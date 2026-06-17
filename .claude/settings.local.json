@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 /c/Users/dnjsg/workspace/bmad-encar-demo/_bmad/scripts/resolve_customization.py --skill \"C:/Users/dnjsg/.claude/skills/bmad-technical-research\" --key workflow)",
+      "Bash(python _bmad/scripts/resolve_customization.py --skill \"C:/Users/dnjsg/.claude/skills/bmad-technical-research\" --key workflow)",
+      "WebSearch",
+      "WebFetch(domain:vercel.com)",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:docs.cloud.google.com)",
+      "Bash(python _bmad/scripts/resolve_customization.py --skill \"C:/Users/dnjsg/.claude/skills/bmad-product-brief\" --key workflow)",
+      "Bash(python3 .claude/skills/bmad-prd/customize.toml)",
+      "Bash(python3 \"C:\\\\Users\\\\dnjsg\\\\workspace\\\\bmad-encar-demo\\\\.claude\\\\skills\\\\bmad-prd\\\\..\\\\..\\\\..\\\\_bmad\\\\scripts\\\\resolve_customization.py\" --skill \"C:\\\\Users\\\\dnjsg\\\\workspace\\\\bmad-encar-demo\\\\.claude\\\\skills\\\\bmad-prd\" --key workflow)",
+      "Bash(python \"_bmad/scripts/resolve_customization.py\" --skill \".claude/skills/bmad-prd\" --key workflow)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
+}
