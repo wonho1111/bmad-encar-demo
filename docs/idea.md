@@ -33,7 +33,7 @@
     - 근거: 본 과제는 시연용·경부하. AI 검색은 요청당 짧은(수초) Gemini 호출 1~2회로 끝나 Vercel Hobby 함수 시간 제한(최대 300초) 내 충분. Python(ASGI) 런타임으로 FastAPI 구동, 의존성도 번들 500MB 한도 내.
     - 유의: ① 무상태(stateless)이므로 채팅 이력은 Supabase에 저장(폴링과 잘 맞음) ② Supabase 연결 풀링 설정 ③ 무거운 라이브러리 미적재.
     - 차선(부하 증가 시): 백엔드만 Google Cloud Run / Railway로 분리.
-    - 모바일 테스트: Expo Go
+    - 모바일 테스트: Android 에뮬레이터(+ mobile-mcp/Maestro) — Flutter는 디바이스/에뮬레이터로 확인. Expo Go는 React Native 전용이라 Flutter엔 미사용.
     - 비고: 기술 연구 + 경부하 시연 스코프 재검토 반영 (planning-artifacts/research/technical-ai-search-architecture-research-2026-06-16.md)
   - 7. AI 오케스트레이션: LangGraph (Python) — FastAPI 백엔드 내 서비스로 탑재
   - 8. LLM: Google Gemini API 무료 등급 (Gemini Flash 계열) — 라우팅/Text-to-SQL/답변 생성
