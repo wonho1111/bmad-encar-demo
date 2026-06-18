@@ -37,3 +37,9 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# ===== 크래시 덤프 (예: grep.exe.stackdump) =====
+*.stackdump
+
+# ===== Claude Code 로컬 설정 (개인/머신별, 추적 제외) =====
+.claude/settings.local.json
