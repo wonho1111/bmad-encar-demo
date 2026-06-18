@@ -196,7 +196,8 @@ create table listings (
 
 - **인증:** Supabase Auth(이메일/비밀번호). 가입 시 역할 선택 → `profiles.role` 고정.
 - **인가:** RLS 정책으로 역할·소유권 강제 — 판매자는 본인 매물만 수정/삭제(FR6), 구매자/판매자/관리자 분기(FR3), 관리자 전권.
-- **판매완료 비노출(FR11):** RLS·쿼리 공통으로 `status='sold'` 구매자 화면 제외.
+- **RLS 배치 원칙(정합성):** 각 테이블의 RLS는 **그 테이블을 만드는 마이그레이션에 동거**시킨다(0001=profiles RLS, 0002=listings 소유권·FR11 RLS, 0003=chat 참여자 RLS). 그래야 마이그레이션을 0001→0006 순서로 적용해도 각 기능(에픽) 시점에 필요한 RLS가 이미 존재한다. **관리자 전권 교차 정책만** 별도 `0005_admin_policies.sql`로 모은다(여러 테이블을 가로지르므로). 단일 `rls_policies` 묶음으로 몰면 RLS가 늦게 적용돼 선행 기능이 막히므로 금지.
+- **판매완료 비노출(FR11):** RLS·쿼리 공통으로 `status='sold'` 구매자 화면 제외(정책은 `0002_listings`에 동거).
 - **AI 경로 안전장치(NFR2):** FastAPI AI 엔드포인트는 **전용 읽기 전용 Postgres 롤**로 DB 접근(클라이언트 RLS 경로와 분리). Text-to-SQL은 SELECT 전용 + 기본 LIMIT + 테이블/컬럼 화이트리스트 + 실행 전 검증. AI 호출 시 Supabase JWT 검증으로 로그인 구매자만 허용.
 
 ### API & Communication Patterns
@@ -325,11 +326,12 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 │
 ├── supabase/                     # DB 정의 (단일 출처)
 │   ├── migrations/
-│   │   ├── 0001_profiles.sql            # FR1~4 역할·상태
+│   │   ├── 0001_profiles.sql            # FR1~4 역할·상태 + profiles RLS(본인 행 읽기·관리자 전체)
 │   │   ├── 0002_listings.sql            # FR5 15필드(사진 제외) + status + embedding vector(768)
-│   │   ├── 0003_chat.sql                # FR19~21 rooms·messages
-│   │   ├── 0004_guide_documents.sql     # FR15 코퍼스② + pgvector HNSW
-│   │   ├── 0005_rls_policies.sql        # FR3·6·11 RLS (관리자 role=admin 정책 포함)
+│   │   │                                #   + 소유권 RLS(FR6) + 판매완료 비노출 RLS(FR11)
+│   │   ├── 0003_chat.sql                # FR19~21 rooms·messages + 참여자 한정 RLS
+│   │   ├── 0004_guide_documents.sql     # FR15 코퍼스② + pgvector HNSW (읽기전용 롤 SELECT 대상)
+│   │   ├── 0005_admin_policies.sql      # FR22~25 관리자 전권 교차 정책(전체 회원·매물·거래·채팅 접근)
 │   │   └── 0006_readonly_role.sql       # NFR2 AI 전용 읽기 전용 롤
 │   ├── seed.sql                  # 관리자 계정·샘플 매물·가이드 문서(OI6)
 │   └── config.toml
@@ -398,16 +400,16 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 
 ### Requirements to Structure Mapping
 
-- **인증·계정(FR1~4):** `supabase/0001·0005` + `web/(auth)` / `app/features/auth` + `middleware.ts`.
-- **매물 등록·관리(FR5~8):** `0002` + `web/(user)/sell` + `app/features/listings`.
-- **매물 탐색(FR9~11):** `(user)/search`·`listings/[id]` + `0005`(FR11 RLS).
+- **인증·계정(FR1~4):** `supabase/0001`(profiles + profiles RLS) + `web/(auth)` / `app/features/auth` + `middleware.ts`.
+- **매물 등록·관리(FR5~8):** `0002`(listings + 소유권·FR11 RLS) + `web/(user)/sell` + `app/features/listings`.
+- **매물 탐색(FR9~11):** `(user)/search`·`listings/[id]` + `0002`(FR11 비노출 RLS).
 - **AI 검색(FR12~18):** `api/app/graph/*` + 클라 `ai/` 화면 + `api/aiSearch.ts`.
-- **문의 채팅(FR19~21):** `0003` + `(user)/chat/[roomId]` + `features/chat`(폴링).
-- **관리자(FR22~25):** `web/(admin)/admin/*` (role=admin 보호).
+- **문의 채팅(FR19~21):** `0003`(chat + 참여자 RLS) + `(user)/chat/[roomId]` + `features/chat`(폴링).
+- **관리자(FR22~25):** `0005_admin_policies`(전권 교차 정책) + `web/(admin)/admin/*` (role=admin 보호).
 
 ### Cross-Cutting Concerns
 
-- **인증/RBAC:** Supabase Auth + `profiles.role` + RLS(`0005`) + `middleware.ts`(/admin 보호) + JWT 검증(`api/auth.py`).
+- **인증/RBAC:** Supabase Auth + `profiles.role` + 테이블별 RLS(`0001`/`0002`/`0003`) + 관리자 교차 정책(`0005_admin_policies`) + `middleware.ts`(/admin 보호) + JWT 검증(`api/auth.py`).
 - **AI 안전장치(NFR2):** `0006_readonly_role` + `api/db/sql_guard.py`.
 - **단위 규칙:** `web/lib/format.ts`, `app/core/format`, `api` 정규화 — km·원 통일.
 - **판매완료 비노출(FR11):** RLS + `sql_guard` + 문서 RAG 결과 필터 공통.
@@ -456,6 +458,7 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 
 - 주행거리 단위 미명시 → **단위·측정 규칙**으로 km 고정(검증 중 발견·반영).
 - 관리자 앱 분리 과투자 → 단일 앱 `(admin)` 라우트+RBAC로 단순화(보안은 RLS가 동등 보장).
+- **RLS 마이그레이션 타이밍 모순(구현 준비도 점검 M1, 2026-06-19 반영)** → 단일 `0005_rls_policies` 묶음이 Epic 1·2 시점보다 늦게 적용되는 문제. 각 테이블 RLS를 해당 테이블 마이그레이션(0001·0002·0003)에 동거시키고, `0005`는 `0005_admin_policies`(관리자 전권 교차 정책)로 재정의해 해소.
 
 ### Architecture Completeness Checklist
 

@@ -67,7 +67,7 @@ This document provides the complete epic and story breakdown for bmad-encar-demo
 (아키텍처 도출 — 구현·인프라·일관성 요구사항)
 
 - AR1: 스타터 스캐폴딩 — 경량 폴더 모노레포(`web`/`app`/`api`/`supabase` 한 저장소 공존), 각 파트 공식 CLI 부트스트랩. 버전: Next.js 16.2.7 · Flutter 3.44.0 · FastAPI 0.137.1 · LangGraph 1.2.4. **→ Epic 1 첫 스토리.**
-- AR2: DB 마이그레이션 6종 — `0001_profiles` · `0002_listings`(15필드+status+embedding, 사진 제외) · `0003_chat` · `0004_guide_documents` · `0005_rls_policies` · `0006_readonly_role`. 단일 스키마 출처 = `supabase/migrations/`.
+- AR2: DB 마이그레이션 6종 — `0001_profiles`(+profiles RLS) · `0002_listings`(15필드+status+embedding, 사진 제외, +소유권·FR11 비노출 RLS) · `0003_chat`(+참여자 RLS) · `0004_guide_documents` · `0005_admin_policies`(관리자 전권 교차 정책) · `0006_readonly_role`. **RLS 배치 원칙:** 각 테이블 RLS는 그 테이블 마이그레이션에 동거(0001→0006 순서 적용 시 에픽 시점마다 필요한 RLS가 이미 존재) — 관리자 전권 교차 정책만 `0005`로 분리. 단일 스키마 출처 = `supabase/migrations/`.
 - AR3: AI 전용 읽기 전용 Postgres 롤 + SELECT 검증·기본 LIMIT 강제(`api/db/sql_guard.py`) — NFR2 결정론적 안전장치.
 - AR4: pgvector HNSW 인덱스, 임베딩 `vector(768)` 차원 정합(생성·저장·검색 전 구간 일치). 임베딩 모델 `gemini-embedding-001`(768).
 - AR5: 폴리글랏 일관성 규칙 강제 — 통신선 snake_case, 단위(km·원·cc), AI 응답 `{answer, listings[]}`·에러 `{error:{code,message}}` 공통 포맷. (ESLint/flutter_lints/ruff로 강제)
@@ -131,7 +131,7 @@ This document provides the complete epic and story breakdown for bmad-encar-demo
 ### Epic 3: 구매자 매물 탐색
 구매자가 키워드/필터로 매물을 검색하고 상세를 조회한다. 판매완료 매물은 모든 경로에서 보이지 않는다.
 **FRs covered:** FR9, FR10, FR11
-**기반 흡수:** FR11 비노출 RLS(`0005`) 적용·검증 AC.
+**기반 흡수:** FR11 비노출 RLS(`0002`에 동거) 적용·검증 AC.
 
 ### Epic 4: AI 검색 어시스턴트 (핵심 차별점)
 구매자가 자연어 한 문장으로 매물을 찾는다 — 라우터 3분류 → Text-to-SQL(A)·문서 RAG(B)·가드(C), 자연어+매물카드 응답, 멀티턴.
@@ -146,7 +146,7 @@ This document provides the complete epic and story breakdown for bmad-encar-demo
 ### Epic 6: 관리자
 운영자가 회원·매물·거래내역·채팅을 조회/삭제한다. (web 전용)
 **FRs covered:** FR22, FR23, FR24, FR25
-**기반 흡수:** `(admin)` 라우트 가드 + admin RLS 정책(`0005`).
+**기반 흡수:** `(admin)` 라우트 가드 + 관리자 전권 교차 정책(`0005_admin_policies`).
 
 ### Epic 7: Flutter 모바일 앱 (구매자 + 판매자)
 구매자(AI검색→상세→문의채팅)와 판매자(등록→문의응대→구매완료) 핵심 여정을 모바일 앱에서 수행한다. 관리자 제외. web이 확정한 Supabase 스키마/RLS + `/ai/search` 계약 재사용.
@@ -236,7 +236,7 @@ So that 권한 밖 기능·데이터에 접근하지 못하게 한다.
 **When** 비로그인 사용자가 보호 경로에 접근하면
 **Then** 로그인으로 리다이렉트된다
 
-**Given** profiles RLS 정책이 적용되면
+**Given** `0001_profiles`에 동거된 profiles RLS 정책이 적용되면 (별도 RLS 묶음 마이그레이션 대기 없이 Epic 1 시점에 활성)
 **When** 사용자가 profiles를 조회하면
 **Then** 본인 행만 읽히고, 관리자만 전체를 읽는다
 
@@ -277,6 +277,7 @@ So that 웹·앱 어느 클라이언트가 붙어도 권한·상태 무결성이
 **When** 스키마를 확인하면
 **Then** FR5 15필드 + `seller_id`·`status check(on_sale/sold)`·`embedding vector(768)`·타임스탬프가 존재한다(사진 컬럼 없음)
 **And** 고정 목록(manufacturer·body_type·color·fuel·transmission·region)은 `CHECK`로 강제된다
+**And** 소유권 RLS(FR6) + 판매완료 비노출 RLS(FR11)가 **같은 `0002_listings` 마이그레이션에 동거**해 함께 적용된다(별도 RLS 묶음 대기 없음)
 
 **Given** 소유권 RLS가 적용되면
 **When** 판매자가 매물을 수정/삭제하면
@@ -401,7 +402,7 @@ So that 거래 불가능한 매물이 노출되지 않는다.
 
 **Acceptance Criteria:**
 
-**Given** RLS/쿼리 공통 규칙이 적용되면
+**Given** FR11 비노출 RLS/쿼리 공통 규칙이 적용되면 (정책은 `0002_listings`에 동거 — Epic 3 시점에 이미 활성)
 **When** 구매자가 목록·필터검색·상세에 접근하면
 **Then** `status='sold'` 매물은 어느 경로에서도 보이지 않는다
 
@@ -589,6 +590,7 @@ So that 당사자만 대화를 읽고 쓴다.
 **Given** `0003_chat` 마이그레이션이 적용되면
 **When** 스키마를 확인하면
 **Then** `chat_rooms(listing_id, buyer_id, seller_id)`·`chat_messages(room_id, sender_id, body, created_at)`가 존재한다
+**And** 참여자 한정 RLS가 **같은 `0003_chat` 마이그레이션에 동거**해 함께 적용된다
 
 **Given** RLS가 적용되면
 **When** 제3자가 채팅방/메시지에 접근하면
@@ -638,7 +640,7 @@ So that 운영 기능이 관리자에게만 열린다.
 
 **Acceptance Criteria:**
 
-**Given** `(admin)` 라우트 가드와 admin RLS가 적용되면
+**Given** `(admin)` 라우트 가드와 `0005_admin_policies`(관리자 전권 교차 정책)가 적용되면
 **When** 비관리자가 `/admin`에 접근하면
 **Then** 1차 미들웨어 + 2차 RLS로 차단된다
 
