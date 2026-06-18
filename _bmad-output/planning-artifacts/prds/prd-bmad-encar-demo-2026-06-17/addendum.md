@@ -9,9 +9,9 @@ PRD 본문에 담기엔 "기술적 어떻게(technical-how)"에 가까운 내용
 - **사용자용 모바일 앱:** Flutter (테스트: Expo Go 대신 Flutter는 디바이스/에뮬레이터로 확인)
 - **통합 API:** FastAPI
 - **AI 오케스트레이션:** LangGraph (Python) — FastAPI 백엔드 내 서비스로 탑재
-- **LLM:** Google Gemini API 무료 등급(Gemini Flash 계열) — 라우팅/Text-to-SQL/답변 생성
-- **임베딩:** Gemini 임베딩(생성 LLM과 동일 SDK·API 키로 통일)
-- **벡터 검색:** Supabase pgvector
+- **LLM:** Google Gemini API **무료 등급** — 생성 모델 **`gemini-flash-latest`**(Flash 계열) — 라우팅/Text-to-SQL/답변 생성
+- **임베딩:** **`gemini-embedding-001`**, **출력 차원 768**(`outputDimensionality=768`로 고정). 생성 LLM과 동일 API 키 사용. (2026-06-17 실호출로 검증)
+- **벡터 검색:** Supabase pgvector — 임베딩 컬럼은 **`vector(768)`**
 - **DB:** Supabase(PostgreSQL)
 - **배포:** Vercel로 통일(Next.js 프론트 + FastAPI 백엔드). 차선: 부하 증가 시 백엔드만 Cloud Run / Railway로 분리.
 

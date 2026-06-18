@@ -136,11 +136,55 @@ pip install "fastapi==0.137.1" "uvicorn[standard]" "langgraph==1.2.4" \
 
 **테이블(초기 6개):**
 - `profiles` — `id`(auth.users 참조), `role`(buyer/seller/admin), `status`(active/suspended).
-- `listings` — 매물 16필드(FR5) + `seller_id`, `status`(on_sale/sold), `embedding vector(768)`(코퍼스① 설명·옵션 임베딩), `created_at`.
+- `listings` — 매물 16필드(FR5) + `seller_id`, `status`(on_sale/sold), `embedding vector(768)`(코퍼스① 설명·옵션 임베딩), `created_at`. 상세 컬럼 정의는 아래 표 참조.
 - `chat_rooms` — `listing_id`, `buyer_id`, `seller_id`, `created_at`.
 - `chat_messages` — `room_id`, `sender_id`, `body`, `created_at`.
 - `guide_documents` — `title`, `content`, `embedding vector(768)`(코퍼스② 차량 상식·가이드).
 - (auth.users는 Supabase Auth 관리)
+
+**`listings` 컬럼 정의 (확정):** FR5 필드를 정의. 차종(`body_type`)은 Encar·K-Car 등 국내 중고차 앱 분류를 따르는 **단일 컬럼**(차급·차형을 합친 관행 분류). 고정 목록은 `text + CHECK`, 숫자 범위는 `CHECK`. 아래 영문 컬럼명을 DB·JSON·코드·Text-to-SQL 화이트리스트 전 구간에서 동일하게 사용(drift 금지).
+
+```sql
+-- supabase/migrations/0002_listings.sql (구현 단계에서 생성)
+-- 단위: price=원(KRW), mileage=km, displacement=cc
+create table listings (
+  -- 시스템 컬럼 (FR5 외)
+  id            uuid primary key default gen_random_uuid(),
+  seller_id     uuid not null references profiles(id) on delete cascade,
+  status        text not null default 'on_sale' check (status in ('on_sale','sold')),
+  embedding     vector(768),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+
+  -- FR5 16필드
+  manufacturer  text not null check (manufacturer in (        -- 제조사(고정)
+                  '현대','기아','제네시스','쉐보레','르노코리아','KG모빌리티',
+                  'BMW','벤츠','아우디','폭스바겐','토요타','혼다','렉서스','테슬라','기타')),
+  model         text not null,                                 -- 모델(자유 입력)
+  body_type     text not null check (body_type in (            -- 차종(Encar/K-Car 분류)
+                  '경차','소형차','준중형차','중형차','대형차','스포츠카',
+                  'SUV','RV','경승합차','승합차','화물차','기타')),
+  year          int  not null check (year between 1990 and 2027),
+  price         int  not null check (price >= 0),              -- 원
+  mileage       int  not null check (mileage >= 0),            -- km
+  color         text not null check (color in (
+                  '흰색','검정','회색','은색','파랑','빨강','갈색','녹색','기타')),
+  fuel          text not null check (fuel in (
+                  '가솔린','디젤','하이브리드','전기','LPG')),
+  transmission  text not null check (transmission in ('자동','수동')),
+  displacement  int  not null check (displacement >= 0),       -- cc, 전기차 0 허용
+  seats         int  not null check (seats between 2 and 11),
+  region        text not null check (region in (
+                  '서울','부산','대구','인천','광주','대전','울산','세종',
+                  '경기','강원','충북','충남','전북','전남','경북','경남','제주')),
+  accident_free boolean not null default true,                 -- 무사고 여부
+  options       text[] default '{}',                           -- 코퍼스① 임베딩 대상
+  description   text,                                          -- 코퍼스① 임베딩 대상
+  photos        text[] default '{}'                            -- URL 배열, 대표=photos[0]
+);
+```
+
+> **정합성 주의:** 위 CHECK 목록값은 **UI 드롭다운 · AI Text-to-SQL 허용값 · 데모 시드 데이터 · 질의셋(OI5)**과 동일해야 한다. `year` 상한(2027)은 CHECK 정적값이라 연도 경과 시 마이그레이션으로 상향한다.
 
 **검증 전략:** API는 Pydantic(LangGraph 구조화 출력 포함), 웹은 Zod/타입, Supabase 자동 생성 타입 활용.
 **마이그레이션:** Supabase 마이그레이션으로 스키마 버전 관리.
