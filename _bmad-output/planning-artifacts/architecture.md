@@ -26,7 +26,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 **Functional Requirements (FR 25개 / 6그룹):**
 - F1 인증·계정(FR1~4): 이메일/비밀번호 가입 시 역할(구매자/판매자) 선택·고정, 역할별 접근 제어(RBAC), 관리자 계정 별도. → Supabase Auth + 역할 기반 권한이 모든 API/화면에 걸친 횡단 관심사.
-- F2 매물 등록·관리(FR5~8): 16필드 매물 CRUD, 본인 매물만 수정/삭제, 즉시 노출, "구매 완료"→판매완료 상태 전환. → 소유권 기반 인가 + 상태 머신.
+- F2 매물 등록·관리(FR5~8): 15필드 매물 CRUD(사진 제외), 본인 매물만 수정/삭제, 즉시 노출, "구매 완료"→판매완료 상태 전환. → 소유권 기반 인가 + 상태 머신.
 - F3 매물 탐색(FR9~11): 키워드/필터 검색, 상세 조회, **판매완료 전 경로 비노출(FR11) = 단일 데이터 규칙**.
 - F4 AI 검색 어시스턴트(FR12~18, 핵심): 라우터 3분류 → 경로 A(Text-to-SQL) / 경로 B(문서 RAG) / 가드(C), 자연어+매물카드 응답, 0건 시 조건 완화 안내, 멀티턴(클라이언트 보관). → 시스템 최고 난도 영역.
 - F5 문의 채팅(FR19~21): 채팅방 생성, 폴링 송수신, 메시지 DB 영속.
@@ -136,7 +136,7 @@ pip install "fastapi==0.137.1" "uvicorn[standard]" "langgraph==1.2.4" \
 
 **테이블(초기 6개):**
 - `profiles` — `id`(auth.users 참조), `role`(buyer/seller/admin), `status`(active/suspended).
-- `listings` — 매물 16필드(FR5) + `seller_id`, `status`(on_sale/sold), `embedding vector(768)`(코퍼스① 설명·옵션 임베딩), `created_at`. 상세 컬럼 정의는 아래 표 참조.
+- `listings` — 매물 15필드(FR5, 사진 제외) + `seller_id`, `status`(on_sale/sold), `embedding vector(768)`(코퍼스① 설명·옵션 임베딩), `created_at`. 상세 컬럼 정의는 아래 표 참조.
 - `chat_rooms` — `listing_id`, `buyer_id`, `seller_id`, `created_at`.
 - `chat_messages` — `room_id`, `sender_id`, `body`, `created_at`.
 - `guide_documents` — `title`, `content`, `embedding vector(768)`(코퍼스② 차량 상식·가이드).
@@ -156,7 +156,7 @@ create table listings (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
 
-  -- FR5 16필드
+  -- FR5 15필드 (사진 제외)
   manufacturer  text not null check (manufacturer in (        -- 제조사(고정)
                   '현대','기아','제네시스','쉐보레','르노코리아','KG모빌리티',
                   'BMW','벤츠','아우디','폭스바겐','토요타','혼다','렉서스','테슬라','기타')),
@@ -179,8 +179,8 @@ create table listings (
                   '경기','강원','충북','충남','전북','전남','경북','경남','제주')),
   accident_free boolean not null default true,                 -- 무사고 여부
   options       text[] default '{}',                           -- 코퍼스① 임베딩 대상
-  description   text,                                          -- 코퍼스① 임베딩 대상
-  photos        text[] default '{}'                            -- URL 배열, 대표=photos[0]
+  description   text                                           -- 코퍼스① 임베딩 대상
+  -- 사진 제외(범위 결정): RAG 목표 집중 위해 photos 컬럼·Supabase Storage 미사용
 );
 ```
 
@@ -265,7 +265,7 @@ create table listings (
 ### Format Patterns
 
 - **AI 응답(공통 계약):** `{ "answer": string, "listings": ListingCard[] }`. 0건이면 `listings: []` + `answer`에 조건 완화 안내(FR17).
-- **ListingCard 필드:** `id, manufacturer, model, year, price, mileage, region, thumbnail_url`(snake_case).
+- **ListingCard 필드:** `id, manufacturer, model, year, price, mileage, region`(snake_case). (사진 제외 — 썸네일 필드 없음)
 - **에러 포맷:** `{ "error": { "code": string, "message": string } }`. HTTP 상태코드 정확히 사용(400/401/403/404/422/500).
 - **날짜:** ISO 8601 문자열(UTC). **불리언:** `true/false`. **null:** 빈 문자열 대신 명시적 `null`.
 
@@ -326,7 +326,7 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 ├── supabase/                     # DB 정의 (단일 출처)
 │   ├── migrations/
 │   │   ├── 0001_profiles.sql            # FR1~4 역할·상태
-│   │   ├── 0002_listings.sql            # FR5 16필드 + status + embedding vector(768)
+│   │   ├── 0002_listings.sql            # FR5 15필드(사진 제외) + status + embedding vector(768)
 │   │   ├── 0003_chat.sql                # FR19~21 rooms·messages
 │   │   ├── 0004_guide_documents.sql     # FR15 코퍼스② + pgvector HNSW
 │   │   ├── 0005_rls_policies.sql        # FR3·6·11 RLS (관리자 role=admin 정책 포함)
