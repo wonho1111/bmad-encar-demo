@@ -232,7 +232,7 @@ So that 권한 밖 기능·데이터에 접근하지 못하게 한다.
 
 **Acceptance Criteria:**
 
-**Given** `middleware.ts` 라우트 가드가 있을 때
+**Given** `proxy.ts`(Next.js 16에서 `middleware.ts` 개명) 라우트 가드가 있을 때
 **When** 비로그인 사용자가 보호 경로에 접근하면
 **Then** 로그인으로 리다이렉트된다
 

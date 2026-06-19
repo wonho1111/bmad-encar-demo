@@ -362,7 +362,7 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 │   │   │   ├── queries/                        # TanStack Query 훅(폴링 포함)
 │   │   │   └── format.ts                       # km·원 표시 포맷(단위 규칙)
 │   │   ├── types/database.ts                   # supabase 생성 타입
-│   │   └── middleware.ts                        # 세션 가드 + /admin은 role=admin만 통과
+│   │   └── proxy.ts                            # (Next.js 16: middleware→proxy 개명) 세션 가드 + /admin은 role=admin만 통과
 │   └── tests/
 │
 ├── app/                          # Flutter 3.44 — 모바일 앱 (사용자용)
@@ -394,13 +394,13 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 ### Architectural Boundaries
 
 - **API 경계:** ① Supabase(인증·CRUD·채팅, RLS 직접 접근) ② FastAPI `/ai/search`(AI 전용, 읽기 전용 롤). 두 경계는 분리되며 AI는 쓰기 권한 없음.
-- **사용자/관리자 경계:** 단일 `web/` 앱 내 라우트 그룹 — `(user)` vs `(admin)/admin`. `middleware.ts`가 `/admin` 접근을 `role=admin`으로 제한(1차), RLS가 서버에서 재차 강제(2차 방어선).
+- **사용자/관리자 경계:** 단일 `web/` 앱 내 라우트 그룹 — `(user)` vs `(admin)/admin`. `proxy.ts`(Next.js 16에서 `middleware.ts` 개명)가 `/admin` 접근을 로그인 여부로 1차 제한하고, `(admin)` 서버 레이아웃의 `role=admin` 확인 + RLS가 2차로 재차 강제(이중 방어선).
 - **컴포넌트 경계:** 웹은 Server Component(조회)/Client Component(폴링·채팅, TanStack Query). 앱은 feature별 Riverpod provider. AI 채팅 멀티턴 맥락은 클라이언트 상태에만 존재(무상태).
 - **데이터 경계:** 스키마 단일 출처 = `supabase/migrations/`. 클라이언트는 RLS 경유, AI는 읽기 전용 롤 경유. 임베딩(vector 768)은 `listings`·`guide_documents`에 위치.
 
 ### Requirements to Structure Mapping
 
-- **인증·계정(FR1~4):** `supabase/0001`(profiles + profiles RLS) + `web/(auth)` / `app/features/auth` + `middleware.ts`.
+- **인증·계정(FR1~4):** `supabase/0001`(profiles + profiles RLS) + `web/(auth)` / `app/features/auth` + `proxy.ts`(Next.js 16: middleware 개명).
 - **매물 등록·관리(FR5~8):** `0002`(listings + 소유권·FR11 RLS) + `web/(user)/sell` + `app/features/listings`.
 - **매물 탐색(FR9~11):** `(user)/search`·`listings/[id]` + `0002`(FR11 비노출 RLS).
 - **AI 검색(FR12~18):** `api/app/graph/*` + 클라 `ai/` 화면 + `api/aiSearch.ts`.
@@ -409,7 +409,7 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 
 ### Cross-Cutting Concerns
 
-- **인증/RBAC:** Supabase Auth + `profiles.role` + 테이블별 RLS(`0001`/`0002`/`0003`) + 관리자 교차 정책(`0005_admin_policies`) + `middleware.ts`(/admin 보호) + JWT 검증(`api/auth.py`).
+- **인증/RBAC:** Supabase Auth + `profiles.role` + 테이블별 RLS(`0001`/`0002`/`0003`) + 관리자 교차 정책(`0005_admin_policies`) + `proxy.ts`(Next.js 16: middleware 개명, /admin 보호) + JWT 검증(`api/auth.py`).
 - **AI 안전장치(NFR2):** `0006_readonly_role` + `api/db/sql_guard.py`.
 - **단위 규칙:** `web/lib/format.ts`, `app/core/format`, `api` 정규화 — km·원 통일.
 - **판매완료 비노출(FR11):** RLS + `sql_guard` + 문서 RAG 결과 필터 공통.
