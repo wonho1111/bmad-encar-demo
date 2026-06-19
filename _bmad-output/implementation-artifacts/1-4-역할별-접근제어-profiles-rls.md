@@ -1,6 +1,6 @@
 # Story 1.4: 역할별 접근 제어 + profiles RLS
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -51,6 +51,26 @@ so that 권한 밖 기능·데이터에 접근하지 못하게 한다.
     - ④ profiles 본인 행만 조회됨 확인(AC2, Task 4.2).
     - 종료 후 `:3000` 정리(잔존 PID Stop-Process, 포트 DOWN 확인), 테스트 계정 `execute_sql`로 cascade 삭제(`users_left=0` 교차검증).
   - [x] 6.3 결과 사실대로 보고(아래 Completion Notes). 관리자 happy-path 검증 방식(임시계정 vs 이연)을 명시.
+
+### Review Findings (코드 리뷰 2026-06-20, 3-레이어 Blind/Edge/Auditor)
+
+**Acceptance Auditor:** AC1~3 + 핵심 제약(proxy=optimistic/역할판정=서버레이아웃·새 마이그레이션 없음·env 종결·재발명 금지·범위 준수) 전부 충족. 스펙 위반 없음.
+
+**Patch (적용 대상 1건):**
+- [x] [Review][Patch] (적용·검증 완료) proxy의 catch가 보호 경로에서도 fail-open(통과) — env 누락 등으로 `updateSession`이 throw하면 `/admin` 요청이 인증 가드 없이 `NextResponse.next()`로 통과한다. 현재는 `(admin)/layout.tsx`의 `requireRole`이 같은 env throw로 노출은 막지만, **보호 경로는 fail-closed(`/login` 리다이렉트)** 가 원칙. catch에서 `isProtected`면 `/login`으로 보낸다. [web/src/proxy.ts]
+
+**Defer (1건 — 후속 스토리에서 처리):**
+- [x] [Review][Defer] `redirectedFrom` 동봉만 되고 소비처 없음 + open-redirect 검증 규약 부재 [web/src/proxy.ts, web/src/app/(auth)/login/page.tsx] — deferred, 후속. proxy는 `?redirectedFrom=<pathname>`을 붙이지만 로그인 화면이 이를 읽지 않아(항상 `/`로 이동) 현재 무해. 향후 로그인 성공 후 `redirectedFrom`으로 이동시키는 스토리에서 **반드시 값이 `/`로 시작하는 상대경로인지 검증**(`//`·`http(s):` 차단)해 오픈 리다이렉트를 막아야 한다. (스펙상 redirectedFrom 활용은 "선택·가점"으로 이연돼 있었음.)
+
+**Dismiss (8건 — 오탐/설계상 안전/범위 외):**
+1. **(오탐, High)** "proxy.ts는 middleware로 동작 안 함 → middleware.ts여야" (Blind Hunter, 컨텍스트 없음) — Next.js 16은 middleware→proxy로 개명. 빌드 `ƒ Proxy (Middleware)` 인식 + Playwright E2E 리다이렉트 실동작으로 정상 작동 증명. (B2 "세션 미갱신"도 동일 전제라 동반 기각.)
+2. `requireRole`의 `.single()`/profiles 에러 미수신 — `profile=null`→`/`로 redirect라 **fail-closed로 안전**(노출 없음). 1.3 홈에서 동일 패턴 dismiss와 일관. 관측성(로깅)은 nice-to-have.
+3. `requireUser` 미사용(데드코드) — Epic 2/3 재사용 위한 의도된 공개 헬퍼(스토리 명시).
+4. matcher가 모든 라우트에 `getUser()` 실행(성능)·`/api` 미제외 — Supabase 공식 패턴이 전 라우트 실행 권장, `/api` 라우트 아직 없음. 데모 경부하라 무시.
+5. `requireRole`이 proxy와 별도로 `getUser()` 재호출(왕복 중복) — 정확성 무관, 데모 경부하.
+6. `getUser()` 에러 미수신(관측성) — 보호경로는 이미 fail-closed, 로깅은 선택.
+7. `(admin)` layout/page 병렬 렌더 — 현재 page는 정적(데이터 페치 없음). Epic 6에서 민감 페치 추가 시 재확인(스토리에 명시).
+8. 로그인 사용자가 `/login`·`/signup` 접근 가능 — UX 나이트, 본 스토리 범위 외.
 
 ## Dev Notes
 
@@ -193,3 +213,4 @@ claude-opus-4-8[1m] (dev-story)
 ## Change Log
 
 - 2026-06-20: Story 1.4 구현 — Next.js 16 `proxy.ts` 라우트 가드(세션 갱신 + 보호경로 인증) · `(admin)` 역할 게이트 · profiles RLS 검증(새 마이그레이션 없음) · Supabase env 가드 일원화(deferred-work 종결). lint/build 통과, Playwright E2E로 AC1~3 검증(비로그인 차단·판매자 차단·관리자 통과·RLS self=1/admin=2) + 임시 admin 계정 교차검증·정리. Status → review. (dev-story)
+- 2026-06-20: 코드 리뷰(Blind/Edge/Auditor 3-레이어) — AC1~3 충족·스펙 위반 없음. Blind Hunter의 최우선 High("proxy.ts는 middleware 아님")는 Next.js 16 개명 미인지 **오탐**(빌드 인식+E2E 실동작으로 반증). patch 1건 적용·검증(proxy catch를 보호경로 fail-closed로 — env 누락 시 `/admin` fail-open 차단), defer 1건(redirectedFrom open-redirect 규약), dismiss 8건. lint/build + curl 회귀(비로그인 /admin→307 /login) 통과. Status → done. (code-review)

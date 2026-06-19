@@ -15,30 +15,39 @@ import { updateSession } from '@/lib/supabase/session';
 // 로그인이 필요한 보호 경로 접두사. 후행 에픽에서 추가 예정: '/sell'(판매자), '/chat'(문의 채팅).
 const PROTECTED_PREFIXES = ['/admin'];
 
+function redirectToLogin(request: NextRequest, pathname: string) {
+  const url = request.nextUrl.clone();
+  url.pathname = '/login';
+  // 로그인 후 원래 가려던 곳으로 돌아갈 수 있게 출발 경로를 동봉한다.
+  url.searchParams.set('redirectedFrom', pathname);
+  return NextResponse.redirect(url);
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // 정확 일치 또는 하위 경로만 보호('/administrator' 같은 우연 일치 방지).
+  // try 바깥에서 계산해, 세션 갱신이 실패해도 보호 여부를 판단할 수 있게 한다.
+  const isProtected = PROTECTED_PREFIXES.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 
   try {
     const { response, user } = await updateSession(request);
 
-    // 정확 일치 또는 하위 경로만 보호('/administrator' 같은 우연 일치 방지).
-    const isProtected = PROTECTED_PREFIXES.some(
-      (p) => pathname === p || pathname.startsWith(`${p}/`),
-    );
-
     if (isProtected && !user) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/login';
-      // 로그인 후 원래 가려던 곳으로 돌아갈 수 있게 출발 경로를 동봉한다.
-      url.searchParams.set('redirectedFrom', pathname);
-      return NextResponse.redirect(url);
+      return redirectToLogin(request, pathname);
     }
 
     return response;
   } catch (e) {
-    // env 누락 등으로 세션 갱신이 불가능하면, 요청을 막지 않고 통과시키되 원인을 로그로 남긴다.
-    // (불투명한 throw로 화면이 깨지는 대신, 무엇을 고쳐야 하는지 콘솔에 명확히 알린다.)
+    // env 누락 등으로 세션 갱신이 불가능한 경우.
+    // 원인을 로그로 남기되, 보호 경로는 fail-closed로 막는다 — 인증을 확인할 수 없으면
+    // 통과(fail-open)시키지 않고 /login으로 보낸다(보안 원칙). 공개 경로만 통과시킨다.
     console.error('[proxy] 세션 갱신 실패 — Supabase 환경변수(web/.env.local)를 확인하세요:', e);
+    if (isProtected) {
+      return redirectToLogin(request, pathname);
+    }
     return NextResponse.next();
   }
 }
