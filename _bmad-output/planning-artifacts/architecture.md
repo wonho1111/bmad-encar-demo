@@ -165,7 +165,7 @@ create table listings (
                   '경차','소형차','준중형차','중형차','대형차','스포츠카',
                   'SUV','RV','경승합차','승합차','화물차','기타')),
   year          int  not null check (year between 1990 and 2027),
-  price         int  not null check (price >= 0),              -- 원
+  price         bigint not null check (price >= 0),            -- 원 (int 최대 21.4억 초과 고가 매물 대비 bigint)
   mileage       int  not null check (mileage >= 0),            -- km
   color         text not null check (color in (
                   '흰색','검정','회색','은색','파랑','빨강','갈색','녹색','기타')),
