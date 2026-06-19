@@ -35,3 +35,41 @@ export const UNITS = {
   price: '원',
   displacement: 'cc',
 } as const;
+
+/**
+ * 매물 고정 목록 6필드의 허용값 (드롭다운 옵션 단일 출처).
+ *
+ * ⚠️ 단일 출처 = `supabase/migrations/0002_listings.sql`의 CHECK 목록 + architecture.md 확정표.
+ *    값·순서·문자를 **그대로(바이트 단위 일치)** 복사한다. 여기와 DB가 어긋나면(drift) 폼에서 고른 값이
+ *    DB CHECK에 걸려 거절되거나, 반대로 막아야 할 값이 통과한다. 값이 바뀌면 마이그레이션을 먼저 고치고 여기 반영.
+ *    (이 미러링은 Story 2-1 코드리뷰에서 2-2로 defer된 항목이다.)
+ */
+export const LISTING_OPTIONS = {
+  manufacturer: [
+    '현대', '기아', '제네시스', '쉐보레', '르노코리아', 'KG모빌리티',
+    'BMW', '벤츠', '아우디', '폭스바겐', '토요타', '혼다', '렉서스', '테슬라', '기타',
+  ],
+  body_type: [
+    '경차', '소형차', '준중형차', '중형차', '대형차', '스포츠카',
+    'SUV', 'RV', '경승합차', '승합차', '화물차', '기타',
+  ],
+  color: ['흰색', '검정', '회색', '은색', '파랑', '빨강', '갈색', '녹색', '기타'],
+  fuel: ['가솔린', '디젤', '하이브리드', '전기', 'LPG'],
+  transmission: ['자동', '수동'],
+  region: [
+    '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+    '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
+  ],
+} as const;
+
+/**
+ * 매물 수치 필드의 허용 범위 (DB CHECK와 일치 — 폼 클라이언트 검증·표시에 공유).
+ * year/seats는 상·하한, 나머지는 0 이상. (근거: 0002_listings.sql CHECK)
+ */
+export const LISTING_RANGES = {
+  year: { min: 1990, max: 2027 }, // 0002_listings.sql: year between 1990 and 2027
+  seats: { min: 2, max: 11 }, // seats between 2 and 11
+  price: { min: 0 }, // 원, 음수 불가 (bigint)
+  mileage: { min: 0 }, // km, 음수 불가
+  displacement: { min: 0 }, // cc, 전기차 0 허용
+} as const;
