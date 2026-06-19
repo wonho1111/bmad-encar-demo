@@ -10,28 +10,45 @@ import { createClient } from '@/lib/supabase/client';
 export default function LogoutButton() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleLogout() {
     if (loading) return; // 중복 클릭 방지
+    setError(null);
     setLoading(true);
     try {
       const supabase = createClient();
-      await supabase.auth.signOut();
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        // signOut이 에러를 반환(예: 네트워크 문제) → 한국어 안내, 버튼은 재활성되어 재시도 가능.
+        setError('로그아웃 중 오류가 발생했습니다. 다시 시도해주세요.');
+        return;
+      }
       router.push('/login');
       router.refresh();
+    } catch {
+      // signOut이 throw하는 예외(네트워크 단절 등)도 사용자에게 알리고 재시도 가능하게 둔다.
+      setError('로그아웃 중 오류가 발생했습니다. 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleLogout}
-      disabled={loading}
-      className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
-    >
-      {loading ? '처리 중…' : '로그아웃'}
-    </button>
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={handleLogout}
+        disabled={loading}
+        className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
+      >
+        {loading ? '처리 중…' : '로그아웃'}
+      </button>
+      {error && (
+        <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
