@@ -5,6 +5,8 @@
 // role·status='active'로 함께 만든다. 역할은 options.data.role로 전달되어 트리거가 읽는다.
 // 로그인/로그아웃은 Story 1.3 범위라 여기서는 다루지 않는다.
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { USER_ROLE, type UserRole } from '@/lib/constants';
 
@@ -31,6 +33,7 @@ function toKoreanError(err: { message: string; status?: number; code?: string })
 }
 
 export default function SignupPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<UserRole>(USER_ROLE.BUYER);
@@ -83,12 +86,15 @@ export default function SignupPage() {
       }
 
       if (data.session) {
-        // 이메일 확인 비활성 → 가입 즉시 세션 생성(로그인됨). 로그인 흐름은 Story 1.3.
-        setSuccess('가입이 완료되었습니다.');
-      } else {
-        // 이메일 확인 활성 → 확인 메일 발송, 세션은 확인 후 생성.
-        setSuccess('가입 신청이 완료되었습니다. 이메일을 확인해 인증을 완료해주세요.');
+        // 이메일 확인 비활성 → 가입 즉시 세션 생성(자동 로그인됨).
+        // 곧바로 홈으로 이동해 로그인된 상태로 시작한다. replace로 뒤로가기 시 가입 폼이 다시 안 뜨게 한다.
+        // refresh로 서버 컴포넌트(홈)가 새 세션 쿠키를 다시 읽게 한다.
+        router.replace('/');
+        router.refresh();
+        return;
       }
+      // 이메일 확인 활성 → 확인 메일 발송, 세션은 확인 후 생성. 화면 이동 없이 안내 + 로그인 링크.
+      setSuccess('가입 신청이 완료되었습니다. 이메일을 확인해 인증을 완료한 뒤 로그인해주세요.');
     } catch (err) {
       setError(`네트워크 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -153,9 +159,14 @@ export default function SignupPage() {
           </p>
         )}
         {success && (
-          <p role="status" className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
-            {success}
-          </p>
+          <div className="flex flex-col gap-2">
+            <p role="status" className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+              {success}
+            </p>
+            <Link href="/login" className="text-sm font-medium text-zinc-900 underline dark:text-zinc-100">
+              로그인하러 가기
+            </Link>
+          </div>
         )}
 
         <button
