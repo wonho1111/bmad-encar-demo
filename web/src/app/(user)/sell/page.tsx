@@ -33,12 +33,19 @@ export default async function SellPage() {
   } = await supabase.auth.getUser();
 
   // 본인 매물 최신순 조회 — seller_id 명시 필터 + RLS(listings_select_own) 이중.
-  const { data: listings } = await supabase
+  // error를 함께 받는다: 빠뜨리면 조회 실패(네트워크·RLS·DB 오류)가 "매물 없음"과 똑같이 보여
+  // 방금 등록한 매물이 사라진 것처럼 오인된다(FR7 즉시 노출 신뢰성 훼손). 실패는 한국어로 구분 표시한다.
+  const { data: listings, error: listingsError } = await supabase
     .from('listings')
     .select('id, manufacturer, model, year, price, status, created_at')
     .eq('seller_id', user?.id ?? '')
     .order('created_at', { ascending: false })
     .returns<OwnListing[]>();
+
+  if (listingsError) {
+    // 원본 에러는 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분.
+    console.error('[sell] 본인 매물 조회 실패:', listingsError);
+  }
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
@@ -53,7 +60,11 @@ export default async function SellPage() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">내가 등록한 매물</h2>
-        {!listings || listings.length === 0 ? (
+        {listingsError ? (
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            매물 목록을 불러오지 못했습니다. 잠시 후 새로고침 해주세요.
+          </p>
+        ) : !listings || listings.length === 0 ? (
           <p className="text-sm text-zinc-500">아직 등록한 매물이 없습니다.</p>
         ) : (
           <ul className="flex flex-col gap-2">

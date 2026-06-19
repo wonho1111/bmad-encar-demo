@@ -98,14 +98,17 @@ export default function SellForm() {
     if (!form.year || !Number.isInteger(year) || year < LISTING_RANGES.year.min || year > LISTING_RANGES.year.max) {
       return { ok: false, message: `연식은 ${LISTING_RANGES.year.min}~${LISTING_RANGES.year.max}년 사이로 입력해주세요.` };
     }
-    if (form.price === '' || !Number.isFinite(price) || price < LISTING_RANGES.price.min) {
-      return { ok: false, message: '가격은 0원 이상의 숫자로 입력해주세요.' };
+    // price·mileage·displacement는 DB가 정수형(bigint/int)이라 소수를 넣으면 DB 단계에서 거절되고
+    // 그 에러는 toKoreanError가 매핑하지 못해 일반 메시지로만 보인다 → 여기서 Number.isInteger로
+    // 먼저 차단해 "정수만 저장(AC3)"을 폼이 보장하고 명확한 한국어 메시지를 준다(year·seats와 동일 규칙).
+    if (form.price === '' || !Number.isInteger(price) || price < LISTING_RANGES.price.min) {
+      return { ok: false, message: '가격은 0원 이상의 정수로 입력해주세요(소수점 불가).' };
     }
-    if (form.mileage === '' || !Number.isFinite(mileage) || mileage < LISTING_RANGES.mileage.min) {
-      return { ok: false, message: '주행거리는 0km 이상의 숫자로 입력해주세요.' };
+    if (form.mileage === '' || !Number.isInteger(mileage) || mileage < LISTING_RANGES.mileage.min) {
+      return { ok: false, message: '주행거리는 0km 이상의 정수로 입력해주세요(소수점 불가).' };
     }
-    if (form.displacement === '' || !Number.isFinite(displacement) || displacement < LISTING_RANGES.displacement.min) {
-      return { ok: false, message: '배기량은 0cc 이상의 숫자로 입력해주세요(전기차는 0).' };
+    if (form.displacement === '' || !Number.isInteger(displacement) || displacement < LISTING_RANGES.displacement.min) {
+      return { ok: false, message: '배기량은 0cc 이상의 정수로 입력해주세요(전기차는 0, 소수점 불가).' };
     }
     if (!form.seats || !Number.isInteger(seats) || seats < LISTING_RANGES.seats.min || seats > LISTING_RANGES.seats.max) {
       return { ok: false, message: `인승은 ${LISTING_RANGES.seats.min}~${LISTING_RANGES.seats.max}명 사이로 입력해주세요.` };
