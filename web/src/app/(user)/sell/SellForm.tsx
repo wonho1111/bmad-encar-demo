@@ -1,15 +1,22 @@
 'use client';
 
-// 매물 등록 폼 (FR5·FR7) — 15필드 입력 → listings INSERT → status=on_sale로 즉시 노출.
+// 매물 등록·수정 겸용 폼 (FR5·FR7 등록 / FR6 수정) — 15필드 입력 → listings INSERT(등록) 또는 UPDATE(수정).
+//
+// mode로 동작을 가른다:
+//   · 'create'(기본): INSERT → status=on_sale로 즉시 노출(2-2 동작 그대로, 회귀 금지).
+//   · 'edit': 기존 매물(initialValues)을 폼에 미리 채우고, 제출 시 listingId 행을 UPDATE(2-3).
+//       - status·seller_id는 UPDATE payload에서 제외 → 구매완료(2-4) 침범·소유권 위조 차단.
+//       - UPDATE/DELETE는 RLS(listings_update_own)가 본인 매물만 허용 → 타인 매물은 0행 반환 → 한국어 거부 안내(AC4).
 //
 // 설계(signup/page.tsx 패턴 재사용):
 //   · noValidate + 직접 검증 → 한국어 오류 메시지(네이티브 영문 검증 끔).
 //   · loading으로 중복 제출 차단.
-//   · 고정 목록 6필드는 <select> 드롭다운(LISTING_OPTIONS 단일출처) → 목록 밖 값 선택 불가(AC2·AC5).
-//   · seller_id는 현재 로그인 user.id로 명시(INSERT RLS with check가 위조 차단 — 2-1).
-//   · 단위(원·km·cc·년·명)는 입력란 라벨에 표기, 저장은 정수(AC3).
+//   · 고정 목록 6필드는 <select> 드롭다운(LISTING_OPTIONS 단일출처) → 목록 밖 값 선택 불가.
+//   · seller_id는 등록 시 현재 로그인 user.id로 명시(INSERT RLS with check가 위조 차단 — 2-1).
+//   · 단위(원·km·cc·년·명)는 입력란 라벨에 표기, 저장은 정수.
 //   · DB CHECK/RLS 위반은 한국어로 변환해 노출(원본·코드는 콘솔에만).
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
@@ -51,22 +58,77 @@ const INITIAL: FormState = {
   description: '',
 };
 
+// 수정 모드 진입 시 서버가 넘겨주는 기존 매물 값(snake_case, DB 그대로). 폼 입력값(문자열)으로 변환해 미리 채운다.
+export type ListingInitialValues = {
+  manufacturer: string;
+  model: string;
+  body_type: string;
+  year: number;
+  price: number;
+  mileage: number;
+  color: string;
+  fuel: string;
+  transmission: string;
+  displacement: number;
+  seats: number;
+  region: string;
+  accident_free: boolean;
+  options: string[] | null;
+  description: string | null;
+};
+
+// DB 값(숫자·배열·null) → 폼 상태(문자열·쉼표문자열)로 변환. 등록 폼과 동일한 입력 규칙으로 맞춘다.
+function toFormState(v: ListingInitialValues): FormState {
+  return {
+    manufacturer: v.manufacturer,
+    model: v.model,
+    body_type: v.body_type,
+    year: String(v.year),
+    price: String(v.price),
+    mileage: String(v.mileage),
+    color: v.color,
+    fuel: v.fuel,
+    transmission: v.transmission,
+    displacement: String(v.displacement),
+    seats: String(v.seats),
+    region: v.region,
+    accident_free: v.accident_free,
+    options: (v.options ?? []).join(', '), // text[] → 쉼표 구분 문자열(입력 UI 규칙과 일치)
+    description: v.description ?? '',
+  };
+}
+
+type SellFormProps = {
+  mode?: 'create' | 'edit';
+  listingId?: string; // edit 모드 필수 — UPDATE 대상 행 id
+  initialValues?: ListingInitialValues; // edit 모드 필수 — 기존 값 미리 채움
+};
+
 // Postgres/Supabase 에러를 사용자용 한국어 메시지로 변환(원본 메시지·코드는 화면에 직접 노출하지 않음).
 //   23514 = check_violation(목록 밖 값·범위 위반), 42501 = insufficient_privilege(RLS 거부).
-function toKoreanError(err: { message: string; code?: string }): string {
+function toKoreanError(err: { message: string; code?: string }, mode: 'create' | 'edit'): string {
   const code = err.code ?? '';
   if (code === '23514') {
     return '입력값이 허용 목록/범위를 벗어났습니다. 드롭다운 항목과 숫자 범위를 확인해주세요.';
   }
   if (code === '42501') {
-    return '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.';
+    // 권한/RLS 거부 — 등록은 본인 명의 위조, 수정은 타인 매물 접근.
+    return mode === 'edit'
+      ? '본인 매물만 수정할 수 있습니다. 다시 로그인 후 시도해주세요.'
+      : '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.';
   }
-  return '매물 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+  return mode === 'edit'
+    ? '매물 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+    : '매물 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 }
 
-export default function SellForm() {
+export default function SellForm({ mode = 'create', listingId, initialValues }: SellFormProps) {
   const router = useRouter();
-  const [form, setForm] = useState<FormState>(INITIAL);
+  const isEdit = mode === 'edit';
+  // 수정 모드면 기존 값으로 초기화, 등록 모드면 빈 폼.
+  const [form, setForm] = useState<FormState>(
+    isEdit && initialValues ? toFormState(initialValues) : INITIAL,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -168,6 +230,42 @@ export default function SellForm() {
         return;
       }
 
+      if (isEdit) {
+        // ── 수정(UPDATE) ──────────────────────────────────────────────
+        if (!listingId) {
+          setError('수정할 매물 정보가 올바르지 않습니다. 목록에서 다시 시도해주세요.');
+          return;
+        }
+        // status·seller_id는 보내지 않는다(구매완료 2-4 침범 금지·소유권 위조 금지). created_at은 트리거가 불변 보장.
+        const { status: _status, ...updatePayload } = built.payload;
+        void _status;
+
+        // .select()로 반환 행을 받아 "몇 행이 바뀌었나"를 본다.
+        //   RLS(listings_update_own)는 타인 매물 UPDATE를 에러가 아니라 0행으로 막는다 → 0행이면 권한 거부로 안내(AC4).
+        const { data: updated, error: updateError } = await supabase
+          .from('listings')
+          .update(updatePayload)
+          .eq('id', listingId)
+          .select('id');
+
+        if (updateError) {
+          console.error('[sell] listings update 실패:', updateError);
+          setError(toKoreanError(updateError, 'edit'));
+          return;
+        }
+        if (!updated || updated.length === 0) {
+          // RLS로 막혀 0행 — 본인 매물이 아니거나 이미 삭제됨.
+          setError('본인 매물만 수정할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)');
+          return;
+        }
+
+        // 성공 → 관리 목록(/sell)으로 이동 + 갱신해 반영 확인.
+        router.push('/sell');
+        router.refresh();
+        return;
+      }
+
+      // ── 등록(INSERT) — 2-2 동작 그대로(회귀 금지) ────────────────────
       const { error: insertError } = await supabase
         .from('listings')
         .insert({ ...built.payload, seller_id: user.id });
@@ -175,7 +273,7 @@ export default function SellForm() {
       if (insertError) {
         // 원본 에러·코드는 콘솔에만(디버깅), 사용자에겐 한국어.
         console.error('[sell] listings insert 실패:', insertError);
-        setError(toKoreanError(insertError));
+        setError(toKoreanError(insertError, 'create'));
         return;
       }
 
@@ -411,13 +509,30 @@ export default function SellForm() {
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={loading}
-        className="rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-      >
-        {loading ? '등록 중…' : '매물 등록'}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={loading}
+          className="rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+        >
+          {loading
+            ? isEdit
+              ? '저장 중…'
+              : '등록 중…'
+            : isEdit
+              ? '수정 저장'
+              : '매물 등록'}
+        </button>
+        {/* 수정 모드에서만 취소(목록으로 돌아가기) 제공. 등록 모드는 단독 버튼. */}
+        {isEdit && (
+          <Link
+            href="/sell"
+            className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
+          >
+            취소
+          </Link>
+        )}
+      </div>
     </form>
   );
 }

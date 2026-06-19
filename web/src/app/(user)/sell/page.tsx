@@ -9,6 +9,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { UNITS, LISTING_STATUS } from '@/lib/constants';
 import SellForm from './SellForm';
+import ListingActions from './ListingActions';
 
 // 본인 매물 목록에 보여줄 최소 필드만 선택(요약 표시용).
 type OwnListing = {
@@ -71,22 +72,31 @@ export default async function SellPage() {
             {listings.map((l) => (
               <li
                 key={l.id}
-                className="flex items-center justify-between rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+                className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
               >
                 <span>
                   [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
                   {l.price.toLocaleString('ko-KR')}
                   {UNITS.price}
                 </span>
-                <span
-                  className={
-                    l.status === LISTING_STATUS.ON_SALE
-                      ? 'rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-300'
-                      : 'rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                  }
-                >
-                  {l.status === LISTING_STATUS.ON_SALE ? '판매중' : '판매완료'}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={
+                      l.status === LISTING_STATUS.ON_SALE
+                        ? 'rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-300'
+                        : 'rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
+                    }
+                  >
+                    {l.status === LISTING_STATUS.ON_SALE ? '판매중' : '판매완료'}
+                  </span>
+                  {/* 본인 매물 수정·삭제 진입점(2-3, FR6). 구매완료 전환은 2-4 소관이라 여기 없음.
+                      판매완료(sold) 매물은 수정 진입을 막는다(거래 끝난 매물 정보 변경 방지) — 삭제는 정리 목적이라 허용. */}
+                  <ListingActions
+                    listingId={l.id}
+                    label={`[${l.manufacturer}] ${l.model}`}
+                    canEdit={l.status === LISTING_STATUS.ON_SALE}
+                  />
+                </div>
               </li>
             ))}
           </ul>
