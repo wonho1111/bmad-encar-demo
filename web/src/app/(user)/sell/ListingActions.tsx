@@ -1,28 +1,85 @@
 'use client';
 
-// 본인 매물 행의 관리 버튼 (FR6) — 수정 진입 링크 + 삭제 버튼.
+// 본인 매물 행의 관리 버튼 (FR6·FR8) — 구매 완료 버튼 + 수정 진입 링크 + 삭제 버튼.
 //
 // 설계:
+//   · 구매 완료(2-4·FR8): 실수 방지 확인(window.confirm) 후 status를 sold로 전환.
+//       - UPDATE payload에 { status:'sold' }만 보낸다 → seller_id·다른 필드 위조/부수변경 차단(AC3·AC4).
+//       - RLS(listings_update_own)가 타인 매물 전환을 에러가 아니라 0행으로 막는다 → .select()로 0행이면 한국어 거부 안내(AC3).
+//       - 판매중(on_sale)일 때만 버튼 노출(canComplete) → 이미 sold면 버튼 자체가 없다(AC2 앱측).
+//       - 성공 시 router.refresh()로 목록을 갱신 → 배지가 "판매완료"로 바뀐다(AC1).
 //   · 수정: /sell/[id]/edit 로 이동(서버 컴포넌트가 본인 매물만 조회해 폼에 채움).
 //   · 삭제: 실수 방지로 확인(window.confirm) 후 DELETE.
-//       - RLS(listings_delete_own)가 타인 매물 삭제를 에러가 아니라 0행으로 막는다 → .select()로 0행이면 한국어 거부 안내(AC4).
-//       - 성공 시 router.refresh()로 목록에서 즉시 제거 반영(AC3).
+//       - RLS(listings_delete_own)가 타인 매물 삭제를 에러가 아니라 0행으로 막는다 → .select()로 0행이면 한국어 거부 안내.
+//       - 성공 시 router.refresh()로 목록에서 즉시 제거 반영.
 //   · 원본 에러·코드는 콘솔에만, 사용자에겐 한국어.
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { LISTING_STATUS } from '@/lib/constants';
 
 type Props = {
   listingId: string;
   label: string; // 확인 메시지에 보여줄 매물 요약(예: "[현대] 아반떼 CN7")
   canEdit?: boolean; // 판매중일 때만 수정 진입 노출(판매완료 매물 정보 변경 방지). 기본 true.
+  canComplete?: boolean; // 판매중일 때만 "구매 완료" 버튼 노출(이미 sold면 숨김 — AC2). 기본 true.
 };
 
-export default function ListingActions({ listingId, label, canEdit = true }: Props) {
+export default function ListingActions({
+  listingId,
+  label,
+  canEdit = true,
+  canComplete = true,
+}: Props) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // "구매 완료" 전환 (FR8) — status를 sold로만 바꾼다(판매자 본인, 상대 지정 불필요).
+  async function handleComplete() {
+    if (completing) return; // 중복 클릭 차단
+    // 확인 단계 — 취소하면 아무 일도 일어나지 않는다(AC1 실수 방지).
+    const ok = window.confirm(
+      `'${label}' 매물을 구매 완료 처리할까요? 처리하면 구매자에게 더 이상 노출되지 않습니다.`,
+    );
+    if (!ok) return;
+
+    setError(null);
+    setCompleting(true);
+    try {
+      const supabase = createClient();
+      // payload는 status만 — seller_id·다른 필드를 보내지 않아 위조·부수변경을 원천 차단(AC3·AC4).
+      // .select()로 바뀐 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
+      const { data: updated, error: updateError } = await supabase
+        .from('listings')
+        .update({ status: LISTING_STATUS.SOLD })
+        .eq('id', listingId)
+        .select('id');
+
+      if (updateError) {
+        console.error('[sell] listings 구매완료 UPDATE 실패:', updateError);
+        setError('구매 완료 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+      if (!updated || updated.length === 0) {
+        // 본인 매물이 아니거나(RLS 0행) 매물이 없음.
+        setError(
+          '본인 매물만 구매 완료 처리할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)',
+        );
+        return;
+      }
+
+      // 성공 → 목록 갱신으로 "판매완료" 배지 즉시 반영(AC1).
+      router.refresh();
+    } catch (err) {
+      console.error('[sell] listings 구매완료 예외:', err);
+      setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setCompleting(false);
+    }
+  }
 
   async function handleDelete() {
     if (deleting) return; // 중복 클릭 차단
@@ -66,6 +123,16 @@ export default function ListingActions({ listingId, label, canEdit = true }: Pro
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
+        {canComplete && (
+          <button
+            type="button"
+            onClick={handleComplete}
+            disabled={completing}
+            className="rounded border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
+          >
+            {completing ? '처리 중…' : '구매 완료'}
+          </button>
+        )}
         {canEdit && (
           <Link
             href={`/sell/${listingId}/edit`}

@@ -89,12 +89,14 @@ export default async function SellPage() {
                   >
                     {l.status === LISTING_STATUS.ON_SALE ? '판매중' : '판매완료'}
                   </span>
-                  {/* 본인 매물 수정·삭제 진입점(2-3, FR6). 구매완료 전환은 2-4 소관이라 여기 없음.
-                      판매완료(sold) 매물은 수정 진입을 막는다(거래 끝난 매물 정보 변경 방지) — 삭제는 정리 목적이라 허용. */}
+                  {/* 본인 매물 관리 진입점 — 구매완료(2-4, FR8)·수정·삭제(2-3, FR6).
+                      판매중(on_sale)일 때만 "구매 완료"·"수정" 노출(거래 끝난 매물 변경 방지).
+                      삭제는 정리 목적이라 status 무관 허용. */}
                   <ListingActions
                     listingId={l.id}
                     label={`[${l.manufacturer}] ${l.model}`}
                     canEdit={l.status === LISTING_STATUS.ON_SALE}
+                    canComplete={l.status === LISTING_STATUS.ON_SALE}
                   />
                 </div>
               </li>

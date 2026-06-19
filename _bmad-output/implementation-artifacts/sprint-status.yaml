@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-06-20T17:00:00
+last_updated: 2026-06-20T18:30:00
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -56,7 +56,7 @@ development_status:
   2-1-listings-스키마-소유권-status-가드: done
   2-2-매물-등록-즉시-노출: done
   2-3-본인-매물-조회-수정-삭제: done
-  2-4-구매-완료-처리: backlog
+  2-4-구매-완료-처리: review
   2-5-샘플-매물-시드: backlog
   epic-2-retrospective: optional
 
