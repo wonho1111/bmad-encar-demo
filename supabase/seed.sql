@@ -145,7 +145,7 @@ begin
       extensions.crypt(v_password, extensions.gen_salt('bf')),  -- bcrypt 해시
       now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
-      '{"role":"seller"}'::jsonb,   -- 가입 메타(트리거 참고용) — 어차피 아래서 seller 승격
+      '{"role":"seller"}'::jsonb,   -- 가입 메타: 트리거(handle_new_user)가 이 값으로 profiles를 seller로 생성 → 아래 UPDATE는 대개 no-op(안전망). admin 블록은 메타 없이 buyer로 생성된 뒤 UPDATE로 승격하는 점과 다름.
       '', '', '', '',
       now(), now()
     );
