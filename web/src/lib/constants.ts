@@ -22,6 +22,13 @@ export const USER_ROLE = {
 } as const;
 export type UserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];
 
+/** 역할(영문 값) → 화면 표시용 한국어 라벨. 홈·관리자 상단바가 공유하는 단일 출처. */
+export const ROLE_LABEL: Record<UserRole, string> = {
+  [USER_ROLE.BUYER]: '구매자',
+  [USER_ROLE.SELLER]: '판매자',
+  [USER_ROLE.ADMIN]: '관리자',
+};
+
 /** 수치 필드 저장 단위 (표시·검색 전 구간 동일, docs/conventions.md §3). */
 export const UNITS = {
   mileage: 'km',

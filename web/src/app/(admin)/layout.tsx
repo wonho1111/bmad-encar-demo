@@ -5,9 +5,18 @@
 // 라우트 그룹 `(admin)`은 URL에 포함되지 않으므로 실제 경로는 /admin 이다.
 import type { ReactNode } from 'react';
 import { requireRole } from '@/lib/auth/guard';
-import { USER_ROLE } from '@/lib/constants';
+import { USER_ROLE, ROLE_LABEL } from '@/lib/constants';
+import AppHeader from '@/components/layout/AppHeader';
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
-  await requireRole(USER_ROLE.ADMIN);
-  return <>{children}</>;
+  // requireRole은 통과 시 로그인 사용자를 반환한다 → 상단바에 이메일을 표시한다.
+  const user = await requireRole(USER_ROLE.ADMIN);
+  // 홈(/)과 동일한 공용 상단바(역할·이메일 좌, 로그아웃 우)를 쓴다.
+  //   관리자는 홈으로 가면 /admin으로 다시 유도되므로, 로그아웃 동선을 관리 영역 안에 둔다.
+  return (
+    <>
+      <AppHeader roleLabel={ROLE_LABEL[USER_ROLE.ADMIN]} email={user.email} />
+      {children}
+    </>
+  );
 }
