@@ -82,4 +82,20 @@ begin
      set role = 'admin'
    where id = (select id from auth.users where email = v_email)
      and role <> 'admin';
+
+  -- (안전장치) "조용한 실패" 방지.
+  --   위 update는 트리거가 만든 profiles 행이 있다고 전제한다. 만약 그 행이 없으면
+  --   (트리거 비활성/외부에서 만들어진 고아 계정 등) update가 0행에 매칭되고 에러 없이
+  --   끝나, admin 권한이 안 붙은 반쪽 계정이 조용히 남을 수 있다. → 결과를 직접 확인해
+  --   admin이 아니면 예외를 던져 멈춘다(실패를 묻지 않고 즉시 드러냄).
+  if not exists (
+    select 1 from public.profiles p
+    join auth.users u on u.id = p.id
+    where u.email = v_email and p.role = 'admin'
+  ) then
+    raise exception '[seed] admin 시드 실패: % 의 admin 프로필이 없습니다 '
+      '(트리거가 profiles 행을 만들었는지, 마이그레이션 0001이 적용됐는지 확인).', v_email;
+  end if;
+
+  raise notice '[seed] admin 계정 준비 완료: %', v_email;
 end $$;
