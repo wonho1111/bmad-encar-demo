@@ -54,7 +54,7 @@ development_status:
   # --- Epic 2: 판매자 매물 등록·관리 ---
   epic-2: in-progress
   2-1-listings-스키마-소유권-status-가드: done
-  2-2-매물-등록-즉시-노출: review
+  2-2-매물-등록-즉시-노출: done
   2-3-본인-매물-조회-수정-삭제: backlog
   2-4-구매-완료-처리: backlog
   2-5-샘플-매물-시드: backlog
