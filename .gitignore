@@ -31,6 +31,9 @@ build/
 # ===== Vercel / 배포 =====
 .vercel/
 
+# ===== 테스트 도구 산출물 =====
+.playwright-mcp/
+
 # ===== OS / 에디터 =====
 .DS_Store
 Thumbs.db
