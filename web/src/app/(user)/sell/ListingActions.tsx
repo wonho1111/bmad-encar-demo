@@ -22,15 +22,17 @@ import { LISTING_STATUS } from '@/lib/constants';
 type Props = {
   listingId: string;
   label: string; // 확인 메시지에 보여줄 매물 요약(예: "[현대] 아반떼 CN7")
-  canEdit?: boolean; // 판매중일 때만 수정 진입 노출(판매완료 매물 정보 변경 방지). 기본 true.
-  canComplete?: boolean; // 판매중일 때만 "구매 완료" 버튼 노출(이미 sold면 숨김 — AC2). 기본 true.
+  canEdit?: boolean; // 판매중일 때만 수정 진입 노출(판매완료 매물 정보 변경 방지). 기본 false(안전 기본값).
+  canComplete?: boolean; // 판매중일 때만 "구매 완료" 버튼 노출(이미 sold면 숨김 — AC2). 기본 false(안전 기본값).
 };
 
+// canEdit·canComplete 기본값은 false(fail-safe) — 상태를 바꾸는 버튼이므로, 호출부가 status 조건을
+//   깜빡 빠뜨려도 sold 매물에 버튼이 잘못 노출되지 않게 "닫힘"으로 시작한다(과노출보다 미노출이 안전).
 export default function ListingActions({
   listingId,
   label,
-  canEdit = true,
-  canComplete = true,
+  canEdit = false,
+  canComplete = false,
 }: Props) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
@@ -51,11 +53,15 @@ export default function ListingActions({
     try {
       const supabase = createClient();
       // payload는 status만 — seller_id·다른 필드를 보내지 않아 위조·부수변경을 원천 차단(AC3·AC4).
+      // .eq('status','on_sale') 전제조건 — 이미 sold인(또는 화면이 낡아 그새 바뀐) 매물을 다시 누르거나
+      //   URL로 강제 재전환을 시도하면 매칭 행이 0개가 돼 아래 0행 분기에서 거부된다(AC2 "다시 전환 시도해도 거부").
+      //   화면 버튼은 canComplete로 가리지만(앱측 1차), 이 조건이 "조용한 no-op 성공"까지 막는 서버측 빗장이다.
       // .select()로 바뀐 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
       const { data: updated, error: updateError } = await supabase
         .from('listings')
         .update({ status: LISTING_STATUS.SOLD })
         .eq('id', listingId)
+        .eq('status', LISTING_STATUS.ON_SALE)
         .select('id');
 
       if (updateError) {
@@ -64,9 +70,9 @@ export default function ListingActions({
         return;
       }
       if (!updated || updated.length === 0) {
-        // 본인 매물이 아니거나(RLS 0행) 매물이 없음.
+        // 0행이 나오는 경우: ① 타인 매물(RLS 차단) ② 매물 없음(그새 삭제됨) ③ 이미 sold(전제조건 불충족).
         setError(
-          '본인 매물만 구매 완료 처리할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)',
+          '본인 매물만 구매 완료 처리할 수 있습니다. (매물을 찾을 수 없거나, 접근 권한이 없거나, 이미 구매 완료된 매물입니다.)',
         );
         return;
       }
@@ -83,7 +89,7 @@ export default function ListingActions({
 
   async function handleDelete() {
     if (deleting) return; // 중복 클릭 차단
-    // 확인 단계 — 취소하면 아무 일도 일어나지 않는다(AC3 실수 방지).
+    // 확인 단계 — 취소하면 아무 일도 일어나지 않는다(삭제 실수 방지, FR6).
     const ok = window.confirm(`'${label}' 매물을 삭제할까요? 삭제하면 되돌릴 수 없습니다.`);
     if (!ok) return;
 
