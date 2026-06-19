@@ -3,13 +3,16 @@
 // Next.js 16에서 cookies()는 비동기이므로 await로 받는다 → 이 함수도 async.
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { getSupabaseEnv } from './env';
 
 export async function createClient() {
   const cookieStore = await cookies();
+  // env 누락 시 어떤 변수가 비었는지 한국어로 알려주는 가드(불투명 throw 방지).
+  const { url, anonKey } = getSupabaseEnv();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         getAll() {
@@ -17,7 +20,7 @@ export async function createClient() {
         },
         setAll(cookiesToSet) {
           // 서버 컴포넌트에서 호출되면 set이 불가능할 수 있다(읽기 전용 컨텍스트).
-          // 미들웨어가 세션 갱신을 담당하므로 여기서는 무시해도 안전하다(후속 스토리에서 middleware 추가).
+          // proxy(web/src/proxy.ts)가 세션 갱신을 담당하므로 여기서 set이 무시돼도 안전하다.
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options),
