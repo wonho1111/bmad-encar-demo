@@ -282,7 +282,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues }: 
       setSuccess('매물이 등록되었습니다. 아래 목록에 바로 노출됩니다.');
       router.refresh();
     } catch (err) {
-      setError(`네트워크 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`);
+      // 원본 에러는 콘솔에만(디버깅), 사용자에겐 한국어 일반 안내(원본 메시지 노출 금지 — 스토리 §AC4 규칙).
+      console.error(`[sell] listings ${isEdit ? 'update' : 'insert'} 예외:`, err);
+      setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }

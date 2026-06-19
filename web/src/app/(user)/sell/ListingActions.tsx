@@ -55,7 +55,9 @@ export default function ListingActions({ listingId, label, canEdit = true }: Pro
       // 성공 → 목록 갱신으로 즉시 제거 반영.
       router.refresh();
     } catch (err) {
-      setError(`네트워크 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`);
+      // 원본 에러는 콘솔에만(디버깅), 사용자에겐 한국어 일반 안내(원본 메시지 노출 금지 — 스토리 §AC4 규칙).
+      console.error('[sell] listings delete 예외:', err);
+      setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setDeleting(false);
     }
