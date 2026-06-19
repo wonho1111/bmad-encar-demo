@@ -32,6 +32,8 @@
 - 흐름: `develop`에서 작업·커밋 → 동작 확인 → `main`으로 병합.
 - 배포용 `main`에는 동작이 검증된 코드만 올린다. (직접 개발 금지)
 - 아직 git 저장소가 없으면, 구현 착수 시점에 `git init` 후 위 두 브랜치를 구성한다.
+- **Vercel 연동**: 운영(Production) 브랜치 = `main`, 그 외 브랜치(=`develop` 포함) = 미리보기(preview) 배포. `develop` push 시 preview 배포가 자동 생성된다.
+- **`/auto-epic` 작업 예외**: 자동 개발(아래 7번) 중 배포-테스트 목적의 **`develop` push는 허용**한다. 단 `main` push·병합은 여전히 금지(사용자 명시 요청 시에만).
 
 ### 4. 초기 DB 구성은 단순하게
 - 초기 데이터베이스 스키마는 **기능 추가·수정이 쉽도록 간단하게** 설계한다.
@@ -69,6 +71,14 @@
   - Android Studio·에뮬레이터 설치 — 모바일 자체 테스트 실행 기반 / 로컬 PC.
   - Playwright·mobile MCP 등록 승인 — MCP 최초 연결 시 승인 프롬프트 / Claude Code.
   - iOS 확인용 Mac·클라우드 기기 — iOS 시뮬레이터는 macOS 전용 / 별도 기기.
+
+### 7. 에픽 자동 개발 (`/auto-epic`)
+- 사용자가 **`/auto-epic [에픽번호]`** 명령(또는 "에픽 자동 돌려" 류 키워드)으로 호출하면, **`.claude/skills/auto-epic/SKILL.md` 절차를 그대로 따른다.**
+  - *오케스트레이터(orchestrator)*: 여러 서브에이전트를 순서대로 부려 작업을 조율하는 진행자.
+- 한 번에 **최대 한 에픽**만 자동 진행하고, 끝나면 멈춰 **사용자가 최종 검증**한다. 다음 에픽 자동 진행 금지.
+- 스토리마다 새 서브에이전트로 BMad 공식 절차(`bmad-create-story`→`bmad-dev-story`→`bmad-code-review`)를 돌리고, 에픽 종료 시 로컬 Playwright + `develop` preview 배포(Vercel MCP 로그)로 자체 검증한다.
+- **실행은 auto 권한 모드 권장** — 무인 진행에 필요(plan 모드는 실행 불가, acceptEdits는 Bash/MCP마다 승인 요구).
+  - *권한 모드(permission mode)*: 도구 실행을 얼마나 자동 승인할지 정하는 설정. shift+tab으로 전환.
 
 ## 참고
 - 상위 `workspace/CLAUDE.md`의 **용어 설명 규칙**(영어 약자·기술/도메인/업무 용어를 처음 등장 시 한 줄로 설명)을
