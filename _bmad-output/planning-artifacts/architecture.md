@@ -164,7 +164,7 @@ create table listings (
   body_type     text not null check (body_type in (            -- 차종(Encar/K-Car 분류)
                   '경차','소형차','준중형차','중형차','대형차','스포츠카',
                   'SUV','RV','경승합차','승합차','화물차','기타')),
-  year          int  not null check (year between 1990 and 2027),
+  year          int  not null check (year >= 1990 and year <= (extract(year from now())::int + 1)),  -- 상한=올해+1(신차년식)
   price         bigint not null check (price >= 0),            -- 원 (int 최대 21.4억 초과 고가 매물 대비 bigint)
   mileage       int  not null check (mileage >= 0),            -- km
   color         text not null check (color in (

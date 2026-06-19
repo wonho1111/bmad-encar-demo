@@ -67,7 +67,7 @@ export const LISTING_OPTIONS = {
  * year/seats는 상·하한, 나머지는 0 이상. (근거: 0002_listings.sql CHECK)
  */
 export const LISTING_RANGES = {
-  year: { min: 1990, max: 2027 }, // 0002_listings.sql: year between 1990 and 2027
+  year: { min: 1990, max: new Date().getFullYear() + 1 }, // 상한=올해+1(신차년식). DB CHECK: year <= extract(year from now())::int + 1
   seats: { min: 2, max: 11 }, // seats between 2 and 11
   price: { min: 0 }, // 원, 음수 불가 (bigint)
   mileage: { min: 0 }, // km, 음수 불가
