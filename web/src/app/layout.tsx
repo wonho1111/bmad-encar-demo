@@ -27,7 +27,12 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      {/* suppressHydrationWarning: ColorZilla 등 브라우저 확장이 <body>에 속성(cz-shortcut-listen 등)을
+          주입해 생기는 하이드레이션 경고를 억제한다. body 한 단계 속성만 해당되며, 내부 컴포넌트의
+          실제 불일치는 그대로 감지된다. (Next.js 공식 권장 — 확장 프로그램 주입 케이스) */}
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
