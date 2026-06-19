@@ -37,8 +37,10 @@ begin
     v_role := 'buyer';
   end if;
 
+  -- on conflict: 같은 id 재시도/리플레이 시 PK 충돌로 가입 트랜잭션이 롤백되는 것을 막는다.
   insert into public.profiles (id, role, status)
-  values (new.id, v_role, 'active');
+  values (new.id, v_role, 'active')
+  on conflict (id) do nothing;
 
   return new;
 end;

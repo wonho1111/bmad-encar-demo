@@ -14,22 +14,20 @@ const SIGNUP_ROLES: { value: UserRole; label: string }[] = [
   { value: USER_ROLE.SELLER, label: '판매자' },
 ];
 
-// Supabase 인증 에러를 사용자용 한국어 메시지로 변환한다(내부 코드는 로그로만).
-function toKoreanError(message: string, status?: number): string {
-  const m = message.toLowerCase();
-  if (m.includes('already registered') || m.includes('already been registered') || status === 422) {
+// Supabase 인증 에러를 사용자용 한국어 메시지로 변환한다(원본 메시지/코드는 화면에 직접 노출하지 않음).
+// 중복 판정은 status(422)가 아니라 에러 code/메시지로 좁힌다 — 422는 약한 비밀번호 등에도 쓰이기 때문.
+function toKoreanError(err: { message: string; status?: number; code?: string }): string {
+  const m = err.message.toLowerCase();
+  if (err.code === 'user_already_exists' || m.includes('already registered') || m.includes('already been registered')) {
     return '이미 가입된 이메일입니다. 다른 이메일을 사용하거나 로그인해주세요.';
   }
-  if (m.includes('password') && (m.includes('at least') || m.includes('should be'))) {
-    return '비밀번호는 6자 이상이어야 합니다.';
+  if (m.includes('password')) {
+    return '비밀번호가 너무 짧거나 약합니다. 더 긴 비밀번호를 사용해주세요.';
   }
-  if (m.includes('invalid') && m.includes('email')) {
+  if (m.includes('email')) {
     return '유효한 이메일 주소를 입력해주세요.';
   }
-  if (m.includes('unable to validate email address')) {
-    return '유효한 이메일 주소를 입력해주세요.';
-  }
-  return `가입 중 오류가 발생했습니다: ${message}`;
+  return '가입 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 }
 
 export default function SignupPage() {
@@ -42,26 +40,44 @@ export default function SignupPage() {
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (loading) return; // 진행 중 중복 제출 차단(빠른 연타/엔터 2회 방지)
     setError(null);
     setSuccess(null);
-    setLoading(true);
 
+    // 제출 전 검증 — noValidate로 네이티브 검증을 끄므로 여기서 직접 막는다. 이메일은 앞뒤 공백 제거.
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError('이메일과 비밀번호를 입력해주세요.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('비밀번호는 6자 이상이어야 합니다.');
+      return;
+    }
+
+    setLoading(true);
     try {
       const supabase = createClient();
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: trimmedEmail,
         password,
         options: { data: { role } }, // → auth.users.raw_user_meta_data.role (트리거가 읽음)
       });
 
       if (signUpError) {
-        setError(toKoreanError(signUpError.message, signUpError.status));
+        setError(toKoreanError(signUpError));
+        return;
+      }
+
+      // signUp이 에러도 user도 없이 반환되는 비정상 응답 → 거짓 성공 방지.
+      if (!data.user) {
+        setError('가입 처리에 실패했습니다. 잠시 후 다시 시도해주세요.');
         return;
       }
 
       // 이메일 확인(Confirm email)이 켜져 있으면 중복 이메일이 에러 없이
       // identities: [] 빈 배열로 돌아온다(이메일 열거 방지). 이를 중복으로 해석한다.
-      if (data.user && data.user.identities && data.user.identities.length === 0) {
+      if (data.user.identities && data.user.identities.length === 0) {
         setError('이미 가입된 이메일입니다. 다른 이메일을 사용하거나 로그인해주세요.');
         return;
       }
