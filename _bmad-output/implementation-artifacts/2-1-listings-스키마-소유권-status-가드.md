@@ -1,6 +1,6 @@
 # Story 2.1: listings 스키마 + 소유권·status 가드(DB측)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -151,6 +151,17 @@ claude-opus-4-8[1m] (create-story)
 - **검증 방식**: 화면이 없는 DB 스토리라 Playwright 대상 아님 → Supabase MCP 실제 적용 + execute_sql 임퍼소네이션 자체 검증(1-4 방식). 임시 계정·데이터는 검증 후 cascade 삭제·교차검증.
 - **escalate 없음**: Supabase MCP 연결 정상, 마이그레이션 적용 성공. 키/환경변수 누락 없음.
 
+### Code Review (2026-06-20, bmad-code-review + 3레이어 자체검토)
+
+- **리뷰 방식**: bmad-code-review 스킬 + 3개 병렬 서브에이전트(Blind Hunter·Edge Case Hunter·Acceptance Auditor). 전 레이어 정상 완료(실패 레이어 없음). Acceptance Auditor: AC1~6 전부 COMPLIANT, CHECK 목록값이 architecture.md 단일출처와 바이트 단위 일치 확인.
+- **[Patch] 적용 1건 — created_at 불변 보장**: `set_updated_at()` 트리거가 UPDATE 시 `new.created_at := old.created_at`로 기존 값을 되돌리도록 강화. 소유자가 UPDATE에 created_at을 끼워 넣어 '최신 등록'처럼 위장(등록일 정렬·노출 신뢰성 훼손)하는 것을 차단. `create or replace`라 멱등 → 파일·라이브 DB(`0002b_listings_created_at_immutable`) 동기화. 검증: created_at 위조 시도 `forgery_succeeded=false / created_at_preserved=true`, 트랜잭션 롤백으로 테스트행 정리, security advisor 신규 경고 0.
+- **[Decision] escalate 2건(자동 미적용)**:
+  - **price/displacement/mileage `int` 오버플로**: `int` 상한 약 21.4억(원). 고가 차량 가격이 상한에 근접·초과할 수 있어 `bigint`가 안전하나, architecture.md 확정 정의가 `int`라 drift-freeze 원칙과 충돌 → 타입 변경은 사용자 결정 필요.
+  - **마이그레이션 비멱등 DDL**: table/trigger/policy에 `if not exists`/`drop if exists` 없음(0001도 동일 패턴). 재적용 시 실패. 현 운영엔 무해하나 마이그레이션 재실행 안전성을 원하면 정책 결정 필요.
+- **defer(후행 에픽)**: embedding 클라이언트 쓰기 차단(Epic 4) · 정지(suspended) 사용자/관리자 쓰기·읽기 차단(FR22/Epic 6) · 관리자 매물 모더레이션 정책(FR23/Epic 6 `0005_admin_policies`) · CHECK 목록값의 constants.ts 미러링(2-2 UI).
+- **dismiss**: sold→on_sale 재오픈 허용(AC6 명시 의도) · anon 비노출(0001 `to authenticated` 설계) · seller_id 노출(Epic 3 문의 필요) · options/description 자유텍스트(임베딩 코퍼스) · year 2027 상한(architecture.md 명시·연도경과 시 마이그레이션 상향).
+- **미해결 High/심각 지적: 없음**(escalate 2건은 spec/정책 결정 사항).
+
 ### File List
 
 - `supabase/migrations/0002_listings.sql` — 신규 (listings 테이블 + 6개 RLS 정책 + updated_at 트리거 + status/소유권 가드)
@@ -160,3 +171,4 @@ claude-opus-4-8[1m] (create-story)
 ## Change Log
 
 - 2026-06-20: Story 2.1 구현 — `0002_listings` 마이그레이션(listings 15필드+시스템컬럼, 사진 제외) + 고정목록 6필드 CHECK + status CHECK(on_sale/sold) + 소유권 RLS(FR6)·판매완료 비노출 RLS(FR11) 동거 + updated_at 트리거. Supabase MCP로 실제 적용·임퍼소네이션 검증(AC1~6 전부 PASS: buyer는 sold 비노출/seller는 본인 sold 조회/admin 전체, 타인 UPDATE·DELETE·INSERT 차단, 목록밖 status·body_type CHECK 차단, updated_at 트리거). 임시계정 cascade 정리·교차검증, security advisor 신규 경고 0. Status → review. (dev-story)
+- 2026-06-20: Code review(bmad-code-review + 3레이어) — Acceptance Auditor AC1~6 COMPLIANT. [Patch] created_at 불변 보장(`set_updated_at` 트리거 강화, 위조 차단 검증). [Decision] price `int` 오버플로·마이그레이션 비멱등 2건 escalate. defer/dismiss는 Code Review 섹션 참조. Status → done. (code-review)
