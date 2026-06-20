@@ -4,6 +4,8 @@
 모든 에러 응답은 공통 포맷 {error:{code,message}}로 통일(architecture.md).
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +14,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .routers import ai
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="encar-demo AI Search API",
@@ -59,4 +63,16 @@ async def on_validation_error(request, exc: RequestValidationError):
     return JSONResponse(
         status_code=422,
         content={"error": {"code": "validation_error", "message": "요청 형식이 올바르지 않습니다."}},
+    )
+
+
+# 그 외 모든 미처리 예외(예: config.require()의 RuntimeError, psycopg 연결 오류)도
+# 공통 포맷 500으로 감싼다. 내부 메시지는 로그로만 남기고 사용자에겐 일반 문구만 노출
+# (스택트레이스·원인 누출 방지).
+@app.exception_handler(Exception)
+async def on_unhandled_exception(request, exc: Exception):
+    logger.exception("미처리 예외 — 500 반환: %r", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"error": {"code": "internal_error", "message": "서버 내부 오류가 발생했습니다."}},
     )

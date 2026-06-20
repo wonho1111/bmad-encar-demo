@@ -1,6 +1,6 @@
 # Story 4.1: api 스캐폴딩 + 읽기전용 롤 + JWT 검증
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -56,6 +56,18 @@ so that 안전한 토대(쓰기 불가·로그인 사용자만) 위에서 이후
   - [x] 5.2 `tests/test_auth.py` — 토큰 없는 `POST /ai/search` → 401 (AC3). (유효 토큰 경로는 실제 토큰 확보가 어려우면 의존성 오버라이드로 200 확인.)
   - [x] 5.3 `tests/test_readonly.py` — 읽기전용 연결로 SELECT 성공 + INSERT 차단 (AC2). DB 접속 불가 환경이면 `skip` 처리하고 이유 명시.
   - [x] 5.4 dev 서버를 백그라운드로 기동(`uvicorn app.main:app --port 8000`) → `GET /health`·`/docs`·미인증 `POST /ai/search`(401) **HTTP로 직접 검증**(CLAUDE.md §6: 백엔드는 브라우저 아닌 HTTP로) → 끝나면 프로세스 정리.
+
+### Review Findings (code review 2026-06-21)
+
+- [x] [Review][Patch] Supabase Auth 장애를 401로 위장하지 말 것 — 전송 오류(연결 실패·타임아웃·5xx)는 `_auth_unavailable()`로 503 분리 + `logger.warning`으로 원인 로깅, 토큰 자체 무효만 401 유지. [api/app/auth.py] ✅ 적용
+- [x] [Review][Patch] 미처리 예외가 공통 에러 포맷을 깨고 500 누출 — `@app.exception_handler(Exception)` 추가: 내부 메시지는 `logger.exception`으로만 남기고 사용자에겐 `{error:{code:"internal_error",...}}` 500 통일. [api/app/main.py] ✅ 적용
+- [x] [Review][Patch] test_readonly 단언이 0건 함정을 못 잡음 — `>= 0` → `> 0`로 강화(라이브 DB 44행으로 통과 확인). [api/tests/test_readonly.py] ✅ 적용
+- [x] [Review][Patch] create_client()가 try 밖에 있어 초기화 실패 시 비포맷 500 — `create_client`·`get_user`를 같은 try로 묶어 초기화 실패까지 잡음. [api/app/auth.py] ✅ 적용
+- [x] [Review][Patch] query에 max_length 없음 + 공백-only 통과 — `max_length=1000` + `field_validator`로 공백-only 질의 거부. [api/app/schemas/ai.py] ✅ 적용
+- [x] [Review][Defer] DB 경로 견고화(풀링·timeout·async 블로킹) [api/app/db/readonly.py, api/app/auth.py] — deferred, run_select 미사용 stub(4.3에서 처리)
+- [x] [Review][Defer] context 필드 크기/스키마 제약 없음 [api/app/schemas/ai.py:13] — deferred, 실제 사용하는 4.6에서 제약
+- [x] [Review][Defer] CORS 기본 origin이 127.0.0.1/Vercel preview/https 미포함 [api/app/main.py:24] — deferred, 배포 시 CORS_ORIGINS 설정(4.7)
+- [x] [Review][Defer] 0006 ALTER DEFAULT PRIVILEGES는 동일 소유자 생성 테이블만 적용 [supabase/migrations/0006_readonly_role.sql] — deferred, 4.2 guide_documents에서 ai_readonly SELECT 명시 GRANT/정책
 
 ## Dev Notes
 
