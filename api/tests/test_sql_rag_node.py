@@ -5,7 +5,10 @@
 특히 _content_to_text는 gemini-flash-latest가 .content를 블록 리스트로 줄 때의 회귀 방지.
 """
 
-from app.graph.sql_rag_node import _content_to_text, _strip_sql, _to_cards
+from app.graph.sql_rag_node import _content_to_text, _strip_sql
+
+# 카드 매핑은 경로 A·B 공유 헬퍼(listing_cards)로 이동했다. 같은 로직을 그대로 검증한다.
+from app.graph.listing_cards import rows_to_cards as _to_cards
 
 
 def test_content_to_text_plain_string():

@@ -39,3 +39,7 @@
 - **FR17 0건 안내·IN-매핑 가드 통과 경로 단위테스트 미커버** [api/tests/test_auth.py] — 200 테스트가 `sql_rag_node`를 통째로 monkeypatch해, 실제 0건→`_ANSWER_EMPTY`(FR17) 경로와 `body_type IN(...)` SQL이 가드를 실제 통과하는지가 단위테스트로 확인되지 않는다. 노드 내부 분기·가드 IN-절 통과 케이스 테스트를 보강할 것.
 - **LIMIT 비정수형(0/음수/`(10)`/OFFSET-only) 처리 미흡** [api/app/db/sql_guard.py:129] — `\blimit\s+(\d+)`가 `LIMIT 0`(오해성 0건)·`LIMIT -5`·`LIMIT (10)`·`OFFSET`-only를 정상 인식 못 해 잘못된 SQL 또는 오해성 빈 결과를 만든다. temp=0 프롬프트 특성상 발생 가능성은 낮고 대부분 fail-safe(오류→재시도→query_failed)라 후속으로 미룸. LIMIT 정규화/하한 검증을 강화할 것.
 - **[4.5 설계 메모] 모호/광범위 질의는 "되묻기(clarify)"로 처리할 것** [api/app/graph/ — 4.5 라우터 스토리] — 4.3은 `DEFAULT_LIMIT=5`(brief "약 5개" 정합)로 확정. 다만 "차 보여줘" 같은 모호 질의를 그냥 5건으로 채우는 건 임시방편이며, 올바른 대응은 라우터(4.5)에서 "예산/차종이 어떻게 되세요?"라고 되묻는 것이다(research §4.3 "모호한 필터 → 라우터에서 되묻기"). **4.5 스토리 AC에 "모호·광범위 질의 → 조건 확인 되묻기(clarify/경로 C)"를 명시할 것. LIMIT 숫자 상향으로 풀지 말 것.**
+
+## Deferred from: code review of 4-4-경로-b-문서-rag (2026-06-21)
+
+- **근거 가이드에 유사도 임계값(거리 컷오프) 없음** [api/app/graph/doc_rag_node.py:64-68] — 가이드 검색이 `ORDER BY embedding <=> %s::vector LIMIT 1`로 거리와 무관하게 항상 최근접 1건을 가져와 `answer`에 무조건 `(참고: {제목})`을 붙인다. 의미상 동떨어진 가이드도 "근거"로 첨부돼 사용자를 오도할 수 있다. 단, 4.4 스펙은 answer를 단순 한국어 근거 요약으로 한정하고 정교한 근거→답변 합성은 4.5 `answer_node` 소관으로 명시했다(범위 밖). 4.5 `answer_node` 도입 시 코사인 거리 컷오프(`WHERE embedding <=> q < threshold`)나 거리 기반 첨부 조건을 적용할 것.

@@ -22,12 +22,12 @@ from app.db.sql_guard import (
     SqlGuardError,
     validate_select_sql,
 )
-from app.schemas.ai import ListingCard
+from app.graph.listing_cards import SELECT_COLUMNS, rows_to_cards
 
 logger = logging.getLogger(__name__)
 
-# ListingCard 7필드 — SELECT 컬럼 순서를 이 순서로 고정해 결과 매핑을 단순화한다.
-_SELECT_COLUMNS = "id, manufacturer, model, year, price, mileage, region"
+# ListingCard 7필드 — SELECT 컬럼 순서는 공유 헬퍼(listing_cards)에 단일출처로 둔다(경로 B와 공유).
+_SELECT_COLUMNS = SELECT_COLUMNS
 
 # 시스템 프롬프트 — 스키마·허용값·단위 정규화·불변 규칙을 LLM에 그대로 박는다.
 # 허용값은 0002_listings.sql CHECK 목록과 정확히 일치(단일출처, drift 금지).
@@ -109,24 +109,6 @@ def _strip_sql(text: str) -> str:
     return s
 
 
-def _to_cards(rows: list[tuple]) -> list[ListingCard]:
-    """run_select가 돌려준 튜플(_SELECT_COLUMNS 순서)을 ListingCard로 매핑한다."""
-    cards = []
-    for r in rows:
-        cards.append(
-            ListingCard(
-                id=str(r[0]),
-                manufacturer=r[1],
-                model=r[2],
-                year=int(r[3]),
-                price=int(r[4]),
-                mileage=int(r[5]),
-                region=r[6],
-            )
-        )
-    return cards
-
-
 def sql_rag_node(query: str) -> dict:
     """자연어 질의를 받아 {"answer": str, "listings": list[ListingCard]}를 반환한다.
 
@@ -149,7 +131,7 @@ def sql_rag_node(query: str) -> dict:
         try:
             safe_sql = validate_select_sql(sql)  # 가드 통과 못하면 SqlGuardError
             rows = run_select(safe_sql)           # ai_readonly 롤로 실행
-            listings = _to_cards(rows)
+            listings = rows_to_cards(rows)
             answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
             return {"answer": answer, "listings": listings}
         except SqlGuardError as exc:

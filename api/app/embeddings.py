@@ -23,11 +23,20 @@ def _l2_normalize(vec: list[float]) -> list[float]:
 
 
 def _check_dim(vec: list[float]) -> list[float]:
-    """차원 정합 검증(fail-loud) — 768이 아니면 즉시 실패해 잘못된 적재를 막는다."""
+    """차원·유한성 검증(fail-loud) — 768이 아니거나 비유한 값이 섞이면 즉시 실패한다.
+
+    NaN/Inf 성분이 있으면 _vec_literal이 "[...,nan,...]"처럼 pgvector가 거부하는 리터럴을
+    만들어 불투명한 DB 오류(invalid input syntax for type vector)로 번진다. 여기서 미리
+    명확한 에러로 막아 잘못된 적재·검색을 차단한다(경로 A·B 공통 보호).
+    """
     if len(vec) != settings.gemini_embedding_dim:
         raise RuntimeError(
             f"임베딩 차원 불일치: {len(vec)} != {settings.gemini_embedding_dim}. "
             f"GEMINI_EMBEDDING_MODEL/DIM 설정과 실제 모델 응답을 확인하세요."
+        )
+    if any(not math.isfinite(x) for x in vec):
+        raise RuntimeError(
+            "임베딩에 비유한 값(NaN/Inf)이 포함됐습니다. 모델 응답을 확인하세요."
         )
     return vec
 

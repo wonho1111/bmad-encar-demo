@@ -33,3 +33,12 @@ def test_check_dim_rejects_wrong_dimension():
     # 3072(기본 차원) 등 768이 아닌 경우 fail-loud
     with pytest.raises(RuntimeError, match="임베딩 차원 불일치"):
         _check_dim([0.1] * 3072)
+
+
+def test_check_dim_rejects_non_finite_values():
+    # NaN/Inf 성분이 섞이면 fail-loud — 무효 pgvector 리터럴로 번지기 전에 막는다.
+    dim = settings.gemini_embedding_dim
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        vec = [0.1] * (dim - 1) + [bad]
+        with pytest.raises(RuntimeError, match="비유한 값"):
+            _check_dim(vec)
