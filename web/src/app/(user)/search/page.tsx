@@ -2,21 +2,25 @@
 //
 // 동작:
 //   1) URL 쿼리스트링(searchParams)에서 필터를 읽는다(Next.js 16: searchParams는 Promise → await).
-//   2) listings를 조회하되 status='on_sale'만(FR11 — 판매완료는 구매자에게 안 보임).
+//   2) listings를 조회하되 판매중(on_sale)만 — FR11 단일 규칙은 buyerListingsQuery(@/lib/listings)에서 비롯된다.
 //   3) 결과를 ListingCard로 렌더. 0건이면 빈 상태 안내, 조회 실패면 별도 한국어 에러 안내(0건과 구분).
 //
 // 보호: proxy가 /search 비로그인 1차 차단. 여기선 로그인 사용자(구매자·판매자 공통)가 on_sale을 본다.
 //   별도 역할 게이트 없음 — on_sale은 RLS상 모두에게 공개라 구매자·판매자 모두 탐색 가능.
 //
-// ⚠️ FR11 이중 방어:
-//   RLS는 구매자에게 on_sale만 통과시키지만, 판매자가 /search에 들어오면 RLS의 'own' 정책으로
-//   본인 sold가 섞일 수 있다 → 앱 쿼리에 .eq('status','on_sale')을 명시해 "구매자 관점(판매중만)"을 강제.
-//   (2-2/2-3에서 확립한 'SELECT RLS는 on_sale∪own∪admin OR결합'의 반대 방향 적용.)
+// FR11 비노출 규칙(판매완료는 구매자에게 안 보임)과 이중 방어 근거는 @/lib/listings 한 곳에 모았다(단일 출처).
+//
+// CM3(즉시 비노출): 이 페이지는 cookies() 기반 인증을 쓰므로 매 요청 DB를 다시 읽는 동적 렌더다.
+//   매물이 sold로 바뀌면 재조회 시 즉시 사라진다. 정적 캐시로 잔존하지 않도록 force-dynamic을 명시한다.
 import { createClient } from '@/lib/supabase/server';
-import { ROLE_LABEL, LISTING_STATUS, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
+import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
+import { buyerListingsQuery } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import SearchFilters, { type SearchFilterValues } from './SearchFilters';
+
+// CM3 보장: 구매자 목록은 매 요청 최신 DB 상태를 반영해야 한다(sold 즉시 비노출). 정적화 방지.
+export const dynamic = 'force-dynamic';
 
 // searchParams 한 항목은 string | string[] | undefined → 첫 문자열만 안전하게 꺼낸다.
 function asStr(v: string | string[] | undefined): string {
@@ -91,11 +95,11 @@ export default async function SearchPage({
   }
 
   // ── 쿼리 빌드 ───────────────────────────────────────────────────
-  // status='on_sale' 명시(FR11). 조건은 값이 있을 때만 체이닝한다.
-  let query = supabase
-    .from('listings')
-    .select('id, manufacturer, model, year, price, mileage, region')
-    .eq('status', LISTING_STATUS.ON_SALE);
+  // 구매자 관점(판매중만) 시작점은 buyerListingsQuery(FR11 단일 출처). 조건은 값이 있을 때만 체이닝한다.
+  let query = buyerListingsQuery(
+    supabase,
+    'id, manufacturer, model, year, price, mileage, region',
+  );
 
   if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
   if (bodyType) query = query.eq('body_type', bodyType);

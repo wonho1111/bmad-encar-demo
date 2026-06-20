@@ -2,20 +2,25 @@
 //
 // 동작:
 //   1) 동적 라우트 params에서 id를 읽는다(Next.js 16: params는 Promise → await).
-//   2) 그 id의 매물을 조회하되 status='on_sale'만(FR11 — 판매완료는 구매자에게 안 보임).
+//   2) 그 id의 매물을 조회하되 판매중(on_sale)만 — FR11 단일 규칙은 buyerListingsQuery(@/lib/listings)에서 비롯된다.
 //   3) 찾으면 FR5 15필드 + 설명·옵션·상태를 표시(사진 없음). 못 찾으면 "찾을 수 없음" 안내,
 //      조회 자체가 실패하면 별도 한국어 에러 안내(둘을 구분 — 2-3 edit·3-1 패턴).
 //
 // 보호: proxy가 /listings 비로그인 1차 차단. 여기선 로그인 사용자(구매자·판매자 공통)가 on_sale을 본다.
 //   별도 역할 게이트 없음 — on_sale은 RLS상 모두에게 공개.
 //
-// ⚠️ FR11 이중 방어(3-1 /search와 동일):
-//   RLS는 구매자에게 on_sale만 통과시키지만, 판매자가 본인 sold 매물의 /listings/[id]에 들어오면
-//   RLS의 'own' 정책으로 통과될 수 있다 → 앱 쿼리에 .eq('status','on_sale')을 명시해 "구매자 관점"을 강제.
+// FR11 비노출 규칙(판매완료는 구매자에게 안 보임)과 이중 방어 근거는 @/lib/listings 한 곳에 모았다(단일 출처).
+//
+// CM3(즉시 비노출): cookies() 기반 인증으로 매 요청 DB를 다시 읽는 동적 렌더다.
+//   매물이 sold로 바뀌면 재조회 시 즉시 "찾을 수 없음"이 된다. 정적 캐시 잔존 방지로 force-dynamic 명시.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { ROLE_LABEL, LISTING_STATUS, UNITS, type UserRole } from '@/lib/constants';
+import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
+import { buyerListingsQuery } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
+
+// CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
+export const dynamic = 'force-dynamic';
 
 // 상세 화면에 표시할 FR5 15필드 + 상태(라벨용). 사진 없음.
 type ListingDetail = {
@@ -72,15 +77,13 @@ export default async function ListingDetailPage({
     }
   }
 
-  // 단일 매물 조회 — id 일치 + status='on_sale' 명시(FR11 이중 방어).
+  // 단일 매물 조회 — 구매자 관점(판매중만) 시작점 buyerListingsQuery(FR11 단일 출처) + id 일치.
   //   maybeSingle(): 0건이면 null(존재하지 않음·sold·접근 권한 없음). edit 페이지와 동일 패턴.
-  const { data: listing, error } = await supabase
-    .from('listings')
-    .select(
-      'id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description, status',
-    )
+  const { data: listing, error } = await buyerListingsQuery(
+    supabase,
+    'id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description, status',
+  )
     .eq('id', id)
-    .eq('status', LISTING_STATUS.ON_SALE)
     .maybeSingle<ListingDetail>();
 
   if (error) {
