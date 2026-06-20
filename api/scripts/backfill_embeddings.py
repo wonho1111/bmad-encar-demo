@@ -35,9 +35,18 @@ from app.embeddings import embed_documents  # noqa: E402
 
 
 def safe_conninfo(url: str) -> str:
-    """URL 비밀번호의 특수문자(?, $, @ 등)를 퍼센트 인코딩해 libpq가 올바로 파싱하게 한다."""
+    """URL 비밀번호의 특수문자(?, $, @ 등)를 퍼센트 인코딩해 libpq가 올바로 파싱하게 한다.
+
+    예상 형태는 `scheme://user:password@host...` (Supabase Session pooler). 비밀번호 없는 URL,
+    `://`가 없는 keyword/value conninfo, userinfo가 없는 URL 등 예상과 다른 형태면 손대지 않고
+    원본을 그대로 돌려준다(잘못된 변형으로 크래시·오인코딩하는 것보다 안전).
+    """
+    if "://" not in url or "@" not in url:
+        return url
     scheme, rest = url.split("://", 1)
     userinfo, hostpart = rest.rsplit("@", 1)  # 비밀번호에 @ 없다고 가정(Supabase 기본)
+    if ":" not in userinfo:  # 비밀번호 없는 URL → 인코딩할 대상 없음
+        return url
     user, password = userinfo.split(":", 1)
     return f"{scheme}://{user}:{quote(password, safe='')}@{hostpart}"
 
@@ -75,6 +84,9 @@ def backfill_listings(conn) -> int:
 
     print(f"[listings] {len(rows)}건 임베딩 생성 중...")
     vecs = embed_documents([compose_listing_text(r) for r in rows])
+    # 반환 개수가 입력과 다르면 zip이 조용히 잘려 일부 매물이 누락된다 → fail-loud로 막는다.
+    if len(vecs) != len(rows):
+        raise RuntimeError(f"임베딩 개수 불일치: {len(vecs)} != listings {len(rows)}건.")
 
     with conn.cursor() as cur:
         for row, vec in zip(rows, vecs):
@@ -92,7 +104,8 @@ def load_corpus() -> list[tuple[str, str]]:
     corpus_dir = API_ROOT / "corpus"
     docs: list[tuple[str, str]] = []
     for f in sorted(corpus_dir.glob("*.md")):
-        text = f.read_text(encoding="utf-8").strip()
+        # utf-8-sig: 편집기가 파일 앞에 넣는 BOM(﻿)을 자동 제거 → 첫 줄 '# 제목' 인식이 깨지지 않게.
+        text = f.read_text(encoding="utf-8-sig").strip()
         lines = text.splitlines()
         if lines and lines[0].lstrip().startswith("#"):
             title = lines[0].lstrip("#").strip()
@@ -100,6 +113,9 @@ def load_corpus() -> list[tuple[str, str]]:
         else:
             title = f.stem
             content = text
+        if not content:  # 빈/제목만 있는 문서는 의미 없는 빈 가이드 행이 되므로 건너뛴다.
+            print(f"[guide_documents] 본문 없는 문서 건너뜀: {f.name}")
+            continue
         docs.append((title, content))
     return docs
 
@@ -114,6 +130,9 @@ def backfill_guides(conn) -> int:
     print(f"[guide_documents] {len(docs)}개 문서 임베딩 생성 중...")
     # 제목+본문을 함께 임베딩해 의미 맥락을 강화. 저장 content는 본문만.
     vecs = embed_documents([f"{title}\n{content}" for title, content in docs])
+    # ⚠️ 개수 검증은 반드시 DELETE 전에 — 불일치 시 테이블을 비우기 전에 멈춰 데이터 유실을 막는다.
+    if len(vecs) != len(docs):
+        raise RuntimeError(f"임베딩 개수 불일치: {len(vecs)} != guide {len(docs)}개.")
 
     with conn.cursor() as cur:
         cur.execute("delete from public.guide_documents")

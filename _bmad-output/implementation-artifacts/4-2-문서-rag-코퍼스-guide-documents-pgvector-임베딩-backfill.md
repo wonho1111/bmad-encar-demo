@@ -1,6 +1,6 @@
 # Story 4.2: 문서 RAG 코퍼스 작성 + guide_documents + pgvector HNSW + 임베딩 backfill
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -66,6 +66,20 @@ so that 다음 스토리(4.4 문서 RAG·4.3 의미검색)가 **실제 데이터
 - [x] **Task 6 — 보고 + 산출물 정리** (AC: 전체)
   - [x] 6.1 Completion Notes에 건수·차원·정규화·멱등·모델명 확정 근거 기록.
   - [x] 6.2 변경 파일·DB 변경을 File List에 기록.
+
+### Review Findings
+
+코드 리뷰(2026-06-21, 3-layer 적대적 리뷰: Blind Hunter / Edge Case Hunter / Acceptance Auditor). Acceptance Auditor 판정: **AC1~4 전부 충족, 결정적 함정 #1~#3 모두 올바로 처리, 범위 준수(4.3~4.5 선구현 없음, `embed_query` 정의-only)**. 아래는 robustness(견고성) 보강 patch 항목.
+
+- [x] [Review][Patch] backfill `embed_documents` 반환 개수 ≠ 입력 개수면 `zip`이 조용히 일부 누락 → 가이드는 DELETE 후 데이터 유실 위험. zip 전 길이 단언 추가(가이드는 DELETE 이전 검증) [api/scripts/backfill_embeddings.py]
+- [x] [Review][Patch] `safe_conninfo` 가 비밀번호 없는 URL·`://` 없는 conninfo·userinfo 없는 URL에서 `ValueError`로 크래시. 예상 형태 아닐 때 원본 URL로 안전 폴백 [api/scripts/backfill_embeddings.py]
+- [x] [Review][Patch] 0004 마이그레이션 재적용 비멱등 — 테이블·`guide_documents_embedding_hnsw` 인덱스에 `if not exists`, 정책은 `drop policy if exists` 후 생성으로 멱등화 [supabase/migrations/0004_guide_documents.sql]
+- [x] [Review][Patch] `load_corpus` BOM 파일이면 첫 줄 `# 제목` 인식 실패 → `encoding="utf-8-sig"`로 읽기 [api/scripts/backfill_embeddings.py]
+- [x] [Review][Patch] `load_corpus` 빈/제목만 있는 .md 파일은 빈 가이드 행 적재 → 빈 content 문서 스킵 가드 추가 [api/scripts/backfill_embeddings.py]
+
+**Patch 적용 검증(2026-06-21):** pytest 임베딩 4 passed(회귀 0) + `safe_conninfo` 정상/폴백·`load_corpus` 실코퍼스 6건 파싱 스모크 통과.
+
+**Dismiss(노이즈·설계상 의도·실DB로 해소):** 매물 단일 배치 임베딩(현 44건·일회성 데모 스크립트라 과잉설계) / `compose_listing_text`의 NOT NULL 컬럼 KeyError(스키마상 비발생) / 가이드 delete-후-재삽입 전량 교체(스펙상 "파일 단일출처" 의도) / 0-벡터 적재(실텍스트에서 비발생, div0 가드는 존재) / `output_dimensionality` 미반영 우려(`_check_dim` fail-loud로 처리·라이브 768 검증) / 부분실패 재실행 복구가능 / 재시도 없음(일회성 허용) / 임베딩에 title 포함·저장은 content만(검색 맥락 강화 의도) 등.
 
 ## Dev Notes
 

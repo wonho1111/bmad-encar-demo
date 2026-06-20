@@ -15,7 +15,8 @@
 create extension if not exists vector;
 
 -- ── 2) guide_documents 테이블 ────────────────────────────────────────
-create table public.guide_documents (
+-- if not exists: 재적용·신규 환경 재생성 시 "already exists"로 중단되지 않게(멱등).
+create table if not exists public.guide_documents (
   id          uuid primary key default gen_random_uuid(),
   title       text not null,
   content     text not null,
@@ -30,7 +31,7 @@ comment on column public.guide_documents.embedding is
 
 -- ── 3) HNSW 인덱스 (코사인). 정규화된 768 벡터 대상. 연구 권장 m=16, ef_construction=200 ──
 -- HNSW: 벡터 유사도 검색을 빠르게 해주는 그래프형 인덱스. 빈 테이블에 먼저 만들어도 행 추가 시 점진 색인됨.
-create index guide_documents_embedding_hnsw
+create index if not exists guide_documents_embedding_hnsw
   on public.guide_documents using hnsw (embedding vector_cosine_ops)
   with (m = 16, ef_construction = 200);
 
@@ -42,6 +43,8 @@ create index if not exists listings_embedding_hnsw
 -- ── 4) ai_readonly 권한 + RLS 가시성 (⚠️ GRANT만으론 행 안 보임 — 정책 필수) ──
 grant select on public.guide_documents to ai_readonly;
 alter table public.guide_documents enable row level security;
+-- Postgres엔 'create policy if not exists'가 없으므로 drop-후-create로 재적용 안전(멱등).
+drop policy if exists "guide_documents_ai_readonly_select" on public.guide_documents;
 create policy "guide_documents_ai_readonly_select" on public.guide_documents
   for select to ai_readonly using (true);
 -- (클라이언트는 guide_documents를 직접 읽지 않음 → authenticated 정책은 미요구·생략. 필요해지면 후속에서 추가.)
