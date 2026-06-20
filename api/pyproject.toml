@@ -1,0 +1,39 @@
+# api/pyproject.toml — AI 검색 전용 FastAPI + LangGraph 백엔드 (bmad-encar-demo)
+# 의존성 버전은 architecture.md 확정값. AI 스택(langgraph 등)은 optional 그룹으로 분리:
+#   4.1(이 스토리)은 토대만 → core+dev 설치.  4.2~4.5에서 .[ai] 설치(langgraph·gemini 첫 사용).
+[project]
+name = "encar-ai-api"
+version = "0.1.0"
+description = "AI 검색 전용 FastAPI + LangGraph 백엔드 (bmad-encar-demo)"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi==0.137.1",
+  "uvicorn[standard]",
+  "supabase",            # JWT 검증(auth.get_user) — 추가 비밀값 불필요
+  "psycopg[binary]",     # 읽기전용 롤 직결(SET ROLE)
+  "pydantic-settings",   # config.py env 로드(fail-loud)
+]
+
+[project.optional-dependencies]
+# AI 스택 — 4.2(임베딩)·4.3+(LangGraph 노드)에서 처음 사용. 그때 `pip install -e ".[ai]"`.
+ai = [
+  "langgraph==1.2.4",
+  "langgraph-cli[inmem]==0.4.28",
+  "langchain-google-genai",
+  "pgvector",
+]
+dev = [
+  "pytest",
+  "httpx",   # FastAPI TestClient 백엔드
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
