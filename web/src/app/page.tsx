@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { USER_ROLE, ROLE_LABEL, type UserRole } from '@/lib/constants';
 import AppHeader from '@/components/layout/AppHeader';
+import { buttonClasses } from '@/components/ui/Button';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -44,18 +45,12 @@ export default async function Home() {
         <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
           <h1 className="text-2xl font-semibold">중고차 직거래</h1>
           {/* 매물 탐색(Story 3-1) — 구매자가 핵심 사용자지만, 판매자도 판매중(on_sale) 매물을 둘러볼 수 있다(RLS상 공개). */}
-          <Link
-            href="/search"
-            className="w-fit rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-          >
+          <Link href="/search" className={buttonClasses({ variant: 'primary', className: 'w-fit' })}>
             매물 탐색
           </Link>
           {/* 판매자에게는 매물 등록 진입점을 함께 제공한다(Story 2-2). */}
           {roleLabel === ROLE_LABEL[USER_ROLE.SELLER] && (
-            <Link
-              href="/sell"
-              className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-            >
+            <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>
               매물 등록·관리
             </Link>
           )}
@@ -71,16 +66,10 @@ export default async function Home() {
       <div className="flex flex-col gap-3">
         <p className="text-sm text-zinc-500">로그인하고 서비스를 이용해보세요.</p>
         <div className="flex gap-3">
-          <Link
-            href="/login"
-            className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-          >
+          <Link href="/login" className={buttonClasses({ variant: 'primary' })}>
             로그인
           </Link>
-          <Link
-            href="/signup"
-            className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-          >
+          <Link href="/signup" className={buttonClasses({ variant: 'secondary' })}>
             회원가입
           </Link>
         </div>

@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import Button from '@/components/ui/Button';
 
 export default function LogoutButton() {
   const router = useRouter();
@@ -36,14 +37,15 @@ export default function LogoutButton() {
 
   return (
     <div className="flex flex-col gap-2">
-      <button
+      <Button
         type="button"
+        variant="secondary"
         onClick={handleLogout}
-        disabled={loading}
-        className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50 dark:border-zinc-700"
+        loading={loading}
+        loadingText="처리 중…"
       >
-        {loading ? '처리 중…' : '로그아웃'}
-      </button>
+        로그아웃
+      </Button>
       {error && (
         <p role="alert" className="text-sm text-red-700 dark:text-red-300">
           {error}

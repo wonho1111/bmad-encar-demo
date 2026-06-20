@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_STATUS } from '@/lib/constants';
+import Button, { buttonClasses } from '@/components/ui/Button';
 
 type Props = {
   listingId: string;
@@ -130,31 +131,35 @@ export default function ListingActions({
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
         {canComplete && (
-          <button
+          <Button
             type="button"
+            variant="info"
+            size="sm"
             onClick={handleComplete}
-            disabled={completing}
-            className="rounded border border-blue-300 px-2 py-1 text-xs font-medium text-blue-700 disabled:opacity-50 dark:border-blue-800 dark:text-blue-300"
+            loading={completing}
+            loadingText="처리 중…"
           >
-            {completing ? '처리 중…' : '구매 완료'}
-          </button>
+            구매 완료
+          </Button>
         )}
         {canEdit && (
           <Link
             href={`/sell/${listingId}/edit`}
-            className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium dark:border-zinc-700"
+            className={buttonClasses({ variant: 'secondary', size: 'sm' })}
           >
             수정
           </Link>
         )}
-        <button
+        <Button
           type="button"
+          variant="danger"
+          size="sm"
           onClick={handleDelete}
-          disabled={deleting}
-          className="rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 disabled:opacity-50 dark:border-red-800 dark:text-red-300"
+          loading={deleting}
+          loadingText="삭제 중…"
         >
-          {deleting ? '삭제 중…' : '삭제'}
-        </button>
+          삭제
+        </Button>
       </div>
       {error && (
         <p role="alert" className="text-xs text-red-600 dark:text-red-400">

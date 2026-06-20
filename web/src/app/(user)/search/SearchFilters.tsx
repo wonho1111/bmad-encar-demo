@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LISTING_OPTIONS, LISTING_RANGES, UNITS } from '@/lib/constants';
+import Button from '@/components/ui/Button';
 
 // 현재 URL 쿼리값(서버가 넘겨준 초기값)으로 폼을 채운다 → 새로고침해도 필터가 유지된다.
 export type SearchFilterValues = {
@@ -156,19 +157,12 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
       </fieldset>
 
       <div className="flex gap-3">
-        <button
-          type="submit"
-          className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-        >
+        <Button type="submit" variant="primary">
           검색
-        </button>
-        <button
-          type="button"
-          onClick={resetFilters}
-          className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-        >
+        </Button>
+        <Button type="button" variant="secondary" onClick={resetFilters}>
           초기화
-        </button>
+        </Button>
       </div>
     </form>
   );

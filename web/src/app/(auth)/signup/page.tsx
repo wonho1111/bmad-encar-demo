@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { USER_ROLE, type UserRole } from '@/lib/constants';
+import Button from '@/components/ui/Button';
 
 // 가입 경로에서 고를 수 있는 역할은 구매자/판매자뿐(admin 제외 — 서버 트리거도 admin을 차단).
 const SIGNUP_ROLES: { value: UserRole; label: string }[] = [
@@ -169,13 +170,9 @@ export default function SignupPage() {
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          {loading ? '처리 중…' : '가입하기'}
-        </button>
+        <Button type="submit" variant="primary" loading={loading} loadingText="처리 중…">
+          가입하기
+        </Button>
       </form>
     </main>
   );

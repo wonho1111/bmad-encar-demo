@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
+import Button, { buttonClasses } from '@/components/ui/Button';
 
 // 폼 상태 — 통신선/DB와 일치하도록 snake_case 키. 수치는 문자열로 받고 제출 시 정수 변환(빈칸 구분 위함).
 type FormState = {
@@ -512,25 +513,17 @@ export default function SellForm({ mode = 'create', listingId, initialValues }: 
       )}
 
       <div className="flex items-center gap-3">
-        <button
+        <Button
           type="submit"
-          disabled={loading}
-          className="rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+          variant="primary"
+          loading={loading}
+          loadingText={isEdit ? '저장 중…' : '등록 중…'}
         >
-          {loading
-            ? isEdit
-              ? '저장 중…'
-              : '등록 중…'
-            : isEdit
-              ? '수정 저장'
-              : '매물 등록'}
-        </button>
+          {isEdit ? '수정 저장' : '매물 등록'}
+        </Button>
         {/* 수정 모드에서만 취소(목록으로 돌아가기) 제공. 등록 모드는 단독 버튼. */}
         {isEdit && (
-          <Link
-            href="/sell"
-            className="rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-          >
+          <Link href="/sell" className={buttonClasses({ variant: 'secondary' })}>
             취소
           </Link>
         )}

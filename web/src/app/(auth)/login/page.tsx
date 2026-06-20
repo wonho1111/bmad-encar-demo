@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import Button from '@/components/ui/Button';
 
 // Supabase 로그인 에러를 사용자용 한국어 메시지로 변환한다(원본 메시지/코드는 화면에 직접 노출하지 않음).
 // 잘못된 자격은 보안상 "이메일/비밀번호 중 무엇이 틀렸는지" 구분하지 않고 동일 문구로 안내한다.
@@ -105,13 +106,9 @@ export default function LoginPage() {
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded bg-zinc-900 px-4 py-2 font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-        >
-          {loading ? '처리 중…' : '로그인'}
-        </button>
+        <Button type="submit" variant="primary" loading={loading} loadingText="처리 중…">
+          로그인
+        </Button>
       </form>
 
       <p className="text-sm text-zinc-500">
