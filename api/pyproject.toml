@@ -21,6 +21,7 @@ ai = [
   "langgraph-cli[inmem]==0.4.28",
   "langchain-google-genai",
   "pgvector",
+  "sqlparse",            # 4.3 — LLM이 만든 SELECT를 토큰 단위로 검증(결정론적 sql_guard)
 ]
 dev = [
   "pytest",

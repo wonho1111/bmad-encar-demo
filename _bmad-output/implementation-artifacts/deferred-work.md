@@ -32,3 +32,10 @@
 - **`context` 필드 크기·스키마 제약 없음(대용량 DoS 여지)** [api/app/schemas/ai.py:13] — `context: list | None`이 원소 타입·길이 제한이 없어 수 MB의 중첩 배열을 그대로 수용한다. spec이 "받아두되 무시(4.6)"로 의도한 필드라 현재 미사용·무해. 멀티턴 맥락을 실제로 읽는 4.6에서 원소 스키마·최대 길이를 강제할 것.
 - **CORS 기본 origin이 127.0.0.1/Vercel preview/https 미포함** [api/app/main.py:24] — 기본값 `http://localhost:3000`은 `http://127.0.0.1:3000`·https·다른 포트·Vercel preview 도메인과 정확히 일치하지 않아, 해당 출처의 브라우저 호출이 차단된다. 코드 버그가 아니라 배포 설정 사안. 웹이 이 API를 실제 소비하는 4.7 배포 시 환경변수 `CORS_ORIGINS`에 preview/운영 도메인을 명시할 것.
 - **0006 ALTER DEFAULT PRIVILEGES는 동일 소유자 생성 테이블만 적용** [supabase/migrations/0006_readonly_role.sql:33] — `alter default privileges ... grant select`는 이 ALTER를 실행한 롤이 만든 테이블에만 자동 적용된다. 4.2 `guide_documents`를 다른 소유자가 생성하면 `ai_readonly`가 SELECT를 못 받아 AI가 조용히 0건을 반환할 수 있다. 4.2 마이그레이션에서 `guide_documents`에 ai_readonly SELECT GRANT + permissive 정책을 명시적으로 추가할 것(스토리 Dev Notes에도 동일 메모 있음).
+
+## Deferred from: code review of 4-3-경로-a-text-to-sql-안전장치 (2026-06-21)
+
+- **AC4 단위 정규화·차형(세단) 매핑 결정론적 단위테스트 부재** [api/tests/] — "3천만원"→`price<=30000000`, "세단"→`body_type IN(...)` 등 AC4 충족 근거가 LLM 프롬프트 + 라이브 1회에만 존재한다. 결정론적 회귀 보호가 없어 LLM/프롬프트 변경 시 조용히 깨질 수 있다. LLM 출력을 모킹한 정규화·매핑 회귀 테스트를 후속으로 추가할 것.
+- **FR17 0건 안내·IN-매핑 가드 통과 경로 단위테스트 미커버** [api/tests/test_auth.py] — 200 테스트가 `sql_rag_node`를 통째로 monkeypatch해, 실제 0건→`_ANSWER_EMPTY`(FR17) 경로와 `body_type IN(...)` SQL이 가드를 실제 통과하는지가 단위테스트로 확인되지 않는다. 노드 내부 분기·가드 IN-절 통과 케이스 테스트를 보강할 것.
+- **LIMIT 비정수형(0/음수/`(10)`/OFFSET-only) 처리 미흡** [api/app/db/sql_guard.py:129] — `\blimit\s+(\d+)`가 `LIMIT 0`(오해성 0건)·`LIMIT -5`·`LIMIT (10)`·`OFFSET`-only를 정상 인식 못 해 잘못된 SQL 또는 오해성 빈 결과를 만든다. temp=0 프롬프트 특성상 발생 가능성은 낮고 대부분 fail-safe(오류→재시도→query_failed)라 후속으로 미룸. LIMIT 정규화/하한 검증을 강화할 것.
+- **[4.5 설계 메모] 모호/광범위 질의는 "되묻기(clarify)"로 처리할 것** [api/app/graph/ — 4.5 라우터 스토리] — 4.3은 `DEFAULT_LIMIT=5`(brief "약 5개" 정합)로 확정. 다만 "차 보여줘" 같은 모호 질의를 그냥 5건으로 채우는 건 임시방편이며, 올바른 대응은 라우터(4.5)에서 "예산/차종이 어떻게 되세요?"라고 되묻는 것이다(research §4.3 "모호한 필터 → 라우터에서 되묻기"). **4.5 스토리 AC에 "모호·광범위 질의 → 조건 확인 되묻기(clarify/경로 C)"를 명시할 것. LIMIT 숫자 상향으로 풀지 말 것.**
