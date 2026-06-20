@@ -14,7 +14,8 @@ import { updateSession } from '@/lib/supabase/session';
 
 // 로그인이 필요한 보호 경로 접두사. 후행 에픽에서 추가 예정: '/chat'(문의 채팅).
 // '/sell'(판매자 매물 등록·관리, Story 2-2~) — 비로그인 1차 차단. 역할(seller) 2차 집행은 (user)/sell 레이아웃의 requireRole.
-const PROTECTED_PREFIXES = ['/admin', '/sell'];
+// '/search'(구매자 매물 탐색, Story 3-1) — 로그인 사용자(구매자·판매자 공통)만. 역할 게이트 없음(on_sale은 RLS상 모두 공개).
+const PROTECTED_PREFIXES = ['/admin', '/sell', '/search'];
 
 function redirectToLogin(request: NextRequest, pathname: string) {
   const url = request.nextUrl.clone();

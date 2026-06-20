@@ -43,16 +43,22 @@ export default async function Home() {
         <AppHeader roleLabel={roleLabel} email={user.email} />
         <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
           <h1 className="text-2xl font-semibold">중고차 직거래</h1>
-          {/* 판매자에게는 매물 등록 진입점을 제공한다(Story 2-2). 구매자 탐색 UI는 Epic 3. */}
+          {/* 매물 탐색(Story 3-1) — 구매자가 핵심 사용자지만, 판매자도 판매중(on_sale) 매물을 둘러볼 수 있다(RLS상 공개). */}
+          <Link
+            href="/search"
+            className="w-fit rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            매물 탐색
+          </Link>
+          {/* 판매자에게는 매물 등록 진입점을 함께 제공한다(Story 2-2). */}
           {roleLabel === ROLE_LABEL[USER_ROLE.SELLER] && (
             <Link
               href="/sell"
-              className="w-fit rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
+              className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
             >
               매물 등록·관리
             </Link>
           )}
-          {/* TODO(Epic 3): 구매자=매물 탐색 UI가 여기 들어온다. */}
         </main>
       </>
     );
