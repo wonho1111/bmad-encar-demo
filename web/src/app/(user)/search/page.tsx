@@ -77,10 +77,18 @@ export default async function SearchPage({
   const fuel = pickOption(asStr(sp.fuel), LISTING_OPTIONS.fuel);
   const transmission = pickOption(asStr(sp.transmission), LISTING_OPTIONS.transmission);
   const region = pickOption(asStr(sp.region), LISTING_OPTIONS.region);
-  const priceMin = asInt(asStr(sp.price_min));
-  const priceMax = asInt(asStr(sp.price_max));
-  const yearMin = asInt(asStr(sp.year_min));
-  const yearMax = asInt(asStr(sp.year_max));
+  let priceMin = asInt(asStr(sp.price_min));
+  let priceMax = asInt(asStr(sp.price_max));
+  let yearMin = asInt(asStr(sp.year_min));
+  let yearMax = asInt(asStr(sp.year_max));
+
+  // 최소>최대로 거꾸로 입력하면(예: 최소 5000~최대 1000) 0건이 나와 혼란 → 둘 다 유효할 때만 값을 맞바꿔(swap) 정상 범위로 보정.
+  if (priceMin !== null && priceMax !== null && priceMin > priceMax) {
+    [priceMin, priceMax] = [priceMax, priceMin];
+  }
+  if (yearMin !== null && yearMax !== null && yearMin > yearMax) {
+    [yearMin, yearMax] = [yearMax, yearMin];
+  }
 
   // ── 쿼리 빌드 ───────────────────────────────────────────────────
   // status='on_sale' 명시(FR11). 조건은 값이 있을 때만 체이닝한다.
@@ -96,8 +104,8 @@ export default async function SearchPage({
   if (transmission) query = query.eq('transmission', transmission);
   if (region) query = query.eq('region', region);
 
-  // 가격·연식 범위 — min/max가 역전(min>max)이면 무의미하므로 둘 다 유효할 때만 둘 다 적용,
-  // 한쪽만 있으면 그 한쪽만 적용(보정: 역전 시에는 0건이 자연스럽게 나오므로 그대로 둬도 안전).
+  // 가격·연식 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로 여기선 그대로 적용한다.
+  // 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
   if (priceMin !== null) query = query.gte('price', priceMin);
   if (priceMax !== null) query = query.lte('price', priceMax);
   if (yearMin !== null) query = query.gte('year', yearMin);
