@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-06-20T22:30:00
+last_updated: 2026-06-20T23:30:00
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -61,11 +61,11 @@ development_status:
   epic-2-retrospective: done
 
   # --- Epic 3: 구매자 매물 탐색 ---
-  epic-3: in-progress
+  epic-3: done
   3-1-매물-목록-필터-검색: done
   3-2-매물-상세-조회: done
   3-3-판매완료-비노출-단일규칙: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
   # --- Epic 4: AI 검색 어시스턴트 ---
   epic-4: backlog
