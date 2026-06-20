@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-06-21T12:00:00
+last_updated: 2026-06-21T14:45:00
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -70,7 +70,7 @@ development_status:
   # --- Epic 4: AI 검색 어시스턴트 ---
   epic-4: in-progress
   4-1-api-스캐폴딩-읽기전용-롤-jwt-검증: done
-  4-2-문서-rag-코퍼스-guide-documents-pgvector-임베딩-backfill: backlog
+  4-2-문서-rag-코퍼스-guide-documents-pgvector-임베딩-backfill: review
   4-3-경로-a-text-to-sql-안전장치: backlog
   4-4-경로-b-문서-rag: backlog
   4-5-라우터-분류-가드-답변-조립: backlog
