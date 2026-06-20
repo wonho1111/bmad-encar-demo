@@ -29,11 +29,21 @@ function pickOption(v: string, options: readonly string[]): string | null {
   return v !== '' && options.includes(v) ? v : null;
 }
 
-// 정수 파싱 — 정수가 아니거나 음수면 null(미적용). 범위 필터에 안전한 숫자만 넘긴다.
+// 정수 파싱 — "숫자만으로 된 문자열"일 때만 통과시킨다(미적용이면 null).
+//   ⚠️ Number()는 '1e9'(=10억)·'0x10' 같은 표기도 정수로 받아들이고, 아주 큰 값은 DB bigint 범위를
+//      넘겨 조회 에러를 낸다(사용자에겐 "불러오기 실패"로 잘못 보임). 그래서 정규식으로 순수 숫자열만
+//      허용하고, 안전 정수(MAX_SAFE_INTEGER) 이하만 통과시킨다 — 범위 밖이면 그 필터는 그냥 미적용.
 function asInt(v: string): number | null {
-  if (v.trim() === '') return null;
-  const n = Number(v);
-  return Number.isInteger(n) && n >= 0 ? n : null;
+  const s = v.trim();
+  if (!/^\d+$/.test(s)) return null; // 부호·소수점·지수표기·16진수 등은 모두 거른다(미적용).
+  const n = Number(s);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+// LIKE 패턴 메타문자(\ % _)를 이스케이프 — 사용자가 친 '%'·'_'를 "특수문자"가 아니라 "그 글자 자체"로
+// 검색하게 한다. 안 하면 '%' 입력이 "전부 일치"가 돼 키워드 필터가 무력화된다(AC1 부분일치 보장).
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, '\\$&');
 }
 
 export default async function SearchPage({
@@ -79,7 +89,7 @@ export default async function SearchPage({
     .select('id, manufacturer, model, year, price, mileage, region')
     .eq('status', LISTING_STATUS.ON_SALE);
 
-  if (q) query = query.ilike('model', `%${q}%`); // 모델명 부분일치(대소문자 무시)
+  if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
   if (bodyType) query = query.eq('body_type', bodyType);
   if (color) query = query.eq('color', color);
   if (fuel) query = query.eq('fuel', fuel);
@@ -93,7 +103,9 @@ export default async function SearchPage({
   if (yearMin !== null) query = query.gte('year', yearMin);
   if (yearMax !== null) query = query.lte('year', yearMax);
 
-  query = query.order('created_at', { ascending: false });
+  // created_at 내림차순. 시드처럼 created_at이 같은 행들의 순서가 새로고침마다 뒤집히지 않도록
+  // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
+  query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
 
   const { data: listings, error } = await query.returns<ListingCardData[]>();
 

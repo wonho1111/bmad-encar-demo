@@ -62,7 +62,7 @@ development_status:
 
   # --- Epic 3: 구매자 매물 탐색 ---
   epic-3: in-progress
-  3-1-매물-목록-필터-검색: review
+  3-1-매물-목록-필터-검색: done
   3-2-매물-상세-조회: backlog
   3-3-판매완료-비노출-단일규칙: backlog
   epic-3-retrospective: optional
