@@ -48,6 +48,10 @@ export default async function Home() {
           <Link href="/search" className={buttonClasses({ variant: 'primary', className: 'w-fit' })}>
             매물 탐색
           </Link>
+          {/* AI 검색(Story 4-7) — 자연어 한 문장으로 매물을 찾는 채팅 화면. 로그인 사용자 공통. */}
+          <Link href="/ai" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>
+            AI 검색
+          </Link>
           {/* 판매자에게는 매물 등록 진입점을 함께 제공한다(Story 2-2). */}
           {roleLabel === ROLE_LABEL[USER_ROLE.SELLER] && (
             <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>

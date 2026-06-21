@@ -16,7 +16,8 @@ import { updateSession } from '@/lib/supabase/session';
 // '/sell'(판매자 매물 등록·관리, Story 2-2~) — 비로그인 1차 차단. 역할(seller) 2차 집행은 (user)/sell 레이아웃의 requireRole.
 // '/search'(구매자 매물 탐색, Story 3-1) — 로그인 사용자(구매자·판매자 공통)만. 역할 게이트 없음(on_sale은 RLS상 모두 공개).
 // '/listings'(구매자 매물 상세, Story 3-2) — /listings/[id] 상세. /search와 동일하게 로그인 사용자만(역할 게이트 없음).
-const PROTECTED_PREFIXES = ['/admin', '/sell', '/search', '/listings'];
+// '/ai'(AI 검색, Story 4-7) — 자연어 채팅 검색. /search와 동일하게 로그인 사용자만(역할 게이트 없음).
+const PROTECTED_PREFIXES = ['/admin', '/sell', '/search', '/listings', '/ai'];
 
 function redirectToLogin(request: NextRequest, pathname: string) {
   const url = request.nextUrl.clone();
