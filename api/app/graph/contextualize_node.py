@@ -81,8 +81,11 @@ def _serialize_context(context: list) -> str:
         content = getattr(turn, "content", None) or (turn.get("content") if isinstance(turn, dict) else None)
         if not content:
             continue
+        # 프롬프트 주입 방어 — 턴 내용은 클라이언트가 보낸 '데이터'일 뿐 '지시'가 아니다.
+        # 내용에 줄바꿈을 넣어 "[현재 질의]" 같은 가짜 섹션을 위조하지 못하도록 개행을 공백으로 눕힌다.
+        flat = " ".join(str(content).split())
         label = "사용자" if role == "user" else "어시스턴트"
-        lines.append(f"{label}: {content}")
+        lines.append(f"{label}: {flat}")
     return "\n".join(lines)
 
 

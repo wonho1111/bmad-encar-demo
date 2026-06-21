@@ -122,5 +122,10 @@ def run_search(query: str, context: list | None = None) -> dict:
     경로 A에서 SqlGuardError가 나면 여기서 잡지 않고 호출자(/ai/search)로 전파한다(함정 #1).
     """
     effective_query = contextualize_query(query, context)  # 단일턴이면 query 그대로 반환
+    # 방어선 — 재작성 결과가 (예기치 못하게) 공백이면 원 질의로 되돌린다. 공개 경로는
+    # 스키마가 빈 질의를 422로 이미 막지만, run_search는 내부에서도 재사용되는 함수이므로
+    # 빈 질의가 그래프(라우터·LLM)로 새어 들어가지 않게 한 번 더 잠근다.
+    if not (effective_query or "").strip():
+        effective_query = query
     final_state = COMPILED_GRAPH.invoke({"query": effective_query})
     return {"answer": final_state["answer"], "listings": final_state["listings"]}
