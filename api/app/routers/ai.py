@@ -7,7 +7,8 @@
 
 인증(get_current_user)·응답 계약({answer, listings[]})·에러 포맷은 4.1 확정값 그대로 유지한다.
 경로 A가 그래프 안에서 던지는 SqlGuardError도 여기까지 전파돼 똑같이 400으로 잡힌다(회귀 0).
-context 필드는 받되 무시한다(멀티턴은 4.6).
+4.6: context(직전 대화 맥락)를 run_search에 전달해 멀티턴을 지원한다(FR18). 맥락은 요청 본문에서만
+  오고 서버·DB에 저장하지 않는다(무상태). 맥락이 없으면 단일턴으로 4.5까지와 동일하게 동작한다.
 """
 
 import logging
@@ -28,7 +29,8 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchResponse:
     # get_current_user 의존성이 미인증 요청을 401로 막는다(AC3).
     try:
-        result = run_search(req.query)  # 라우터→경로→answer 그래프. context는 4.6 전까지 무시
+        # 맥락화→라우터→경로→answer 그래프. context가 있으면 후속 질의를 독립 질의로 재작성해 반영(FR18).
+        result = run_search(req.query, req.context)
     except SqlGuardError as exc:
         # 가드 차단·재시도 실패 — 사용자에게 의미 있는 한국어 안내(400). 서버 500 누출 금지(AC3).
         logger.info("sql_guard 차단 — 400 반환: [%s] %s", exc.code, exc.message)

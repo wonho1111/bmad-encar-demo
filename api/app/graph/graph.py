@@ -24,6 +24,7 @@ from typing import TypedDict
 from langgraph.graph import END, StateGraph
 
 from app.graph.answer_node import answer_node
+from app.graph.contextualize_node import contextualize_query
 from app.graph.doc_rag_node import doc_rag_node
 from app.graph.guard_node import guard_node
 from app.graph.router_node import router_node
@@ -111,11 +112,15 @@ def _build_graph():
 COMPILED_GRAPH = _build_graph()
 
 
-def run_search(query: str) -> dict:
+def run_search(query: str, context: list | None = None) -> dict:
     """그래프를 1회 실행해 {answer, listings[]}를 반환한다.
 
+    멀티턴(FR18): 그래프 호출 "앞단"에서 contextualize_query(query, context)로 직전 대화를
+      흡수한 독립 질의를 만든 뒤, 그 질의를 그래프에 흘린다. 맥락이 없으면(None·[]) 원 질의가
+      그대로 들어가 4.5까지와 동일하게 동작한다(회귀 0). 맥락은 인자로만 흐르고 저장하지 않는다(무상태).
     /ai/search가 sql_rag_node 직접 호출 대신 이 함수를 부른다.
     경로 A에서 SqlGuardError가 나면 여기서 잡지 않고 호출자(/ai/search)로 전파한다(함정 #1).
     """
-    final_state = COMPILED_GRAPH.invoke({"query": query})
+    effective_query = contextualize_query(query, context)  # 단일턴이면 query 그대로 반환
+    final_state = COMPILED_GRAPH.invoke({"query": effective_query})
     return {"answer": final_state["answer"], "listings": final_state["listings"]}

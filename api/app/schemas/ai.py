@@ -22,11 +22,27 @@ class RouterDecision(BaseModel):
     reason: str | None = None
 
 
+class ConversationTurn(BaseModel):
+    """멀티턴 맥락의 한 턴(FR18) — 클라이언트가 보관하다 후속 질의에 동봉한다.
+
+    role/content만 둔 최소 스키마. content 길이를 막아 과대 입력(DoS)을 닫는다.
+    role은 사용자/어시스턴트 둘로 한정(Literal) — 형식이탈을 422로 거른다.
+    이 모델은 '서버 무상태' 입력 계약일 뿐, 서버·DB에 저장하지 않는다(요청 본문에서만 온다).
+    """
+
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=2000, description="턴 내용")
+
+
 class SearchRequest(BaseModel):
     # max_length로 과대 입력을 막고(4.3+ LLM 비용·DoS 방어), 공백만 있는 질의는 거른다.
     query: str = Field(..., min_length=1, max_length=1000, description="자연어 검색 질의")
-    # 멀티턴 맥락 — 4.6에서 사용. 4.1은 받아두되 무시(서버 무상태).
-    context: list | None = Field(default=None, description="직전 대화 맥락(클라이언트 보관)")
+    # 멀티턴 맥락(FR18) — 4.6에서 실제로 읽어 후속 질의를 맥락화한다(서버 무상태: 매 요청에 클라가 동봉).
+    # 원소 타입(ConversationTurn)·최대 턴 수(12)를 강제해 4.5까지 무제한이던 DoS 여지를 닫는다.
+    # 빈/누락(None·[])은 단일턴으로 정상 동작(회귀 0).
+    context: list[ConversationTurn] | None = Field(
+        default=None, max_length=12, description="직전 대화 맥락(클라이언트 보관, 최대 12턴)"
+    )
 
     @field_validator("query")
     @classmethod

@@ -30,7 +30,7 @@ def test_search_authorized_returns_contract_shape(monkeypatch):
     # 응답 계약 형태"만 보도록 그래프를 가짜로 치환한다(라이브 검증은 test_graph/test_ai_search).
     monkeypatch.setattr(
         "app.routers.ai.run_search",
-        lambda query: {"answer": "조건에 맞는 매물 0건을 찾았어요.", "listings": []},
+        lambda query, context=None: {"answer": "조건에 맞는 매물 0건을 찾았어요.", "listings": []},
     )
     app.dependency_overrides[get_current_user] = lambda: {"id": "test-user"}
     try:
@@ -47,7 +47,7 @@ def test_search_guard_block_returns_400(monkeypatch):
     # 가드 차단(SqlGuardError) 시 사용자에게 공통 에러 포맷 400으로 안내된다(AC3, 500 누출 금지).
     from app.db.sql_guard import SqlGuardError
 
-    def _raise(query):
+    def _raise(query, context=None):
         raise SqlGuardError("not_select", "조회(SELECT) 쿼리만 허용됩니다.")
 
     monkeypatch.setattr("app.routers.ai.run_search", _raise)

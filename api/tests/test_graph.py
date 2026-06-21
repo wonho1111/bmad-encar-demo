@@ -121,3 +121,37 @@ def test_guard_node_returns_empty_listings_and_guidance():
     out = guard_node("파이썬 코드 짜줘")
     assert out["listings"] == []
     assert "중고차" in out["answer"] and "어시스턴트" in out["answer"]
+
+
+# ── 4.6 멀티턴 맥락화 배선 (run_search 앞단) ───────────────────────
+def test_run_search_contextualizes_before_graph(monkeypatch):
+    # context가 있으면 run_search가 contextualize_query로 재작성한 질의를 그래프(라우터)에 넘긴다.
+    seen_query = {}
+
+    def fake_router(q):
+        seen_query["q"] = q  # 라우터가 받은 질의(=맥락화 결과)를 캡처
+        return "B"
+
+    monkeypatch.setattr(gmod, "router_node", fake_router)
+    monkeypatch.setattr(gmod, "doc_rag_node", lambda q: {"answer": "ok", "listings": []})
+    # 맥락화는 재작성된 독립 질의를 돌려주도록 모킹(LLM 없이).
+    monkeypatch.setattr(gmod, "contextualize_query", lambda query, context: "재작성된 독립 질의")
+
+    out = gmod.run_search("그 중 더 싼 거", [{"role": "user", "content": "패밀리카"}])
+    assert seen_query["q"] == "재작성된 독립 질의"  # 그래프는 재작성 질의를 처리
+    assert out["listings"] == []
+
+
+def test_run_search_single_turn_passes_query_unchanged(monkeypatch):
+    # context 없으면 원 query가 그대로 그래프로 간다(단일턴 회귀 0). 실제 contextualize_query 사용.
+    seen_query = {}
+
+    def fake_router(q):
+        seen_query["q"] = q
+        return "A"
+
+    monkeypatch.setattr(gmod, "router_node", fake_router)
+    monkeypatch.setattr(gmod, "sql_rag_node", lambda q: {"answer": "ok", "listings": ["s1"]})
+
+    gmod.run_search("3천만원 이하 SUV")  # context 없음 → contextualize_query가 LLM 없이 그대로 반환
+    assert seen_query["q"] == "3천만원 이하 SUV"
