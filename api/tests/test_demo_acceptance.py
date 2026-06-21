@@ -123,8 +123,10 @@ def test_cm1_unrelated_rejected_via_graph(monkeypatch, query):
     _patch_route(monkeypatch, "C")
     out = gmod.run_search(query)
     assert out["listings"] == [], f"무관 질의에 매물을 주면 CM1 불합격: {query!r}"
-    assert "중고차" in out["answer"] and "어시스턴트" in out["answer"], (
-        "정중한 거절 + 검색 유도 문구가 있어야 한다(FR16)"
+    # 거절 문구는 고정 상수(_GUARD_ANSWER)와 "정확히 일치"해야 한다 — 부분문자열 검사보다 강한 단언.
+    # 부분문자열("중고차"·"어시스턴트")만 보면 문구가 바뀌어도 조용히 통과해 거절 계약을 못 박는다(코드리뷰 4.8).
+    assert out["answer"] == _GUARD_ANSWER, (
+        "그래프 경로 C는 고정 거절 문구(_GUARD_ANSWER)를 그대로 내보내야 한다(FR16)"
     )
 
 
@@ -142,7 +144,8 @@ def test_cm1_count_all_unrelated_rejected(monkeypatch):
     not_rejected = []
     for q in UNRELATED_C:
         out = gmod.run_search(q)
-        rejected = (out["listings"] == []) and ("중고차" in out["answer"])
+        # 빈 목록 + 고정 거절 문구(정확 일치)를 모두 만족해야 "거절됨"으로 센다(코드리뷰 4.8).
+        rejected = (out["listings"] == []) and (out["answer"] == _GUARD_ANSWER)
         if not rejected:
             not_rejected.append(q)
     assert not_rejected == [], f"거절되지 않은 무관 질의(CM1 위반): {not_rejected}"
@@ -176,7 +179,8 @@ VIOLATING_SQL = [
     # OR 우회(sold 누출)
     "SELECT id, manufacturer, model, year, price, mileage, region "
     "FROM listings WHERE status = 'on_sale' OR price < 99999999",
-    # 서브쿼리(외부 LIMIT 우회)
+    # 서브쿼리 — 중첩 SELECT는 무조건 차단(subquery_not_allowed). 내부 LIMIT의 외부 상한 우회
+    # 여지를 애초에 없앤다(SELECT 2개 이상이면 LIMIT 검사 전에 먼저 거부됨).
     "SELECT id, manufacturer, model, year, price, mileage, region "
     "FROM listings WHERE status='on_sale' AND year IN (SELECT year FROM listings LIMIT 50)",
     # status='on_sale' 필터 누락
