@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-06-22T00:30:00
+last_updated: 2026-06-22T02:00:00
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -76,7 +76,7 @@ development_status:
   4-5-라우터-분류-가드-답변-조립: done
   4-6-멀티턴-맥락: done
   4-7-ai-검색-ui: done
-  4-8-ai-검증-sm3-cm1-cm2: backlog
+  4-8-ai-검증-sm3-cm1-cm2: review
   epic-4-retrospective: optional
 
   # --- Epic 5: 문의 채팅 ---

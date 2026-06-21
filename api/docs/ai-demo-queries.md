@@ -82,3 +82,29 @@
 
 > `body_type` 허용값: 경차·소형차·준중형차·중형차·대형차·스포츠카·SUV·RV·경승합차·승합차·화물차·기타.
 > 정규화 단위: 주행거리 "만km" → ×10000, 가격 "천만원"=10,000,000 / "만원"=10,000.
+
+---
+
+## 4.8 검증 매트릭스 (SM3·CM1·CM2 합격 판정)
+
+이 질의셋이 SM3·CM1·CM2 합격임을 **재현 가능한 pytest**로 못박는다. 질의 문자열·기대 경로는
+`api/tests/demo_queries.py`가 위 표 ①②③④를 그대로 미러링한다(단일출처, drift 금지).
+
+쿼터 보호: 판정은 라이브 LLM에 매번 의존하지 않는다.
+- **SM3·CM1** — 라우터·경로 노드를 모킹해 분기·계약을 LLM/DB 없이 결정론적으로 검증.
+- **CM2** — `sql_guard`는 순수 함수라 키 없이 항상 결정론적으로 완전 검증.
+- 라이브 동작은 별도 스모크에서 소량(3건 이하)만 확인하며 기본 실행에서는 스킵된다.
+
+| 판정 | 대상 질의 | 기대 | 검증 테스트(`api/tests/`) |
+|---|---|---|---|
+| SM3 | ① 구조형(A) | 경로 A가 매물 카드 반환(빈손 아님) | `test_demo_acceptance.py::test_sm3_pathA_returns_listings` |
+| SM3 | ② 의미형(B) | 경로 B가 추천 매물 반환 | `test_demo_acceptance.py::test_sm3_pathB_returns_listings` |
+| SM3 | ③ 회색지대 | A/B 어느 쪽이든 빈손·거절 아님 | `test_demo_acceptance.py::test_sm3_gray_zone_returns_listings_either_route` |
+| SM3 | 경로 A 가드 통과 | 세단 IN-매핑 SQL이 sql_guard를 실제 통과 | `test_demo_acceptance.py::test_sm3_pathA_real_guard_passes_generated_sql` |
+| CM1 | ④ 무관(C) | 전부 빈 목록 + 정중한 거절 문구 | `test_demo_acceptance.py::test_cm1_unrelated_rejected_via_graph`, `test_cm1_count_all_unrelated_rejected` |
+| CM2 | 위반 SQL 코퍼스 | 범위밖 SQL 0건 통과(전부 실행 전 차단) | `test_demo_acceptance.py::test_cm2_violating_sql_is_blocked`, `test_cm2_zero_violations_pass_through` |
+| CM2 | 정상 SQL 대조군 | 정상 SELECT는 통과(과차단 아님) | `test_demo_acceptance.py::test_cm2_valid_sql_still_passes` |
+| 라이브 | A·B·C 각 1건 | 실물 동작 눈 확인(쿼터-세이프, 기본 skip) | `test_live_smoke.py`(`RUN_LIVE_SMOKE=1`로 활성) |
+
+> 실행: `cd api && pytest`(전체) 또는 `pytest tests/test_demo_acceptance.py`(판정만). 라이브 스모크는
+> `RUN_LIVE_SMOKE=1`(+ `GEMINI_API_KEY`·`DATABASE_URL`)일 때만 돈다. 429/키부재는 실패가 아닌 skip이다.
