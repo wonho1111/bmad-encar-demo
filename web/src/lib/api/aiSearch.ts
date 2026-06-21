@@ -91,8 +91,27 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
   const result = data as Partial<SearchResult>;
   return {
     answer: typeof result.answer === 'string' ? result.answer : '',
-    listings: Array.isArray(result.listings) ? result.listings : [],
+    // 배열 여부만 보지 않고 "카드 한 장이 7필드를 제대로 갖췄는지"까지 검사한 뒤 깨진 원소는 버린다.
+    // 이렇게 안 하면 서버가 id·price·mileage가 빠진 매물을 주었을 때 ListingCard가 렌더 도중
+    // (price.toLocaleString) 터지고, 그 오류는 try/catch 밖이라 대화 화면 전체가 날아간다.
+    listings: Array.isArray(result.listings) ? result.listings.filter(isValidListing) : [],
   };
+}
+
+// 매물카드 한 장이 ListingCard가 요구하는 7필드를 올바른 타입으로 갖췄는지 확인한다(런타임 가드).
+// 응답 형태가 계약을 벗어났을 때 화면을 깨뜨리는 대신 그 원소만 조용히 제외한다(나머지는 정상 표시).
+function isValidListing(item: unknown): item is ListingCardData {
+  if (typeof item !== 'object' || item === null) return false;
+  const l = item as Record<string, unknown>;
+  return (
+    typeof l.id === 'string' &&
+    typeof l.manufacturer === 'string' &&
+    typeof l.model === 'string' &&
+    typeof l.year === 'number' &&
+    typeof l.price === 'number' &&
+    typeof l.mileage === 'number' &&
+    typeof l.region === 'string'
+  );
 }
 
 // 비200 응답에서 한국어 에러 메시지를 뽑는다. 백엔드 공통 포맷({error:{code,message}})이면 그 message를 쓰고,

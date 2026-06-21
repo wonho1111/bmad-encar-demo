@@ -21,6 +21,7 @@ import Button from '@/components/ui/Button';
 // 서버가 강제하는 한계를 클라이언트에서 미리 지켜 422를 자초하지 않는다.
 const MAX_CONTEXT_TURNS = 12; // 최근 12턴만 동봉(초과분 잘라냄)
 const MAX_CONTENT_LENGTH = 2000; // 각 턴 content 최대 2000자(초과 시 절단)
+const MAX_QUERY_LENGTH = 1000; // 질의 최대 1000자(서버 SearchRequest.query 상한과 동일 — 초과 시 클라에서 미리 차단)
 
 // 화면에 쌓이는 대화 한 줄. assistant 턴만 매물카드(listings)를 가질 수 있다.
 type ChatMessage = {
@@ -38,6 +39,10 @@ type ChatMessage = {
  */
 export function buildContext(messages: ChatMessage[]): ConversationTurn[] {
   return messages
+    // 내용이 빈(공백뿐인) 턴은 먼저 제거한다. 서버 ConversationTurn.content는 최소 1자를 요구하므로,
+    // 예컨대 답변이 비어 있던 assistant 턴(content="")을 그대로 동봉하면 다음 질의가 통째로 422로 거절된다
+    // (멀쩡한 질의인데 "질문 형식이 올바르지 않습니다"가 떠 대화가 막히는 오염). 빈 턴을 빼 이를 막는다.
+    .filter((m) => m.content.trim() !== '')
     .slice(-MAX_CONTEXT_TURNS) // 최근 N턴
     .map((m) => ({
       role: m.role,
@@ -56,6 +61,13 @@ export default function ChatAssistant() {
     e.preventDefault();
     const query = input.trim();
     if (query === '' || loading) return; // 빈 질의·중복 전송 차단(클라 1차 검증).
+
+    // 질의가 서버 상한(1000자)을 넘으면, 그대로 보내봐야 422가 떠 "질문 형식이 올바르지 않습니다"라는
+    // 원인 모를 안내만 받는다. 길이 초과를 클라에서 먼저 잡아 "왜 막혔는지"를 또렷이 알려준다(fail-loud).
+    if (query.length > MAX_QUERY_LENGTH) {
+      setError(`질문이 너무 깁니다. ${MAX_QUERY_LENGTH}자 이내로 줄여 다시 시도해주세요.`);
+      return;
+    }
 
     setError(null);
     // 이번 질의 직전까지의 대화를 context로(중복 금지 — 방금 입력한 query는 context가 아니라 query로 보낸다).
