@@ -23,6 +23,9 @@ from sqlparse.tokens import DDL, DML
 #   · MAX_LIMIT: 과도 조회("차 보여줘")를 막는 절대 안전 상한(연구 §4.3). 초과 생성 시 거부.
 DEFAULT_LIMIT = 5           # 기본 추천 개수 — brief "약 5개" 정합
 MAX_LIMIT = 50             # 데모 안전 상한 — 초과 생성 시 거부(연구 §4.3)
+# OFFSET 안전 상한 — 과도한 페이지네이션(예: OFFSET 999999)으로 DB를 훑는 것을 막는다.
+#   데모 데이터 규모상 이 이상 건너뛸 일이 없으므로 초과 시 거부한다(MAX_LIMIT와 동일 스타일).
+MAX_OFFSET = 1000          # 데모 안전 상한 — 초과 생성 시 거부
 
 # 화이트리스트 — listings 단일 테이블만 허용(0002_listings.sql 단일출처).
 ALLOWED_TABLES = {"listings"}
@@ -152,10 +155,29 @@ def validate_select_sql(sql: str) -> str:
             "판매중 매물만 조회할 수 있도록 status = 'on_sale' 조건이 필요합니다.",
         )
 
-    # ── 5) LIMIT 검사·주입 ─────────────────────────────────────────
-    limit_match = re.search(r"\blimit\s+(\d+)", cleaned, re.IGNORECASE)
+    # ── 5) OFFSET 상한 검사 ────────────────────────────────────────
+    # OFFSET은 "앞에서 N건 건너뛰기". 상한이 없으면 OFFSET 999999처럼 DB를 통째로 훑는
+    # 우회 조회가 통과한다. 부호([-+]?)까지 잡아 음수/과도한 값을 모두 거부한다(MAX_LIMIT와 동일 정책).
+    offset_match = re.search(r"\boffset\s+([-+]?\d+)", cleaned, re.IGNORECASE)
+    if offset_match:
+        off = int(offset_match.group(1))
+        if off < 0 or off > MAX_OFFSET:
+            raise SqlGuardError(
+                "offset_exceeded",
+                f"건너뛸 수 있는 매물 수(OFFSET)는 최대 {MAX_OFFSET}건입니다.",
+            )
+
+    # ── 6) LIMIT 검사·주입 ─────────────────────────────────────────
+    # 부호([-+]?)까지 함께 잡는다. 안 그러면 `LIMIT -1`이 "LIMIT 없음"으로 오인돼
+    #   `LIMIT -1 LIMIT 5`라는 실행 불가 SQL이 만들어진다(코드리뷰 후속 버그). 음수·0은 거부.
+    limit_match = re.search(r"\blimit\s+([-+]?\d+)", cleaned, re.IGNORECASE)
     if limit_match:
         n = int(limit_match.group(1))
+        if n <= 0:
+            raise SqlGuardError(
+                "limit_invalid",
+                "LIMIT은 1 이상의 값이어야 합니다.",
+            )
         if n > MAX_LIMIT:
             raise SqlGuardError(
                 "limit_exceeded",
@@ -166,5 +188,5 @@ def validate_select_sql(sql: str) -> str:
         # LIMIT 없으면 끝에 append — append는 결정론적으로 안전(WHERE 변형 위험 없음).
         normalized = f"{cleaned} LIMIT {DEFAULT_LIMIT}"
 
-    # ── 6) 통과 — 정규화된 안전 SQL 반환 ──────────────────────────
+    # ── 7) 통과 — 정규화된 안전 SQL 반환 ──────────────────────────
     return normalized

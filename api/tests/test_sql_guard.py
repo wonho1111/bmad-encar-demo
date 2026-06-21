@@ -9,6 +9,7 @@ import pytest
 from app.db.sql_guard import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    MAX_OFFSET,
     SqlGuardError,
     validate_select_sql,
 )
@@ -150,6 +151,43 @@ def test_limit_at_cap_passes():
     sql = f"SELECT id FROM listings WHERE status='on_sale' LIMIT {MAX_LIMIT}"
     out = validate_select_sql(sql)
     assert f"LIMIT {MAX_LIMIT}" in out
+
+
+# ── LIMIT 음수·0 거부 (코드리뷰 후속: 이중 LIMIT 버그) ─────────────
+def test_negative_limit_rejected():
+    # 예전엔 음수가 "LIMIT 없음"으로 오인돼 `LIMIT -1 LIMIT 5`라는 실행 불가 SQL이 나왔다.
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT -1"
+    assert _code(sql) == "limit_invalid"
+
+
+def test_zero_limit_rejected():
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 0"
+    assert _code(sql) == "limit_invalid"
+
+
+# ── OFFSET 상한 (코드리뷰 후속: OFFSET 무상한 버그) ────────────────
+def test_offset_within_cap_passes():
+    # 정상 페이지네이션(LIMIT 5 OFFSET 10)은 과차단 없이 통과해야 한다.
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 10"
+    out = validate_select_sql(sql)
+    assert "OFFSET 10" in out
+    assert "LIMIT 5" in out
+
+
+def test_offset_at_cap_passes():
+    sql = f"SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET {MAX_OFFSET}"
+    out = validate_select_sql(sql)
+    assert f"OFFSET {MAX_OFFSET}" in out
+
+
+def test_excessive_offset_rejected():
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 999999"
+    assert _code(sql) == "offset_exceeded"
+
+
+def test_negative_offset_rejected():
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET -1"
+    assert _code(sql) == "offset_exceeded"
 
 
 # ── 빈 입력 ────────────────────────────────────────────────────────

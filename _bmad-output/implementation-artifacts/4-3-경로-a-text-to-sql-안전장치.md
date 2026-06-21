@@ -279,3 +279,4 @@ claude-opus-4-8[1m] (dev-story 워크플로우). 생성 LLM: `gemini-flash-lates
 | 2026-06-21 | Story 4.3 컨텍스트 작성 — 경로 A Text-to-SQL + sql_guard. OI2=제약 Chain+결정론적 가드 확정 | Status → ready-for-dev |
 | 2026-06-21 | 경로 A 구현 — sql_guard(20 테스트)·sql_rag_node·/ai/search 실연결. 라이브 생성·실행·단위정규화·FR11(sold 제외) 검증. content 블록 파싱 버그 수정. 33 tests passed | Status → review |
 | 2026-06-21 | code-review 통과 — patch 5건 반영(OR우회 차단·서브쿼리 차단·리터럴 키워드 오탐 수정·PsycopgError 재시도 제거·LIMIT 5/50 분리[brief "약5개" 정합]) + 가드 테스트 보강. 43 tests passed | Status → done |
+| 2026-06-22 | code-review 후속: sql_guard 음수 LIMIT·OFFSET 상한 보강(사용자 결정) — `LIMIT -1`/`LIMIT 0` 거부, OFFSET MAX_OFFSET(1000) 상한·음수 거부. 경계 테스트 6건 추가. 141 passed/3 skipped | — |
