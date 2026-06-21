@@ -1,6 +1,6 @@
 # Story 4.7: AI 검색 UI (FR12)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -233,6 +233,22 @@ claude-opus-4-8[1m] (dev-story 워크플로우). 백엔드 AI: 기존 `/ai/searc
 ## Change Log
 
 - 2026-06-21: 4.7 AI 검색 UI(FR12·FR18) 구현 — `/ai` 채팅 화면 + `lib/api/aiSearch.ts`(Bearer 인증 호출) + `ChatAssistant`(멀티턴 context 클라이언트 보관·동봉). 매물카드는 ListingCard 재사용(클릭→상세 이동). proxy `/ai` 보호 + 홈 진입 링크. tsc/eslint/build 통과. Playwright 라이브 E2E: 단일턴 3건·카드 클릭 상세 이동·멀티턴 context 동봉(request body 캡처)·무상태 초기화·에러/롤백 확인. Gemini 무료 쿼터(20/day) 초과 시 멀티턴 answer 라이브는 간헐 429(코드 무관, escalate). Status → review.
+
+## Code Review (4-7) — 통과
+
+3레이어 adversarial 리뷰(Blind Hunter·Edge Case Hunter·Acceptance Auditor) 실행. AC1~AC5 전부 PASS, 범위 밖(백엔드·DB저장·스트리밍·새 카드·새 의존성·TanStack) 위반 0. 적용 패치 3건(커밋 `7301513`):
+
+- **[Patch] 응답 매물 원소 검증(aiSearch.ts)** — 3레이어 공통 지적(High). `Array.isArray`만 보던 것을 `isValidListing`로 7필드·타입까지 검사해 깨진 원소를 제외. 서버가 `id`/`price`/`mileage` 빠진 매물을 주면 `ListingCard`가 렌더 중(`price.toLocaleString`) 터지고 try/catch 밖이라 대화 화면 전체가 날아가던 위험 차단.
+- **[Patch] 빈 맥락턴 제거(buildContext)** — Edge Case(High). 빈 `answer`로 만들어진 assistant 턴(content="")이 다음 질의의 `context`에 실리면 서버 `ConversationTurn.content min_length=1` 위반으로 멀쩡한 질의가 422로 막히던 "대화 오염"을 `filter(content.trim()!=="")`로 차단.
+- **[Patch] 질의 길이 클라 가드(handleSubmit)** — Edge Case(Medium). 서버 상한 1000자 초과 질의를 보내면 원인 모를 422가 뜨던 것을, 클라에서 먼저 잡아 "1000자 이내로" 한국어 안내(fail-loud).
+
+검증: `tsc --noEmit` 0 · `eslint`(변경파일) 0 · `npm run build` 성공(`/ai` dynamic 등록). 미해결 High/Critical 없음.
+
+**Defer(이번 미적용, 사유 명기):**
+- fetch 타임아웃/AbortController 부재 — LLM 호출이 무한 대기 가능하나 취소 UI는 스트리밍과 함께 별도 스토리로 deferred(스펙 최소범위). 
+- 만료 토큰 401 후 재로그인 유도 없음 — 401은 AC5대로 한국어로 fail-loud 표면화됨. 자동 재인증 리다이렉트는 UX 개선으로 이연.
+
+**Decision(escalate, 사람 판단 필요): 없음.** (모든 패치가 일의적이라 자동 적용)
 
 ## Escalation (사람 결정/처리 필요)
 
