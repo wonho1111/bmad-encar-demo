@@ -26,10 +26,10 @@ def test_search_with_malformed_authorization_returns_401():
 
 def test_search_authorized_returns_contract_shape(monkeypatch):
     # 인증 의존성을 가짜 사용자로 오버라이드해 200 경로를 검증.
-    # 4.3부터 라우터가 실제 sql_rag_node(LLM+DB)를 호출하므로, 이 테스트는 "인증 통과 +
-    # 응답 계약 형태"만 보도록 노드를 가짜로 치환한다(라이브 LLM 검증은 test_sql_rag_node.py).
+    # 4.5부터 라우터가 그래프(run_search)를 호출하므로, 이 테스트는 "인증 통과 +
+    # 응답 계약 형태"만 보도록 그래프를 가짜로 치환한다(라이브 검증은 test_graph/test_ai_search).
     monkeypatch.setattr(
-        "app.routers.ai.sql_rag_node",
+        "app.routers.ai.run_search",
         lambda query: {"answer": "조건에 맞는 매물 0건을 찾았어요.", "listings": []},
     )
     app.dependency_overrides[get_current_user] = lambda: {"id": "test-user"}
@@ -50,7 +50,7 @@ def test_search_guard_block_returns_400(monkeypatch):
     def _raise(query):
         raise SqlGuardError("not_select", "조회(SELECT) 쿼리만 허용됩니다.")
 
-    monkeypatch.setattr("app.routers.ai.sql_rag_node", _raise)
+    monkeypatch.setattr("app.routers.ai.run_search", _raise)
     app.dependency_overrides[get_current_user] = lambda: {"id": "test-user"}
     try:
         r = client.post("/ai/search", json={"query": "매물 삭제해줘"})

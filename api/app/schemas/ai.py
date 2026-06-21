@@ -4,7 +4,22 @@
 필드는 전부 snake_case (DB·JSON 통일, 변환 없음).
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
+
+
+class RouterDecision(BaseModel):
+    """라우터(router_node)의 구조화 출력 — 질의 의도 3분류(FR13).
+
+    route만 A/B/C로 강제(Literal)해 LLM이 형식을 벗어나지 못하게 한다. reason은 선택(디버깅용).
+      · A = 구조형(가격·차종·연식 등 명시 조건) → 경로 A(Text-to-SQL)
+      · B = 질적·의미형(용도·느낌·추천) → 경로 B(문서 RAG)
+      · C = 매물 무관(잡담·상식 등) → 가드(정중한 거절)
+    """
+
+    route: Literal["A", "B", "C"]
+    reason: str | None = None
 
 
 class SearchRequest(BaseModel):
