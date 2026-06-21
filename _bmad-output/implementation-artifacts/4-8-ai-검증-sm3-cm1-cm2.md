@@ -1,6 +1,6 @@
 # Story 4.8: AI 검증 — SM3·CM1·CM2 합격 판정
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -156,3 +156,4 @@ claude-opus-4-8[1m]
 ## Change Log
 
 - 2026-06-22: 4.8 구현 — OI5 데모 질의셋 기반 SM3·CM1·CM2 합격 판정 자산 추가(결정론 판정 44 테스트 + 라이브 스모크 3, 전체 135 passed/3 skipped, 회귀 0). 앱 코드 변경 없음. Status → review.
+- 2026-06-22: code-review 통과(병렬 3레이어: Blind Hunter·Edge Case Hunter·Acceptance Auditor). 패치 3건 자동 반영(commit 47f8e66) — CM1 그래프-경로 단언을 `== _GUARD_ANSWER` 정확 일치로 강화, 서브쿼리 코퍼스 주석 정정, ③ "AB" 라벨 정합 명시. High/심각 무. 앱코드 사전이슈 2건(sql_guard `LIMIT -1` 이중 LIMIT·OFFSET 무상한)은 4.8 범위 밖이라 escalate. pytest 135 passed/3 skipped. Status → done.
