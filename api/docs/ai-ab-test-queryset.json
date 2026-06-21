@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "purpose": "Gemini 생성모델 A/B 실측 테스트(Phase B)용 질의셋. 각 질의의 기대 경로(A=Text-to-SQL, B=문서RAG, C=거절)와 검증된 기대 결과를 라벨링.",
+    "data_snapshot": "listings 100건(on_sale 94), guide_documents 12개 기준. 기대결과는 2026-06 실DB 카운트로 검증함.",
+    "scoring_hint": "라우팅 정확도 = expected_route 일치율. 결과 정확도 = Path A는 expected_ids/expected_top 일치, Path B는 expected_doc 포함 여부, Path C는 거절 여부.",
+    "default_limit": 5
+  },
+  "single": [
+    {"id": "A1", "route": "A", "query": "3천만원 이하 SUV 보여줘",
+     "expected": "body_type=SUV AND price<=30,000,000 (총 23건 중 상위 5건). 가격 오름차순 추천."},
+    {"id": "A2", "route": "A", "query": "서울에 있는 2500만원 이하 차 찾아줘",
+     "expected": "region=서울 AND price<=25,000,000 (총 3건)."},
+    {"id": "A3", "route": "A", "query": "전기차 중에 5천만원 안 넘는 거 추천해줘",
+     "expected": "fuel=전기 AND price<=50,000,000 (총 12건)."},
+    {"id": "A4", "route": "A", "query": "디젤 SUV 7인승 이상으로 알려줘",
+     "expected": "fuel=디젤 AND body_type=SUV AND seats>=7 (총 7건)."},
+    {"id": "A5", "route": "A", "query": "1500만원 이하 가성비 좋은 차 있어?",
+     "expected": "price<=15,000,000 (총 22건 중 상위 5건)."},
+    {"id": "A6", "route": "A", "query": "사고 없는 하이브리드 중형 세단 보여줘",
+     "expected": "fuel=하이브리드 AND body_type=중형차 AND accident_free=true (하이브리드 중형 4건 중 무사고)."},
+    {"id": "A7", "route": "A", "query": "제일 싼 차 뭐야?",
+     "expected_top": "쉐보레 올란도 4,900,000원 (on_sale 최저가). 가격 오름차순 1위."},
+    {"id": "A8", "route": "A", "query": "가장 비싼 매물 하나 보여줘",
+     "expected_top": "테슬라 모델S 98,000,000원 (on_sale 최고가)."},
+    {"id": "A9", "route": "A", "query": "현대 SUV 중에 주행거리 3만km 이하인 거",
+     "expected": "manufacturer=현대 AND body_type=SUV AND mileage<30000."},
+    {"id": "A10", "route": "A", "query": "경기도에 있는 2022년식 이상 가솔린차 찾아줘",
+     "expected": "region=경기 AND year>=2022 AND fuel=가솔린."},
+
+    {"id": "B1", "route": "B", "query": "초보운전자 첫차로 뭐가 좋아?",
+     "expected_doc": "초보 운전자에게 적합한 차종"},
+    {"id": "B2", "route": "B", "query": "전기차 유지비 실제로 어때? 비싼가?",
+     "expected_doc": "전기차 충전·보조금·주행거리 이해 / 연료별 유지비와 연비 특성"},
+    {"id": "B3", "route": "B", "query": "패밀리카 고를 때 뭘 봐야 해?",
+     "expected_doc": "패밀리카로 무난한 차종 고르기"},
+    {"id": "B4", "route": "B", "query": "중고차 살 때 사고이력이랑 침수차 어떻게 확인해?",
+     "expected_doc": "사고이력·침수차·주행거리 조작 판별법"},
+    {"id": "B5", "route": "B", "query": "차 살 때 할부랑 리스 뭐가 달라?",
+     "expected_doc": "할부·리스·현금 구매 방식 비교"},
+    {"id": "B6", "route": "B", "query": "중고차 사면 취득세랑 자동차세 얼마나 나와?",
+     "expected_doc": "자동차 보험과 세금 기초"},
+    {"id": "B7", "route": "B", "query": "주행거리 많은 차 사도 괜찮을까?",
+     "expected_doc": "적정 주행거리와 연식 판단 기준"},
+
+    {"id": "C1", "route": "C", "query": "오늘 서울 날씨 어때?",
+     "expected": "정중한 거절(중고차 검색 범위 밖). LLM 호출 없이 고정 템플릿."},
+    {"id": "C2", "route": "C", "query": "김치찌개 맛있게 끓이는 법 알려줘",
+     "expected": "정중한 거절."},
+    {"id": "C3", "route": "C", "query": "비트코인 지금 사도 돼?",
+     "expected": "정중한 거절."}
+  ],
+  "multiturn": [
+    {"id": "M1", "turns": [
+       {"query": "3천만원 이하 SUV 보여줘", "route": "A", "expected": "SUV AND price<=30M (23건)"},
+       {"query": "그중에 서울에 있는 것만", "route": "A", "expected": "+ region=서울 (3건)"},
+       {"query": "제일 싼 거 하나만 알려줘", "route": "A", "expected_top": "현대 코나 23,500,000원"}
+     ]},
+    {"id": "M2", "turns": [
+       {"query": "전기차 보여줘", "route": "A", "expected": "fuel=전기 (13건)"},
+       {"query": "5천만원 이하로", "route": "A", "expected": "+ price<=50M (12건)"},
+       {"query": "그중 제일 저렴한 거", "route": "A", "expected_top": "현대 코나 일렉트릭 26,000,000원"}
+     ]},
+    {"id": "M3", "turns": [
+       {"query": "초보운전자한테 맞는 차 추천해줘", "route": "B", "expected_doc": "초보 운전자에게 적합한 차종"},
+       {"query": "그럼 그런 차 중에 1500만원 이하 실제 매물 보여줄래?", "route": "A", "expected": "저가(경차/소형 위주) price<=15M — 경로 전환(B→A) 테스트"}
+     ]},
+    {"id": "M4", "turns": [
+       {"query": "연비 좋은 하이브리드 세단 찾아줘", "route": "A", "expected": "fuel=하이브리드 AND 중형차 (4건)"},
+       {"query": "그중에 사고 없는 걸로만", "route": "A", "expected": "+ accident_free=true"}
+     ]}
+  ]
+}
