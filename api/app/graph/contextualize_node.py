@@ -22,8 +22,22 @@ import logging
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import require, settings
+from app.schemas.ai import MAX_QUERY_LENGTH
 
 logger = logging.getLogger(__name__)
+
+# 폴백으로 "흡수해도 되는" 예상 실패만 좁혀 잡는다(D1).
+#   · ConnectionError/TimeoutError = 네트워크·전송 계열 일시 오류
+#   · ValueError/KeyError/AttributeError 등 코드 버그는 여기에 없음 → 폴백에 묻히지 않고 전파됨
+# langchain/google 클라이언트가 던지는 예외 타입이 버전마다 달라, 표준 transport 예외를
+# 기본으로 두고 (있으면) google 트랜스포트 예외도 합친다. import 실패해도 표준 예외로는 동작.
+_EXPECTED_LLM_ERRORS: tuple[type[Exception], ...] = (ConnectionError, TimeoutError, OSError)
+try:  # google API 클라이언트의 전송 예외(설치돼 있으면)도 폴백 대상에 포함
+    from google.api_core import exceptions as _gax_exc  # type: ignore
+
+    _EXPECTED_LLM_ERRORS = _EXPECTED_LLM_ERRORS + (_gax_exc.GoogleAPIError,)
+except Exception:  # 패키지 부재·구조 변경 시엔 표준 예외만으로 동작(과한 의존 금지)
+    pass
 
 # 재작성 전용 시스템 프롬프트 — 지시어만 치환하고 새 조건을 지어내지 않게 못 박는다(함정 #3).
 _SYSTEM_PROMPT = """너는 중고차 검색 대화의 "질의 재작성기"다.
@@ -111,13 +125,28 @@ def contextualize_query(query: str, context: list | None = None) -> str:
     try:
         resp = llm.invoke([("system", _SYSTEM_PROMPT), ("human", human)])
         rewritten = _extract_text(resp.content).strip()
-    except Exception as exc:  # LLM 일시 오류·형식이탈 → 원 질의 폴백(키 부재는 위 require가 이미 처리)
+    # D1: 광범위 except를 좁힌다 — LLM 호출/전송 계열 "예상한 실패"만 흡수해 원 질의로 폴백한다.
+    #   AttributeError·TypeError 같은 프로그래밍 오류는 여기서 잡지 않으므로, 코드 버그가
+    #   조용한 폴백에 묻히지 않고 그대로 전파돼 드러난다(복원력은 유지하되 버그는 숨기지 않음).
+    except _EXPECTED_LLM_ERRORS as exc:  # 네트워크·전송 일시 오류 → 원 질의 폴백(키 부재는 위 require가 처리)
         logger.warning("contextualize 재작성 실패 → 원 질의 폴백: %r", exc)
         return query
 
     if not rewritten:
         logger.warning("contextualize 재작성 결과 공백 → 원 질의 폴백 (query=%r)", query)
         return query
+
+    # D2: 맥락을 합쳐 재작성하면 query 입력 상한(MAX_QUERY_LENGTH)을 넘을 수 있다.
+    #   상한 초과분이 다운스트림(라우터·LLM)으로 새지 않도록 안전하게 절단한다.
+    #   (원 query는 스키마가 이미 상한 안으로 보장하므로, 넘치는 건 재작성으로 늘어난 경우뿐.)
+    if len(rewritten) > MAX_QUERY_LENGTH:
+        logger.warning(
+            "contextualize 재작성 결과가 상한(%d자) 초과(%d자) → %d자로 절단",
+            MAX_QUERY_LENGTH, len(rewritten), MAX_QUERY_LENGTH,
+        )
+        rewritten = rewritten[:MAX_QUERY_LENGTH].strip()
+        if not rewritten:  # 절단 결과가 공백뿐이면 원 질의로 폴백(조용한 빈 결과 금지)
+            return query
 
     logger.info("contextualize 질의=%r (+맥락 %d턴) → 재작성=%r", query, len(context), rewritten)
     return rewritten

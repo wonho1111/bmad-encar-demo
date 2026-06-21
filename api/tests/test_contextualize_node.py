@@ -65,14 +65,50 @@ def test_blank_rewrite_falls_back_to_original(monkeypatch):
     assert contextualize_query("흰색만", ctx) == "흰색만"
 
 
-def test_llm_exception_falls_back_to_original(monkeypatch):
+def test_llm_transport_exception_falls_back_to_original(monkeypatch):
+    # LLM 호출/전송 계열(네트워크) 일시 오류는 "예상한 실패"로 흡수 → 원 query 폴백.
     class _RaisingLLM:
         def invoke(self, messages):
-            raise RuntimeError("일시 오류")
+            raise ConnectionError("일시적 네트워크 오류")
 
     monkeypatch.setattr(contextualize_node, "_llm", lambda: _RaisingLLM())
     ctx = _ctx(("user", "3천만원 이하 SUV"))
     assert contextualize_query("흰색만", ctx) == "흰색만"
+
+
+def test_programming_error_propagates_not_swallowed(monkeypatch):
+    # D1: 프로그래밍 오류(코드 버그)는 조용한 폴백에 묻히지 않고 그대로 전파돼야 한다.
+    class _BuggyLLM:
+        def invoke(self, messages):
+            raise AttributeError("코드 버그(예: 잘못된 속성 접근)")
+
+    monkeypatch.setattr(contextualize_node, "_llm", lambda: _BuggyLLM())
+    ctx = _ctx(("user", "3천만원 이하 SUV"))
+    with pytest.raises(AttributeError):
+        contextualize_query("흰색만", ctx)
+
+
+def test_rewrite_over_length_is_truncated(monkeypatch):
+    # D2: 맥락을 합쳐 재작성한 결과가 query 입력 상한을 넘으면 안전하게 절단한다.
+    from app.schemas.ai import MAX_QUERY_LENGTH
+
+    long_rewrite = "가" * (MAX_QUERY_LENGTH + 50)
+    monkeypatch.setattr(contextualize_node, "_llm", lambda: _FakeLLM(long_rewrite))
+    ctx = _ctx(("user", "3천만원 이하 SUV"))
+    out = contextualize_query("그 중 싼 거", ctx)
+    assert len(out) <= MAX_QUERY_LENGTH
+
+
+def test_rewrite_at_exact_limit_kept(monkeypatch):
+    # 경계 케이스 — 정확히 상한 길이면 절단하지 않고 그대로 둔다.
+    from app.schemas.ai import MAX_QUERY_LENGTH
+
+    exact = "나" * MAX_QUERY_LENGTH
+    monkeypatch.setattr(contextualize_node, "_llm", lambda: _FakeLLM(exact))
+    ctx = _ctx(("user", "3천만원 이하 SUV"))
+    out = contextualize_query("그 중 싼 거", ctx)
+    assert out == exact
+    assert len(out) == MAX_QUERY_LENGTH
 
 
 def test_missing_key_fails_loud_only_with_context(monkeypatch):
