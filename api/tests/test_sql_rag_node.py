@@ -2,7 +2,7 @@
 
 실제 생성·실행(라이브 LLM+DB)은 dev-story 라이브 검증에서 눈으로 확인한다(Completion Notes).
 여기서는 LLM 응답 파싱·카드 매핑처럼 결정론적인 부분만 격리해 테스트한다.
-특히 _content_to_text는 gemini-flash-latest가 .content를 블록 리스트로 줄 때의 회귀 방지.
+특히 _content_to_text는 일부 Gemini 모델이 .content를 블록 리스트로 줄 때의 회귀 방지.
 """
 
 from app.graph.sql_rag_node import _content_to_text, _strip_sql
@@ -16,7 +16,7 @@ def test_content_to_text_plain_string():
 
 
 def test_content_to_text_block_list():
-    # gemini-flash-latest 형식: [{"type":"text","text":"..."}] → text만 추출.
+    # 일부 Gemini 모델 형식: [{"type":"text","text":"..."}] → text만 추출.
     content = [{"type": "text", "text": "SELECT id FROM listings", "extras": {"x": 1}}]
     assert _content_to_text(content) == "SELECT id FROM listings"
 

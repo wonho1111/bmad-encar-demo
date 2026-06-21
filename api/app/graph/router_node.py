@@ -52,7 +52,7 @@ _LISTING_SIGNALS = (
 def _llm() -> ChatGoogleGenerativeAI:
     """분류용 LLM. temperature=0으로 같은 질의에 같은 분류가 나오게 한다(재현성)."""
     return ChatGoogleGenerativeAI(
-        model=settings.gemini_generation_model,  # gemini-flash-latest
+        model=settings.gemini_generation_model,  # gemini-3.1-flash-lite (env로 교체 가능)
         google_api_key=require("GEMINI_API_KEY", settings.gemini_api_key),
         temperature=0,
     )

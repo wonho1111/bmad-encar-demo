@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     # Gemini — 4.2+에서 사용 (4.1 미사용)
     gemini_api_key: str | None = None
     gemini_embedding_dim: int = 768
-    gemini_generation_model: str = "gemini-flash-latest"
+    # 별칭(gemini-flash-latest) 대신 명시 버전 고정 — 비용·재현성 안정화(데모/유료 단계).
+    gemini_generation_model: str = "gemini-3.1-flash-lite"
     gemini_embedding_model: str = "gemini-embedding-001"
 
 
