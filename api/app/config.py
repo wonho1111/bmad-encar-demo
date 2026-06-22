@@ -21,8 +21,11 @@ class Settings(BaseSettings):
     # 읽기전용 DB 직결 (Session pooler 문자열)
     database_url: str | None = None
 
-    # CORS 허용 오리진(쉼표 구분)
+    # CORS 허용 오리진(쉼표 구분, 정확 매칭)
     cors_origins: str = "http://localhost:3000"
+    # CORS 정규식 허용(선택) — preview처럼 매번 바뀌는 오리진을 패턴으로 허용한다.
+    #   예: ^https://bmad-encar-demo-.*\.vercel\.app$  (미설정(None)이면 정확 매칭만 사용)
+    cors_origin_regex: str | None = None
 
     # Gemini — 4.2+에서 사용 (4.1 미사용)
     gemini_api_key: str | None = None

@@ -24,11 +24,15 @@ app = FastAPI(
     "클라이언트는 Supabase에 직접 접근하고, 이 API는 AI 검색에만 쓰인다(읽기전용).",
 )
 
-# CORS — 개발 웹(localhost:3000)에서 브라우저 호출 허용.
+# CORS — 웹에서 브라우저 호출 허용.
+#   · cors_origins: 정확히 일치해야 하는 오리진 목록(운영 도메인·localhost).
+#   · cors_origin_regex: preview처럼 매번 바뀌는 오리진을 패턴으로 허용(개발 환경에서 사용).
+#     설정 시 정확 목록과 OR로 동작한다(둘 중 하나만 맞아도 허용).
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
