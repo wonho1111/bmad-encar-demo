@@ -49,6 +49,9 @@ _SQL_KEYWORDS = {
     "select", "from", "where", "and", "or", "not", "in", "is", "null",
     "true", "false", "like", "ilike", "between", "order", "by", "asc",
     "desc", "limit", "offset", "as", "on", "distinct",
+    # any: 배열 멤버십 검사용(`'스마트키' = ANY(options)`). 서브쿼리(`= ANY(SELECT ...)`)는
+    #   위 5)에서 select 2개 이상으로 이미 차단되므로, 배열 형태만 통과한다(안전).
+    "any",
 }
 
 
