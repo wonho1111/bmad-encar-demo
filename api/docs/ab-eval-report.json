@@ -1,0 +1,1615 @@
+{
+  "baseline": "gemini-3.1-flash-lite",
+  "candidate": "gemini-2.5-flash-lite",
+  "verdict": {
+    "winner": "gemini-2.5-flash-lite",
+    "reason": "비용 $0.0779 vs $0.0280",
+    "tier": "cost"
+  },
+  "regression_block": true,
+  "summaries": [
+    {
+      "name": "gemini-3.1-flash-lite",
+      "result_mean": 0.9382716049382717,
+      "result_n": 27,
+      "routing_correct": 50,
+      "routing_total": 55,
+      "flaky_n": 0,
+      "contamination": 0,
+      "soft_obs": 1,
+      "deadend": 0,
+      "gate_pass": true,
+      "tokens_in": 237666,
+      "tokens_out": 12339,
+      "cost_usd": 0.077925,
+      "latency_ms_mean": 5599.344220454524
+    },
+    {
+      "name": "gemini-2.5-flash-lite",
+      "result_mean": 0.8790123456790124,
+      "result_n": 27,
+      "routing_correct": 48,
+      "routing_total": 55,
+      "flaky_n": 0,
+      "contamination": 0,
+      "soft_obs": 1,
+      "deadend": 0,
+      "gate_pass": true,
+      "tokens_in": 224592,
+      "tokens_out": 13905,
+      "cost_usd": 0.028021200000000003,
+      "latency_ms_mean": 5981.016093181813
+    }
+  ],
+  "detail": {
+    "gemini-3.1-flash-lite": [
+      {
+        "id": "A1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.21739130434782608,
+          "jaccard": 0.21739130434782608,
+          "returned_n": 5,
+          "golden_n": 23
+        }
+      },
+      {
+        "id": "A2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        }
+      },
+      {
+        "id": "A3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.4166666666666667,
+          "jaccard": 0.4166666666666667,
+          "returned_n": 5,
+          "golden_n": 12
+        }
+      },
+      {
+        "id": "A4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.7142857142857143,
+          "jaccard": 0.7142857142857143,
+          "returned_n": 5,
+          "golden_n": 7
+        }
+      },
+      {
+        "id": "A5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.22727272727272727,
+          "jaccard": 0.22727272727272727,
+          "returned_n": 5,
+          "golden_n": 22
+        }
+      },
+      {
+        "id": "A6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        }
+      },
+      {
+        "id": "A7",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 5,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "A8",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "A9",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        }
+      },
+      {
+        "id": "A10",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 2,
+          "golden_n": 2
+        }
+      },
+      {
+        "id": "A11",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "jaccard": 0.5,
+          "returned_n": 5,
+          "golden_n": 10
+        }
+      },
+      {
+        "id": "A12",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.3333333333333333,
+          "jaccard": 0.3333333333333333,
+          "returned_n": 5,
+          "golden_n": 15
+        }
+      },
+      {
+        "id": "A13",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        }
+      },
+      {
+        "id": "A14",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        }
+      },
+      {
+        "id": "A15",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        }
+      },
+      {
+        "id": "A16",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "B1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "B2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "B4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B7",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "C1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "G1",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "G2",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "jaccard": 0.0,
+          "returned_n": 0,
+          "golden_n": 10
+        }
+      },
+      {
+        "id": "G3",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.35714285714285715,
+          "jaccard": 0.35714285714285715,
+          "returned_n": 5,
+          "golden_n": 14
+        }
+      },
+      {
+        "id": "G4",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": false
+      },
+      {
+        "id": "G5",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.1724137931034483,
+          "jaccard": 0.1724137931034483,
+          "returned_n": 5,
+          "golden_n": 29
+        }
+      },
+      {
+        "id": "G6",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.45454545454545453,
+          "jaccard": 0.45454545454545453,
+          "returned_n": 5,
+          "golden_n": 11
+        }
+      },
+      {
+        "id": "M1",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "jaccard": 1.0,
+              "returned_n": 3,
+              "golden_n": 3
+            }
+          },
+          {
+            "turn": 2,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 0.0,
+              "returned_n": 1,
+              "golden_n": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "M2",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.38461538461538464,
+              "jaccard": 0.38461538461538464,
+              "returned_n": 5,
+              "golden_n": 13
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "jaccard": 0.4166666666666667,
+              "returned_n": 5,
+              "golden_n": 12
+            }
+          },
+          {
+            "turn": 2,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 1.0,
+              "returned_n": 5,
+              "golden_n": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "M3",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.35714285714285715,
+              "jaccard": 0.35714285714285715,
+              "returned_n": 5,
+              "golden_n": 14
+            }
+          },
+          {
+            "turn": 1,
+            "route": "B",
+            "route_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M4",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "B",
+            "route_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.5,
+              "jaccard": 0.5,
+              "returned_n": 5,
+              "golden_n": 10
+            }
+          }
+        ]
+      },
+      {
+        "id": "M5",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 0.6666666666666665,
+              "precision": 0.6,
+              "recall": 0.75,
+              "jaccard": 0.5,
+              "returned_n": 5,
+              "golden_n": 4
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 0.6666666666666665,
+              "precision": 0.6,
+              "recall": 0.75,
+              "jaccard": 0.5,
+              "returned_n": 5,
+              "golden_n": 4
+            }
+          }
+        ]
+      },
+      {
+        "id": "M6",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.625,
+              "jaccard": 0.625,
+              "returned_n": 5,
+              "golden_n": 8
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.02631578947368421,
+              "jaccard": 0.02631578947368421,
+              "returned_n": 1,
+              "golden_n": 38
+            }
+          }
+        ]
+      },
+      {
+        "id": "M7",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "B",
+            "route_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "soft_pricey": [
+              "a2a398f7-0baa-4f41-b889-ae44745f5925: price=42000000 >= 40000000 (소프트예산 위반)"
+            ],
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.7142857142857143,
+              "jaccard": 0.7142857142857143,
+              "returned_n": 5,
+              "golden_n": 7
+            }
+          }
+        ]
+      },
+      {
+        "id": "M8",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          }
+        ]
+      },
+      {
+        "id": "M9",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.8333333333333334,
+              "jaccard": 0.8333333333333334,
+              "returned_n": 5,
+              "golden_n": 6
+            }
+          },
+          {
+            "turn": 1,
+            "route": "C",
+            "route_ok": true
+          }
+        ]
+      }
+    ],
+    "gemini-2.5-flash-lite": [
+      {
+        "id": "A1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.21739130434782608,
+          "jaccard": 0.21739130434782608,
+          "returned_n": 5,
+          "golden_n": 23
+        }
+      },
+      {
+        "id": "A2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        }
+      },
+      {
+        "id": "A3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.4166666666666667,
+          "jaccard": 0.4166666666666667,
+          "returned_n": 5,
+          "golden_n": 12
+        }
+      },
+      {
+        "id": "A4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.7142857142857143,
+          "jaccard": 0.7142857142857143,
+          "returned_n": 5,
+          "golden_n": 7
+        }
+      },
+      {
+        "id": "A5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.22727272727272727,
+          "jaccard": 0.22727272727272727,
+          "returned_n": 5,
+          "golden_n": 22
+        }
+      },
+      {
+        "id": "A6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        }
+      },
+      {
+        "id": "A7",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": false,
+        "score": {
+          "mode": "topn",
+          "result": 0.0,
+          "returned_n": 5,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "A8",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "A9",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        }
+      },
+      {
+        "id": "A10",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 2,
+          "golden_n": 2
+        }
+      },
+      {
+        "id": "A11",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "jaccard": 0.5,
+          "returned_n": 5,
+          "golden_n": 10
+        }
+      },
+      {
+        "id": "A12",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.3333333333333333,
+          "jaccard": 0.3333333333333333,
+          "returned_n": 5,
+          "golden_n": 15
+        }
+      },
+      {
+        "id": "A13",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        }
+      },
+      {
+        "id": "A14",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        }
+      },
+      {
+        "id": "A15",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        }
+      },
+      {
+        "id": "A16",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "B1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "B2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "B4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "B6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "B7",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": false,
+        "doc_hit": false
+      },
+      {
+        "id": "C1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "C6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "C",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "G1",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": true
+      },
+      {
+        "id": "G2",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "jaccard": 0.5,
+          "returned_n": 5,
+          "golden_n": 10
+        }
+      },
+      {
+        "id": "G3",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.35714285714285715,
+          "jaccard": 0.35714285714285715,
+          "returned_n": 5,
+          "golden_n": 14
+        }
+      },
+      {
+        "id": "G4",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "B",
+        "route_ok": true,
+        "doc_hit": false
+      },
+      {
+        "id": "G5",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "jaccard": 0.0,
+          "returned_n": 0,
+          "golden_n": 29
+        }
+      },
+      {
+        "id": "G6",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "A",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.45454545454545453,
+          "jaccard": 0.45454545454545453,
+          "returned_n": 5,
+          "golden_n": 11
+        }
+      },
+      {
+        "id": "M1",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "jaccard": 1.0,
+              "returned_n": 3,
+              "golden_n": 3
+            }
+          },
+          {
+            "turn": 2,
+            "route": "B",
+            "route_ok": false,
+            "score": {
+              "mode": "topn",
+              "result": 0.0,
+              "returned_n": 5,
+              "golden_n": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "M2",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.38461538461538464,
+              "jaccard": 0.38461538461538464,
+              "returned_n": 5,
+              "golden_n": 13
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "jaccard": 0.4166666666666667,
+              "returned_n": 5,
+              "golden_n": 12
+            }
+          },
+          {
+            "turn": 2,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 1.0,
+              "returned_n": 1,
+              "golden_n": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "M3",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "B",
+            "route_ok": false,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.35714285714285715,
+              "jaccard": 0.35714285714285715,
+              "returned_n": 5,
+              "golden_n": 14
+            }
+          },
+          {
+            "turn": 1,
+            "route": "B",
+            "route_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M4",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "B",
+            "route_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 0.4,
+              "precision": 0.4,
+              "recall": 0.2,
+              "jaccard": 0.15384615384615385,
+              "returned_n": 5,
+              "golden_n": 10
+            }
+          }
+        ]
+      },
+      {
+        "id": "M5",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 0.6666666666666665,
+              "precision": 0.6,
+              "recall": 0.75,
+              "jaccard": 0.5,
+              "returned_n": 5,
+              "golden_n": 4
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 0.6666666666666665,
+              "precision": 0.6,
+              "recall": 0.75,
+              "jaccard": 0.5,
+              "returned_n": 5,
+              "golden_n": 4
+            }
+          }
+        ]
+      },
+      {
+        "id": "M6",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 0.0,
+              "precision": 0.0,
+              "recall": 0.0,
+              "jaccard": 0.0,
+              "returned_n": 0,
+              "golden_n": 8
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.02631578947368421,
+              "jaccard": 0.02631578947368421,
+              "returned_n": 1,
+              "golden_n": 38
+            }
+          }
+        ]
+      },
+      {
+        "id": "M7",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "B",
+            "route_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "soft_pricey": [
+              "a2a398f7-0baa-4f41-b889-ae44745f5925: price=42000000 >= 40000000 (소프트예산 위반)"
+            ],
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.7142857142857143,
+              "jaccard": 0.7142857142857143,
+              "returned_n": 5,
+              "golden_n": 7
+            }
+          }
+        ]
+      },
+      {
+        "id": "M8",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          },
+          {
+            "turn": 1,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          }
+        ]
+      },
+      {
+        "id": "M9",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "A",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.8333333333333334,
+              "jaccard": 0.8333333333333334,
+              "returned_n": 5,
+              "golden_n": 6
+            }
+          },
+          {
+            "turn": 1,
+            "route": "C",
+            "route_ok": true
+          }
+        ]
+      }
+    ]
+  },
+  "final_adopt": "gemini-3.1-flash-lite"
+}

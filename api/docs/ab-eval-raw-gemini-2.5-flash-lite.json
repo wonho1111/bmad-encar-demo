@@ -1,0 +1,2404 @@
+{
+  "model": "gemini-2.5-flash-lite",
+  "runs": 3,
+  "results": {
+    "A1": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "2bc77650-0d0f-4014-b326-661f322d4029",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 6278.511499999695,
+        "tokens_in": 1752,
+        "tokens_out": 99,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "2bc77650-0d0f-4014-b326-661f322d4029",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5442.870500000026,
+        "tokens_in": 1752,
+        "tokens_out": 99,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "2bc77650-0d0f-4014-b326-661f322d4029",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5423.2875999996395,
+        "tokens_in": 1752,
+        "tokens_out": 99,
+        "turns": null
+      }
+    ],
+    "A2": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "latency_ms": 5413.0371999999625,
+        "tokens_in": 1764,
+        "tokens_out": 95,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "latency_ms": 5610.362399999758,
+        "tokens_in": 1764,
+        "tokens_out": 95,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "latency_ms": 6131.910699999935,
+        "tokens_in": 1764,
+        "tokens_out": 95,
+        "turns": null
+      }
+    ],
+    "A3": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "a2a398f7-0baa-4f41-b889-ae44745f5925",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+          "faaa369f-e373-4510-ba0f-a8d45ca26da7"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5575.185800000327,
+        "tokens_in": 1768,
+        "tokens_out": 96,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "a2a398f7-0baa-4f41-b889-ae44745f5925",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+          "faaa369f-e373-4510-ba0f-a8d45ca26da7"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5739.892099999452,
+        "tokens_in": 1768,
+        "tokens_out": 96,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "a2a398f7-0baa-4f41-b889-ae44745f5925",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+          "faaa369f-e373-4510-ba0f-a8d45ca26da7"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5585.659099999248,
+        "tokens_in": 1768,
+        "tokens_out": 96,
+        "turns": null
+      }
+    ],
+    "A4": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "347a87bb-a096-4c30-82e0-71d67e267fc6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 6730.030600000646,
+        "tokens_in": 1760,
+        "tokens_out": 94,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "347a87bb-a096-4c30-82e0-71d67e267fc6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5458.4930000000895,
+        "tokens_in": 1760,
+        "tokens_out": 94,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "347a87bb-a096-4c30-82e0-71d67e267fc6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5584.554900000512,
+        "tokens_in": 1760,
+        "tokens_out": 94,
+        "turns": null
+      }
+    ],
+    "A5": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "20b487d3-13ee-4e62-82f8-f12e5798d285",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5474.903799999993,
+        "tokens_in": 1764,
+        "tokens_out": 108,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "20b487d3-13ee-4e62-82f8-f12e5798d285",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5722.007299999859,
+        "tokens_in": 1764,
+        "tokens_out": 108,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "20b487d3-13ee-4e62-82f8-f12e5798d285",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5575.027300000329,
+        "tokens_in": 1764,
+        "tokens_out": 108,
+        "turns": null
+      }
+    ],
+    "A6": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "8be87cfa-d798-426c-b743-3c72b0f00867"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "latency_ms": 5463.790699999663,
+        "tokens_in": 1764,
+        "tokens_out": 105,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "8be87cfa-d798-426c-b743-3c72b0f00867"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "latency_ms": 5556.245599999784,
+        "tokens_in": 1764,
+        "tokens_out": 105,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "8be87cfa-d798-426c-b743-3c72b0f00867"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "latency_ms": 5242.072199999711,
+        "tokens_in": 1764,
+        "tokens_out": 105,
+        "turns": null
+      }
+    ],
+    "A7": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "'제일 싼 차 뭐야?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4875.92769999992,
+        "tokens_in": 685,
+        "tokens_out": 51,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "'제일 싼 차 뭐야?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4987.937400000192,
+        "tokens_in": 685,
+        "tokens_out": 51,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "'제일 싼 차 뭐야?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 5107.916799999657,
+        "tokens_in": 685,
+        "tokens_out": 51,
+        "turns": null
+      }
+    ],
+    "A8": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "4cc01bfd-46f7-4e93-b3de-358052bb213a"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 5459.328300000379,
+        "tokens_in": 1756,
+        "tokens_out": 75,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "4cc01bfd-46f7-4e93-b3de-358052bb213a"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 5322.234199999912,
+        "tokens_in": 1756,
+        "tokens_out": 75,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "4cc01bfd-46f7-4e93-b3de-358052bb213a"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 5457.319600000119,
+        "tokens_in": 1756,
+        "tokens_out": 75,
+        "turns": null
+      }
+    ],
+    "A9": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "50295f8b-a23e-4f04-b735-be87ca019716"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5516.619500000161,
+        "tokens_in": 1766,
+        "tokens_out": 108,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "50295f8b-a23e-4f04-b735-be87ca019716"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5474.79790000034,
+        "tokens_in": 1766,
+        "tokens_out": 108,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "50295f8b-a23e-4f04-b735-be87ca019716"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5247.188199999982,
+        "tokens_in": 1766,
+        "tokens_out": 108,
+        "turns": null
+      }
+    ],
+    "A10": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "94f21bc5-d530-4e08-b594-955de7e50601"
+        ],
+        "answer_last": "조건에 맞는 매물 2건을 찾았어요.",
+        "latency_ms": 5972.84050000053,
+        "tokens_in": 1772,
+        "tokens_out": 110,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "94f21bc5-d530-4e08-b594-955de7e50601"
+        ],
+        "answer_last": "조건에 맞는 매물 2건을 찾았어요.",
+        "latency_ms": 5338.378200000079,
+        "tokens_in": 1772,
+        "tokens_out": 110,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "94f21bc5-d530-4e08-b594-955de7e50601"
+        ],
+        "answer_last": "조건에 맞는 매물 2건을 찾았어요.",
+        "latency_ms": 5239.364099999875,
+        "tokens_in": 1772,
+        "tokens_out": 110,
+        "turns": null
+      }
+    ],
+    "A11": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "65f0b089-b03c-4263-923c-78d5f426e174",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5467.012600000089,
+        "tokens_in": 1760,
+        "tokens_out": 104,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "65f0b089-b03c-4263-923c-78d5f426e174",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5363.915400000224,
+        "tokens_in": 1760,
+        "tokens_out": 104,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "65f0b089-b03c-4263-923c-78d5f426e174",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5403.39270000004,
+        "tokens_in": 1760,
+        "tokens_out": 104,
+        "turns": null
+      }
+    ],
+    "A12": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "38ec1bab-983e-455e-a8e3-c1be96660884",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "9684a636-8aeb-4825-b991-ba77762d3c21"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5160.006999999496,
+        "tokens_in": 1766,
+        "tokens_out": 101,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "38ec1bab-983e-455e-a8e3-c1be96660884",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "9684a636-8aeb-4825-b991-ba77762d3c21"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5508.79630000054,
+        "tokens_in": 1766,
+        "tokens_out": 101,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "38ec1bab-983e-455e-a8e3-c1be96660884",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "9684a636-8aeb-4825-b991-ba77762d3c21"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5832.553100000041,
+        "tokens_in": 1766,
+        "tokens_out": 101,
+        "turns": null
+      }
+    ],
+    "A13": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "d5d7aa3e-4d26-49d0-b340-c066f7c3177a",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "0fbd0ee9-7200-4dca-bac7-0f52779d28bb"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "latency_ms": 5445.160599999326,
+        "tokens_in": 1762,
+        "tokens_out": 95,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "d5d7aa3e-4d26-49d0-b340-c066f7c3177a",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "0fbd0ee9-7200-4dca-bac7-0f52779d28bb"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "latency_ms": 5173.369099999945,
+        "tokens_in": 1762,
+        "tokens_out": 95,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "d5d7aa3e-4d26-49d0-b340-c066f7c3177a",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "0fbd0ee9-7200-4dca-bac7-0f52779d28bb"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "latency_ms": 5432.50850000004,
+        "tokens_in": 1762,
+        "tokens_out": 95,
+        "turns": null
+      }
+    ],
+    "A14": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "864e3492-6acf-482a-b3b3-f71b5d84fb10",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "1882591f-9b46-42db-a45a-9bd24169a015",
+          "4b896b78-e2f2-4e9d-b9c2-c86c99e4aed6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5647.277900000518,
+        "tokens_in": 1754,
+        "tokens_out": 78,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "864e3492-6acf-482a-b3b3-f71b5d84fb10",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "1882591f-9b46-42db-a45a-9bd24169a015",
+          "4b896b78-e2f2-4e9d-b9c2-c86c99e4aed6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5200.856299999941,
+        "tokens_in": 1754,
+        "tokens_out": 78,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "864e3492-6acf-482a-b3b3-f71b5d84fb10",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "1882591f-9b46-42db-a45a-9bd24169a015",
+          "4b896b78-e2f2-4e9d-b9c2-c86c99e4aed6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5718.03219999947,
+        "tokens_in": 1754,
+        "tokens_out": 78,
+        "turns": null
+      }
+    ],
+    "A15": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "695267ca-9033-487d-aa03-98f7d087b299",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "4824ab13-0934-41cc-a89a-f4c08cbb7e25"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "latency_ms": 5506.853999999294,
+        "tokens_in": 1760,
+        "tokens_out": 105,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "695267ca-9033-487d-aa03-98f7d087b299",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "4824ab13-0934-41cc-a89a-f4c08cbb7e25"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "latency_ms": 5967.140400000062,
+        "tokens_in": 1760,
+        "tokens_out": 105,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "695267ca-9033-487d-aa03-98f7d087b299",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "4824ab13-0934-41cc-a89a-f4c08cbb7e25"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "latency_ms": 5685.996000000159,
+        "tokens_in": 1760,
+        "tokens_out": 105,
+        "turns": null
+      }
+    ],
+    "A16": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 5405.180699999619,
+        "tokens_in": 1766,
+        "tokens_out": 100,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 5741.9105999997555,
+        "tokens_in": 1766,
+        "tokens_out": 100,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 5214.474400000654,
+        "tokens_in": 1766,
+        "tokens_out": 100,
+        "turns": null
+      }
+    ],
+    "B1": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "'초보운전자 첫차로 뭐가 좋아?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 5299.802000000454,
+        "tokens_in": 688,
+        "tokens_out": 73,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "'초보운전자 첫차로 뭐가 좋아?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 5693.418500000007,
+        "tokens_in": 688,
+        "tokens_out": 73,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "'초보운전자 첫차로 뭐가 좋아?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 5465.285500000391,
+        "tokens_in": 688,
+        "tokens_out": 73,
+        "turns": null
+      }
+    ],
+    "B2": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2616.132899999684,
+        "tokens_in": 691,
+        "tokens_out": 58,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2770.8247000000483,
+        "tokens_in": 691,
+        "tokens_out": 58,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3051.994200000081,
+        "tokens_in": 691,
+        "tokens_out": 58,
+        "turns": null
+      }
+    ],
+    "B3": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "ff73b989-03db-4b23-b2df-a22658428aa6",
+          "f85a0db0-fa22-40cf-a4a7-42ee987b2afa",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f"
+        ],
+        "answer_last": "'패밀리카 고를 때 뭘 봐야 해?'에 어울리는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "latency_ms": 5243.061600000146,
+        "tokens_in": 688,
+        "tokens_out": 69,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "ff73b989-03db-4b23-b2df-a22658428aa6",
+          "f85a0db0-fa22-40cf-a4a7-42ee987b2afa",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f"
+        ],
+        "answer_last": "'패밀리카 고를 때 뭘 봐야 해?'에 어울리는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "latency_ms": 4893.417199999931,
+        "tokens_in": 688,
+        "tokens_out": 69,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "ff73b989-03db-4b23-b2df-a22658428aa6",
+          "f85a0db0-fa22-40cf-a4a7-42ee987b2afa",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f"
+        ],
+        "answer_last": "'패밀리카 고를 때 뭘 봐야 해?'에 어울리는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "latency_ms": 5094.678699999349,
+        "tokens_in": 688,
+        "tokens_out": 69,
+        "turns": null
+      }
+    ],
+    "B4": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2962.4939000004815,
+        "tokens_in": 694,
+        "tokens_out": 85,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3201.0685999994166,
+        "tokens_in": 694,
+        "tokens_out": 85,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3007.9634000003352,
+        "tokens_in": 694,
+        "tokens_out": 85,
+        "turns": null
+      }
+    ],
+    "B5": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "49a4e175-1986-476b-ac66-f46ae7a36fd4",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "8be87cfa-d798-426c-b743-3c72b0f00867",
+          "9684a636-8aeb-4825-b991-ba77762d3c21"
+        ],
+        "answer_last": "'주행거리 많은 차 사도 괜찮을까?'에 어울리는 매물 5건을 찾았어요. (참고: 적정 주행거리와 연식 판단 기준)",
+        "latency_ms": 5024.022000000514,
+        "tokens_in": 689,
+        "tokens_out": 73,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "49a4e175-1986-476b-ac66-f46ae7a36fd4",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "8be87cfa-d798-426c-b743-3c72b0f00867",
+          "9684a636-8aeb-4825-b991-ba77762d3c21"
+        ],
+        "answer_last": "'주행거리 많은 차 사도 괜찮을까?'에 어울리는 매물 5건을 찾았어요. (참고: 적정 주행거리와 연식 판단 기준)",
+        "latency_ms": 5251.59689999964,
+        "tokens_in": 689,
+        "tokens_out": 73,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "49a4e175-1986-476b-ac66-f46ae7a36fd4",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "8be87cfa-d798-426c-b743-3c72b0f00867",
+          "9684a636-8aeb-4825-b991-ba77762d3c21"
+        ],
+        "answer_last": "'주행거리 많은 차 사도 괜찮을까?'에 어울리는 매물 5건을 찾았어요. (참고: 적정 주행거리와 연식 판단 기준)",
+        "latency_ms": 5473.1001999998625,
+        "tokens_in": 689,
+        "tokens_out": 73,
+        "turns": null
+      }
+    ],
+    "B6": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3124.565299999631,
+        "tokens_in": 695,
+        "tokens_out": 53,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2720.6007999993744,
+        "tokens_in": 695,
+        "tokens_out": 53,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2869.6202000000994,
+        "tokens_in": 695,
+        "tokens_out": 53,
+        "turns": null
+      }
+    ],
+    "B7": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2952.4678000007043,
+        "tokens_in": 686,
+        "tokens_out": 52,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2752.0054000005985,
+        "tokens_in": 686,
+        "tokens_out": 52,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2703.4822999994503,
+        "tokens_in": 686,
+        "tokens_out": 52,
+        "turns": null
+      }
+    ],
+    "C1": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3023.321399999986,
+        "tokens_in": 685,
+        "tokens_out": 50,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2859.2950999991444,
+        "tokens_in": 685,
+        "tokens_out": 50,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3037.378400000307,
+        "tokens_in": 685,
+        "tokens_out": 50,
+        "turns": null
+      }
+    ],
+    "C2": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3031.6326000001936,
+        "tokens_in": 690,
+        "tokens_out": 55,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2604.5779000005496,
+        "tokens_in": 690,
+        "tokens_out": 55,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2730.5421999999453,
+        "tokens_in": 690,
+        "tokens_out": 55,
+        "turns": null
+      }
+    ],
+    "C3": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2789.647800000239,
+        "tokens_in": 687,
+        "tokens_out": 52,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3054.964099999779,
+        "tokens_in": 687,
+        "tokens_out": 52,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2605.0302000003285,
+        "tokens_in": 687,
+        "tokens_out": 52,
+        "turns": null
+      }
+    ],
+    "C4": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2585.6743000003917,
+        "tokens_in": 689,
+        "tokens_out": 61,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2620.3484999996363,
+        "tokens_in": 689,
+        "tokens_out": 61,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2829.021300000022,
+        "tokens_in": 689,
+        "tokens_out": 61,
+        "turns": null
+      }
+    ],
+    "C5": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2891.5372999999818,
+        "tokens_in": 692,
+        "tokens_out": 49,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2818.9056999999593,
+        "tokens_in": 692,
+        "tokens_out": 49,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2521.008800000345,
+        "tokens_in": 692,
+        "tokens_out": 49,
+        "turns": null
+      }
+    ],
+    "C6": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 3128.0452999999397,
+        "tokens_in": 688,
+        "tokens_out": 59,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2823.808199999803,
+        "tokens_in": 688,
+        "tokens_out": 59,
+        "turns": null
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 2782.944600000519,
+        "tokens_in": 688,
+        "tokens_out": 59,
+        "turns": null
+      }
+    ],
+    "G1": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "c88ee0db-03da-451b-a0fa-6caf5a9fe8fc",
+          "5d0d1114-10a8-4347-b6fa-ec308fbcb6fa"
+        ],
+        "answer_last": "'사회 초년생이 탈만한 저렴한 차 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4932.974899999863,
+        "tokens_in": 692,
+        "tokens_out": 71,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "c88ee0db-03da-451b-a0fa-6caf5a9fe8fc",
+          "5d0d1114-10a8-4347-b6fa-ec308fbcb6fa"
+        ],
+        "answer_last": "'사회 초년생이 탈만한 저렴한 차 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4891.0273000001325,
+        "tokens_in": 692,
+        "tokens_out": 71,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "c88ee0db-03da-451b-a0fa-6caf5a9fe8fc",
+          "5d0d1114-10a8-4347-b6fa-ec308fbcb6fa"
+        ],
+        "answer_last": "'사회 초년생이 탈만한 저렴한 차 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 5134.103200000027,
+        "tokens_in": 692,
+        "tokens_out": 71,
+        "turns": null
+      }
+    ],
+    "G2": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "38ec1bab-983e-455e-a8e3-c1be96660884",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "fef24c05-7ad4-47d6-9456-366becc47e46",
+          "a07ea5fd-cb60-48e0-b8d2-57f8ae649a72",
+          "6218befb-fb23-4f22-be3c-fe762aa1518e"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5148.020200000246,
+        "tokens_in": 1760,
+        "tokens_out": 103,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "38ec1bab-983e-455e-a8e3-c1be96660884",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "fef24c05-7ad4-47d6-9456-366becc47e46",
+          "a07ea5fd-cb60-48e0-b8d2-57f8ae649a72",
+          "6218befb-fb23-4f22-be3c-fe762aa1518e"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5077.370799999699,
+        "tokens_in": 1760,
+        "tokens_out": 103,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "38ec1bab-983e-455e-a8e3-c1be96660884",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "fef24c05-7ad4-47d6-9456-366becc47e46",
+          "a07ea5fd-cb60-48e0-b8d2-57f8ae649a72",
+          "6218befb-fb23-4f22-be3c-fe762aa1518e"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5169.102799999564,
+        "tokens_in": 1760,
+        "tokens_out": 103,
+        "turns": null
+      }
+    ],
+    "G3": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "'가족이랑 타기 좋은 7인승 차 보여줘'에 어울리는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "latency_ms": 5133.250000000771,
+        "tokens_in": 691,
+        "tokens_out": 73,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "'가족이랑 타기 좋은 7인승 차 보여줘'에 어울리는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "latency_ms": 4882.976500000041,
+        "tokens_in": 691,
+        "tokens_out": 73,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "'가족이랑 타기 좋은 7인승 차 보여줘'에 어울리는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "latency_ms": 4723.1056000000535,
+        "tokens_in": 691,
+        "tokens_out": 73,
+        "turns": null
+      }
+    ],
+    "G4": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "83042a40-7242-4e0e-a140-72d45f3d6300",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a"
+        ],
+        "answer_last": "'그냥 괜찮은 차 아무거나 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4644.488200000524,
+        "tokens_in": 688,
+        "tokens_out": 50,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "83042a40-7242-4e0e-a140-72d45f3d6300",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a"
+        ],
+        "answer_last": "'그냥 괜찮은 차 아무거나 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4904.768299999887,
+        "tokens_in": 688,
+        "tokens_out": 50,
+        "turns": null
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "83042a40-7242-4e0e-a140-72d45f3d6300",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a"
+        ],
+        "answer_last": "'그냥 괜찮은 차 아무거나 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 4880.38300000062,
+        "tokens_in": 688,
+        "tokens_out": 50,
+        "turns": null
+      }
+    ],
+    "G5": [
+      {
+        "route_last": "A",
+        "ids_last": [],
+        "answer_last": "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요.",
+        "latency_ms": 5129.361499999504,
+        "tokens_in": 1764,
+        "tokens_out": 102,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [],
+        "answer_last": "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요.",
+        "latency_ms": 4957.512900000438,
+        "tokens_in": 1764,
+        "tokens_out": 102,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [],
+        "answer_last": "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요.",
+        "latency_ms": 5165.62470000008,
+        "tokens_in": 1764,
+        "tokens_out": 102,
+        "turns": null
+      }
+    ],
+    "G6": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 5041.37079999964,
+        "tokens_in": 1772,
+        "tokens_out": 101,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 4880.822399999488,
+        "tokens_in": 1772,
+        "tokens_out": 101,
+        "turns": null
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 4890.295100000003,
+        "tokens_in": 1772,
+        "tokens_out": 101,
+        "turns": null
+      }
+    ],
+    "M1": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "'제일 싼 거 하나만 알려줘'에 어울리는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)",
+        "latency_ms": 15595.306199999868,
+        "tokens_in": 4564,
+        "tokens_out": 264,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "80730d06-bd53-42f2-9292-94c05655da4c",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "39621ae9-2df7-4192-bb7e-9bf8ee094889"
+            ],
+            "answer": "조건에 맞는 매물 3건을 찾았어요."
+          },
+          {
+            "route": "B",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "3108f2b3-2b67-44c9-91ef-00138b644690",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "'제일 싼 거 하나만 알려줘'에 어울리는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)"
+          }
+        ]
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "'제일 싼 거 하나만 알려줘'에 어울리는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)",
+        "latency_ms": 14875.64620000012,
+        "tokens_in": 4564,
+        "tokens_out": 264,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "80730d06-bd53-42f2-9292-94c05655da4c",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "39621ae9-2df7-4192-bb7e-9bf8ee094889"
+            ],
+            "answer": "조건에 맞는 매물 3건을 찾았어요."
+          },
+          {
+            "route": "B",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "3108f2b3-2b67-44c9-91ef-00138b644690",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "'제일 싼 거 하나만 알려줘'에 어울리는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)"
+          }
+        ]
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "'제일 싼 거 하나만 알려줘'에 어울리는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)",
+        "latency_ms": 14795.218400000522,
+        "tokens_in": 4564,
+        "tokens_out": 264,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "80730d06-bd53-42f2-9292-94c05655da4c",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "39621ae9-2df7-4192-bb7e-9bf8ee094889"
+            ],
+            "answer": "조건에 맞는 매물 3건을 찾았어요."
+          },
+          {
+            "route": "B",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "3108f2b3-2b67-44c9-91ef-00138b644690",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "'제일 싼 거 하나만 알려줘'에 어울리는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)"
+          }
+        ]
+      }
+    ],
+    "M2": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 15151.200199999039,
+        "tokens_in": 6026,
+        "tokens_out": 292,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "4cc01bfd-46f7-4e93-b3de-358052bb213a",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "08a59827-bd66-40e6-a198-90938070f9f8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "08a59827-bd66-40e6-a198-90938070f9f8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+              "faaa369f-e373-4510-ba0f-a8d45ca26da7"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 15663.18499999943,
+        "tokens_in": 6026,
+        "tokens_out": 292,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "4cc01bfd-46f7-4e93-b3de-358052bb213a",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "08a59827-bd66-40e6-a198-90938070f9f8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "08a59827-bd66-40e6-a198-90938070f9f8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+              "faaa369f-e373-4510-ba0f-a8d45ca26da7"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 15061.381399999846,
+        "tokens_in": 6026,
+        "tokens_out": 292,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "4cc01bfd-46f7-4e93-b3de-358052bb213a",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "08a59827-bd66-40e6-a198-90938070f9f8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "08a59827-bd66-40e6-a198-90938070f9f8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d",
+              "faaa369f-e373-4510-ba0f-a8d45ca26da7"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요."
+          }
+        ]
+      }
+    ],
+    "M3": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d"
+        ],
+        "answer_last": "'아 그냥 초보 첫차로 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 9658.668500000203,
+        "tokens_in": 1373,
+        "tokens_out": 120,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "1e88fbf3-3646-4fb4-9562-78f7197e15d3",
+              "0fbd0ee9-7200-4dca-bac7-0f52779d28bb",
+              "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea"
+            ],
+            "answer": "'중형 세단 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 차종별 특성과 용도 가이드)"
+          },
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "09d273ba-8a48-4408-b87d-b165646abfb3",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d"
+            ],
+            "answer": "'아 그냥 초보 첫차로 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          }
+        ]
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d"
+        ],
+        "answer_last": "'아 그냥 초보 첫차로 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 9730.879099999584,
+        "tokens_in": 1373,
+        "tokens_out": 120,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "1e88fbf3-3646-4fb4-9562-78f7197e15d3",
+              "0fbd0ee9-7200-4dca-bac7-0f52779d28bb",
+              "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea"
+            ],
+            "answer": "'중형 세단 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 차종별 특성과 용도 가이드)"
+          },
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "09d273ba-8a48-4408-b87d-b165646abfb3",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d"
+            ],
+            "answer": "'아 그냥 초보 첫차로 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          }
+        ]
+      },
+      {
+        "route_last": "B",
+        "ids_last": [
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d"
+        ],
+        "answer_last": "'아 그냥 초보 첫차로 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "latency_ms": 9852.8053,
+        "tokens_in": 1373,
+        "tokens_out": 120,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "1e88fbf3-3646-4fb4-9562-78f7197e15d3",
+              "0fbd0ee9-7200-4dca-bac7-0f52779d28bb",
+              "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea"
+            ],
+            "answer": "'중형 세단 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 차종별 특성과 용도 가이드)"
+          },
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "09d273ba-8a48-4408-b87d-b165646abfb3",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d"
+            ],
+            "answer": "'아 그냥 초보 첫차로 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          }
+        ]
+      }
+    ],
+    "M4": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "20b487d3-13ee-4e62-82f8-f12e5798d285",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10316.862699999547,
+        "tokens_in": 2877,
+        "tokens_out": 178,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "09d273ba-8a48-4408-b87d-b165646abfb3"
+            ],
+            "answer": "'초보운전자한테 맞는 차 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          },
+          {
+            "route": "A",
+            "ids": [
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "20b487d3-13ee-4e62-82f8-f12e5798d285",
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "20b487d3-13ee-4e62-82f8-f12e5798d285",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10256.778100000702,
+        "tokens_in": 2877,
+        "tokens_out": 178,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "09d273ba-8a48-4408-b87d-b165646abfb3"
+            ],
+            "answer": "'초보운전자한테 맞는 차 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          },
+          {
+            "route": "A",
+            "ids": [
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "20b487d3-13ee-4e62-82f8-f12e5798d285",
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "20b487d3-13ee-4e62-82f8-f12e5798d285",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 9964.966900000945,
+        "tokens_in": 2877,
+        "tokens_out": 178,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "09d273ba-8a48-4408-b87d-b165646abfb3"
+            ],
+            "answer": "'초보운전자한테 맞는 차 추천해줘'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          },
+          {
+            "route": "A",
+            "ids": [
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "20b487d3-13ee-4e62-82f8-f12e5798d285",
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      }
+    ],
+    "M5": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10515.406399999847,
+        "tokens_in": 3898,
+        "tokens_out": 240,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+              "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+              "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+              "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+              "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 11332.967799999096,
+        "tokens_in": 3898,
+        "tokens_out": 240,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+              "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+              "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+              "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+              "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10501.379999999699,
+        "tokens_in": 3898,
+        "tokens_out": 240,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+              "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+              "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+              "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+              "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      }
+    ],
+    "M6": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 13554.801000000225,
+        "tokens_in": 3516,
+        "tokens_out": 187,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [],
+            "answer": "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 10626.747100000102,
+        "tokens_in": 3516,
+        "tokens_out": 187,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [],
+            "answer": "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "latency_ms": 10001.170800000182,
+        "tokens_in": 3516,
+        "tokens_out": 187,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [],
+            "answer": "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요."
+          }
+        ]
+      }
+    ],
+    "M7": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "a2a398f7-0baa-4f41-b889-ae44745f5925"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10109.436800000367,
+        "tokens_in": 2847,
+        "tokens_out": 185,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "c88ee0db-03da-451b-a0fa-6caf5a9fe8fc",
+              "09d273ba-8a48-4408-b87d-b165646abfb3"
+            ],
+            "answer": "'사회 초년생 탈만한 차종 추천'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          },
+          {
+            "route": "A",
+            "ids": [
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "085b749f-37cf-46b4-80a2-555c95bcd037",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "a2a398f7-0baa-4f41-b889-ae44745f5925"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 9966.442099999767,
+        "tokens_in": 2847,
+        "tokens_out": 185,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "c88ee0db-03da-451b-a0fa-6caf5a9fe8fc",
+              "09d273ba-8a48-4408-b87d-b165646abfb3"
+            ],
+            "answer": "'사회 초년생 탈만한 차종 추천'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          },
+          {
+            "route": "A",
+            "ids": [
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "085b749f-37cf-46b4-80a2-555c95bcd037",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "a2a398f7-0baa-4f41-b889-ae44745f5925"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 9646.96449999974,
+        "tokens_in": 2847,
+        "tokens_out": 185,
+        "turns": [
+          {
+            "route": "B",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "c88ee0db-03da-451b-a0fa-6caf5a9fe8fc",
+              "09d273ba-8a48-4408-b87d-b165646abfb3"
+            ],
+            "answer": "'사회 초년생 탈만한 차종 추천'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)"
+          },
+          {
+            "route": "A",
+            "ids": [
+              "28602cdc-22b8-4cb7-9d24-50d6ed30510a",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "085b749f-37cf-46b4-80a2-555c95bcd037",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      }
+    ],
+    "M8": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "2bc77650-0d0f-4014-b326-661f322d4029",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10441.949500000192,
+        "tokens_in": 3871,
+        "tokens_out": 200,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "2bc77650-0d0f-4014-b326-661f322d4029",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10144.264099999418,
+        "tokens_in": 3871,
+        "tokens_out": 200,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      },
+      {
+        "route_last": "A",
+        "ids_last": [
+          "2bc77650-0d0f-4014-b326-661f322d4029",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "latency_ms": 10638.898600000175,
+        "tokens_in": 3871,
+        "tokens_out": 200,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "A",
+            "ids": [
+              "2bc77650-0d0f-4014-b326-661f322d4029",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+              "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+              "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          }
+        ]
+      }
+    ],
+    "M9": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 7769.62790000016,
+        "tokens_in": 2444,
+        "tokens_out": 156,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "9684a636-8aeb-4825-b991-ba77762d3c21",
+              "c4421102-15fc-4b94-a686-22ac90afe211"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "C",
+            "ids": [],
+            "answer": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요."
+          }
+        ]
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 8131.548500000463,
+        "tokens_in": 2444,
+        "tokens_out": 156,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "9684a636-8aeb-4825-b991-ba77762d3c21",
+              "c4421102-15fc-4b94-a686-22ac90afe211"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "C",
+            "ids": [],
+            "answer": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요."
+          }
+        ]
+      },
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "latency_ms": 7811.644699999306,
+        "tokens_in": 2444,
+        "tokens_out": 156,
+        "turns": [
+          {
+            "route": "A",
+            "ids": [
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "9684a636-8aeb-4825-b991-ba77762d3c21",
+              "c4421102-15fc-4b94-a686-22ac90afe211"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요."
+          },
+          {
+            "route": "C",
+            "ids": [],
+            "answer": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요."
+          }
+        ]
+      }
+    ]
+  }
+}
