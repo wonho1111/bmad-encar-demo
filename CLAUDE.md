@@ -32,7 +32,9 @@
 - 흐름: `develop`에서 작업·커밋 → 동작 확인 → `main`으로 병합.
 - 배포용 `main`에는 동작이 검증된 코드만 올린다. (직접 개발 금지)
 - 아직 git 저장소가 없으면, 구현 착수 시점에 `git init` 후 위 두 브랜치를 구성한다.
-- **Vercel 연동**: 운영(Production) 브랜치 = `main`, 그 외 브랜치(=`develop` 포함) = 미리보기(preview) 배포. `develop` push 시 preview 배포가 자동 생성된다.
+- **Vercel 연동(web)**: 운영(Production) 브랜치 = `main`, 그 외 브랜치(=`develop` 포함) = 미리보기(preview) 배포. `develop` push 시 preview 배포가 자동 생성된다.
+- **Cloud Run 연동(api)**: api(`api/`)는 Vercel이 아니라 **Google Cloud Run**에 배포한다(Vercel은 의존성 번들 250MB 한도로 실패 → 표준 컨테이너로 전환). GitHub 연동으로 **`develop` push 시 개발 서비스 `encar-ai-api-dev`가 자동 배포**되고, `main`은 운영 서비스 `encar-ai-api`(사용자 승인 후 병합 시). 서울 리전(`asia-northeast3`).
+- **배포 = `develop` push** (수동 `gcloud run deploy`·`vercel deploy` 하지 말 것): api 코드를 바꿨으면 `develop`에 push만 하면 web preview(Vercel)와 api 개발(Cloud Run)이 **둘 다 자동 배포**된다. 두 배포가 끝나면 **preview 웹을 열어 개발 브랜치 작업분을 E2E 테스트**한다(§6). 운영 반영은 `main` 병합으로만, **병합은 사용자 명시 승인 시에만**.
 - **`/auto-epic` 작업 예외**: 자동 개발(아래 7번) 중 배포-테스트 목적의 **`develop` push는 허용**한다. 단 `main` push·병합은 여전히 금지(사용자 명시 요청 시에만).
 
 ### 4. 초기 DB 구성은 단순하게
