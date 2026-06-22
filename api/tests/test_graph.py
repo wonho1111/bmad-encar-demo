@@ -120,7 +120,8 @@ def test_answer_node_respects_node_empty_message():
 def test_guard_node_returns_empty_listings_and_guidance():
     out = guard_node("파이썬 코드 짜줘")
     assert out["listings"] == []
-    assert "중고차" in out["answer"] and "어시스턴트" in out["answer"]
+    # "갈림길" 멘트 — 매물 검색으로 재유도하는 정보(매물·예산·용도)를 담는다(dead-end 0%, 안건2/3).
+    assert "매물" in out["answer"] and "예산" in out["answer"]
 
 
 # ── 4.6 멀티턴 맥락화 배선 (run_search 앞단) ───────────────────────

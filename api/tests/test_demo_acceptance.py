@@ -138,6 +138,18 @@ def test_cm1_guard_node_is_deterministic(query):
     assert out["answer"] == _GUARD_ANSWER  # 질의 내용과 무관하게 고정 문구
 
 
+def test_cm1_decline_is_not_dead_end():
+    """거절 문구는 "막다른 길"이 아니라 "갈림길"이어야 한다 — 사용자를 매물 검색으로 재유도.
+
+    party-mode 2026-06-23 결정(dead-end 0%): 거절하더라도 사용자가 다음에 무엇을 하면 되는지
+    (예산·용도로 매물 찾기) 길을 열어 둔다. 단순 "못 한다" 종결이 아니어야 한다.
+    """
+    # 거절 멘트가 검색 재유도 정보(예산·용도/매물)를 담고 있어야 한다(부분문자열로 의도만 고정).
+    assert "예산" in _GUARD_ANSWER
+    assert "용도" in _GUARD_ANSWER
+    assert "매물" in _GUARD_ANSWER
+
+
 def test_cm1_count_all_unrelated_rejected(monkeypatch):
     """집계 단언 — 무관 질의 전부(N건)가 거절된다. 거절 실패 0건이어야 CM1 합격."""
     _patch_route(monkeypatch, "C")

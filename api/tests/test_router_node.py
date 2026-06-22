@@ -70,6 +70,19 @@ def test_fallback_route_signal_detection():
     assert rn._fallback_route("1+1은 뭐야") == "C"
 
 
+def test_system_prompt_routes_finance_knowledge_to_C():
+    """프롬프트 표류 방지 — 금융·세금·보험 일반지식을 C로 보내는 규칙이 프롬프트에 박혀 있어야 한다.
+
+    party-mode 2026-06-23 결정(안건3): "할부·리스·취득세" 같은 일반지식은 어떤 매물을 보여줄지
+    바꾸지 않으므로 B가 아니라 C(거절). 실제 분류 동작은 라이브 LLM에서 확인하지만, 여기서는
+    프롬프트가 이 규칙을 잃지 않게 잠근다(규칙이 빠지면 라우터가 다시 B로 샌다).
+    """
+    prompt = rn._SYSTEM_PROMPT
+    assert "할부" in prompt and "취득세" in prompt
+    # 금융·세금·보험 키워드가 C 분류 규칙과 함께 등장해야 한다.
+    assert "금융" in prompt and "C로 분류" in prompt
+
+
 def test_missing_api_key_fails_loud(monkeypatch):
     # 키 부재 → require()가 RuntimeError(조용한 빈 결과 금지). _llm 실제 호출.
     monkeypatch.setattr(rn.settings, "gemini_api_key", None)
