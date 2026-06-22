@@ -38,5 +38,15 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
             status_code=400,
             detail={"error": {"code": exc.code, "message": exc.message}},
         )
-    # 그 외 오류(키 부재 RuntimeError·LLM/DB 장애)는 main.py 전역 핸들러가 공통 500 포맷으로 처리.
+    except Exception as exc:
+        # 그 외 오류(키 부재 RuntimeError·LLM/DB 장애 등)를 여기서 HTTPException(500)으로 바꿔 던진다.
+        #   왜: 라우트 밖(main.py 전역 Exception 핸들러)에서 잡으면 그 500 응답이 CORSMiddleware
+        #   바깥에서 만들어져 Access-Control-Allow-Origin 헤더가 빠진다 → 브라우저가 실제 500을
+        #   "CORS 차단/연결 실패"로 오인(원인 은폐). HTTPException은 CORS 안쪽에서 처리되므로
+        #   헤더가 정상적으로 붙어, 프런트가 진짜 서버 오류 메시지를 받게 된다.
+        logger.exception("run_search 처리 중 오류 — 500 반환: %r", exc)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": {"code": "internal_error", "message": "서버 내부 오류가 발생했습니다."}},
+        )
     return SearchResponse(answer=result["answer"], listings=result["listings"])
