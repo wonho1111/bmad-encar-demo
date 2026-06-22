@@ -142,6 +142,70 @@ def test_only_recent_turns_serialized(monkeypatch):
     assert "질문9" in human_msg      # 최근 턴은 포함
 
 
+# ═════════════════════════════════════════════════════════════════════
+# 안건2 회귀 — 주제전환 시 옛 조건 오염 차단(party-mode 2026-06-23)
+#   결정적 가드(_is_topic_shift)가 LLM 호출 전에 새 검색을 판정해 원 질의를 그대로 쓴다.
+#   → 주제전환 케이스는 LLM을 부르면 안 되므로 _llm을 호출 시 실패하도록 심어 검증한다.
+# ═════════════════════════════════════════════════════════════════════
+def _boom_llm():
+    raise AssertionError("주제전환인데 LLM이 호출됨(맥락 오염 가드 위반)")
+
+
+def test_topic_shift_persona_resets_old_conditions(monkeypatch):
+    # 헤드라인 버그 — "중형세단" 대화 뒤 "초보운전자 첫차 추천"은 옛 가격·차종을 버리고 원 질의 사용.
+    monkeypatch.setattr(contextualize_node, "_llm", _boom_llm)
+    ctx = _ctx(("user", "2천만원 이하 중형세단"), ("assistant", "쏘나타 등 5건"))
+    assert contextualize_query("초보운전자 첫차 추천", ctx) == "초보운전자 첫차 추천"
+
+
+def test_topic_shift_body_type_replacement_resets(monkeypatch):
+    # 같은 차원(차종) 값 교체: 중형세단 → SUV 는 새 검색.
+    monkeypatch.setattr(contextualize_node, "_llm", _boom_llm)
+    ctx = _ctx(("user", "2천만원 이하 중형세단"))
+    assert contextualize_query("SUV 보여줘", ctx) == "SUV 보여줘"
+
+
+def test_topic_shift_manufacturer_replacement_resets(monkeypatch):
+    # 같은 차원(제조사) 값 교체: 현대 → 기아 는 새 검색.
+    monkeypatch.setattr(contextualize_node, "_llm", _boom_llm)
+    ctx = _ctx(("user", "현대 아반떼 보여줘"))
+    assert contextualize_query("기아 차 보여줘", ctx) == "기아 차 보여줘"
+
+
+def test_refine_add_dimension_keeps_context(monkeypatch):
+    # 좁히기(차원 추가) — "흰색만"은 직전 조건에 색상만 더하는 것이라 리셋하지 않고 LLM 재작성한다.
+    fake = _FakeLLM("2천만원 이하 중형세단 중 흰색")
+    monkeypatch.setattr(contextualize_node, "_llm", lambda: fake)
+    ctx = _ctx(("user", "2천만원 이하 중형세단"))
+    out = contextualize_query("흰색만", ctx)
+    assert out == "2천만원 이하 중형세단 중 흰색"
+    assert len(fake.calls) == 1  # 좁히기는 LLM을 거친다(리셋 아님)
+
+
+def test_refine_reference_word_keeps_context(monkeypatch):
+    # 참조 표현("그중")이 있으면 무조건 좁히기 → 리셋하지 않고 LLM 재작성.
+    fake = _FakeLLM("패밀리카 중 더 저렴한 매물")
+    monkeypatch.setattr(contextualize_node, "_llm", lambda: fake)
+    ctx = _ctx(("user", "패밀리카로 무난한 거"))
+    out = contextualize_query("그중 더 싼 거", ctx)
+    assert out == "패밀리카 중 더 저렴한 매물"
+    assert len(fake.calls) == 1
+
+
+def test_is_topic_shift_pure_function():
+    # 순수 함수 단위 — 값 교체/주제 점프=True, 좁히기/참조어=False.
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "2천만원 이하 중형세단"))
+    assert shift("초보운전자 첫차 추천", ctx) is True   # 비-SQL 주제 점프
+    assert shift("SUV 보여줘", ctx) is True              # 차종 값 교체
+    assert shift("흰색만", ctx) is False                 # 색상 추가(좁히기)
+    assert shift("2천 이하만", ctx) is False             # 숫자 조건 추가(좁히기)
+    assert shift("그중 더 싼 거", ctx) is False          # 참조어
+    # 모델명(자유값)은 결정적으로 못 잡는다 — 프롬프트(1차)에 맡김(투명 한계).
+    ctx2 = _ctx(("user", "아반떼 보여줘"))
+    assert shift("쏘렌토는?", ctx2) is False             # 가드는 통과(False), 프롬프트가 처리
+
+
 def test_context_content_newlines_flattened_no_prompt_injection(monkeypatch):
     # 프롬프트 주입 방어 — 턴 내용에 개행으로 가짜 "[현재 질의]" 섹션을 끼워도
     # 직렬화 단계에서 개행이 눕혀져 새 섹션을 위조하지 못한다.
