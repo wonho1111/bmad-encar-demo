@@ -1,0 +1,12 @@
+# api/requirements.txt — 컨테이너(런타임)용 의존성 목록.
+# Docker/Cloud Run은 이 파일을 보고 라이브러리를 설치한다(pyproject의 core + ai 그룹).
+# 개발 전용(langgraph-cli·pytest·httpx)은 런타임에 불필요하므로 제외한다.
+fastapi==0.137.1
+uvicorn[standard]
+supabase
+psycopg[binary]
+pydantic-settings
+langgraph==1.2.4
+langchain-google-genai
+pgvector
+sqlparse
