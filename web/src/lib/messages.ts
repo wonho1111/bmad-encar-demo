@@ -118,9 +118,14 @@ export async function sendMessage(
 }
 
 /**
- * id 기준 중복 제거(append 머지용). 이미 있는 id는 추가하지 않는다.
+ * id 기준 중복 제거 + 시간순 재정렬(append 머지용).
  *   폴링 증분 조회와 "내가 보낸 낙관적 메시지"가 같은 행을 두 번 넣으려 할 때 중복을 막는다(AC#5).
- *   순서는 입력 순서를 유지하되(시간 오름차순으로 들어옴), 같은 id 재등장 시 첫 등장만 남긴다.
+ *   같은 id 재등장 시 첫 등장만 남긴다.
+ *
+ * 왜 마지막에 (created_at, id)로 정렬하는가(AC#3 "시간 오름차순" 불변식 보장):
+ *   [...prev, ...incoming] 머지는 입력 순서를 유지할 뿐 시간순을 보장하지 않는다. 거의 동시에 양쪽이
+ *   메시지를 보내면(내 낙관적 전송 T_me 가 상대의 더 이른 T_other 보다 먼저 append) 화면이 시간 역순으로
+ *   보일 수 있다. fetchMessages가 쓰는 것과 동일한 (created_at asc, id asc) 안정 정렬로 재정렬해 이를 막는다.
  */
 export function dedupeById(messages: ChatMessageRow[]): ChatMessageRow[] {
   const seen = new Set<string>();
@@ -130,5 +135,17 @@ export function dedupeById(messages: ChatMessageRow[]): ChatMessageRow[] {
     seen.add(m.id);
     out.push(m);
   }
+  // created_at 오름차순, 동시각이면 id로 안정화(fetchMessages의 order와 동일 규칙).
+  out.sort((a, b) =>
+    a.created_at < b.created_at
+      ? -1
+      : a.created_at > b.created_at
+        ? 1
+        : a.id < b.id
+          ? -1
+          : a.id > b.id
+            ? 1
+            : 0,
+  );
   return out;
 }

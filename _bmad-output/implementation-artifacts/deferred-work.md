@@ -6,6 +6,12 @@
 
 ---
 
+## Deferred from: code review of story 5-3 (2026-06-24)
+
+- **폴링 지속 실패 시 무알림** [web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx 폴링 effect] — 초기 로드 실패는 한국어 에러로 표시하지만, 세션 만료·방 삭제 등으로 폴링이 매 주기 영구 실패하면 사용자에게 아무 표시 없이 대화가 멈춘 것처럼 보인다(첫 로드는 loud, 폴링 실패는 silent의 비대칭). NFR1의 "일시 실패는 조용히 재시도" 정책과 충돌하지는 않으므로 회귀 아님. 향후 "재연결/오프라인 표시" 개선 시 N회 연속 실패 후 비차단 배너를 띄우는 방식 검토.
+- **커밋 후 응답 유실 시 중복 전송** [web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx handleSubmit catch] — INSERT가 DB에 성공했으나 응답이 네트워크에서 끊기면 catch가 입력을 복원하고 사용자가 재전송 → 서로 다른 id의 중복 메시지가 영속된다(dedupe는 id 기준이라 못 막음). 멱등키(클라 생성 uuid를 PK로)가 정석이나 데모 범위 밖. 중복 우려가 커지면 도입.
+- **본문 최대 길이 가드 없음** [web/src/lib/messages.ts sendMessage / 입력창] — `body`가 `text`(무제한)이고 클라이언트는 `trim()`만 한다. 초대용량 붙여넣기가 그대로 INSERT되어 행·이후 폴링 페이로드를 비대화시킬 수 있다. 입력창 `maxLength` + 서버측 길이 컷으로 하드닝 가능(회귀 아님).
+
 ## Deferred from: code review of story 1-4 (2026-06-20)
 
 - **`redirectedFrom` 소비처 부재 + open-redirect 검증 규약 미정** [web/src/proxy.ts, web/src/app/(auth)/login/page.tsx] — proxy가 보호경로 차단 시 `/login?redirectedFrom=<pathname>`을 동봉하지만, 로그인 화면은 이를 읽지 않고 항상 `/`로 이동한다(현재 무해). 향후 "로그인 후 원래 가려던 곳으로 복귀" 스토리에서 `redirectedFrom`을 사용할 때, 반드시 값이 `/`로 시작하는 **상대경로**인지 검증(`//`·`http(s):`·역슬래시 차단)해 오픈 리다이렉트를 막을 것. 보호경로가 `/admin` 1개뿐이라 현재 영향은 작음.
