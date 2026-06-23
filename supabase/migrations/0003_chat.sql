@@ -1,15 +1,19 @@
 -- 0003_chat.sql — FR19~21 기반: 문의 채팅방·메시지 테이블 + 참여자 한정 RLS
--- 스키마 단일 출처(supabase/migrations/). 적용 순서: 0001 → 0002(+0002b/c/d) → 0003(이 파일) → 0004 → 0006.
+-- 스키마 단일 출처(supabase/migrations/). 적용 순서: 0001 → 0002 → 0003(이 파일) → 0004 → 0006.
 --   (번호 갭 의도됨: 0003=chat(Epic5)·0005=admin(Epic6). 0004/0006 헤더가 이 예약을 명시.)
 --
 -- 이 마이그레이션이 하는 일:
 --   1) chat_rooms 테이블 — 한 매물에 대한 구매자↔판매자 1:1 대화방.
 --      · listing_id→listings, buyer_id/seller_id→profiles (0002 listings.seller_id가 profiles를 참조한 패턴과 동일)
 --      · UNIQUE(listing_id, buyer_id, seller_id) — "한 매물·구매자·판매자 조합당 방 1개"(5-2 기존 방 재사용 토대)
+--      · CHECK(buyer_id <> seller_id) — 자기 자신과의 방 금지(구매자=판매자 불가)
 --   2) chat_messages 테이블 — 방 안의 개별 메시지(room_id→chat_rooms, sender_id→profiles, body, created_at)
+--      · CHECK(빈 본문 금지) — 공백만 있는 메시지 차단
 --   3) 참여자 한정 RLS — 같은 마이그레이션에 동거(0001·0002 원칙). 방의 당사자(buyer_id/seller_id)만 read/write, 제3자 차단.
+--   4) FK 인덱스 — on delete cascade 대상 컬럼(buyer_id/seller_id/sender_id)에 인덱스(부모 삭제 시 풀스캔·락 회피).
 --
--- ⚠️ ai_readonly 영향(0006): 0006의 `alter default privileges ... grant select to ai_readonly`로
+-- ⚠️ ai_readonly 영향(0006): 0006의 `grant select on all tables in schema public`로(0003<0006 순서라
+--    chat 테이블은 0006 적용 시점에 이미 존재 → "all tables" 일괄 grant에 포함된다)
 --    이 두 테이블에도 ai_readonly의 테이블 SELECT 권한이 자동 부여된다. 그러나 chat 테이블에는
 --    ai_readonly용 가시성 정책(using true)을 **만들지 않으므로**, RLS가 켜진 한 ai_readonly는 행을 0건만 본다.
 --    (테이블 권한이 있어도 행 가시성 정책이 없으면 0건.) AI 검색은 chat을 조회하지 않으므로 이게 의도된 안전 동작이다.
@@ -24,8 +28,15 @@ create table if not exists public.chat_rooms (
   seller_id   uuid not null references public.profiles (id) on delete cascade,  -- 판매자 = 매물 소유자
   created_at  timestamptz not null default now(),
   -- 한 매물·구매자·판매자 조합당 방 1개 (5-2 "기존 방 재사용"이 이 키에 의존)
-  unique (listing_id, buyer_id, seller_id)
+  unique (listing_id, buyer_id, seller_id),
+  -- 구매자와 판매자가 같은 사람일 수 없음(자기 자신과의 방 차단). 5-2 흐름에서 buyer=문의자, seller=매물주라 항상 서로 다름.
+  constraint chat_rooms_buyer_ne_seller check (buyer_id <> seller_id)
 );
+
+-- on delete cascade FK 가속 인덱스: profiles 행 삭제 시 referencing 행을 인덱스로 찾는다(풀스캔·락 회피).
+--   listing_id는 위 UNIQUE 인덱스의 선두 컬럼이라 별도 인덱스 불필요.
+create index if not exists chat_rooms_buyer_idx  on public.chat_rooms (buyer_id);
+create index if not exists chat_rooms_seller_idx on public.chat_rooms (seller_id);
 
 comment on table public.chat_rooms is
   'FR19 문의 채팅방 — 한 매물에 대한 구매자↔판매자 1:1 대화방. (listing_id,buyer_id,seller_id) 조합당 1개(UNIQUE). RLS로 당사자만 접근.';
@@ -38,7 +49,9 @@ create table if not exists public.chat_messages (
   room_id     uuid not null references public.chat_rooms (id) on delete cascade,  -- 방 삭제 시 메시지도 정리
   sender_id   uuid not null references public.profiles (id) on delete cascade,    -- 보낸 사람 = 방의 당사자 중 하나
   body        text not null,                                                       -- 메시지 본문
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  -- 공백만 있는 빈 메시지 차단(not null은 ''를 막지 못함).
+  constraint chat_messages_body_not_blank check (length(btrim(body)) > 0)
 );
 
 comment on table public.chat_messages is
@@ -46,8 +59,13 @@ comment on table public.chat_messages is
 comment on column public.chat_messages.room_id is '소속 방 = chat_rooms.id. RLS는 이 방의 당사자인지로 read/write를 판정한다.';
 
 -- room_id로 메시지를 시간순 조회하는 폴링(5-3) 패턴 가속용 인덱스.
+--   (room_id가 선두 컬럼이라 chat_rooms 삭제 cascade의 FK 조회도 이 인덱스로 커버된다.)
 create index if not exists chat_messages_room_created_idx
   on public.chat_messages (room_id, created_at);
+
+-- sender_id on delete cascade FK 가속(profiles 삭제 시 referencing 메시지 조회).
+create index if not exists chat_messages_sender_idx
+  on public.chat_messages (sender_id);
 
 -- ── 3) chat_rooms RLS (참여자 한정) ──────────────────────────────────
 -- 0001·0002와 동일 원칙: 정책은 해당 테이블 마이그레이션에 동거 → 적용 순서대로 RLS가 함께 존재.

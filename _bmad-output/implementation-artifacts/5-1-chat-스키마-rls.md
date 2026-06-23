@@ -1,6 +1,6 @@
 # Story 5.1: chat 스키마 + RLS
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -118,6 +118,36 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 - `_bmad-output/implementation-artifacts/5-1-chat-스키마-rls.md` (스토리 — 본 파일)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (epic-5 in-progress, 5-1 review)
 
+## Review Findings
+
+코드리뷰 3레이어(Blind Hunter·Edge Case Hunter·Acceptance Auditor) 병렬 서브에이전트로 실행. 라이브 DB(Supabase MCP)로 정책·제약·인덱스·advisor 사실 검증.
+
+### [Decision] 결정 필요 — 사용자 판단 대기
+
+- [ ] [Review][Decision] **chat_rooms INSERT 시 `seller_id`·`listing_id` 위조 가능(High)** — 현재 INSERT RLS(`auth.uid() = buyer_id or seller_id`)는 방을 만드는 사람이 *둘 중 하나*이기만 하면 통과한다. 그래서 구매자가 **임의의 `seller_id`(아무 프로필)** 와 **임의의 `listing_id`** 를 지정해 방을 만들 수 있고, `seller_id`가 그 `listing_id`의 실제 판매자(소유자)인지 DB가 검증하지 않는다 → 모르는 사람에게 원치 않는 방을 강제로 만들거나, 잘못된 (매물,판매자) 짝의 방을 생성할 수 있다. **선택지**: (A) 트리거/함수로 INSERT 시 `seller_id = (select seller_id from listings where id = listing_id)` 강제(DB 레벨 차단, 가장 견고) / (B) `listings(id, seller_id)` 복합 UNIQUE + 복합 FK로 짝 무결성 보장 / (C) 앱(5-2 프록시) 책임으로 두고 DB는 현행 유지(데모 범위면 수용 가능, RLS 위조 벡터는 남음). 5-2 "방 생성" 구현 방식과 직결되므로 자동 선택하지 않고 escalate. (location: `supabase/migrations/0003_chat.sql` chat_rooms_insert_participant)
+
+### [Patch] 자동 적용 완료
+
+- [x] [Review][Patch] `chat_rooms`에 `CHECK(buyer_id <> seller_id)` 추가 — 자기 자신과의 방 차단(`not null`은 막지 못함). [supabase/migrations/0003_chat.sql] — 적용·validate 완료(0003b).
+- [x] [Review][Patch] `chat_messages`에 `CHECK(length(btrim(body)) > 0)` 추가 — 공백만 있는 빈 메시지 차단. [supabase/migrations/0003_chat.sql] — 적용·validate 완료(0003b).
+- [x] [Review][Patch] cascade FK 인덱스 추가 — `chat_rooms(buyer_id)`·`chat_rooms(seller_id)`·`chat_messages(sender_id)`. profiles 삭제 cascade 시 풀스캔/락 회피(마이그레이션 자체가 명시한 성능 의도와 정합). [supabase/migrations/0003_chat.sql] — 적용 완료(0003b).
+- [x] [Review][Patch] 헤더 주석 정정 — ① ai_readonly가 chat 테이블 SELECT를 얻는 경로를 `alter default privileges`가 아니라 `grant select on all tables`(0003<0006 순서라 0006 적용 시 chat이 이미 존재)로 정정. ② 존재하지 않는 `0002b/c/d` 파일 참조 제거(0004에서 복사된 stale 표기). [supabase/migrations/0003_chat.sql L1~16]
+
+### 검토했으나 조치 안 함(dismiss/defer)
+
+- [x] [Review][Dismiss] UNIQUE 역할 스왑 중복 방 — `(L,A,B)`/`(L,B,A)` 이론상 별개지만, 5-2 흐름상 `buyer=문의자·seller=매물주`로 deterministic이고 `CHECK(buyer<>seller)`로 보강돼 실질 중복 불가. #Decision(A/B)로 완전 차단 가능.
+- [x] [Review][Dismiss] INSERT-then-RETURNING 순서 의존 — 정상 흐름(방 먼저 생성→메시지)에서 충족. 결함 아님(정보성).
+- [x] [Review][Dismiss] UPDATE/DELETE 정책 부재 — 의도된 default-deny(메시지 영속·불변, 관리자 삭제는 Epic6). 스펙 명시.
+- [x] [Review][Dismiss] EXISTS 서브쿼리가 chat_rooms RLS 우회 우려 — 라이브 검증상 정상. 참여자만 통과, 제3자 0건. 보안 갭 없음.
+
+### 라이브 검증 결과(패치 후)
+
+- 정책 4개 그대로(`{authenticated}`), 술어값 정확.
+- CHECK 2개 validated: `chat_rooms_buyer_ne_seller`, `chat_messages_body_not_blank`.
+- 인덱스 7개: pkey×2, room_created, sender, buyer, seller, UNIQUE.
+- `get_advisors(security)`: chat 관련 신규 경고 0건(기존 vector/is_admin/leaked-password만, 본 스토리 무관).
+
 ## Change Log
 
 - 2026-06-23: chat 스키마(`chat_rooms`·`chat_messages`) + 참여자 한정 RLS 4개 + UNIQUE(매물·구매자·판매자) 마이그레이션 `0003_chat` 생성·적용·검증. (dev, story 5-1)
+- 2026-06-23: code-review 반영(0003b) — CHECK(buyer≠seller)·CHECK(빈 본문 금지)·FK 인덱스 3개·헤더 주석 정정. seller_id 위조(High)는 [Decision]으로 escalate, 상태 in-progress 유지. (review, story 5-1)
