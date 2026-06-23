@@ -88,7 +88,7 @@ development_status:
 
   # --- Epic 6: 관리자 ---
   epic-6: in-progress
-  6-1-admin-라우트-가드-admin-rls: review
+  6-1-admin-라우트-가드-admin-rls: done
   6-2-회원-관리: backlog
   6-3-전체-매물-관리: backlog
   6-4-거래-내역-조회: backlog

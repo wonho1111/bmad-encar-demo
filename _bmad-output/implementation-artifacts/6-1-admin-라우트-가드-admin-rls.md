@@ -1,6 +1,6 @@
 # Story 6.1: admin 라우트 가드 + admin RLS
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -130,3 +130,4 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 
 - 2026-06-24: 스토리 6-1 컨텍스트 생성(ready-for-dev) — 라우트 가드는 Epic 1 기존 자산(신규 코드 없음), 실질 산출물은 `0005_admin_policies.sql`(관리자 전권 교차 RLS) 임을 명확화. (create-story)
 - 2026-06-24: 관리자 전권 교차 RLS `0005_admin_policies` 작성·적용·검증(신규 정책 7개) + 라우트 가드 3분기 Playwright E2E 통과. 상태 review. (dev, story 6-1)
+- 2026-06-24: code-review 통과 — Blind/Edge/Acceptance 3레이어 인라인 검토(서브에이전트 중첩 제한으로 순차 수행). 라이브 pg_policies(admin 9개=신규7+기존2, 전부 `{authenticated}`·`qual=is_admin()`, profiles_update_admin은 with_check=is_admin())·get_advisors(security) 신규 경고 0건 재확인. 라우트 가드 3종 파일 존재·동작 확인. High/심각 지적 0, [Patch]·[Decision] 0. 상태 done. (code-review, story 6-1)
