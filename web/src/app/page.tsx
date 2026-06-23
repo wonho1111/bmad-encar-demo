@@ -52,6 +52,10 @@ export default async function Home() {
           <Link href="/ai" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>
             AI 검색
           </Link>
+          {/* 문의 채팅(Story 5-2) — 매물 문의로 시작된 채팅방 목록. 구매자·판매자 모두 당사자가 될 수 있어 공통 노출. */}
+          <Link href="/chat" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>
+            문의 채팅
+          </Link>
           {/* 판매자에게는 매물 등록 진입점을 함께 제공한다(Story 2-2). */}
           {roleLabel === ROLE_LABEL[USER_ROLE.SELLER] && (
             <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>

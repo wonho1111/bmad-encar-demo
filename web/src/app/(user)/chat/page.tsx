@@ -1,0 +1,125 @@
+// 문의 채팅방 목록 (FR19, Story 5-2) — 서버 컴포넌트.
+//
+// 동작:
+//   1) 로그인 사용자가 당사자(구매자 또는 판매자)인 채팅방만 보여준다.
+//      · 필터를 따로 걸지 않아도 RLS(chat_rooms_select_participant)가 "내 방"만 통과시킨다(제3자 0건).
+//   2) 각 방은 매물 요약 + 내 역할에 따른 상대 표기와 함께, 클릭하면 그 대화(/chat/[roomId])로 진입.
+//   3) 방이 없으면 빈 상태 안내. 조회 실패는 "없음"과 구분해 한국어 에러 안내(search/sell 패턴).
+//
+// 보호: proxy가 /chat 비로그인 1차 차단. 역할 게이트 없음(구매자·판매자 공통).
+//
+// 매 요청 최신 DB 상태를 반영해야 하므로(새 방·sold 변화 즉시) force-dynamic.
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
+import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
+import AppHeader from '@/components/layout/AppHeader';
+
+export const dynamic = 'force-dynamic';
+
+// 방 1건 + 임베디드 매물 요약(PostgREST 조인). listings는 단일 객체로 온다(FK 단방향).
+type ChatRoomRow = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  created_at: string;
+  listings: {
+    manufacturer: string;
+    model: string;
+    year: number;
+    price: number;
+    status: string;
+  } | null;
+};
+
+export default async function ChatListPage() {
+  const supabase = await createClient();
+
+  // 상단바용 역할 라벨 + 본인 식별(내가 buyer인지 seller인지로 상대 표기를 정한다).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  let roleLabel: string | null = null;
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+    if (profile?.role) {
+      roleLabel = ROLE_LABEL[profile.role as UserRole] ?? profile.role;
+    }
+  }
+
+  // 내 채팅방 목록 — RLS가 참여자 방만 통과시키므로 별도 필터 불필요. 매물 요약은 임베디드 조회로 함께.
+  //   최신순(created_at desc) + id 2차정렬(같은 시각 행의 순서 안정화 — search 페이지와 동일 정신).
+  const { data: rooms, error } = await supabase
+    .from('chat_rooms')
+    .select(
+      'id, listing_id, buyer_id, seller_id, created_at, listings(manufacturer, model, year, price, status)',
+    )
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .returns<ChatRoomRow[]>();
+
+  if (error) {
+    // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분.
+    console.error('[chat/list] 채팅방 목록 조회 실패:', error);
+  }
+
+  return (
+    <>
+      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} />
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+        <section className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold">문의 채팅</h1>
+          <p className="text-sm text-zinc-500">매물 문의로 시작된 채팅방 목록입니다.</p>
+        </section>
+
+        <section className="flex flex-col gap-3">
+          {error ? (
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              채팅방 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
+            </p>
+          ) : !rooms || rooms.length === 0 ? (
+            <p className="text-sm text-zinc-500">
+              아직 문의한 채팅방이 없습니다. 매물 상세에서 &lsquo;문의하기&rsquo;를 눌러보세요.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {rooms.map((room) => {
+                // 내가 구매자면 상대는 판매자, 판매자면 상대는 구매자. (한 방엔 정확히 두 당사자.)
+                const iAmBuyer = user?.id === room.buyer_id;
+                const counterpart = iAmBuyer ? '판매자에게 문의' : '구매자 문의';
+                const l = room.listings;
+                const summary = l
+                  ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
+                  : '매물 정보 없음';
+                const sold = l?.status === 'sold';
+                return (
+                  <li key={room.id}>
+                    <Link
+                      href={`/chat/${room.id}`}
+                      className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                    >
+                      <span className="flex flex-col gap-0.5">
+                        <span className="font-medium">
+                          {summary}
+                          {sold && (
+                            <span className="ml-2 text-xs text-zinc-400">(판매완료)</span>
+                          )}
+                        </span>
+                        <span className="text-xs text-zinc-500">{counterpart}</span>
+                      </span>
+                      <span className="text-xs text-zinc-400">대화 열기 →</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      </main>
+    </>
+  );
+}

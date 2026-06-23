@@ -18,13 +18,15 @@ import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
+import InquiryButton from './InquiryButton';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
 export const dynamic = 'force-dynamic';
 
-// 상세 화면에 표시할 FR5 15필드 + 상태(라벨용). 사진 없음.
+// 상세 화면에 표시할 FR5 15필드 + 상태(라벨용) + seller_id(문의 버튼 노출 판단용). 사진 없음.
 type ListingDetail = {
   id: string;
+  seller_id: string; // 이 매물의 판매자(매물주). 본인이면 "문의하기"를 숨긴다(자기 자신과 채팅 불가).
   manufacturer: string;
   model: string;
   body_type: string;
@@ -81,7 +83,7 @@ export default async function ListingDetailPage({
   //   maybeSingle(): 0건이면 null(존재하지 않음·sold·접근 권한 없음). edit 페이지와 동일 패턴.
   const { data: listing, error } = await buyerListingsQuery(
     supabase,
-    'id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description, status',
+    'id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description, status',
   )
     .eq('id', id)
     .maybeSingle<ListingDetail>();
@@ -158,6 +160,11 @@ export default async function ListingDetailPage({
           <p className="text-sm text-zinc-500">
             {listing.year}년 · {priceText}
           </p>
+          {/* 문의하기 (FR19) — 이 매물의 판매자와 채팅방을 연다(없으면 생성, 있으면 재사용).
+              본인이 이 매물의 판매자면 숨긴다(자기 자신과 채팅 불가 — DB의 CHECK(buyer<>seller)로도 막힘, 앱측 1차 비노출). */}
+          {user && user.id !== listing.seller_id && (
+            <InquiryButton listingId={listing.id} />
+          )}
         </section>
 
         {/* 기본 정보(15필드 중 수치·고정목록 필드) */}
