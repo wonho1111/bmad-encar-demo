@@ -1,6 +1,6 @@
 # Story 5.1: chat 스키마 + RLS
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -115,6 +115,7 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 ### File List
 
 - `supabase/migrations/0003_chat.sql` (신규)
+- `supabase/migrations/0003c_chat_room_integrity.sql` (신규 — [Decision] 옵션A 무결성 트리거)
 - `_bmad-output/implementation-artifacts/5-1-chat-스키마-rls.md` (스토리 — 본 파일)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (epic-5 in-progress, 5-1 review)
 
@@ -122,9 +123,11 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 
 코드리뷰 3레이어(Blind Hunter·Edge Case Hunter·Acceptance Auditor) 병렬 서브에이전트로 실행. 라이브 DB(Supabase MCP)로 정책·제약·인덱스·advisor 사실 검증.
 
-### [Decision] 결정 필요 — 사용자 판단 대기
+### [Decision] 결정 완료 — 사용자 승인 옵션 (A) 적용 (2026-06-24)
 
-- [ ] [Review][Decision] **chat_rooms INSERT 시 `seller_id`·`listing_id` 위조 가능(High)** — 현재 INSERT RLS(`auth.uid() = buyer_id or seller_id`)는 방을 만드는 사람이 *둘 중 하나*이기만 하면 통과한다. 그래서 구매자가 **임의의 `seller_id`(아무 프로필)** 와 **임의의 `listing_id`** 를 지정해 방을 만들 수 있고, `seller_id`가 그 `listing_id`의 실제 판매자(소유자)인지 DB가 검증하지 않는다 → 모르는 사람에게 원치 않는 방을 강제로 만들거나, 잘못된 (매물,판매자) 짝의 방을 생성할 수 있다. **선택지**: (A) 트리거/함수로 INSERT 시 `seller_id = (select seller_id from listings where id = listing_id)` 강제(DB 레벨 차단, 가장 견고) / (B) `listings(id, seller_id)` 복합 UNIQUE + 복합 FK로 짝 무결성 보장 / (C) 앱(5-2 프록시) 책임으로 두고 DB는 현행 유지(데모 범위면 수용 가능, RLS 위조 벡터는 남음). 5-2 "방 생성" 구현 방식과 직결되므로 자동 선택하지 않고 escalate. (location: `supabase/migrations/0003_chat.sql` chat_rooms_insert_participant)
+> **해결**: 사용자가 옵션 **(A) DB 트리거 강제**를 직접 승인. `0003c_chat_room_integrity.sql`로 `chat_rooms` BEFORE INSERT 트리거(`enforce_chat_room_seller`)를 추가해 `seller_id`를 그 매물의 실제 소유자(`listings.seller_id`)로 **강제 덮어쓴다**(클라이언트 입력 무시 → 위조 원천 차단 + 기획 "매물 주인 자동 연결" 보장). `security definer`+`search_path=public`, 트리거 함수 EXECUTE는 anon/authenticated에서 회수(advisor 0028/0029 해소). 라이브 4케이스 검증 통과(정상=매물주 자동설정 / 위조 seller=매물주로 교정 / 본인매물=CHECK 거부 / 없는매물=트리거 거부).
+
+- [x] [Review][Decision→해결] **chat_rooms INSERT 시 `seller_id`·`listing_id` 위조 가능(High)** — 옵션 (A) 트리거로 DB 레벨 차단(위 해결 박스).  원지적: — 현재 INSERT RLS(`auth.uid() = buyer_id or seller_id`)는 방을 만드는 사람이 *둘 중 하나*이기만 하면 통과한다. 그래서 구매자가 **임의의 `seller_id`(아무 프로필)** 와 **임의의 `listing_id`** 를 지정해 방을 만들 수 있고, `seller_id`가 그 `listing_id`의 실제 판매자(소유자)인지 DB가 검증하지 않는다 → 모르는 사람에게 원치 않는 방을 강제로 만들거나, 잘못된 (매물,판매자) 짝의 방을 생성할 수 있다. **선택지**: (A) 트리거/함수로 INSERT 시 `seller_id = (select seller_id from listings where id = listing_id)` 강제(DB 레벨 차단, 가장 견고) / (B) `listings(id, seller_id)` 복합 UNIQUE + 복합 FK로 짝 무결성 보장 / (C) 앱(5-2 프록시) 책임으로 두고 DB는 현행 유지(데모 범위면 수용 가능, RLS 위조 벡터는 남음). 5-2 "방 생성" 구현 방식과 직결되므로 자동 선택하지 않고 escalate. (location: `supabase/migrations/0003_chat.sql` chat_rooms_insert_participant)
 
 ### [Patch] 자동 적용 완료
 
@@ -151,3 +154,4 @@ claude-opus-4-8[1m] (Opus 4.8, 1M context)
 
 - 2026-06-23: chat 스키마(`chat_rooms`·`chat_messages`) + 참여자 한정 RLS 4개 + UNIQUE(매물·구매자·판매자) 마이그레이션 `0003_chat` 생성·적용·검증. (dev, story 5-1)
 - 2026-06-23: code-review 반영(0003b) — CHECK(buyer≠seller)·CHECK(빈 본문 금지)·FK 인덱스 3개·헤더 주석 정정. seller_id 위조(High)는 [Decision]으로 escalate, 상태 in-progress 유지. (review, story 5-1)
+- 2026-06-24: [Decision] 사용자 승인 옵션(A) 적용 — `0003c_chat_room_integrity.sql` 무결성 트리거(`seller_id=매물주` 강제) + 함수 EXECUTE 회수. 라이브 4케이스 검증 통과. 상태 done. (review→done, story 5-1)
