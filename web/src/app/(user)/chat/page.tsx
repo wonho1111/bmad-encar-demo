@@ -92,10 +92,14 @@ export default async function ChatListPage() {
                 const iAmBuyer = user?.id === room.buyer_id;
                 const counterpart = iAmBuyer ? '판매자에게 문의' : '구매자 문의';
                 const l = room.listings;
+                // 매물 임베드가 null = 판매완료(sold)거나 구매자 RLS상 조회 불가한 매물.
+                //   FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심 단일 규칙)을 지켜
+                //   상세 정보(제조사·모델·가격)는 노출하지 않고 플레이스홀더만 보인다.
+                //   [Decision 옵션D] sold를 다시 보이게 하지 않는다(RLS 확대·스냅샷·서버우회 채택 안 함).
+                //   대화방 자체는 살아 있으므로 행은 그대로 클릭 가능(/chat/[roomId] 진입은 정상).
                 const summary = l
                   ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
-                  : '매물 정보 없음';
-                const sold = l?.status === 'sold';
+                  : '판매 완료되었거나 조회할 수 없는 매물';
                 return (
                   <li key={room.id}>
                     <Link
@@ -103,11 +107,8 @@ export default async function ChatListPage() {
                       className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
                     >
                       <span className="flex flex-col gap-0.5">
-                        <span className="font-medium">
+                        <span className={l ? 'font-medium' : 'font-medium text-zinc-400'}>
                           {summary}
-                          {sold && (
-                            <span className="ml-2 text-xs text-zinc-400">(판매완료)</span>
-                          )}
                         </span>
                         <span className="text-xs text-zinc-500">{counterpart}</span>
                       </span>

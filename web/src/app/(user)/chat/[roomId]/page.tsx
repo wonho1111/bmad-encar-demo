@@ -120,24 +120,24 @@ export default async function ChatRoomPage({
   const iAmBuyer = user?.id === room.buyer_id;
   const counterpart = iAmBuyer ? '판매자' : '구매자';
   const l = room.listings;
+  // 매물 임베드가 null = 판매완료(sold)거나 구매자 RLS상 조회 불가한 매물.
+  //   FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심 단일 규칙)을 지켜
+  //   매물 상세 정보는 노출하지 않고 플레이스홀더만 보인다. 대화방은 살아 있어 채팅은 그대로 가능.
+  //   [Decision 옵션D] sold를 다시 보이게 하지 않는다(RLS 확대·스냅샷·서버우회 채택 안 함).
   const summary = l
     ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
-    : '매물 정보 없음';
-  const sold = l?.status === 'sold';
+    : '판매 완료되었거나 조회할 수 없는 매물';
 
   return (
     <>
       {header}
       <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-        {/* 방 헤더 — 어떤 매물·누구와의 대화인지 */}
+        {/* 방 헤더 — 어떤 매물·누구와의 대화인지 (매물이 안 보이면 플레이스홀더 — FR11 준수) */}
         <section className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-2">
-            <h1 className="text-xl font-semibold">{summary}</h1>
-            {sold && (
-              <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                판매완료
-              </span>
-            )}
+            <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-zinc-400'}>
+              {summary}
+            </h1>
           </div>
           <p className="text-sm text-zinc-500">{counterpart}와의 문의 채팅</p>
         </section>
