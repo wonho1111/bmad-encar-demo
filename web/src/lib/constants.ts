@@ -14,6 +14,13 @@ export const LISTING_STATUS = {
 } as const;
 export type ListingStatus = (typeof LISTING_STATUS)[keyof typeof LISTING_STATUS];
 
+/** 회원 상태 enum (profiles.status CHECK와 일치 — 0001_profiles.sql). 관리자 회원 관리(6-2)에서 사용. */
+export const PROFILE_STATUS = {
+  ACTIVE: 'active',
+  SUSPENDED: 'suspended',
+} as const;
+export type ProfileStatus = (typeof PROFILE_STATUS)[keyof typeof PROFILE_STATUS];
+
 /** 사용자 역할 enum (profiles.role CHECK와 일치). */
 export const USER_ROLE = {
   BUYER: 'buyer',
