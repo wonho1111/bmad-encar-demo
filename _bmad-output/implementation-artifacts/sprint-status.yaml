@@ -84,7 +84,7 @@ development_status:
   5-1-chat-스키마-rls: done
   5-2-문의-채팅방-생성-진입: done
   5-3-폴링-메시지-송수신: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   # --- Epic 6: 관리자 ---
   epic-6: backlog
