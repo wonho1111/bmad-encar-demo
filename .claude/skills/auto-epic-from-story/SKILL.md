@@ -143,6 +143,8 @@ Agent 도구로 새 서브에이전트를 띄우고 아래 지시를 준다:
    - (보조) 페이지를 몇 개 접속시킨 뒤 `get_runtime_logs`(environment=preview)로 런타임 에러를 본다 — 트래픽이 없으면 로그가 비어 있을 수 있음(정상).
    - 배포가 `ERROR`거나 로그에 에러가 있으면 보고한다.
 
+> **배포 링크 브라우저 E2E가 막힐 때(preview/production 공통):** Playwright 게스트모드에서 Vercel 보호벽 로그인이 안 돼 로컬로만 테스트하고 끝내지 말 것. 먼저 **① 이미 로그인된 크롬 세션으로 접속**을 시도하고, 안 되면 **② `get_access_to_vercel_url`로 그 배포의 share 링크(`?_vercel_share=<token>`, 23h 유효)를 발급**해 게스트모드에서 접속한다 — 공유 URL 한 번이면 인증 쿠키가 세팅돼 로컬과 동일하게 E2E 가능. (자세히는 [[preview-e2e-via-vercel-share-link]])
+
 ---
 
 ## 4단계 — 종료 + 인수인계
