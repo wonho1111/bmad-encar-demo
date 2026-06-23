@@ -80,7 +80,7 @@ development_status:
   epic-4-retrospective: done
 
   # --- Epic 5: 문의 채팅 ---
-  epic-5: in-progress
+  epic-5: done
   5-1-chat-스키마-rls: done
   5-2-문의-채팅방-생성-진입: done
   5-3-폴링-메시지-송수신: done
