@@ -5,14 +5,16 @@
 //      "찾을 수 없음/접근 불가" 안내(존재하지 않는 방·삭제·제3자 접근을 한데 묶어 안내 — 정보 누출 방지).
 //   2) 당사자면 매물 요약·상대 헤더 + 메시지 영역의 "빈 골격"을 보여준다.
 //
-// ⚠️ 범위(Story 5-2): 방 진입까지만. 메시지 입력·전송·폴링(주고받기)은 5-3에서 구현한다.
-//    그래서 여기엔 입력창·전송 버튼·폴링이 없다(과구현 금지). 메시지 영역은 안내 박스만 둔다.
+// 메시지 송수신·폴링(Story 5-3): 당사자면 메시지 영역에 <ChatRoomMessages>(클라이언트 컴포넌트)를 렌더한다.
+//   전송(INSERT 영속)·폴링 수신(4초)·내/상대 구분 목록은 그 컴포넌트가 담당. 이 서버 페이지는 "당사자 확인 +
+//   본인 id 전달"까지만 한다(RLS로 방을 못 읽으면 아래에서 이미 "찾을 수 없음" 안내로 빠진다).
 //
 // 보호: proxy가 /chat 비로그인 1차 차단. 참여자 한정은 RLS가 집행. force-dynamic(매 요청 최신 상태).
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import AppHeader from '@/components/layout/AppHeader';
+import ChatRoomMessages from './ChatRoomMessages';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,15 +144,18 @@ export default async function ChatRoomPage({
           <p className="text-sm text-zinc-500">{counterpart}와의 문의 채팅</p>
         </section>
 
-        {/* 메시지 영역(빈 골격) — 송수신은 5-3에서. 지금은 안내 박스만. */}
-        <section
-          aria-label="메시지"
-          className="flex min-h-40 flex-col items-center justify-center rounded border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500 dark:border-zinc-700"
-        >
-          아직 주고받은 메시지가 없습니다.
-          <br />
-          메시지 송수신 기능은 곧 제공됩니다.
-        </section>
+        {/* 메시지 영역 — 송수신·폴링(5-3). 당사자 확인이 끝난 지점이므로 본인 id를 내려 RLS 전송을 통과시킨다.
+            user.id가 없는 비정상 상황(여기 도달 전 proxy·RLS가 막지만)엔 안내로 폴백(방어). */}
+        {user?.id ? (
+          <ChatRoomMessages roomId={room.id} myUserId={user.id} />
+        ) : (
+          <p
+            role="alert"
+            className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+          >
+            로그인이 필요합니다. 다시 로그인해주세요.
+          </p>
+        )}
 
         {backLink}
       </main>
