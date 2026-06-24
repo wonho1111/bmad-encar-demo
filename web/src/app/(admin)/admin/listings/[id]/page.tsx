@@ -38,7 +38,7 @@ export default async function AdminListingDetailPage({
   const { data: listing, error } = await supabase
     .from('listings')
     .select(
-      'id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description, status',
+      'id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status',
     )
     .eq('id', id)
     .maybeSingle<AdminListingDetail>();

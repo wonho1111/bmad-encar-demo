@@ -26,6 +26,7 @@ export type ListingDetailFieldsData = {
   seats: number;
   region: string;
   accident_free: boolean;
+  seller_name?: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007 비정규화). 없으면 행 자체를 숨긴다.
   options: string[] | null; // text[]; 빈 배열·null 가능
   description: string | null; // nullable
 };
@@ -69,6 +70,8 @@ export default function ListingDetailFields({
         <Field label="승차인원" value={`${listing.seats}인승`} />
         <Field label="지역" value={listing.region} />
         <Field label="사고이력" value={listing.accident_free ? '무사고' : '사고이력 있음'} />
+        {/* 판매자 표시 이름(있을 때만) — 등록 시 트리거가 자동 기록한 값(이메일 @앞부분). */}
+        {listing.seller_name && <Field label="판매자" value={listing.seller_name} />}
       </section>
 
       {/* 옵션(text[]) — 빈 배열이면 안내 */}

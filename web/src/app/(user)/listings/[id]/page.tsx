@@ -41,6 +41,7 @@ type ListingDetail = {
   seats: number;
   region: string;
   accident_free: boolean;
+  seller_name: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007). 상세에 표시.
   options: string[] | null; // text[]; 빈 배열·null 가능
   description: string | null; // nullable
   status: string;
@@ -74,7 +75,7 @@ export default async function ListingDetailPage({
   //   maybeSingle(): 0건이면 null(존재하지 않음·sold·접근 권한 없음). edit 페이지와 동일 패턴.
   const { data: listing, error } = await buyerListingsQuery(
     supabase,
-    'id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description, status',
+    'id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status',
   )
     .eq('id', id)
     .maybeSingle<ListingDetail>();
