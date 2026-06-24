@@ -12,6 +12,11 @@ class SupabaseEnv {
   static const String url = String.fromEnvironment('SUPABASE_URL');
   static const String anonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
+  // AI 검색(/ai/search)을 부를 FastAPI 주소(7.2). web 의 NEXT_PUBLIC_API_BASE_URL 과 같은 값
+  // (Cloud Run dev 서비스 encar-ai-api-dev URL). 매물 탐색·상세는 Supabase 만으로 동작하므로
+  // 이 값은 "AI 호출 시점"에만 가드한다(아래 isConfigured 는 Supabase 키만 본다).
+  static const String apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+
   /// 누락된 환경변수가 있으면 무엇이 비었는지 한국어로 알리고 throw 한다.
   /// 불투명한 런타임 에러(예: 빈 URL로 초기화 실패) 대신 원인을 바로 진단하게 한다.
   static void assertConfigured() {
@@ -29,5 +34,9 @@ class SupabaseEnv {
   }
 
   /// 환경변수가 모두 채워졌는지(빌드에 주입됐는지) 여부. 화면에서 가드 안내 분기에 쓴다.
+  /// (Supabase 키만 본다 — 탐색·상세는 API 없이도 동작해야 하므로 API_BASE_URL 은 제외.)
   static bool get isConfigured => url.isNotEmpty && anonKey.isNotEmpty;
+
+  /// AI 검색 API 주소가 주입됐는지. AI 채팅 화면이 호출 전에 이걸로 가드한다.
+  static bool get isApiConfigured => apiBaseUrl.isNotEmpty;
 }

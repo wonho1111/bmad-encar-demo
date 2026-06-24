@@ -1,9 +1,12 @@
-// 인증 후 홈(토대) — 역할·이메일 표시 + 로그아웃.
-// nav-ia-rules §1: buyer/seller 공통 홈(R1 상위집합). 탐색 미리보기·AI FAB 등은 7.2부터.
-// 관리자(admin)는 모바일 제외(AR9) → 여기까지 오지 않고 main.dart 가 차단 화면으로 보낸다.
+// 인증 후 홈 — 역할·이메일 + 매물 탐색 진입(②) + AI 검색 전역 진입(③, FAB).
+// nav-ia-rules §1·§2: 구매자/판매자 공통 홈(R1 상위집합), 1순위 과업=매물 탐색(R2),
+//   AI 는 전역 진입점(R3, Flutter=FAB). 판매자 전용(등록·관리)은 7.3·7.4 에서.
+// 관리자(admin)는 모바일 제외(AR9) → main.dart 가 차단 화면으로 보낸다.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ai_search/ai_chat_screen.dart';
+import '../listings/search_screen.dart';
 import 'auth_controller.dart';
 import 'user_role.dart';
 
@@ -29,6 +32,15 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
+      // AI 검색 전역 진입(nav-ia R3) — 어느 화면에서든 닿는 보조 동작을 홈에서 FAB 로.
+      floatingActionButton: FloatingActionButton.extended(
+        key: const Key('ai_fab'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AiChatScreen()),
+        ),
+        icon: const Icon(Icons.smart_toy_outlined),
+        label: const Text('AI 검색'),
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -44,13 +56,26 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 4),
                 Text('역할: ${role?.label ?? '미상'}', key: const Key('home_role')),
                 const SizedBox(height: 24),
-                const Text(
-                  '앱 골격(7.1)이 정상 동작합니다. 매물 탐색·AI 검색·판매 등 화면은 다음 스토리(7.2~)에서 추가됩니다.',
-                  style: TextStyle(color: Colors.grey),
+
+                // ② 매물 탐색 — 1순위 과업으로 바로 진입(R2).
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const Key('go_search'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SearchScreen()),
+                    ),
+                    icon: const Icon(Icons.search),
+                    label: const Text('매물 탐색'),
+                  ),
                 ),
+                const SizedBox(height: 12),
+
                 if (role == UserRole.seller) ...[
-                  const SizedBox(height: 16),
-                  const Text('· 판매자: 내 매물 등록·관리(7.3·7.4 예정)'),
+                  const Text(
+                    '· 판매자: 내 매물 등록·관리는 다음 스토리(7.3·7.4)에서 추가됩니다.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
                 ],
               ],
             ),
