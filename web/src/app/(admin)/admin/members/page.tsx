@@ -16,10 +16,11 @@ type MemberRow = {
   id: string;
   role: UserRole;
   status: ProfileStatus;
+  name: string | null; // 표시 이름(이메일 @앞부분, 0009). 회원 식별에 사용.
   created_at: string;
 };
 
-// 회원 id를 화면 식별용으로 짧게 보여준다(전체 UUID는 길어 가독성↓). 앞 8자.
+// 이름이 없을 때(예전 회원·백필 누락)만 쓰는 폴백 — 회원 id를 짧게 보여준다(전체 UUID는 길어 가독성↓). 앞 8자.
 function shortId(id: string): string {
   return id.slice(0, 8);
 }
@@ -34,7 +35,7 @@ export default async function AdminMembersPage() {
   // error를 함께 받아 "조회 실패"와 "회원 없음"을 구분한다(SellPage 패턴).
   const { data: members, error: membersError } = await supabase
     .from('profiles')
-    .select('id, role, status, created_at')
+    .select('id, role, status, name, created_at')
     .order('created_at', { ascending: true })
     .returns<MemberRow[]>();
 
@@ -64,6 +65,8 @@ export default async function AdminMembersPage() {
             {members.map((m) => {
               const isSelf = m.id === user.id;
               const isSuspended = m.status === PROFILE_STATUS.SUSPENDED;
+              // 표시 이름(이메일 @앞부분, 0009). 없으면 UUID 앞자리로 폴백.
+              const memberLabel = m.name ?? shortId(m.id);
               return (
                 <li
                   key={m.id}
@@ -71,7 +74,7 @@ export default async function AdminMembersPage() {
                 >
                   <span className="flex items-center gap-2">
                     <span className="font-medium">{ROLE_LABEL[m.role]}</span>
-                    <span className="text-zinc-400">{shortId(m.id)}</span>
+                    <span className="text-zinc-400">{memberLabel}</span>
                     {isSelf && (
                       <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
                         나
@@ -93,7 +96,7 @@ export default async function AdminMembersPage() {
                       <MemberActions
                         memberId={m.id}
                         status={m.status}
-                        label={`${ROLE_LABEL[m.role]} ${shortId(m.id)}`}
+                        label={`${ROLE_LABEL[m.role]} ${memberLabel}`}
                       />
                     )}
                   </div>
