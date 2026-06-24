@@ -19,6 +19,8 @@ type AdminChatRoomDetail = {
   listing_id: string;
   buyer_id: string;
   seller_id: string;
+  buyer_name: string | null; // 표시 이름(이메일 @앞부분, 0008). 헤더 식별에 사용(과거 UUID 앞자리 대체).
+  seller_name: string | null;
   created_at: string;
   listings: {
     manufacturer: string;
@@ -58,7 +60,7 @@ export default async function AdminChatRoomPage({
   const { data: room, error: roomError } = await supabase
     .from('chat_rooms')
     .select(
-      'id, listing_id, buyer_id, seller_id, created_at, listings(manufacturer, model, year, price, status)',
+      'id, listing_id, buyer_id, seller_id, buyer_name, seller_name, created_at, listings(manufacturer, model, year, price, status)',
     )
     .eq('id', roomId)
     .maybeSingle<AdminChatRoomDetail>();
@@ -133,8 +135,8 @@ export default async function AdminChatRoomPage({
           {summary}
         </h1>
         <p className="text-sm text-zinc-500">
-          구매자 {room.buyer_id.slice(0, 8)} ↔ 판매자 {room.seller_id.slice(0, 8)} 의 문의 채팅 (열람
-          전용)
+          구매자 {room.buyer_name ?? room.buyer_id.slice(0, 8)} ↔ 판매자{' '}
+          {room.seller_name ?? room.seller_id.slice(0, 8)} 의 문의 채팅 (열람 전용)
         </p>
       </section>
 

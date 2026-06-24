@@ -18,6 +18,8 @@ type AdminChatRoom = {
   listing_id: string;
   buyer_id: string;
   seller_id: string;
+  buyer_name: string | null; // 표시 이름(이메일 @앞부분, 0008). 당사자 식별에 사용(과거 UUID 앞자리 대체).
+  seller_name: string | null;
   created_at: string;
   listings: {
     manufacturer: string;
@@ -44,7 +46,7 @@ export default async function AdminChatsPage() {
   const { data: rooms, error } = await supabase
     .from('chat_rooms')
     .select(
-      'id, listing_id, buyer_id, seller_id, created_at, listings(manufacturer, model, year, price, status)',
+      'id, listing_id, buyer_id, seller_id, buyer_name, seller_name, created_at, listings(manufacturer, model, year, price, status)',
     )
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -79,11 +81,14 @@ export default async function AdminChatsPage() {
               const summary = l
                 ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
                 : '삭제되었거나 조회할 수 없는 매물';
+              // 당사자 식별 = 표시 이름(이메일 @앞부분, 0008). 없으면 UUID 앞자리로 폴백(예전 방·백필 누락 대비).
+              const buyerLabel = room.buyer_name ?? shortId(room.buyer_id);
+              const sellerLabel = room.seller_name ?? shortId(room.seller_id);
               // 삭제 확인 라벨: 매물이 null이면 summary가 모든 방에 동일해(어느 방을 지우는지 구분 불가) →
-              //   당사자 축약 id를 덧붙여 관리자가 "어느 방"을 삭제하는지 식별할 수 있게 한다(code-review 6-5).
+              //   당사자 이름을 덧붙여 관리자가 "어느 방"을 삭제하는지 식별할 수 있게 한다(code-review 6-5).
               const deleteLabel = l
                 ? summary
-                : `${summary} (구매자 ${shortId(room.buyer_id)} · 판매자 ${shortId(room.seller_id)})`;
+                : `${summary} (구매자 ${buyerLabel} · 판매자 ${sellerLabel})`;
               const createdLabel = new Date(room.created_at).toLocaleString('ko-KR');
               return (
                 <li
@@ -97,10 +102,9 @@ export default async function AdminChatsPage() {
                     <span className={l ? 'font-medium' : 'font-medium text-zinc-400'}>
                       {summary}
                     </span>
-                    {/* 당사자 식별: 구매자/판매자 id 축약 + 생성일. (이메일은 profiles에 없음 — 6-2 결정) */}
+                    {/* 당사자 식별: 구매자/판매자 표시 이름(0008) + 생성일. 이름 없으면 UUID 앞자리 폴백. */}
                     <span className="text-xs text-zinc-500">
-                      구매자 {shortId(room.buyer_id)} · 판매자 {shortId(room.seller_id)} ·{' '}
-                      {createdLabel}
+                      구매자 {buyerLabel} · 판매자 {sellerLabel} · {createdLabel}
                     </span>
                   </Link>
                   <div className="flex shrink-0 items-center gap-2">

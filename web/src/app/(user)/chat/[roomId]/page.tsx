@@ -23,6 +23,8 @@ type ChatRoomDetail = {
   listing_id: string;
   buyer_id: string;
   seller_id: string;
+  buyer_name: string | null; // 상대 표기용 표시 이름(이메일 @앞부분, 0008)
+  seller_name: string | null;
   listings: {
     manufacturer: string;
     model: string;
@@ -60,7 +62,7 @@ export default async function ChatRoomPage({
   const { data: room, error } = await supabase
     .from('chat_rooms')
     .select(
-      'id, listing_id, buyer_id, seller_id, listings(manufacturer, model, year, price, status)',
+      'id, listing_id, buyer_id, seller_id, buyer_name, seller_name, listings(manufacturer, model, year, price, status)',
     )
     .eq('id', roomId)
     .maybeSingle<ChatRoomDetail>();
@@ -121,6 +123,9 @@ export default async function ChatRoomPage({
   // 당사자 — 매물 요약·상대 헤더 + 메시지 빈 골격.
   const iAmBuyer = user?.id === room.buyer_id;
   const counterpart = iAmBuyer ? '판매자' : '구매자';
+  // 상대 표시 이름(이메일 @앞부분, 0008). 내가 구매자면 상대는 판매자 이름, 반대면 구매자 이름.
+  //   값이 없으면(예전 방·백필 누락) 역할만 표기로 폴백.
+  const counterpartName = iAmBuyer ? room.seller_name : room.buyer_name;
   const l = room.listings;
   // 매물 임베드가 null = 판매완료(sold)거나 구매자 RLS상 조회 불가한 매물.
   //   FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심 단일 규칙)을 지켜
@@ -151,7 +156,9 @@ export default async function ChatRoomPage({
               </Link>
             )}
           </div>
-          <p className="text-sm text-zinc-500">{counterpart}와의 문의 채팅</p>
+          <p className="text-sm text-zinc-500">
+            {counterpartName ? `${counterpart} ${counterpartName}` : counterpart}와의 문의 채팅
+          </p>
         </section>
 
         {/* 메시지 영역 — 송수신·폴링(5-3). 당사자 확인이 끝난 지점이므로 본인 id를 내려 RLS 전송을 통과시킨다.

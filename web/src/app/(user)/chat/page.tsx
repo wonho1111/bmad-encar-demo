@@ -22,6 +22,8 @@ type ChatRoomRow = {
   listing_id: string;
   buyer_id: string;
   seller_id: string;
+  buyer_name: string | null; // 상대 표기용 표시 이름(이메일 @앞부분, 0008)
+  seller_name: string | null;
   created_at: string;
   listings: {
     manufacturer: string;
@@ -59,7 +61,7 @@ export default async function ChatListPage() {
   const { data: rooms, error } = await supabase
     .from('chat_rooms')
     .select(
-      'id, listing_id, buyer_id, seller_id, created_at, listings(manufacturer, model, year, price, status)',
+      'id, listing_id, buyer_id, seller_id, buyer_name, seller_name, created_at, listings(manufacturer, model, year, price, status)',
     )
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -96,7 +98,15 @@ export default async function ChatListPage() {
               {rooms.map((room) => {
                 // 내가 구매자면 상대는 판매자, 판매자면 상대는 구매자. (한 방엔 정확히 두 당사자.)
                 const iAmBuyer = user?.id === room.buyer_id;
-                const counterpart = iAmBuyer ? '판매자에게 문의' : '구매자 문의';
+                // 상대 표시 이름(이메일 @앞부분, 0008). 없으면 역할만 표기로 폴백.
+                const counterpartName = iAmBuyer ? room.seller_name : room.buyer_name;
+                const counterpart = iAmBuyer
+                  ? counterpartName
+                    ? `판매자 ${counterpartName}에게 문의`
+                    : '판매자에게 문의'
+                  : counterpartName
+                    ? `구매자 ${counterpartName} 문의`
+                    : '구매자 문의';
                 const l = room.listings;
                 // 매물 임베드가 null = 판매완료(sold)거나 구매자 RLS상 조회 불가한 매물.
                 //   FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심 단일 규칙)을 지켜
