@@ -17,6 +17,7 @@ export type ListingCardData = {
   price: number; // 원(KRW) 정수
   mileage: number; // km 정수
   region: string;
+  seller_name?: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007 비정규화). 없으면(AI결과 등) 미표시.
 };
 
 export default function ListingCard({ listing }: { listing: ListingCardData }) {
@@ -35,6 +36,10 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
         {UNITS.price} · {listing.mileage.toLocaleString('ko-KR')}
         {UNITS.mileage} · {listing.region}
       </span>
+      {/* 판매자 표시 이름(있을 때만) — 본인 매물 인지 등 식별 편의(0007). AI결과처럼 값이 없으면 줄 자체를 숨긴다. */}
+      {listing.seller_name && (
+        <span className="text-xs text-zinc-400">판매자 {listing.seller_name}</span>
+      )}
     </Link>
   );
 }

@@ -98,7 +98,7 @@ export default async function SearchPage({
   // 구매자 관점(판매중만) 시작점은 buyerListingsQuery(FR11 단일 출처). 조건은 값이 있을 때만 체이닝한다.
   let query = buyerListingsQuery(
     supabase,
-    'id, manufacturer, model, year, price, mileage, region',
+    'id, manufacturer, model, year, price, mileage, region, seller_name',
   );
 
   if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)

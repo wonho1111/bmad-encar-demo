@@ -13,7 +13,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { USER_ROLE, ROLE_LABEL, type UserRole } from '@/lib/constants';
+import { USER_ROLE, ROLE_LABEL, LISTING_STATUS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
@@ -55,7 +55,7 @@ export default async function Home() {
     //   search 페이지와 같은 요약 컬럼·정렬을 쓰되 limit만 건다(상태·표시 규칙은 공유).
     const { data: previewListings, error: previewError } = await buyerListingsQuery(
       supabase,
-      'id, manufacturer, model, year, price, mileage, region',
+      'id, manufacturer, model, year, price, mileage, region, seller_name',
     )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
@@ -69,25 +69,55 @@ export default async function Home() {
 
     const isSeller = roleLabel === ROLE_LABEL[USER_ROLE.SELLER];
 
+    // ① 카드 표시 이름 = 이메일의 '@' 앞부분(별도 이름 컬럼 없이 식별용). 본인 이메일은 항상 읽을 수 있어 DB 조회 불필요.
+    const displayName = user.email ? user.email.split('@')[0] : '사용자';
+
+    // ③ "구매문의 n건"(공통) — 본인이 참여한 문의 채팅방 수. chat_rooms 참여자 RLS가
+    //   자동으로 본인 방만(판매자=받은 문의, 구매자=보낸 문의) 세므로 별도 필터가 필요 없다. head:true로 개수만.
+    const { count: roomCount } = await supabase
+      .from('chat_rooms')
+      .select('id', { count: 'exact', head: true });
+    const inquiryCount = roomCount ?? 0;
+
+    // ③ "판매중 n건"(판매자만) — 본인 매물 중 판매중 개수. 본인 행이라 RLS로 바로 읽힌다.
+    let onSaleCount = 0;
+    if (isSeller) {
+      const { count } = await supabase
+        .from('listings')
+        .select('id', { count: 'exact', head: true })
+        .eq('seller_id', user.id)
+        .eq('status', LISTING_STATUS.ON_SALE);
+      onSaleCount = count ?? 0;
+    }
+
     return (
       <>
         <AppHeader roleLabel={roleLabel} email={user.email} />
         <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
-          {/* ① 본인 정보 영역 — 역할 배지 + 이메일. (profiles에 이름 컬럼이 없어 이메일을 식별자로 쓴다) */}
-          <section className="flex flex-col gap-1 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+          {/* ① 본인 정보 영역 — 역할 배지 + 표시 이름(이메일 @앞부분; 이메일 전체는 상단바에 있음).
+              그 아래에 자주 쓰는 동선을 엔카 마이페이지 스타일의 "텍스트 메뉴"로 둔다(버튼처럼 보이지 않게, hover 시 강조).
+              · 문의 채팅: 구매자·판매자 공통.  · 판매중 n건: 판매자만(매물 등록·관리 /sell로 진입, 건수는 가변). */}
+          <section className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex items-center gap-2">
               {roleLabel && (
                 <span className="rounded bg-zinc-900 px-2 py-0.5 text-xs font-medium text-white dark:bg-white dark:text-zinc-900">
                   {roleLabel}
                 </span>
               )}
-              <span className="text-sm font-medium">{user.email}</span>
+              <span className="text-sm font-medium">{displayName}</span>
             </div>
-            <p className="text-xs text-zinc-500">
-              {isSeller
-                ? '내 매물을 관리하거나, 다른 매물을 둘러볼 수 있어요.'
-                : '원하는 차를 탐색하고 판매자에게 바로 문의해보세요.'}
-            </p>
+            <nav className="flex items-center gap-5 border-t border-zinc-200 pt-2 text-sm dark:border-zinc-800">
+              {/* 구매문의(공통) — 본인 참여 문의 채팅방 수. hover 시 빨강 강조. 버튼 테두리 없음(텍스트 메뉴). */}
+              <Link href="/chat" className="text-zinc-600 transition-colors hover:text-red-600 dark:text-zinc-300">
+                구매문의 <span className="font-semibold text-zinc-900 dark:text-zinc-100">{inquiryCount}</span>건
+              </Link>
+              {/* 판매중 n건(판매자만) — 매물 등록·관리(/sell)로 진입. 건수는 본인 판매중 매물 수에 따라 가변. */}
+              {isSeller && (
+                <Link href="/sell" className="text-zinc-600 transition-colors hover:text-red-600 dark:text-zinc-300">
+                  판매중 <span className="font-semibold text-zinc-900 dark:text-zinc-100">{onSaleCount}</span>건
+                </Link>
+              )}
+            </nav>
           </section>
 
           {/* ② 매물 탐색 미리보기 — 최근 매물 N건 + 더보기. 읽기 전용(필터·상태는 /search가 소유). */}
@@ -115,18 +145,6 @@ export default async function Home() {
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
-
-          {/* 보조 동선 — 문의 채팅(구매자·판매자 공통) + 판매자에게는 매물 등록·관리. */}
-          <section className="flex flex-wrap gap-3">
-            <Link href="/chat" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>
-              문의 채팅
-            </Link>
-            {isSeller && (
-              <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}>
-                매물 등록·관리
-              </Link>
             )}
           </section>
         </main>
