@@ -140,6 +140,16 @@ export default async function ChatRoomPage({
             <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-zinc-400'}>
               {summary}
             </h1>
+            {/* 매물이 살아있는(on_sale) 방이면 그 매물 상세로 가는 링크. 관리자 채팅 목록의 '매물 상세'와 동일한 동선.
+                판매완료(l=null)면 FR11(구매자에게 sold 비노출)에 따라 링크를 숨긴다(상세도 어차피 못 봄). */}
+            {l && (
+              <Link
+                href={`/listings/${room.listing_id}`}
+                className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                매물 상세
+              </Link>
+            )}
           </div>
           <p className="text-sm text-zinc-500">{counterpart}와의 문의 채팅</p>
         </section>
