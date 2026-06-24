@@ -22,3 +22,19 @@ String toKoreanListingError(Object error) {
   }
   return '매물 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 }
+
+// 7.4 본인 매물 관리(수정·삭제·구매완료) "0행 거부" 한국어 안내.
+//   Supabase 는 RLS 로 막힌 UPDATE/DELETE 를 예외가 아니라 "영향 행 0개"로 돌려준다.
+//   → 영향 행이 0이면 아래 메시지로 분기한다(타인 매물·없음·전제조건 불충족).
+
+/// 수정 0행 거부(타인 매물·이미 삭제됨).
+const String ownEditDeniedMessage =
+    '본인 매물만 수정할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)';
+
+/// 삭제 0행 거부(타인 매물·이미 삭제됨).
+const String ownDeleteDeniedMessage =
+    '본인 매물만 삭제할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)';
+
+/// 구매완료 0행 거부(타인 매물·없음·이미 sold 라 전제조건 on_sale 불충족).
+const String ownMarkSoldDeniedMessage =
+    '본인 판매중 매물만 구매 완료 처리할 수 있습니다. (매물을 찾을 수 없거나, 접근 권한이 없거나, 이미 구매 완료된 매물입니다.)';

@@ -11,12 +11,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_controller.dart';
 import '../auth/user_role.dart';
+import 'listing.dart' show ListingDetail;
 import 'listing_filters.dart' show ListingOptions;
 import 'listing_form.dart';
 import 'sell_controller.dart';
 
+/// 매물 등록/수정 화면(7.3 등록 + 7.4 수정). 같은 15필드 폼을 재사용한다.
+///   · editDetail == null → 등록 모드(INSERT).
+///   · editDetail != null → 수정 모드(UPDATE) — 기존 값으로 폼을 채우고, 성공 시 화면을 닫는다(done).
 class SellScreen extends ConsumerStatefulWidget {
-  const SellScreen({super.key});
+  const SellScreen({super.key, this.editDetail});
+
+  /// 수정 대상 매물 상세(수정 모드일 때만). null 이면 등록 모드.
+  final ListingDetail? editDetail;
+
+  bool get isEdit => editDetail != null;
 
   @override
   ConsumerState<SellScreen> createState() => _SellScreenState();
@@ -40,6 +49,37 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String? _transmission;
   String? _region;
   bool _accidentFree = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // 수정 모드: 기존 값으로 화면 입력 + 컨트롤러(startEdit)를 채운다.
+    final detail = widget.editDetail;
+    if (detail != null) {
+      final input = ListingFormInput.fromDetail(detail);
+      _model.text = input.model;
+      _year.text = input.year;
+      _price.text = input.price;
+      _mileage.text = input.mileage;
+      _displacement.text = input.displacement;
+      _seats.text = input.seats;
+      _options.text = input.options;
+      _description.text = input.description;
+      _manufacturer = input.manufacturer;
+      _bodyType = input.bodyType;
+      _color = input.color;
+      _fuel = input.fuel;
+      _transmission = input.transmission;
+      _region = input.region;
+      _accidentFree = input.accidentFree;
+      // 빌드 완료 후 컨트롤러에 수정 모드를 알린다(빌드 중 provider 수정 금지 → 다음 프레임).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(sellControllerProvider.notifier).startEdit(detail.id, input);
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -75,7 +115,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
     );
     final notifier = ref.read(sellControllerProvider.notifier);
     notifier.updateInput(input);
-    notifier.submit();
+    // 수정 모드면 대상 id 를 명시 전달 — 컨트롤러의 editingId 가 (post-frame startEdit 가 아직 안 돈) 첫 프레임에
+    //   null 이더라도 등록(INSERT)로 새지 않고 반드시 수정(UPDATE)으로 가게 한다(중복 등록 사고 방지).
+    notifier.submit(editingIdOverride: widget.editDetail?.id);
   }
 
   /// 등록 성공 시 폼 입력 위젯을 비운다(컨트롤러는 입력을 초기화했지만 화면 컨트롤러도 맞춘다).
@@ -103,15 +145,18 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   Widget build(BuildContext context) {
     final role = ref.watch(currentRoleProvider);
 
-    // ── 역할 가드(AC4): 판매자만 등록 화면 사용 ─────────────────────
+    final isEdit = widget.isEdit;
+    final title = isEdit ? '매물 수정' : '매물 등록';
+
+    // ── 역할 가드(AC5): 판매자만 등록/수정 화면 사용 ─────────────────
     if (role != UserRole.seller) {
       return Scaffold(
-        appBar: AppBar(title: const Text('매물 등록')),
+        appBar: AppBar(title: Text(title)),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Text(
-              '판매자만 매물을 등록할 수 있습니다.',
+              '판매자만 이용할 수 있습니다.',
               key: Key('sell_role_blocked'),
               textAlign: TextAlign.center,
             ),
@@ -122,15 +167,23 @@ class _SellScreenState extends ConsumerState<SellScreen> {
 
     final sell = ref.watch(sellControllerProvider);
 
-    // 등록 성공 시 화면 입력을 비운다(빌드 직후 한 번). 빌드 중 setState 금지 → 다음 프레임에.
     if (sell.success != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _model.text.isNotEmpty) _resetFields();
+        if (!mounted) return;
+        if (isEdit) {
+          // 수정 성공 → 화면을 닫고 목록으로 복귀(true 를 돌려줘 목록이 새로고침하게).
+          if (sell.done && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop(true);
+          }
+        } else {
+          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비).
+          if (_model.text.isNotEmpty) _resetFields();
+        }
       });
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('매물 등록')),
+      appBar: AppBar(title: Text(title)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
@@ -139,9 +192,11 @@ class _SellScreenState extends ConsumerState<SellScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  '차량 정보를 입력해 등록하면 구매자에게 바로 노출됩니다(관리자 승인 없음).',
-                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                Text(
+                  isEdit
+                      ? '내 매물 정보를 수정합니다. (구매 완료 처리는 별도 기능입니다.)'
+                      : '차량 정보를 입력해 등록하면 구매자에게 바로 노출됩니다(관리자 승인 없음).',
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
                 ),
                 const SizedBox(height: 16),
 
@@ -216,7 +271,11 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                 FilledButton(
                   key: const Key('sell_submit'),
                   onPressed: sell.loading ? null : _submit,
-                  child: Text(sell.loading ? '등록 중…' : '매물 등록'),
+                  child: Text(
+                    sell.loading
+                        ? (isEdit ? '수정 중…' : '등록 중…')
+                        : (isEdit ? '수정 완료' : '매물 등록'),
+                  ),
                 ),
               ],
             ),

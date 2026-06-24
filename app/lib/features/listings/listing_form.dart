@@ -11,6 +11,7 @@
 //
 // 단일 출처(drift 금지): 15필드·CHECK 목록·범위의 원천은 supabase/migrations/0002_listings.sql.
 
+import 'listing.dart' show ListingDetail;
 import 'listing_filters.dart' show ListingOptions;
 
 /// 매물 수치 필드 허용 범위 — web LISTING_RANGES 미러(= 0002 CHECK).
@@ -65,6 +66,30 @@ class ListingFormInput {
   final bool accidentFree;
   final String options;
   final String description;
+
+  /// 기존 매물 상세 → 수정 폼 입력값 역변환(7.4 수정 화면용).
+  /// 등록 폼은 수치를 "문자열"로 보관하므로 정수→문자열, options 배열→쉼표 문자열로 되돌린다.
+  /// status·seller_id 는 폼에서 다루지 않으므로 가져오지 않는다(수정 범위 밖 — 상태 전환은 구매완료 별도 동작).
+  factory ListingFormInput.fromDetail(ListingDetail d) {
+    return ListingFormInput(
+      manufacturer: d.manufacturer,
+      model: d.model,
+      bodyType: d.bodyType,
+      year: d.year.toString(),
+      price: d.price.toString(),
+      mileage: d.mileage.toString(),
+      color: d.color,
+      fuel: d.fuel,
+      transmission: d.transmission,
+      displacement: d.displacement.toString(),
+      seats: d.seats.toString(),
+      region: d.region,
+      accidentFree: d.accidentFree,
+      // 옵션 배열 → 쉼표 구분 문자열(등록 폼이 다시 쉼표로 split 하므로 왕복 일관).
+      options: (d.options ?? const <String>[]).join(', '),
+      description: d.description ?? '',
+    );
+  }
 
   ListingFormInput copyWith({
     String? manufacturer,

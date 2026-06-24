@@ -150,4 +150,47 @@ void main() {
       expect(ok!.accidentFree, isTrue);
     });
   });
+
+  // 7.4 본인 매물 관리 행 모델 — 요약 6필드 + status 보존, 깨진 행 제외.
+  group('OwnListing.fromMap', () {
+    Map<String, dynamic> full() => {
+          'id': 'own-1',
+          'manufacturer': '기아',
+          'model': 'K5',
+          'year': 2022,
+          'price': 31000000,
+          'status': 'on_sale',
+        };
+
+    test('정상 6필드 → 행, status 보존', () {
+      final o = OwnListing.fromMap(full());
+      expect(o, isNotNull);
+      expect(o!.id, 'own-1');
+      expect(o.manufacturer, '기아');
+      expect(o.model, 'K5');
+      expect(o.year, 2022);
+      expect(o.price, 31000000);
+      expect(o.status, 'on_sale');
+    });
+
+    test('sold status 도 그대로 보존(본인은 sold 도 본다)', () {
+      final o = OwnListing.fromMap({...full(), 'status': 'sold'});
+      expect(o, isNotNull);
+      expect(o!.status, 'sold');
+    });
+
+    test('숫자 문자열도 안전 변환', () {
+      final o = OwnListing.fromMap({...full(), 'year': '2019', 'price': '20000000'});
+      expect(o, isNotNull);
+      expect(o!.year, 2019);
+      expect(o.price, 20000000);
+    });
+
+    test('필수 필드 누락/타입 깨짐 → null(그 행 제외)', () {
+      expect(OwnListing.fromMap({...full()}..remove('status')), isNull);
+      expect(OwnListing.fromMap({...full()}..remove('id')), isNull);
+      expect(OwnListing.fromMap({...full(), 'year': 'abc'}), isNull);
+      expect(OwnListing.fromMap('not a map'), isNull);
+    });
+  });
 }

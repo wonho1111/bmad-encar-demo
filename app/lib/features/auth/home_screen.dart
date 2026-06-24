@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai_search/ai_chat_screen.dart';
+import '../listings/my_listings_screen.dart';
 import '../listings/search_screen.dart';
 import '../listings/sell_screen.dart';
 import 'auth_controller.dart';
@@ -86,9 +87,19 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    '· 판매자: 내 매물 관리·구매완료는 다음 스토리(7.4)에서 추가됩니다.',
-                    style: TextStyle(color: Colors.grey),
+
+                  // 판매자 전용: 내 매물 관리(수정·삭제·구매완료, FR6·8). buyer 미노출.
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      key: const Key('go_my_listings'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const MyListingsScreen()),
+                      ),
+                      icon: const Icon(Icons.inventory_2_outlined),
+                      label: const Text('내 매물 관리'),
+                    ),
                   ),
                 ],
               ],

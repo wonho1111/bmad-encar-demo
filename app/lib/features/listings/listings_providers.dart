@@ -6,6 +6,7 @@
 // 7.1 패턴: Riverpod 3 모던 Notifier + AsyncValue(로딩/에러/데이터).
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/supabase/supabase_client.dart';
 import 'listing.dart';
 import 'listing_filters.dart';
 import 'listings_repository.dart';
@@ -20,6 +21,17 @@ final listingDetailProvider =
     FutureProvider.family<ListingDetail?, String>((ref, id) async {
   final repo = ref.watch(listingsRepositoryProvider);
   return repo.fetchListing(id);
+});
+
+/// 수정 진입용 본인 매물 단건(id) — 7.4. 현재 로그인 판매자 본인 매물만 조회(seller_id 필터 + RLS).
+/// 0행이면 null(타인·없음) → 수정 화면이 한국어 차단. 세션 없으면 null 로 처리(차단 화면).
+/// autoDispose: 수정 화면을 닫으면 캐시를 버려, 다음에 들어올 때 항상 최신 값을 다시 읽는다.
+final editListingProvider =
+    FutureProvider.autoDispose.family<ListingDetail?, String>((ref, id) async {
+  final user = supabase.auth.currentUser;
+  if (user == null) return null;
+  final repo = ref.watch(listingsRepositoryProvider);
+  return repo.fetchOwnListing(id, sellerId: user.id);
 });
 
 /// 탐색 화면 상태 = (현재 입력값) + (검색 결과 목록).

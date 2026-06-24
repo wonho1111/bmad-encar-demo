@@ -74,6 +74,55 @@ class ListingCardData {
   }
 }
 
+/// 본인 매물 관리 목록의 한 행(요약 6필드). web `OwnListing`(sell/page.tsx) 미러.
+/// 구매자 카드(ListingCardData)와 달리 status 를 포함한다 — 판매중/판매완료 배지·동작 분기에 쓰기 때문.
+/// (본인 매물이라 sold 도 보여야 하므로 status 필수.)
+class OwnListing {
+  const OwnListing({
+    required this.id,
+    required this.manufacturer,
+    required this.model,
+    required this.year,
+    required this.price,
+    required this.status,
+  });
+
+  final String id;
+  final String manufacturer;
+  final String model;
+  final int year;
+  final int price; // 원(KRW)
+  final String status; // on_sale=판매중 / sold=판매완료(0002 CHECK)
+
+  /// Supabase row → 본인 매물 행. 필수 6필드가 깨졌으면 null(그 행만 제외).
+  static OwnListing? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'];
+    final manufacturer = raw['manufacturer'];
+    final model = raw['model'];
+    final status = raw['status'];
+    final year = _asInt(raw['year']);
+    final price = _asInt(raw['price']);
+
+    if (id is! String ||
+        manufacturer is! String ||
+        model is! String ||
+        status is! String ||
+        year == null ||
+        price == null) {
+      return null;
+    }
+    return OwnListing(
+      id: id,
+      manufacturer: manufacturer,
+      model: model,
+      year: year,
+      price: price,
+      status: status,
+    );
+  }
+}
+
 /// 매물 상세(FR5 15필드 + 상태·판매자·옵션·설명). 사진 없음.
 class ListingDetail {
   const ListingDetail({
