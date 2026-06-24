@@ -118,5 +118,36 @@ void main() {
     test('필수 필드 누락은 null', () {
       expect(ListingDetail.fromMap({'id': 'x'}), isNull);
     });
+
+    test('accident_free 가 누락/비bool 이면 null (무사고로 단정 안 함)', () {
+      // 15필드는 모두 채우되 accident_free 만 빠진(또는 깨진) 응답.
+      // DB 는 NOT NULL bool 이라 정상 경로에선 안 생기지만, 깨진 응답을
+      // "무사고" 로 단정하면 중고차에서 오해 소지 → 못 찾음으로 처리한다.
+      Map<String, Object?> full() => {
+            'id': 'a1',
+            'seller_id': 's1',
+            'manufacturer': '현대',
+            'model': '아반떼',
+            'body_type': '준중형차',
+            'year': 2021,
+            'price': 15000000,
+            'mileage': 30000,
+            'color': '검정',
+            'fuel': '가솔린',
+            'transmission': '자동',
+            'displacement': 1598,
+            'seats': 5,
+            'region': '서울',
+            'status': 'on_sale',
+          };
+      // accident_free 키 없음 → null
+      expect(ListingDetail.fromMap(full()), isNull);
+      // accident_free 가 bool 이 아님 → null
+      expect(ListingDetail.fromMap({...full(), 'accident_free': 'true'}), isNull);
+      // 정상 bool 이면 매핑 성공
+      final ok = ListingDetail.fromMap({...full(), 'accident_free': true});
+      expect(ok, isNotNull);
+      expect(ok!.accidentFree, isTrue);
+    });
   });
 }

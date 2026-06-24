@@ -131,6 +131,7 @@ class ListingDetail {
     final transmission = raw['transmission'];
     final region = raw['region'];
     final status = raw['status'];
+    final accidentFree = raw['accident_free'];
     final year = _asInt(raw['year']);
     final price = _asInt(raw['price']);
     final mileage = _asInt(raw['mileage']);
@@ -147,6 +148,9 @@ class ListingDetail {
         transmission is! String ||
         region is! String ||
         status is! String ||
+        // accident_free 는 DB 가 NOT NULL bool(0002_listings) — 안 오거나 타입이 깨졌으면
+        // "무사고" 로 단정하지 않고(중고차에선 오해 소지) 못 찾음으로 처리한다(보수적 기본값).
+        accidentFree is! bool ||
         year == null ||
         price == null ||
         mileage == null ||
@@ -161,7 +165,6 @@ class ListingDetail {
         : null;
     final sellerName = raw['seller_name'];
     final description = raw['description'];
-    final accidentFree = raw['accident_free'];
 
     return ListingDetail(
       id: id,
@@ -178,7 +181,7 @@ class ListingDetail {
       displacement: displacement,
       seats: seats,
       region: region,
-      accidentFree: accidentFree is bool ? accidentFree : true,
+      accidentFree: accidentFree,
       status: status,
       sellerName: sellerName is String ? sellerName : null,
       options: options,
