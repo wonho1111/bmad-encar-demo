@@ -6,7 +6,9 @@ import { buttonClasses } from '@/components/ui/Button';
 
 export default function AdminHomePage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
+    // 정렬 통일(2026-06-24): 구매자·판매자 홈(page.tsx)과 동일하게 상단 정렬.
+    //   기존엔 min-h-screen+justify-center로 세로 중앙이라 역할 간 톤이 어긋났다.
+    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">관리자 영역</h1>
         <p className="text-sm text-zinc-500">운영 기능을 선택하세요.</p>

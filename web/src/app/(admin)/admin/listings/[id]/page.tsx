@@ -8,13 +8,13 @@
 //
 // 화면 본문(15필드·옵션·설명)은 구매자 상세와 동일하므로 공유 컴포넌트 ListingDetailFields로 그린다.
 //   제목·상태 배지(판매중/판매완료)·삭제·목록 링크처럼 관리자 맥락 요소만 이 페이지가 직접 그린다.
-import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { UNITS, LISTING_STATUS } from '@/lib/constants';
 import ListingDetailFields, {
   type ListingDetailFieldsData,
 } from '@/components/listings/ListingDetailFields';
 import ListingAdminActions from '../ListingAdminActions';
+import BackButton from './BackButton';
 
 // 관리자는 매 진입 시 최신 DB 상태를 봐야 한다(다른 관리자가 그새 삭제·판매완료 처리했을 수 있음). 정적화 방지.
 export const dynamic = 'force-dynamic';
@@ -48,14 +48,9 @@ export default async function AdminListingDetailPage({
     console.error('[admin/listings/detail] 매물 상세 조회 실패:', error);
   }
 
-  const backLink = (
-    <Link
-      href="/admin/listings"
-      className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-    >
-      매물 관리로
-    </Link>
-  );
+  // 돌아가기 = 들어온 화면으로 복귀(매물 관리·거래 내역·채팅 관리 어디서 왔든).
+  //   히스토리가 없으면(직접 진입) 폴백으로 '/admin/listings'(이 상세가 속한 매물 관리)로 보낸다.
+  const backLink = <BackButton fallbackHref="/admin/listings">돌아가기</BackButton>;
 
   // 조회 실패(네트워크·RLS·DB) — "없음"과 구분해 빨강 에러 안내.
   if (error) {
