@@ -3,7 +3,7 @@ baseline_commit: 7b7a5964986c5e13a44d57ebe2f80f535867c895
 ---
 # Story 7.1: Flutter 골격 + 인증 연동
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -153,3 +153,13 @@ claude-opus-4-8[1m] (BMad dev-story 서브에이전트)
 - `app/test/widget_test.dart` — 기본 카운터 테스트 → 7.1 토대 단위 테스트로 교체
 
 커밋 제외(gitignore): `app/.env.json`, `app/build/`, `app/.dart_tool/`
+
+### Code Review (BMad code-review, 무인 인라인 3레이어)
+
+- 검증 재현: `flutter analyze` 0건 / `flutter test` 8/8 / `flutter build web` ✓ (패치 전·후 모두 통과).
+- 비밀값 누출: 없음. `app/.env.json`(실키)은 루트 `.gitignore` `.env.*` 규칙으로 추적 제외(추적 파일 0건 확인). 저장소엔 `app/.env.example`(플레이스홀더)만.
+- **[Patch] 적용 2건**:
+  1. 중복 이메일 가입 안내 버그 — `auth_controller.dart` 에서 `throw const AuthException('user_already_exists')` 가 코드를 *message* 에 넣어, `toKoreanSignupError` 가 못 잡고 일반 "가입 중 오류" 로 잘못 떨어졌다. `code: 'user_already_exists'` 로 옮겨 "이미 가입된 이메일입니다." 가 정상 표시되게 수정.
+  2. 로그인 거짓성공 방지(web login 포팅 계약 누락) — `signIn` 에 `res.session == null` 가드 추가. 에러 없이 빈 세션이 와도 성공으로 오인하지 않게(web `if (!data.session)` 동작 이식).
+- **[Decision] escalate**: 없음.
+- 미해결 High/심각: 없음. AC5(Playwright 픽셀 렌더)는 dev 단계에서 시스템 라이브러리 미비로 이미 escalate·문서화된 사항(빌드 산출물 정적검증 + live HTTP 스모크로 대체 실증). 신규 차단 이슈 아님.

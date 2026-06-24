@@ -59,7 +59,13 @@ class AuthController extends Notifier<AsyncValue<void>> {
       final identities = res.user?.identities;
       if (identities != null && identities.isEmpty) {
         state = const AsyncValue.data(null);
-        throw const AuthException('user_already_exists');
+        // code 로 실어야 toKoreanSignupError 가 "이미 가입된 이메일" 문구로 매칭한다.
+        // (AuthException 의 첫 인자는 message, code 는 named 인자다. 코드를 message 에
+        //  넣으면 핸들러가 못 잡아 일반 "가입 중 오류" 로 잘못 떨어진다.)
+        throw const AuthException(
+          'user already registered',
+          code: 'user_already_exists',
+        );
       }
 
       state = const AsyncValue.data(null);
@@ -78,7 +84,16 @@ class AuthController extends Notifier<AsyncValue<void>> {
   Future<void> signIn({required String email, required String password}) async {
     state = const AsyncValue.loading();
     try {
-      await supabase.auth.signInWithPassword(email: email, password: password);
+      final res =
+          await supabase.auth.signInWithPassword(email: email, password: password);
+      // 에러 없이 세션이 비어 돌아오는 비정상 응답 → 거짓 성공 방지(web login 동작 이식).
+      if (res.session == null) {
+        state = const AsyncValue.data(null);
+        throw const AuthException(
+          'login failed: no session',
+          code: 'no_session',
+        );
+      }
       state = const AsyncValue.data(null);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
