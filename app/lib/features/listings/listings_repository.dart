@@ -70,4 +70,19 @@ class ListingsRepository {
     if (row == null) return null;
     return ListingDetail.fromMap(row);
   }
+
+  /// 매물 등록(INSERT, FR5) — 본인 명의로 listings 행 생성.
+  /// 구매자 조회용 _buyerQuery(status='on_sale' 강제)를 타지 않는다(이건 "쓰기"라 별개 경로).
+  ///
+  /// seller_id 는 호출부가 현재 로그인 user.id 로 넘긴다(정상 경로 명시). 위조해 넘겨도
+  /// DB RLS(listings_insert_own: auth.uid()=seller_id, 0002)가 막는다 — 앱·DB 이중 방어.
+  /// payload 는 validateAndBuildListing 이 만든 snake_case 정수 페이로드(status='on_sale' 포함).
+  ///
+  /// 에러(PostgrestException 등)는 변환 없이 그대로 던진다 → 호출부(컨트롤러)가 toKoreanListingError 로 한국어화.
+  Future<void> createListing(
+    Map<String, dynamic> payload, {
+    required String sellerId,
+  }) async {
+    await _client.from('listings').insert({...payload, 'seller_id': sellerId});
+  }
 }

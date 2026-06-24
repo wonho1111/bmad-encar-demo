@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai_search/ai_chat_screen.dart';
 import '../listings/search_screen.dart';
+import '../listings/sell_screen.dart';
 import 'auth_controller.dart';
 import 'user_role.dart';
 
@@ -71,9 +72,22 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 12),
 
+                // 판매자 전용(nav-ia §2): 매물 등록 진입. buyer 에게는 노출 안 함.
                 if (role == UserRole.seller) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      key: const Key('go_sell'),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SellScreen()),
+                      ),
+                      icon: const Icon(Icons.add_box_outlined),
+                      label: const Text('매물 등록'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   const Text(
-                    '· 판매자: 내 매물 등록·관리는 다음 스토리(7.3·7.4)에서 추가됩니다.',
+                    '· 판매자: 내 매물 관리·구매완료는 다음 스토리(7.4)에서 추가됩니다.',
                     style: TextStyle(color: Colors.grey),
                   ),
                 ],

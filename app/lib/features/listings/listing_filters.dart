@@ -7,6 +7,12 @@
 
 /// 매물 고정 목록 필드의 허용값(드롭다운 옵션). web LISTING_OPTIONS 미러.
 class ListingOptions {
+  // 제조사 — 등록 폼(7.3)이 처음 사용. 탐색 필터(7.2)는 제조사를 안 써서 그때는 없었다.
+  // 0002_listings CHECK · web LISTING_OPTIONS.manufacturer 와 바이트 일치(15개).
+  static const List<String> manufacturer = [
+    '현대', '기아', '제네시스', '쉐보레', '르노코리아', 'KG모빌리티',
+    'BMW', '벤츠', '아우디', '폭스바겐', '토요타', '혼다', '렉서스', '테슬라', '기타',
+  ];
   static const List<String> bodyType = [
     '경차', '소형차', '준중형차', '중형차', '대형차', '스포츠카',
     'SUV', 'RV', '경승합차', '승합차', '화물차', '기타',
