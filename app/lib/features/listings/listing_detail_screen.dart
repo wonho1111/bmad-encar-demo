@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format/number_format.dart';
+import '../../core/supabase/supabase_client.dart';
+import '../chat/chat_providers.dart';
+import '../chat/chat_repository.dart';
+import '../chat/chat_room_screen.dart';
 import 'listing.dart';
 import 'listings_providers.dart';
 
@@ -76,14 +80,54 @@ class _MessageBody extends StatelessWidget {
   }
 }
 
-/// 상세 본문 — 제목 + 기본정보(15필드) + 옵션 + 설명.
-class _DetailContent extends StatelessWidget {
+/// 상세 본문 — 제목 + 기본정보(15필드) + 옵션 + 설명 + 문의하기(7.5).
+///   ConsumerStatefulWidget: "문의하기" 탭 시 방 생성/재사용을 호출하는 동안 버튼을 비활성(중복 클릭 차단)해야 하므로.
+class _DetailContent extends ConsumerStatefulWidget {
   const _DetailContent({required this.listing});
 
   final ListingDetail listing;
 
   @override
+  ConsumerState<_DetailContent> createState() => _DetailContentState();
+}
+
+class _DetailContentState extends ConsumerState<_DetailContent> {
+  bool _opening = false; // 방 생성/재사용 진행 중(중복 클릭 차단).
+
+  ListingDetail get listing => widget.listing;
+
+  // 문의하기 — 그 매물 판매자와의 방을 열고(있으면 재사용) 채팅방으로 이동. 실패는 한국어 SnackBar.
+  //   seller_id 는 보내지 않는다(DB 트리거가 매물주로 강제). buyer=본인. 본인 매물이면 버튼이 애초에 안 뜬다.
+  Future<void> _openChat() async {
+    final myId = supabase.auth.currentUser?.id;
+    if (myId == null || _opening) return;
+    setState(() => _opening = true);
+
+    final res = await ref.read(chatRepositoryProvider).openOrCreateRoom(
+          listingId: listing.id,
+          buyerId: myId,
+        );
+    if (!mounted) return;
+    setState(() => _opening = false);
+
+    switch (res) {
+      case OpenRoomSuccess(:final roomId):
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ChatRoomScreen(roomId: roomId)),
+        );
+      case OpenRoomFailure(:final message):
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final myId = supabase.auth.currentUser?.id;
+    // 본인 매물(buyer=seller)이면 문의 버튼 숨김 — DB CHECK(23514)가 권위지만 UX상 미리 차단.
+    final isOwnListing = myId != null && myId == listing.sellerId;
+
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -159,6 +203,26 @@ class _DetailContent extends StatelessWidget {
           const Text('설명', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(listing.description!),
+        ],
+
+        // 문의하기(7.5, FR19) — 본인 매물이 아니고 로그인 상태일 때만. 그 매물 판매자와 1:1 방을 연다.
+        if (!isOwnListing && myId != null) ...[
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const Key('go_chat_inquiry'),
+              onPressed: _opening ? null : _openChat,
+              icon: _opening
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.chat_bubble_outline),
+              label: Text(_opening ? '여는 중…' : '문의하기'),
+            ),
+          ),
         ],
       ],
     );

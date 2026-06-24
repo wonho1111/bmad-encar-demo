@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ai_search/ai_chat_screen.dart';
+import '../chat/chat_list_screen.dart';
 import '../listings/my_listings_screen.dart';
 import '../listings/search_screen.dart';
 import '../listings/sell_screen.dart';
@@ -69,6 +70,20 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     icon: const Icon(Icons.search),
                     label: const Text('매물 탐색'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 문의 채팅(7.5, FR19~21) — 구매자·판매자 공통 동선(web /chat 이 공통인 것과 동일).
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const Key('go_chat'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ChatListScreen()),
+                    ),
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: const Text('문의 채팅'),
                   ),
                 ),
                 const SizedBox(height: 12),
