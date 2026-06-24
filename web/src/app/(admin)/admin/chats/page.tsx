@@ -79,6 +79,11 @@ export default async function AdminChatsPage() {
               const summary = l
                 ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
                 : '삭제되었거나 조회할 수 없는 매물';
+              // 삭제 확인 라벨: 매물이 null이면 summary가 모든 방에 동일해(어느 방을 지우는지 구분 불가) →
+              //   당사자 축약 id를 덧붙여 관리자가 "어느 방"을 삭제하는지 식별할 수 있게 한다(code-review 6-5).
+              const deleteLabel = l
+                ? summary
+                : `${summary} (구매자 ${shortId(room.buyer_id)} · 판매자 ${shortId(room.seller_id)})`;
               const createdLabel = new Date(room.created_at).toLocaleString('ko-KR');
               return (
                 <li
@@ -98,7 +103,7 @@ export default async function AdminChatsPage() {
                       {createdLabel}
                     </span>
                   </Link>
-                  <ChatAdminActions roomId={room.id} label={summary} />
+                  <ChatAdminActions roomId={room.id} label={deleteLabel} />
                 </li>
               );
             })}

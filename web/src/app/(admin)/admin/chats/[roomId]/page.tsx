@@ -117,10 +117,12 @@ export default async function AdminChatRoomPage({
 
   // 보낸 사람 라벨 — sender_id를 방의 buyer/seller와 대조해 "구매자"/"판매자"로, 그 외는 "기타".
   //   (profiles엔 이메일이 없어(6-2 결정) admin anon-key로 타인 이메일 조회 불가 → 역할 라벨 + id 축약으로 식별.)
+  //   "기타"(당사자 아님 — 예: 과거 관리자 발신)는 누구인지 추적 가능하도록 sender_id 축약을 함께 보여준다(code-review 6-5).
+  //   이 화면 자체가 감독(누가 뭘 말했는지 확인) 목적이라, 미식별 발신자도 식별 단서를 남긴다.
   function senderLabel(senderId: string): string {
     if (senderId === room!.buyer_id) return '구매자';
     if (senderId === room!.seller_id) return '판매자';
-    return '기타';
+    return `기타 ${senderId.slice(0, 8)}`;
   }
 
   return (
