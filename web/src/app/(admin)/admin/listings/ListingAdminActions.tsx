@@ -18,9 +18,12 @@ import Button from '@/components/ui/Button';
 type Props = {
   listingId: string;
   label: string; // 확인 메시지에 보여줄 매물 요약(예: "[현대] 아반떼 CN7")
+  // 삭제 성공 후 이동할 경로(선택). 상세 페이지에서 삭제하면 그 매물이 사라져 머무를 곳이 없으므로
+  //   목록('/admin/listings')으로 보낸다. 목록 화면에선 생략 → 기존대로 router.refresh()로 행만 제거.
+  redirectTo?: string;
 };
 
-export default function ListingAdminActions({ listingId, label }: Props) {
+export default function ListingAdminActions({ listingId, label, redirectTo }: Props) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +57,13 @@ export default function ListingAdminActions({ listingId, label }: Props) {
         setError('매물을 삭제할 수 없습니다. (권한이 없거나 매물을 찾을 수 없습니다.)');
         return;
       }
-      router.refresh();
+      // 상세에서 삭제했으면(목록으로 이동) 그 매물 페이지는 더 이상 유효하지 않다 → push.
+      //   목록에서 삭제했으면 redirectTo 없음 → refresh로 그 행만 제거.
+      if (redirectTo) {
+        router.push(redirectTo);
+      } else {
+        router.refresh();
+      }
     } catch (err) {
       console.error('[admin/listings] listings delete 예외:', err);
       setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');

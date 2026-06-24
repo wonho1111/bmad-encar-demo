@@ -103,7 +103,19 @@ export default async function AdminChatsPage() {
                       {createdLabel}
                     </span>
                   </Link>
-                  <ChatAdminActions roomId={room.id} label={deleteLabel} />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {/* 매물이 살아있는 방이면 그 매물의 관리자 상세로 가는 링크 추가.
+                        방 열람 링크와 중첩되면 안 되므로(중첩 anchor 금지) 별도 버튼으로 분리. */}
+                    {l && (
+                      <Link
+                        href={`/admin/listings/${room.listing_id}`}
+                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                      >
+                        매물 상세
+                      </Link>
+                    )}
+                    <ChatAdminActions roomId={room.id} label={deleteLabel} />
+                  </div>
                 </li>
               );
             })}

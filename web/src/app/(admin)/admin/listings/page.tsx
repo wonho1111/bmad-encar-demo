@@ -8,6 +8,7 @@
 //        (SellPage는 "내 매물"만 보려고 seller_id 필터를 넣었지만, 여기선 정반대로 전부 보는 게 목적이라 필터를 뺀다.)
 //   2) 행마다 삭제 액션(ListingAdminActions, 클라이언트 컴포넌트) — 부적절 매물 제거(FR23).
 //      정지/수정 같은 부가 액션은 관리 요구에 없어 넣지 않는다(범위 컷). 판매완료 처리(2-4)는 판매자 동선이지 관리자 동선이 아니다.
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { UNITS, LISTING_STATUS } from '@/lib/constants';
 import ListingAdminActions from './ListingAdminActions';
@@ -65,11 +66,12 @@ export default async function AdminListingsPage() {
                   key={l.id}
                   className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
                 >
-                  <span>
+                  {/* 요약을 누르면 관리자 매물 상세(/admin/listings/[id])로 이동 — 판매완료 포함 모든 상태 조회. */}
+                  <Link href={`/admin/listings/${l.id}`} className="flex-1 hover:underline">
                     [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
                     {l.price.toLocaleString('ko-KR')}
                     {UNITS.price}
-                  </span>
+                  </Link>
                   <div className="flex items-center gap-3">
                     {/* 상태 배지: 판매중=초록 / 판매완료=회색 (SellPage 스타일). sold도 그대로 보이는 게 핵심(FR11 예외). */}
                     <span

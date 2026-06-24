@@ -18,6 +18,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
+import ListingDetailFields from '@/components/listings/ListingDetailFields';
 import InquiryButton from './InquiryButton';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
@@ -44,16 +45,6 @@ type ListingDetail = {
   description: string | null; // nullable
   status: string;
 };
-
-// 라벨-값 한 줄. 단위·표시는 호출부에서 이미 한국어 문자열로 만들어 넘긴다.
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4 border-b border-zinc-100 py-2 text-sm last:border-0 dark:border-zinc-800">
-      <span className="text-zinc-500">{label}</span>
-      <span className="text-right font-medium">{value}</span>
-    </div>
-  );
-}
 
 export default async function ListingDetailPage({
   params,
@@ -137,11 +128,8 @@ export default async function ListingDetailPage({
     );
   }
 
-  // 단위·표시 규칙(conventions §3): 천단위 콤마 + 단위.
+  // 부제목(연식·가격)에 쓸 가격 문자열만 여기서 만든다. 나머지 필드 표시는 ListingDetailFields가 담당.
   const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
-  const mileageText = `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`;
-  const displacementText = `${listing.displacement.toLocaleString('ko-KR')}${UNITS.displacement}`;
-  const options = listing.options ?? [];
 
   return (
     <>
@@ -167,54 +155,8 @@ export default async function ListingDetailPage({
           )}
         </section>
 
-        {/* 기본 정보(15필드 중 수치·고정목록 필드) */}
-        <section className="flex flex-col">
-          <h2 className="mb-1 text-lg font-semibold">기본 정보</h2>
-          <Field label="제조사" value={listing.manufacturer} />
-          <Field label="모델" value={listing.model} />
-          <Field label="차종" value={listing.body_type} />
-          <Field label="연식" value={`${listing.year}년`} />
-          <Field label="가격" value={priceText} />
-          <Field label="주행거리" value={mileageText} />
-          <Field label="색상" value={listing.color} />
-          <Field label="연료" value={listing.fuel} />
-          <Field label="변속기" value={listing.transmission} />
-          <Field label="배기량" value={displacementText} />
-          <Field label="승차인원" value={`${listing.seats}인승`} />
-          <Field label="지역" value={listing.region} />
-          <Field label="사고이력" value={listing.accident_free ? '무사고' : '사고이력 있음'} />
-        </section>
-
-        {/* 옵션(text[]) — 빈 배열이면 안내 */}
-        <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">옵션</h2>
-          {options.length === 0 ? (
-            <p className="text-sm text-zinc-500">등록된 옵션이 없습니다.</p>
-          ) : (
-            <ul className="flex flex-wrap gap-2">
-              {options.map((opt, i) => (
-                <li
-                  key={`${opt}-${i}`}
-                  className="rounded border border-zinc-200 px-2 py-0.5 text-xs dark:border-zinc-700"
-                >
-                  {opt}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* 설명(nullable) — 비면 안내, 있으면 줄바꿈 보존 */}
-        <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">설명</h2>
-          {listing.description && listing.description.trim() !== '' ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
-              {listing.description}
-            </p>
-          ) : (
-            <p className="text-sm text-zinc-500">등록된 설명이 없습니다.</p>
-          )}
-        </section>
+        {/* 기본 정보·옵션·설명 = 관리자 상세와 공유하는 표시부(단일 출처). */}
+        <ListingDetailFields listing={listing} />
 
         <Link
           href="/search"
