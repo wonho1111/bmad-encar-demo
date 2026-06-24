@@ -91,7 +91,7 @@ development_status:
   6-1-admin-라우트-가드-admin-rls: done
   6-2-회원-관리: done
   6-3-전체-매물-관리: done
-  6-4-거래-내역-조회: review
+  6-4-거래-내역-조회: done
   6-5-채팅-관리: backlog
   epic-6-retrospective: optional
 
