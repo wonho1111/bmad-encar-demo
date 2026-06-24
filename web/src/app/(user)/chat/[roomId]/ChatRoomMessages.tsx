@@ -4,7 +4,7 @@
 //
 // 핵심 책임:
 //   1) 전송(FR21): 입력한 메시지를 chat_messages에 INSERT해 영속 저장하고, 내 화면에 즉시 반영.
-//   2) 폴링 수신(FR20·NFR1): 4초마다 그 방의 "새 메시지만" 증분 조회해, 상대가 보낸 메시지를 ≤5초 내 갱신.
+//   2) 폴링 수신(FR20·NFR1): 3초마다 그 방의 "새 메시지만" 증분 조회해, 상대가 보낸 메시지를 ≤5초 내 갱신.
 //   3) 목록 UI(AC#3): created_at 시간순, 내 메시지(오른쪽)·상대 메시지(왼쪽) 구분. 0건이면 빈 상태.
 //
 // 왜 클라이언트 컴포넌트인가:
@@ -23,8 +23,10 @@ import {
 } from '@/lib/messages';
 import Button from '@/components/ui/Button';
 
-// 폴링 주기 — NFR1 "채팅 폴링 준실시간(3~5초)"의 중앙값. 상수로 둬 의도를 드러낸다.
-const POLL_INTERVAL_MS = 4000;
+// 폴링 주기 — NFR1 "채팅 폴링 준실시간(3~5초)" 범위의 하단값(체감 응답성↑).
+//   증분 조회(gte 커서)+id dedupe라 요청이 겹쳐도 중복 메시지가 안 생기고, cleanup의 cancelled로 유령 요청도 차단.
+//   더 빠른 실시간이 필요하면 폴링 대신 Supabase Realtime 구독이 정답(향후 과제).
+const POLL_INTERVAL_MS = 3000;
 
 export default function ChatRoomMessages({
   roomId,
@@ -76,7 +78,7 @@ export default function ChatRoomMessages({
       setLoading(false);
     })();
 
-    // 폴링: 4초마다 커서 "뒤"의 새 메시지만 증분 조회 → id dedupe로 합침.
+    // 폴링: 3초마다 커서 "뒤"의 새 메시지만 증분 조회 → id dedupe로 합침.
     const timer = setInterval(async () => {
       const res = await fetchMessages(supabase, roomId, cursorRef.current);
       if (cancelled) return;

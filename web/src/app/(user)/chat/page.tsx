@@ -11,7 +11,7 @@
 // 매 요청 최신 DB 상태를 반영해야 하므로(새 방·sold 변화 즉시) force-dynamic.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
+import { ROLE_LABEL, UNITS, USER_ROLE, type UserRole } from '@/lib/constants';
 import AppHeader from '@/components/layout/AppHeader';
 
 export const dynamic = 'force-dynamic';
@@ -40,6 +40,8 @@ export default async function ChatListPage() {
     data: { user },
   } = await supabase.auth.getUser();
   let roleLabel: string | null = null;
+  // 빈 상태 안내 문구를 역할에 맞게 분기하려고 원시 role 값도 보관한다(판매자는 문의를 '받는' 입장).
+  let role: UserRole | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -47,7 +49,8 @@ export default async function ChatListPage() {
       .eq('id', user.id)
       .single();
     if (profile?.role) {
-      roleLabel = ROLE_LABEL[profile.role as UserRole] ?? profile.role;
+      role = profile.role as UserRole;
+      roleLabel = ROLE_LABEL[role] ?? profile.role;
     }
   }
 
@@ -82,8 +85,11 @@ export default async function ChatListPage() {
               채팅방 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
             </p>
           ) : !rooms || rooms.length === 0 ? (
+            // 역할별 빈 상태: 구매자는 '문의하기를 눌러 시작', 판매자는 '문의가 들어오면 생긴다'(받는 입장).
             <p className="text-sm text-zinc-500">
-              아직 문의한 채팅방이 없습니다. 매물 상세에서 &lsquo;문의하기&rsquo;를 눌러보세요.
+              {role === USER_ROLE.SELLER
+                ? '아직 들어온 문의가 없습니다. 구매자가 매물에 문의하면 여기에 채팅방이 생깁니다.'
+                : '아직 문의한 채팅방이 없습니다. 매물 상세에서 ‘문의하기’를 눌러보세요.'}
             </p>
           ) : (
             <ul className="flex flex-col gap-2">
