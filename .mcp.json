@@ -6,7 +6,15 @@
     },
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest"]
+      "args": ["@playwright/mcp@0.0.76", "--browser", "chromium", "--no-sandbox"]
+    },
+    "mobile": {
+      "command": "npx",
+      "args": ["-y", "@mobilenext/mobile-mcp@0.0.60"],
+      "env": {
+        "ANDROID_HOME": "/home/whlee/Android/sdk",
+        "PATH": "/home/whlee/Android/sdk/platform-tools:/home/whlee/jdk17/bin:/usr/local/bin:/usr/bin:/bin"
+      }
     }
   }
 }

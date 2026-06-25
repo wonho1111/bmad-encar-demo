@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-06-24T16:00:00
+last_updated: 2026-06-25T18:00:00
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -96,11 +96,11 @@ development_status:
   epic-6-retrospective: done
 
   # --- Epic 7: Flutter 모바일 앱 (구매자 + 판매자) ---
-  epic-7: backlog
-  7-1-flutter-골격-인증-연동: backlog
-  7-2-구매자-매물-탐색-상세-ai-검색: backlog
-  7-3-판매자-매물-등록: backlog
-  7-4-판매자-본인-매물-관리-구매완료: backlog
-  7-5-구매자-판매자-문의-채팅: backlog
-  7-6-sm1-통합-시연-검증: backlog
+  epic-7: done
+  7-1-flutter-골격-인증-연동: done
+  7-2-구매자-매물-탐색-상세-ai-검색: done
+  7-3-판매자-매물-등록: done
+  7-4-판매자-본인-매물-관리-구매완료: done
+  7-5-구매자-판매자-문의-채팅: done
+  7-6-sm1-통합-시연-검증: done
   epic-7-retrospective: optional
