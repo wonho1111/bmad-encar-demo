@@ -118,7 +118,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   );
                 }
                 return ListView.builder(
-                  padding: const EdgeInsets.all(12),
+                  // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 마지막 카드가 가리지 않게.
+                  padding: EdgeInsets.fromLTRB(
+                      12, 12, 12, 12 + MediaQuery.of(context).viewPadding.bottom),
                   itemCount: listings.length + 1,
                   itemBuilder: (context, i) {
                     if (i == 0) {

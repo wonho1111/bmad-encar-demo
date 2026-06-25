@@ -129,7 +129,9 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
     final isOwnListing = myId != null && myId == listing.sellerId;
 
     return ListView(
-      padding: const EdgeInsets.all(20),
+      // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 문의하기 버튼이 가리지 않게.
+      padding: EdgeInsets.fromLTRB(
+          20, 20, 20, 20 + MediaQuery.of(context).viewPadding.bottom),
       children: [
         // 제목 = 제조사·모델 + 상태 배지(on_sale 만 도달하므로 "판매중").
         Row(

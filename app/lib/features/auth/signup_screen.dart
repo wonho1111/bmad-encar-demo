@@ -69,7 +69,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 마지막 버튼이 가리지 않게.
+            padding: EdgeInsets.fromLTRB(
+                24, 24, 24, 24 + MediaQuery.of(context).viewPadding.bottom),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

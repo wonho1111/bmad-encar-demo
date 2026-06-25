@@ -156,29 +156,33 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
             ),
           const Divider(height: 1),
           // 입력 폼 — 전송 버튼 또는 키보드 제출. 로딩 중 비활성(연타 차단).
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _input,
-                    enabled: !_loading,
-                    decoration: const InputDecoration(
-                      hintText: '찾으시는 차를 자연어로 입력하세요',
-                      isDense: true,
-                      border: OutlineInputBorder(),
+          // SafeArea(top:false): 하단 시스템 내비바(edge-to-edge)에 입력란이 가리지 않게 여백 확보.
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _input,
+                      enabled: !_loading,
+                      decoration: const InputDecoration(
+                        hintText: '찾으시는 차를 자연어로 입력하세요',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _submit(),
                     ),
-                    onSubmitted: (_) => _submit(),
                   ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  key: const Key('ai_send'),
-                  onPressed: _loading ? null : _submit,
-                  child: const Text('전송'),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    key: const Key('ai_send'),
+                    onPressed: _loading ? null : _submit,
+                    child: const Text('전송'),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

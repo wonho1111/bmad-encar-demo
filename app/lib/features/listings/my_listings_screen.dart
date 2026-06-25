@@ -93,7 +93,9 @@ class MyListingsScreen extends ConsumerWidget {
                       );
                     }
                     return ListView.separated(
-                      padding: const EdgeInsets.all(16),
+                      // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 마지막 카드 액션이 가리지 않게.
+                      padding: EdgeInsets.fromLTRB(
+                          16, 16, 16, 16 + MediaQuery.of(context).viewPadding.bottom),
                       itemCount: list.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (_, i) => _row(context, ref, list[i], st),
@@ -126,17 +128,25 @@ class MyListingsScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 제목(제조사·모델·연식) + 상태 배지를 한 행에(제목은 길면 줄바꿈, 배지는 우상단 고정).
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Text(
-                    '[${l.manufacturer}] ${l.model} · ${l.year}년 · '
-                    '${_won(l.price)}',
+                    '[${l.manufacturer}] ${l.model} · ${l.year}년',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
+                const SizedBox(width: 8),
                 _badge(onSale),
               ],
+            ),
+            const SizedBox(height: 4),
+            // 가격은 별도 행에 굵게 — 긴 차명에도 레이아웃이 무너지지 않게(ListingCard 와 동일 구조).
+            Text(
+              _won(l.price),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             const SizedBox(height: 8),
             Wrap(

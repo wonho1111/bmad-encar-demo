@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format/number_format.dart';
 import '../../core/supabase/supabase_client.dart';
+import '../../core/theme/app_theme.dart';
 import '../auth/auth_controller.dart';
 import '../auth/user_role.dart';
 import 'chat_models.dart';
@@ -48,7 +49,9 @@ class ChatListScreen extends ConsumerWidget {
           return RefreshIndicator(
             onRefresh: () async => ref.refresh(chatRoomsProvider.future),
             child: ListView.separated(
-              padding: const EdgeInsets.all(12),
+              // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 마지막 항목이 가리지 않게.
+              padding: EdgeInsets.fromLTRB(
+                  12, 12, 12, 12 + MediaQuery.of(context).viewPadding.bottom),
               itemCount: rooms.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (context, i) =>
@@ -77,25 +80,67 @@ class _RoomTile extends StatelessWidget {
         : (counterName != null ? '구매자 $counterName 문의' : '구매자 문의');
 
     final l = room.listing;
-    // 임베드 null = 판매완료(sold)거나 RLS상 조회 불가 → 상세 정보 비노출(FR11), 플레이스홀더만.
-    final summary = l != null
-        ? '[${l.manufacturer}] ${l.model} · ${l.year}년 · ${wonText(l.price)}'
-        : '판매 완료되었거나 조회할 수 없는 매물';
 
     return Card(
       margin: EdgeInsets.zero,
-      child: ListTile(
-        title: Text(
-          summary,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: l != null ? null : Colors.grey,
-          ),
-        ),
-        subtitle: Text(counter, style: TextStyle(color: Colors.grey[600])),
-        trailing: const Icon(Icons.chevron_right),
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => ChatRoomScreen(roomId: room.id)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 매물 카드와 동일한 다단 구조 — 제목(제조사·모델·연식) / 가격(별행). 길어도 안 무너짐.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    // 임베드 null = 판매완료(sold)·조회불가 → 플레이스홀더만(FR11).
+                    child: l != null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '[${l.manufacturer}] ${l.model} · ${l.year}년',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.ink2),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                wonText(l.price),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15,
+                                    color: AppColors.ink2),
+                              ),
+                            ],
+                          )
+                        : const Text(
+                            '판매 완료되었거나 조회할 수 없는 매물',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.muted),
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.chevron_right, color: AppColors.muted),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(counter,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
+            ],
+          ),
         ),
       ),
     );

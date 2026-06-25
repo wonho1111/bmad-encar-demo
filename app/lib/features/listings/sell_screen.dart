@@ -188,7 +188,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 등록 버튼이 가리지 않게.
+            padding: EdgeInsets.fromLTRB(
+                20, 20, 20, 20 + MediaQuery.of(context).viewPadding.bottom),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

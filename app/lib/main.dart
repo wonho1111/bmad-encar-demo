@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/supabase/env.dart';
 import 'core/supabase/supabase_client.dart';
+import 'core/theme/app_theme.dart';
 import 'features/auth/admin_blocked_screen.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/home_screen.dart';
@@ -44,11 +45,8 @@ class EncarApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '엔카 데모',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
-        useMaterial3: true,
-      ),
+      title: '중고차 직거래',
+      theme: buildAppTheme(),
       // 가입 화면은 라우트로 진입(로그인↔가입 이동). 홈/분기는 home 으로 처리.
       routes: {
         '/signup': (_) => const SignupScreen(),

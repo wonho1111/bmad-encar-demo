@@ -23,6 +23,16 @@ final listingDetailProvider =
   return repo.fetchListing(id);
 });
 
+/// 홈 "최근 매물" 미리보기 — 빈 필터(전체 판매중)를 created_at desc 로 받아 상위 몇 건만.
+/// fetchListings 가 이미 최신순 정렬이라 take 만 하면 된다. autoDispose 로 홈을 떠나면 캐시 정리.
+final recentListingsProvider =
+    FutureProvider.autoDispose<List<ListingCardData>>((ref) async {
+  final repo = ref.watch(listingsRepositoryProvider);
+  final list =
+      await repo.fetchListings(ResolvedFilters.fromInput(const ListingFilterInput()));
+  return list.take(4).toList();
+});
+
 /// 수정 진입용 본인 매물 단건(id) — 7.4. 현재 로그인 판매자 본인 매물만 조회(seller_id 필터 + RLS).
 /// 0행이면 null(타인·없음) → 수정 화면이 한국어 차단. 세션 없으면 null 로 처리(차단 화면).
 /// autoDispose: 수정 화면을 닫으면 캐시를 버려, 다음에 들어올 때 항상 최신 값을 다시 읽는다.
