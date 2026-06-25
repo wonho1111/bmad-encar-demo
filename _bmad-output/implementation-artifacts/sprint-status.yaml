@@ -96,7 +96,7 @@ development_status:
   epic-6-retrospective: done
 
   # --- Epic 7: Flutter 모바일 앱 (구매자 + 판매자) ---
-  epic-7: in-progress
+  epic-7: done
   7-1-flutter-골격-인증-연동: done
   7-2-구매자-매물-탐색-상세-ai-검색: done
   7-3-판매자-매물-등록: done
