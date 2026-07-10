@@ -47,3 +47,6 @@ Thumbs.db
 
 # ===== Claude Code 로컬 설정 (개인/머신별, 추적 제외) =====
 .claude/settings.local.json
+
+# ===== agent-reach(mcporter) 로컬 조사 도구 설정 (자동 생성, 추적 제외) =====
+/config/mcporter.json
