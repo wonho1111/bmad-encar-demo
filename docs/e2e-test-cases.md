@@ -13,12 +13,14 @@
 
 ## 0. 사전 준비
 
-### 0.1 테스트 계정 (비번 고정)
-| 역할 | 계정 | 비번 |
-|---|---|---|
-| 관리자 | admin@test.com | admin123 |
-| 구매자 | buyer@test.com / buyer2@test.com / buyer3@test.com | buyer123 |
-| 판매자 | seller@test.com / seller-seed@test.com ~ seller-seed3@test.com | seller123 |
+### 0.1 테스트 계정
+| 역할 | 계정 |
+|---|---|
+| 관리자 | admin@test.com |
+| 구매자 | buyer@test.com / buyer2@test.com / buyer3@test.com |
+| 판매자 | seller@test.com / seller-seed@test.com ~ seller-seed3@test.com |
+
+> 🔐 비밀번호는 저장소에 두지 않는다(기술부채 #1) — 미추적 파일 `supabase/.env.seed` 참조. 템플릿: `supabase/seed-secret.example`.
 
 ### 0.2 환경값
 - **웹**: Vercel preview URL(`develop` 푸시 시 자동 생성) 또는 로컬 `web/` → `npm run dev` (`:3000`).

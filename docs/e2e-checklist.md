@@ -8,12 +8,12 @@
 
 ## 0. 사전 준비
 
-- **테스트 계정** (비번 고정)
-  | 역할 | 계정 | 비번 |
-  |---|---|---|
-  | 관리자 | admin@test.com | admin123 |
-  | 구매자 | buyer@test.com / buyer2@test.com / buyer3@test.com | buyer123 |
-  | 판매자 | seller@test.com / seller-seed@test.com / seller-seed2@test.com / seller-seed3@test.com | seller123 |
+- **테스트 계정** (비밀번호는 저장소 미추적 파일 `supabase/.env.seed` 참조 — 기술부채 #1)
+  | 역할 | 계정 |
+  |---|---|
+  | 관리자 | admin@test.com |
+  | 구매자 | buyer@test.com / buyer2@test.com / buyer3@test.com |
+  | 판매자 | seller@test.com / seller-seed@test.com / seller-seed2@test.com / seller-seed3@test.com |
 - **환경값**: 웹 프리뷰 URL(Vercel, develop), dev API URL(`https://encar-ai-api-dev-1057364978050.asia-northeast3.run.app`), Supabase 프로젝트 `psrnsasxpkpwqdukjdmt`.
 - **웹 실행**: `web/` 에 `.env.local`(NEXT_PUBLIC_SUPABASE_*·NEXT_PUBLIC_API_BASE_URL) → `npm run dev`(:3000) 또는 배포 프리뷰.
 - **모바일 실행**: `app/` 에서 `flutter build apk --release --dart-define-from-file=.env.json` → 기기 설치(사이드로드). 시드 매물 100건·계정 위 표 기준.
