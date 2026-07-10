@@ -12,8 +12,8 @@
       "command": "npx",
       "args": ["-y", "@mobilenext/mobile-mcp@0.0.60"],
       "env": {
-        "ANDROID_HOME": "/home/whlee/Android/sdk",
-        "PATH": "/home/whlee/Android/sdk/platform-tools:/home/whlee/jdk17/bin:/usr/local/bin:/usr/bin:/bin"
+        "ANDROID_HOME": "${ANDROID_HOME}",
+        "ANDROID_SDK_ROOT": "${ANDROID_HOME}"
       }
     }
   }
