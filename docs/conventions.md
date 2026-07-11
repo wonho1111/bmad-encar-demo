@@ -55,3 +55,9 @@
 
 - `status='sold'` 매물은 구매자의 **모든 경로**(목록·필터·상세·AI SQL·문서 RAG)에서 노출되지 않는다.
 - 강제 지점: RLS(`0002_listings`에 동거) + `api/db/sql_guard.py` + 문서 RAG 결과 필터. (구현은 Epic 2~4)
+
+## 7. 채팅 메시지 길이 (Chat Message Length)
+
+- **본문(`body`) 최대 `2000`자.** 공백 제거(trim) 후 글자 수 기준.
+- 강제 지점(3층): DB CHECK(`0010_chat_message_length.sql`, `char_length(body) <= 2000`) + web 입력창 `maxLength` + `sendMessage` 길이 가드. 값은 `web/src/lib/constants.ts`의 `CHAT.MESSAGE_MAX_LENGTH`가 미러링.
+- 빈 본문 금지는 별도 CHECK(`0003_chat.sql`, `length(btrim(body)) > 0`). (근거: 기술부채 #8 — 무제한 붙여넣기로 행·폴링 페이로드 비대화 방지)
