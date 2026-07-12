@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>차장님 관리자 웹 — 디자인시스템 통일 + 반응형 목업 v2</title>
+<style>
+  :root {
+    --surface-base: #FAFAF8;
+    --surface-raised: #FFFFFF;
+    --ink: #1A1E1D;
+    --ink-muted: #5C5A54;
+    --brand-petrol: #1E6E6A;
+    --brand-petrol-strong: #14514E;
+    --petrol-deepest: #0F3D3E;
+    --accent-amber: #F0A339;
+    --on-amber: #1A1E1D;
+    --trust-green-bg: #E3F2EA;
+    --trust-green-ink: #1E8E63;
+    --warn-amber-bg: #FDEFDA;
+    --warn-amber-ink: #8A5A12;
+    --hairline: rgba(0, 0, 0, 0.08);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px rgba(0, 0, 0, .06);
+    --petrol-tint-bg: rgba(30, 110, 106, .12);
+    --pill-gray-bg: rgba(0, 0, 0, .06);
+    --pill-gray-ink: #5C5A54;
+    --danger-ink: #B23B2E;
+    --overlay-scrim: rgba(15, 20, 19, .45);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-base: #201F1C;
+      --surface-raised: #2A2926;
+      --ink: #F1EFEA;
+      --ink-muted: #B9B5AC;
+      --brand-petrol: #4FA39D;
+      --brand-petrol-strong: #6BBAB4;
+      --petrol-deepest: #0B2E2F;
+      --accent-amber: #F0A339;
+      --on-amber: #1A1E1D;
+      --trust-green-bg: #1E3A2E;
+      --trust-green-ink: #7FD6AB;
+      --warn-amber-bg: #3A2E1C;
+      --warn-amber-ink: #F0C177;
+      --hairline: rgba(255, 255, 255, 0.10);
+      --shadow-card: 0 1px 2px rgba(0, 0, 0, .35), 0 8px 24px rgba(0, 0, 0, .45);
+      --petrol-tint-bg: rgba(79, 163, 157, .18);
+      --pill-gray-bg: rgba(255, 255, 255, .08);
+      --pill-gray-ink: #B9B5AC;
+      --danger-ink: #E08674;
+      --overlay-scrim: rgba(0, 0, 0, .6);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--surface-base);
+    color: var(--ink);
+    font-family: "Pretendard", -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input { font-family: inherit; }
+
+  /* ============================================================
+     APP SHELL
+  ============================================================ */
+  .app-shell {
+    display: flex;
+    min-height: 100vh;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    flex: 0 0 240px;
+    background: var(--brand-petrol-strong);
+    color: #FFFFFF;
+    padding: 20px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 20;
+  }
+
+  .brand-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px 22px; }
+
+  .brand-badge {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: var(--petrol-deepest); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 15px; flex-shrink: 0;
+  }
+
+  .brand-text .name { font-weight: 800; font-size: 15px; line-height: 1.2; color: #fff; }
+  .brand-text .role { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.68); }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 12px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; color: rgba(255,255,255,.82);
+    cursor: default;
+  }
+  .nav-item .glyph { width: 18px; text-align: center; opacity: .95; }
+  .nav-item.active { background: var(--petrol-deepest); color: #fff; }
+  .nav-item:not(.active):hover { background: rgba(255,255,255,.08); }
+
+  .sidebar-footer {
+    margin-top: auto; padding: 12px 8px 4px;
+    font-size: 11px; color: rgba(255,255,255,.55); line-height: 1.5;
+  }
+
+  .sidebar-close-btn { display: none; }
+
+  .sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: var(--overlay-scrim);
+    z-index: 15;
+  }
+  .sidebar-overlay.open { display: block; }
+
+  /* Mobile top bar (hidden on desktop) */
+  .topbar {
+    display: none;
+    position: sticky; top: 0; z-index: 18;
+    align-items: center; gap: 12px;
+    background: var(--brand-petrol-strong);
+    color: #fff;
+    padding: 12px 16px;
+    box-shadow: var(--shadow-card);
+  }
+  .hamburger-btn {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: rgba(255,255,255,.12); border: none; color: #fff;
+    font-size: 17px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+  }
+  .topbar .brand-text .name { font-size: 14px; }
+  .topbar .brand-text .role { font-size: 11px; }
+
+  /* ============================================================
+     MAIN
+  ============================================================ */
+  .main { flex: 1; min-width: 0; padding: 32px 40px 64px; display: flex; flex-direction: column; gap: 56px; }
+
+  .screen-block { display: flex; flex-direction: column; gap: 20px; }
+
+  .screen-label-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .screen-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--ink-muted); text-transform: uppercase; }
+  .route-chip {
+    font-size: 11px; font-weight: 700; font-family: "SFMono-Regular", Consolas, monospace;
+    color: var(--brand-petrol); background: var(--petrol-tint-bg);
+    padding: 3px 9px; border-radius: 999px;
+  }
+
+  .page-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .page-title { font-size: 20px; font-weight: 700; line-height: 1.3; color: var(--ink); }
+  .page-sub { font-size: 13px; font-weight: 500; color: var(--ink-muted); }
+  .page-desc { font-size: 15px; font-weight: 500; color: var(--ink-muted); margin-top: -10px; }
+
+  .divider { height: 1px; background: var(--hairline); border: none; margin: 8px 0 0; }
+
+  /* ============================================================
+     CARDS / KPI
+  ============================================================ */
+  .card { background: var(--surface-raised); border-radius: 16px; box-shadow: var(--shadow-card); padding: 22px; border: 1px solid var(--hairline); }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .kpi-card { background: var(--surface-raised); border-radius: 16px; box-shadow: var(--shadow-card); padding: 18px; border: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 8px; }
+  .kpi-label { font-size: 13px; font-weight: 500; color: var(--ink-muted); }
+  .kpi-number { font-size: 26px; font-weight: 800; line-height: 1.2; color: var(--ink); }
+  .kpi-number.amber { color: var(--accent-amber); }
+  .kpi-delta { font-size: 12px; font-weight: 500; color: var(--ink-muted); }
+
+  .two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+  .panel-title { font-size: 16px; font-weight: 600; color: var(--ink); margin: 0 0 16px; }
+
+  /* ============================================================
+     LISTING / MEMBER ROWS (dashboard panels)
+  ============================================================ */
+  .row-list { display: flex; flex-direction: column; }
+  .list-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
+  .list-row:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .thumb {
+    flex: 0 0 72px; width: 72px; height: 43px; border-radius: 8px;
+    background: linear-gradient(135deg, rgba(30,110,106,.20), rgba(30,110,106,.06));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: var(--brand-petrol);
+    flex-shrink: 0; overflow: hidden;
+  }
+  .thumb.placeholder {
+    background: repeating-linear-gradient(45deg, var(--hairline), var(--hairline) 6px, transparent 6px, transparent 12px), var(--surface-base);
+    color: var(--ink-muted); font-size: 16px;
+  }
+  .thumb.sm { flex-basis: 56px; width: 56px; height: 34px; }
+
+  .row-info { flex: 1; min-width: 0; }
+  .row-title { font-size: 16px; font-weight: 600; line-height: 1.4; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-meta { font-size: 13px; font-weight: 500; color: var(--ink-muted); margin-top: 2px; }
+
+  .price-amber { color: var(--accent-amber); font-weight: 800; font-size: 20px; white-space: nowrap; }
+  .price-amber.lg { font-size: 26px; }
+
+  .pill { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill-view { background: var(--brand-petrol); color: #fff; }
+  .pill-status-on { background: var(--petrol-tint-bg); color: var(--brand-petrol); }
+  .pill-status-off { background: var(--pill-gray-bg); color: var(--pill-gray-ink); }
+  .pill-type { background: var(--petrol-tint-bg); color: var(--brand-petrol); }
+  .pill-me { background: var(--accent-amber); color: var(--on-amber); }
+  .pill-count { background: var(--petrol-tint-bg); color: var(--brand-petrol); }
+
+  /* ============================================================
+     BUTTONS
+  ============================================================ */
+  .btn-petrol { background: var(--brand-petrol); color: #fff; border: none; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: default; white-space: nowrap; }
+  .btn-outline { background: transparent; color: var(--brand-petrol); border: 1px solid var(--brand-petrol); border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: default; white-space: nowrap; }
+  .btn-danger-text { background: transparent; color: var(--danger-ink); border: none; font-size: 13px; font-weight: 700; cursor: default; padding: 8px 4px; white-space: nowrap; }
+  .btn-amber { background: var(--accent-amber); color: var(--on-amber); border: none; border-radius: 10px; padding: 10px 18px; font-size: 14px; font-weight: 800; cursor: default; }
+
+  .action-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+  /* ============================================================
+     TOOLBAR / SEARCH / FILTER CHIPS
+  ============================================================ */
+  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .search-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface-raised); border: 1px solid var(--hairline);
+    border-radius: 999px; padding: 9px 16px; flex: 1 1 260px; max-width: 320px;
+  }
+  .search-pill input { border: none; background: transparent; outline: none; color: var(--ink); font-size: 14px; width: 100%; }
+  .search-pill input::placeholder { color: var(--ink-muted); }
+
+  .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-tab { padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 700; background: var(--surface-raised); color: var(--ink-muted); border: 1px solid var(--hairline); }
+  .filter-tab.active { background: var(--brand-petrol); color: #fff; border-color: var(--brand-petrol); }
+
+  .mobile-filter-btn { display: none; }
+
+  /* Bottom sheet (mobile filter) */
+  .bottom-sheet-overlay { display: none; position: fixed; inset: 0; background: var(--overlay-scrim); z-index: 30; }
+  .bottom-sheet-overlay.open { display: block; }
+  .bottom-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 31;
+    background: var(--surface-raised); border-radius: 20px 20px 0 0;
+    padding: 18px 20px 26px; box-shadow: 0 -8px 24px rgba(0,0,0,.18);
+    transform: translateY(100%); transition: transform .2s ease;
+  }
+  .bottom-sheet.open { transform: translateY(0); }
+  .bottom-sheet-handle { width: 40px; height: 4px; border-radius: 999px; background: var(--hairline); margin: 0 auto 14px; }
+  .bottom-sheet-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; }
+
+  /* ============================================================
+     TABLE (desktop) -> CARD LIST (<640px)
+  ============================================================ */
+  .table-wrap { background: var(--surface-raised); border-radius: 16px; box-shadow: var(--shadow-card); border: 1px solid var(--hairline); overflow: hidden; }
+  table.admin-table { width: 100%; border-collapse: collapse; }
+  .admin-table thead th {
+    text-align: left; font-size: 12px; font-weight: 700; color: var(--ink-muted);
+    text-transform: uppercase; letter-spacing: .03em;
+    padding: 14px 18px; border-bottom: 1px solid var(--hairline);
+  }
+  .admin-table tbody td { padding: 14px 18px; border-bottom: 1px solid var(--hairline); font-size: 15px; font-weight: 500; color: var(--ink); vertical-align: middle; }
+  .admin-table tbody tr:last-child td { border-bottom: none; }
+  .admin-table td.cell-title { font-size: 16px; font-weight: 600; }
+  .admin-table td .row-meta { margin-top: 2px; }
+
+  .cell-with-thumb { display: flex; align-items: center; gap: 12px; }
+
+  /* ============================================================
+     TRUST BADGE / WARN NOTE / OPTION CHIPS
+  ============================================================ */
+  .trust-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .trust-badge { display: inline-flex; align-items: center; gap: 5px; background: var(--trust-green-bg); color: var(--trust-green-ink); font-size: 13px; font-weight: 700; padding: 7px 14px; border-radius: 999px; }
+
+  .warn-note { display: flex; gap: 10px; align-items: flex-start; background: var(--warn-amber-bg); color: var(--warn-amber-ink); border-radius: 12px; padding: 14px 16px; font-size: 13px; font-weight: 500; line-height: 1.6; }
+  .warn-note .glyph { font-size: 15px; flex-shrink: 0; }
+
+  .gray-note-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--pill-gray-bg); color: var(--pill-gray-ink); font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px; }
+
+  .option-chip { display: inline-flex; align-items: center; background: transparent; color: var(--brand-petrol); border: 1px solid var(--brand-petrol); font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 999px; }
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ============================================================
+     LISTING DETAIL (screen 4)
+  ============================================================ */
+  .detail-header-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .detail-gallery-main {
+    position: relative; border-radius: 16px; overflow: hidden;
+    aspect-ratio: 5 / 3; width: 100%; max-width: 560px;
+    background: linear-gradient(135deg, rgba(30,110,106,.28), rgba(30,110,106,.08));
+    display: flex; align-items: center; justify-content: center;
+    color: var(--brand-petrol); font-size: 13px; font-weight: 700;
+  }
+  .gallery-counter { position: absolute; right: 12px; bottom: 12px; background: rgba(0,0,0,.55); color: #fff; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; }
+  .gallery-thumbs { display: flex; gap: 8px; margin-top: 8px; max-width: 560px; }
+  .gallery-thumb { flex: 1; aspect-ratio: 5/3; border-radius: 8px; background: linear-gradient(135deg, rgba(30,110,106,.20), rgba(30,110,106,.05)); border: 2px solid transparent; }
+  .gallery-thumb.active { border-color: var(--brand-petrol); }
+
+  .detail-section-title { font-size: 16px; font-weight: 700; color: var(--ink); margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .detail-section-title .num { width: 22px; height: 22px; border-radius: 999px; background: var(--brand-petrol); color: #fff; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  .disclaimer-text { font-size: 13px; font-weight: 500; color: var(--ink-muted); margin-top: 10px; }
+
+  .spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+  .spec-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); font-size: 15px; }
+  .spec-item .k { color: var(--ink-muted); font-weight: 500; }
+  .spec-item .v { color: var(--ink); font-weight: 600; text-align: right; }
+
+  .seller-row { display: flex; align-items: center; gap: 14px; }
+  .seller-avatar { width: 48px; height: 48px; border-radius: 999px; background: var(--petrol-tint-bg); color: var(--brand-petrol); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; flex-shrink: 0; }
+  .seller-name { font-size: 16px; font-weight: 700; }
+  .seller-sub { font-size: 13px; font-weight: 500; color: var(--ink-muted); margin-top: 2px; }
+
+  /* ============================================================
+     CHAT MANAGEMENT (screen 6)
+  ============================================================ */
+  .chat-cols { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  .room-row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 12px; cursor: default; }
+  .room-row.active { background: var(--petrol-tint-bg); }
+  .room-row + .room-row { margin-top: 2px; }
+  .room-avatar { width: 40px; height: 40px; border-radius: 999px; background: var(--pill-gray-bg); color: var(--ink-muted); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .room-info { flex: 1; min-width: 0; }
+  .room-parties { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .room-listing { font-size: 12.5px; font-weight: 500; color: var(--ink-muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .room-meta-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+  .room-time { font-size: 11px; font-weight: 500; color: var(--ink-muted); }
+  .room-delete { font-size: 13px; color: var(--danger-ink); }
+
+  .chat-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--hairline); }
+  .chat-panel-title { font-size: 15px; font-weight: 700; }
+  .chat-panel-sub { font-size: 12.5px; font-weight: 500; color: var(--ink-muted); margin-top: 2px; }
+
+  .bubble-stack { display: flex; flex-direction: column; gap: 12px; }
+  .bubble-line { display: flex; flex-direction: column; max-width: 72%; }
+  .bubble-line.buyer { align-self: flex-start; align-items: flex-start; }
+  .bubble-line.seller { align-self: flex-end; align-items: flex-end; }
+  .bubble { padding: 10px 14px; border-radius: 14px; font-size: 14px; font-weight: 500; line-height: 1.5; }
+  .bubble-line.buyer .bubble { background: var(--surface-base); border: 1px solid var(--hairline); color: var(--ink); border-bottom-left-radius: 4px; }
+  .bubble-line.seller .bubble { background: var(--brand-petrol); color: #fff; border-bottom-right-radius: 4px; }
+  .bubble-time { font-size: 11px; color: var(--ink-muted); margin-top: 4px; padding: 0 2px; }
+
+  /* ============================================================
+     RESPONSIVE (real breakpoints — resize the browser to see this)
+  ============================================================ */
+  @media (max-width: 980px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; }
+    .chat-cols { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 900px) {
+    .sidebar {
+      position: fixed; top: 0; left: 0; height: 100vh; width: 260px;
+      transform: translateX(-100%); transition: transform .2s ease;
+      box-shadow: 0 0 32px rgba(0,0,0,.3);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-close-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,.12);
+      color: #fff; border: none; font-size: 15px; margin-left: auto; cursor: pointer;
+    }
+    .topbar { display: flex; }
+    .main { padding: 24px 18px 48px; gap: 40px; }
+  }
+
+  @media (max-width: 640px) {
+    .kpi-row { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .kpi-card { padding: 14px; }
+    .kpi-number { font-size: 22px; }
+
+    .filter-tabs { display: none; }
+    .mobile-filter-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface-raised); border: 1px solid var(--hairline);
+      color: var(--ink); font-size: 13px; font-weight: 700;
+      padding: 9px 16px; border-radius: 999px; cursor: pointer;
+    }
+
+    /* table -> card list */
+    .admin-table thead { display: none; }
+    .admin-table, .admin-table tbody, .admin-table tr, .admin-table td { display: block; width: 100%; }
+    .admin-table tr {
+      border-bottom: 1px solid var(--hairline);
+      padding: 14px 16px;
+    }
+    .admin-table td {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; padding: 6px 0; border-bottom: none; text-align: right;
+    }
+    .admin-table td.cell-with-thumb { justify-content: flex-start; padding-bottom: 10px; }
+    .admin-table td::before {
+      content: attr(data-label); font-size: 12px; font-weight: 700;
+      color: var(--ink-muted); text-align: left; flex-shrink: 0;
+    }
+    .admin-table td.cell-with-thumb::before { display: none; }
+    .admin-table td.cell-title { justify-content: space-between; }
+
+    .chat-cols { display: flex; flex-direction: column; }
+
+    .spec-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ============================================================
+     SCREEN divider / footer
+  ============================================================ */
+  .footer-caption { text-align: center; font-size: 12px; font-weight: 500; color: var(--ink-muted); padding: 8px 0 24px; line-height: 1.7; }
+
+  /* ============================================================
+     PHONE FRAME DEMO SECTION (forced-mobile, viewport-independent)
+  ============================================================ */
+  .phone-demo-title { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+  .phone-row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .phone-unit { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .phone-unit-label { font-size: 13px; font-weight: 700; color: var(--ink-muted); }
+
+  .device-frame {
+    width: 360px; border-radius: 34px; padding: 12px;
+    background: var(--petrol-deepest);
+    box-shadow: var(--shadow-card);
+  }
+  .device-notch { width: 90px; height: 18px; background: var(--petrol-deepest); border-radius: 0 0 12px 12px; margin: 0 auto; position: relative; top: 0; }
+  .device-screen {
+    background: var(--surface-base); border-radius: 22px; overflow: hidden;
+    height: 640px; overflow-y: auto; display: flex; flex-direction: column;
+  }
+
+  /* forced-mobile scope: identical rules to the <640/<900 media queries above, but
+     applied via class instead of viewport width so the phone frames render correctly
+     regardless of the actual browser width. */
+  .fm-topbar { display: flex; align-items: center; gap: 10px; background: var(--brand-petrol-strong); color: #fff; padding: 12px 16px; }
+  .fm-topbar .hamburger-btn { width: 30px; height: 30px; font-size: 15px; }
+  .fm-topbar .brand-text .name { font-size: 13px; }
+  .fm-topbar .brand-text .role { font-size: 10px; }
+  .fm-body { padding: 16px 14px 28px; display: flex; flex-direction: column; gap: 18px; }
+  .fm-page-title { font-size: 18px; font-weight: 700; }
+  .fm-page-sub { font-size: 12px; font-weight: 500; color: var(--ink-muted); }
+  .fm-kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .fm-kpi-row .kpi-card { padding: 13px; }
+  .fm-kpi-row .kpi-number { font-size: 21px; }
+  .fm-search-row { display: flex; align-items: center; gap: 8px; }
+  .fm-search-row .search-pill { max-width: none; }
+  .fm-card-list { display: flex; flex-direction: column; gap: 10px; }
+  .fm-row-card { background: var(--surface-raised); border: 1px solid var(--hairline); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-card); }
+  .fm-kv { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 0; font-size: 13.5px; }
+  .fm-kv .k { color: var(--ink-muted); font-weight: 700; font-size: 11.5px; }
+  .fm-kv .v { color: var(--ink); font-weight: 600; text-align: right; }
+  .fm-row-thumbline { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ===================== MOBILE TOP BAR ===================== -->
+  <div class="topbar">
+    <button class="hamburger-btn" data-toggle="sidebar" aria-label="메뉴 열기">☰</button>
+    <div class="brand-row" style="padding:0;">
+      <div class="brand-badge">차</div>
+      <div class="brand-text"><div class="name">차장님</div><div class="role">관리자</div></div>
+    </div>
+  </div>
+  <div class="sidebar-overlay" data-close="sidebar" id="sidebarOverlay-main"></div>
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand-row">
+      <div class="brand-badge">차</div>
+      <div class="brand-text"><div class="name">차장님</div><div class="role">관리자</div></div>
+      <button class="sidebar-close-btn" data-toggle="sidebar" aria-label="메뉴 닫기">✕</button>
+    </div>
+
+    <div class="nav-item active"><span class="glyph">▦</span>대시보드</div>
+    <div class="nav-item"><span class="glyph">👤</span>회원관리</div>
+    <div class="nav-item"><span class="glyph">🚗</span>전체매물</div>
+    <div class="nav-item"><span class="glyph">📋</span>거래내역</div>
+    <div class="nav-item"><span class="glyph">💬</span>채팅관리</div>
+
+    <div class="sidebar-footer">운영자 · web 전용</div>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="main">
+
+    <!-- ============ SCREEN 1: 대시보드 ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row">
+        <span class="screen-label">SCREEN 1</span>
+        <span class="route-chip">/admin</span>
+      </div>
+      <div class="page-header">
+        <div class="page-title">대시보드</div>
+        <div class="page-sub">2026-07-12</div>
+      </div>
+
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">총 회원</div>
+          <div class="kpi-number">1,284</div>
+          <div class="kpi-delta">+12 이번 주</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">판매 중 매물</div>
+          <div class="kpi-number">93</div>
+          <div class="kpi-delta">+5 이번 주</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">판매완료</div>
+          <div class="kpi-number">41</div>
+          <div class="kpi-delta">+3 이번 주</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">진행 중 채팅방</div>
+          <div class="kpi-number">27</div>
+          <div class="kpi-delta">+8 이번 주</div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="panel-title">최근 등록 매물</div>
+          <div class="row-list">
+            <div class="list-row">
+              <div class="thumb">5:3</div>
+              <div class="row-info">
+                <div class="row-title">2022 그랜저 하이브리드 캘리그래피</div>
+                <div class="row-meta">2022년식 · 3.2만km · 서울 강남구</div>
+              </div>
+              <span class="price-amber">₩ 4,180만</span>
+              <span class="pill pill-view">👁 3,412</span>
+            </div>
+            <div class="list-row">
+              <div class="thumb">5:3</div>
+              <div class="row-info">
+                <div class="row-title">2021 카니발 9인승 노블레스</div>
+                <div class="row-meta">2021년식 · 5.1만km · 경기 성남시</div>
+              </div>
+              <span class="price-amber">₩ 3,290만</span>
+              <span class="pill pill-view">👁 2,988</span>
+            </div>
+            <div class="list-row">
+              <div class="thumb placeholder">📷</div>
+              <div class="row-info">
+                <div class="row-title">2023 아이오닉6 롱레인지</div>
+                <div class="row-meta">2023년식 · 1.2만km · 사진 준비중</div>
+              </div>
+              <span class="price-amber">₩ 4,850만</span>
+              <span class="pill pill-view">👁 2,540</span>
+            </div>
+            <div class="list-row">
+              <div class="thumb">5:3</div>
+              <div class="row-info">
+                <div class="row-title">2020 쏘렌토 디젤 4WD</div>
+                <div class="row-meta">2020년식 · 6.8만km · 인천 남동구</div>
+              </div>
+              <span class="price-amber">₩ 2,690만</span>
+              <span class="pill pill-view">👁 2,301</span>
+            </div>
+            <div class="list-row">
+              <div class="thumb">5:3</div>
+              <div class="row-info">
+                <div class="row-title">2022 아반떼 CN7 스마트</div>
+                <div class="row-meta">2022년식 · 2.9만km · 부산 해운대구</div>
+              </div>
+              <span class="price-amber">₩ 1,790만</span>
+              <span class="pill pill-view">👁 1,876</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-title">최근 가입 회원</div>
+          <div class="row-list">
+            <div class="list-row"><div class="row-info"><div class="row-title" style="font-size:15px;">김도현</div></div><span class="pill pill-type">일반회원</span><span class="row-meta">07-12</span></div>
+            <div class="list-row"><div class="row-info"><div class="row-title" style="font-size:15px;">이서연</div></div><span class="pill pill-type">일반회원</span><span class="row-meta">07-11</span></div>
+            <div class="list-row"><div class="row-info"><div class="row-title" style="font-size:15px;">박준호</div></div><span class="pill pill-type">일반회원</span><span class="row-meta">07-11</span></div>
+            <div class="list-row"><div class="row-info"><div class="row-title" style="font-size:15px;">최유리</div></div><span class="pill pill-type">일반회원</span><span class="row-meta">07-10</span></div>
+            <div class="list-row"><div class="row-info"><div class="row-title" style="font-size:15px;">정민석</div></div><span class="pill pill-type">일반회원</span><span class="row-meta">07-10</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ============ SCREEN 2: 회원관리 ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row"><span class="screen-label">SCREEN 2</span><span class="route-chip">/admin/members</span></div>
+      <div class="page-header"><div class="page-title">회원관리</div></div>
+      <div class="page-desc">전체 회원을 조회하고 이상 회원을 정지·삭제합니다.</div>
+
+      <div class="toolbar">
+        <div class="search-pill">🔍<input type="text" placeholder="이름으로 검색" readonly /></div>
+        <div class="filter-tabs">
+          <span class="filter-tab active">전체</span>
+          <span class="filter-tab">활성</span>
+          <span class="filter-tab">정지</span>
+        </div>
+        <button class="mobile-filter-btn" data-toggle="sheet-members">▤ 필터</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>회원</th><th>유형</th><th>상태</th><th>가입일</th><th>관리</th></tr></thead>
+          <tbody>
+            <tr>
+              <td data-label="회원" class="cell-title">김도현</td>
+              <td data-label="유형"><span class="pill pill-type">일반회원</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">활성</span></td>
+              <td data-label="가입일">2026-07-12</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">정지</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="회원" class="cell-title">이서연 <span class="pill pill-me" style="margin-left:6px;">나</span></td>
+              <td data-label="유형"><span class="pill pill-type">관리자</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">활성</span></td>
+              <td data-label="가입일">2026-05-02</td>
+              <td data-label="관리"><span class="row-meta">—</span></td>
+            </tr>
+            <tr>
+              <td data-label="회원" class="cell-title">박준호</td>
+              <td data-label="유형"><span class="pill pill-type">일반회원</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">활성</span></td>
+              <td data-label="가입일">2026-07-11</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">정지</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="회원" class="cell-title">6f2a91c0</td>
+              <td data-label="유형"><span class="pill pill-type">일반회원</span></td>
+              <td data-label="상태"><span class="pill pill-status-off">정지됨</span></td>
+              <td data-label="가입일">2026-06-28</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">해제</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="회원" class="cell-title">최유리</td>
+              <td data-label="유형"><span class="pill pill-type">일반회원</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">활성</span></td>
+              <td data-label="가입일">2026-07-10</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">정지</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="회원" class="cell-title">정민석</td>
+              <td data-label="유형"><span class="pill pill-type">일반회원</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">활성</span></td>
+              <td data-label="가입일">2026-07-10</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">정지</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="warn-note"><span class="glyph">⚠️</span><span>이메일은 표시하지 않습니다 — anon 키(비로그인용 공개 접근키) + RLS(행 단위 접근제어) 정책상 타인 이메일 조회 불가(service_role 미사용). 완전 계정 삭제는 profiles 행 제거로 처리됩니다.</span></div>
+    </section>
+
+    <!-- mobile filter bottom sheet: 회원관리 -->
+    <div class="bottom-sheet-overlay" data-close="sheet-members" id="ov-members"></div>
+    <div class="bottom-sheet" id="sheet-members">
+      <div class="bottom-sheet-handle"></div>
+      <div class="bottom-sheet-title">상태 필터</div>
+      <div class="filter-tabs"><span class="filter-tab active">전체</span><span class="filter-tab">활성</span><span class="filter-tab">정지</span></div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- ============ SCREEN 3: 전체매물 ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row"><span class="screen-label">SCREEN 3</span><span class="route-chip">/admin/listings</span></div>
+      <div class="page-header"><div class="page-title">전체매물</div></div>
+      <div class="page-desc">판매완료 포함 전체 매물을 조회·삭제합니다.</div>
+
+      <div class="toolbar">
+        <div class="search-pill">🔍<input type="text" placeholder="차량명으로 검색" readonly /></div>
+        <div class="filter-tabs">
+          <span class="filter-tab active">전체</span>
+          <span class="filter-tab">판매중</span>
+          <span class="filter-tab">판매완료</span>
+        </div>
+        <button class="mobile-filter-btn" data-toggle="sheet-listings">▤ 필터</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>매물</th><th>가격</th><th>상태</th><th>판매자</th><th>조회수</th><th>등록일</th><th>관리</th></tr></thead>
+          <tbody>
+            <tr>
+              <td data-label="매물" class="cell-with-thumb"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title">2022 그랜저 하이브리드 캘리그래피</div><div class="row-meta">2022년식 · 3.2만km</div></div></td>
+              <td data-label="가격"><span class="price-amber">₩ 4,180만</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">판매중</span></td>
+              <td data-label="판매자">김도현</td>
+              <td data-label="조회수">3,412</td>
+              <td data-label="등록일">2026-07-01</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">상세</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-with-thumb"><div class="thumb placeholder sm">📷</div><div class="row-info"><div class="row-title">2023 아이오닉6 롱레인지</div><div class="row-meta">2023년식 · 1.2만km · 사진 준비중</div></div></td>
+              <td data-label="가격"><span class="price-amber">₩ 4,850만</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">판매중</span></td>
+              <td data-label="판매자">이서연</td>
+              <td data-label="조회수">2,540</td>
+              <td data-label="등록일">2026-06-28</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">상세</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-with-thumb"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title">2020 쏘렌토 디젤 4WD</div><div class="row-meta">2020년식 · 6.8만km</div></div></td>
+              <td data-label="가격"><span class="price-amber">₩ 2,690만</span></td>
+              <td data-label="상태"><span class="pill pill-status-off">판매완료</span></td>
+              <td data-label="판매자">박준호</td>
+              <td data-label="조회수">2,301</td>
+              <td data-label="등록일">2026-06-15</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">상세</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-with-thumb"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title">2022 아반떼 CN7 스마트</div><div class="row-meta">2022년식 · 2.9만km</div></div></td>
+              <td data-label="가격"><span class="price-amber">₩ 1,790만</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">판매중</span></td>
+              <td data-label="판매자">최유리</td>
+              <td data-label="조회수">1,876</td>
+              <td data-label="등록일">2026-07-05</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">상세</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-with-thumb"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title">2019 스포티지 QL 디젤</div><div class="row-meta">2019년식 · 8.4만km</div></div></td>
+              <td data-label="가격"><span class="price-amber">₩ 1,590만</span></td>
+              <td data-label="상태"><span class="pill pill-status-off">판매완료</span></td>
+              <td data-label="판매자">정민석</td>
+              <td data-label="조회수">1,204</td>
+              <td data-label="등록일">2026-05-20</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">상세</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-with-thumb"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title">2021 카니발 9인승 노블레스</div><div class="row-meta">2021년식 · 5.1만km</div></div></td>
+              <td data-label="가격"><span class="price-amber">₩ 3,290만</span></td>
+              <td data-label="상태"><span class="pill pill-status-on">판매중</span></td>
+              <td data-label="판매자">김도현</td>
+              <td data-label="조회수">2,988</td>
+              <td data-label="등록일">2026-06-30</td>
+              <td data-label="관리"><div class="action-cell"><button class="btn-outline">상세</button><button class="btn-danger-text">삭제</button></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="bottom-sheet-overlay" data-close="sheet-listings" id="ov-listings"></div>
+    <div class="bottom-sheet" id="sheet-listings">
+      <div class="bottom-sheet-handle"></div>
+      <div class="bottom-sheet-title">상태 필터</div>
+      <div class="filter-tabs"><span class="filter-tab active">전체</span><span class="filter-tab">판매중</span><span class="filter-tab">판매완료</span></div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- ============ SCREEN 4: 매물상세 ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row"><span class="screen-label">SCREEN 4</span><span class="route-chip">/admin/listings/[id]</span></div>
+      <div class="detail-header-bar">
+        <div>
+          <div class="page-title">매물상세</div>
+          <span class="gray-note-badge" style="margin-top:6px;">판매완료 포함 조회</span>
+        </div>
+        <button class="btn-danger-text" style="border:1px solid var(--danger-ink); border-radius:10px;">🗑 삭제</button>
+      </div>
+
+      <div>
+        <div class="detail-gallery-main">5 : 3<span class="gallery-counter">1 / 5</span></div>
+        <div class="gallery-thumbs">
+          <div class="gallery-thumb active"></div>
+          <div class="gallery-thumb"></div>
+          <div class="gallery-thumb"></div>
+          <div class="gallery-thumb"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="detail-section-title"><span class="num">1</span>신뢰정보</div>
+        <div class="trust-row">
+          <span class="trust-badge">✓ 무사고</span>
+          <span class="trust-badge">✓ 1인소유</span>
+          <span class="trust-badge">✓ 비흡연</span>
+        </div>
+        <div class="disclaimer-text">판매자 제공 정보입니다. 차장님이 별도로 검증하지 않았습니다.</div>
+      </div>
+
+      <div class="card">
+        <div class="detail-section-title"><span class="num">2</span>차량정보</div>
+        <div class="spec-grid">
+          <div class="spec-item"><span class="k">제조사</span><span class="v">현대</span></div>
+          <div class="spec-item"><span class="k">모델</span><span class="v">그랜저 하이브리드</span></div>
+          <div class="spec-item"><span class="k">연식</span><span class="v">2022년</span></div>
+          <div class="spec-item"><span class="k">주행거리</span><span class="v">3.2만km</span></div>
+          <div class="spec-item"><span class="k">연료</span><span class="v">하이브리드</span></div>
+          <div class="spec-item"><span class="k">변속기</span><span class="v">자동</span></div>
+          <div class="spec-item"><span class="k">배기량</span><span class="v">1,598cc</span></div>
+          <div class="spec-item"><span class="k">승차인원</span><span class="v">5인승</span></div>
+          <div class="spec-item"><span class="k">색상</span><span class="v">진주 화이트</span></div>
+          <div class="spec-item"><span class="k">지역</span><span class="v">서울 강남구</span></div>
+        </div>
+        <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--hairline); display:flex; justify-content:flex-end;">
+          <span class="price-amber lg">₩ 4,180만</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="detail-section-title"><span class="num">3</span>옵션</div>
+        <div class="chip-row">
+          <span class="option-chip">스마트키</span>
+          <span class="option-chip">내비게이션</span>
+          <span class="option-chip">후방카메라</span>
+          <span class="option-chip">통풍시트</span>
+          <span class="option-chip">선루프</span>
+          <span class="option-chip">열선핸들</span>
+          <span class="option-chip">어라운드뷰</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="detail-section-title"><span class="num">4</span>판매자정보</div>
+        <div class="seller-row">
+          <div class="seller-avatar">김</div>
+          <div>
+            <div class="seller-name">김도현</div>
+            <div class="seller-sub">2026년 5월 가입 · 다른 매물 3건</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ============ SCREEN 5: 거래내역 ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row"><span class="screen-label">SCREEN 5</span><span class="route-chip">/admin/transactions</span></div>
+      <div class="page-header"><div class="page-title">거래내역</div></div>
+      <div class="page-desc">판매완료(sold) 매물 조회 전용.</div>
+
+      <div class="kpi-row" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="kpi-card"><div class="kpi-label">총 거래</div><div class="kpi-number">41건</div></div>
+        <div class="kpi-card"><div class="kpi-label">총 거래액</div><div class="kpi-number amber">₩ 12.4억</div></div>
+        <div class="kpi-card"><div class="kpi-label">이번 달</div><div class="kpi-number">7건</div></div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>매물</th><th>거래액</th><th>판매자</th><th>거래일</th></tr></thead>
+          <tbody>
+            <tr>
+              <td data-label="매물" class="cell-title">2020 쏘렌토 디젤 4WD <div class="row-meta">2020년식 · 6.8만km</div></td>
+              <td data-label="거래액"><span class="price-amber">₩ 2,690만</span></td>
+              <td data-label="판매자">박준호</td>
+              <td data-label="거래일">2026-06-18</td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-title">2019 스포티지 QL 디젤 <div class="row-meta">2019년식 · 8.4만km</div></td>
+              <td data-label="거래액"><span class="price-amber">₩ 1,590만</span></td>
+              <td data-label="판매자">정민석</td>
+              <td data-label="거래일">2026-05-22</td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-title">2018 K5 3세대 노블레스 <div class="row-meta">2018년식 · 9.9만km</div></td>
+              <td data-label="거래액"><span class="price-amber">₩ 1,280만</span></td>
+              <td data-label="판매자">최유리</td>
+              <td data-label="거래일">2026-05-11</td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-title">2021 싼타페 TM 캘리그래피 <div class="row-meta">2021년식 · 4.2만km</div></td>
+              <td data-label="거래액"><span class="price-amber">₩ 3,150만</span></td>
+              <td data-label="판매자">김도현</td>
+              <td data-label="거래일">2026-04-30</td>
+            </tr>
+            <tr>
+              <td data-label="매물" class="cell-title">2017 아반떼 AD 스마트 <div class="row-meta">2017년식 · 11.3만km</div></td>
+              <td data-label="거래액"><span class="price-amber">₩ 890만</span></td>
+              <td data-label="판매자">이서연</td>
+              <td data-label="거래일">2026-04-15</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ============ SCREEN 6: 채팅관리 ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row"><span class="screen-label">SCREEN 6</span><span class="route-chip">/admin/chats</span></div>
+      <div class="page-header"><div class="page-title">채팅관리</div></div>
+      <div class="page-desc">전체 채팅방 조회·대화 열람·삭제. (읽기 전용 열람)</div>
+
+      <div class="chat-cols">
+        <div class="card" style="padding:12px;">
+          <div class="panel-title" style="padding-left:6px;">전체 채팅방</div>
+          <div class="room-row active">
+            <div class="room-avatar">김↔박</div>
+            <div class="room-info"><div class="room-parties">김도현 ↔ 박준호</div><div class="room-listing">2022 그랜저 하이브리드 캘리그래피</div></div>
+            <div class="room-meta-col"><span class="room-time">14:32</span><span class="pill pill-count">18</span></div>
+          </div>
+          <div class="room-row">
+            <div class="room-avatar">이↔최</div>
+            <div class="room-info"><div class="room-parties">이서연 ↔ 최유리</div><div class="room-listing">2023 아이오닉6 롱레인지</div></div>
+            <div class="room-meta-col"><span class="room-time">11:05</span><span class="pill pill-count">6</span></div>
+          </div>
+          <div class="room-row">
+            <div class="room-avatar">정↔김</div>
+            <div class="room-info"><div class="room-parties">정민석 ↔ 김도현</div><div class="room-listing">2021 카니발 9인승 노블레스</div></div>
+            <div class="room-meta-col"><span class="room-time">어제</span><span class="pill pill-count">32</span></div>
+          </div>
+          <div class="room-row">
+            <div class="room-avatar">박↔이</div>
+            <div class="room-info"><div class="room-parties">박준호 ↔ 이서연</div><div class="room-listing">2020 쏘렌토 디젤 4WD</div></div>
+            <div class="room-meta-col"><span class="room-time">07-09</span><span class="pill pill-count">4</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="chat-panel-header">
+            <div>
+              <div class="chat-panel-title">김도현 ↔ 박준호</div>
+              <div class="chat-panel-sub">2022 그랜저 하이브리드 캘리그래피</div>
+            </div>
+            <button class="btn-danger-text">🗑 방 삭제</button>
+          </div>
+          <div class="bubble-stack">
+            <div class="bubble-line buyer"><div class="bubble">안녕하세요, 아직 판매중인가요?</div><div class="bubble-time">14:20</div></div>
+            <div class="bubble-line seller"><div class="bubble">네 가능합니다! 직거래 희망 지역이 어디세요?</div><div class="bubble-time">14:22</div></div>
+            <div class="bubble-line buyer"><div class="bubble">강남구 근처면 좋을 것 같아요. 무사고 맞나요?</div><div class="bubble-time">14:25</div></div>
+            <div class="bubble-line seller"><div class="bubble">네, 무사고·1인소유·비흡연 차량입니다.</div><div class="bubble-time">14:28</div></div>
+            <div class="bubble-line buyer"><div class="bubble">좋네요. 이번 주말에 볼 수 있을까요?</div><div class="bubble-time">14:32</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <hr class="divider" />
+
+    <!-- ============ 모바일 브라우저 (반응형) ============ -->
+    <section class="screen-block">
+      <div class="screen-label-row"><span class="screen-label">반응형 데모</span></div>
+      <div class="page-header"><div class="page-title">모바일 브라우저 (반응형)</div></div>
+      <div class="page-desc">&lt;900px에서 사이드바가 상단바+햄버거로, &lt;640px에서 테이블이 카드 리스트로 전환됩니다. 아래 3개 프레임은 그 결과를 고정폭으로 보여줍니다.</div>
+
+      <div class="phone-row">
+        <!-- PHONE A: 대시보드 -->
+        <div class="phone-unit">
+          <div class="phone-unit-label">(a) 대시보드 mobile</div>
+          <div class="device-frame">
+            <div class="device-notch"></div>
+            <div class="device-screen">
+              <div class="fm-topbar">
+                <div class="hamburger-btn">☰</div>
+                <div class="brand-row" style="padding:0;"><div class="brand-badge" style="width:28px;height:28px;font-size:12px;">차</div><div class="brand-text"><div class="name">차장님</div><div class="role">관리자</div></div></div>
+              </div>
+              <div class="fm-body">
+                <div><div class="fm-page-title">대시보드</div><div class="fm-page-sub">2026-07-12</div></div>
+                <div class="fm-kpi-row">
+                  <div class="kpi-card"><div class="kpi-label">총 회원</div><div class="kpi-number">1,284</div></div>
+                  <div class="kpi-card"><div class="kpi-label">판매 중 매물</div><div class="kpi-number">93</div></div>
+                  <div class="kpi-card"><div class="kpi-label">판매완료</div><div class="kpi-number">41</div></div>
+                  <div class="kpi-card"><div class="kpi-label">진행 중 채팅방</div><div class="kpi-number">27</div></div>
+                </div>
+                <div class="card" style="padding:14px;">
+                  <div class="panel-title" style="font-size:14px;">최근 등록 매물</div>
+                  <div class="row-list">
+                    <div class="list-row"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title" style="font-size:14px;">그랜저 하이브리드</div><div class="row-meta">2022년식 · 3.2만km</div></div></div>
+                    <div class="list-row"><div class="thumb sm placeholder" style="font-size:13px;">📷</div><div class="row-info"><div class="row-title" style="font-size:14px;">아이오닉6 롱레인지</div><div class="row-meta">2023년식 · 사진 준비중</div></div></div>
+                    <div class="list-row"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title" style="font-size:14px;">쏘렌토 디젤 4WD</div><div class="row-meta">2020년식 · 6.8만km</div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PHONE B: 회원관리 -->
+        <div class="phone-unit">
+          <div class="phone-unit-label">(b) 회원관리 mobile</div>
+          <div class="device-frame">
+            <div class="device-notch"></div>
+            <div class="device-screen">
+              <div class="fm-topbar">
+                <div class="hamburger-btn">☰</div>
+                <div class="brand-row" style="padding:0;"><div class="brand-badge" style="width:28px;height:28px;font-size:12px;">차</div><div class="brand-text"><div class="name">차장님</div><div class="role">관리자</div></div></div>
+              </div>
+              <div class="fm-body">
+                <div><div class="fm-page-title">회원관리</div><div class="fm-page-sub">전체 회원 조회 · 정지 · 삭제</div></div>
+                <div class="fm-search-row">
+                  <div class="search-pill">🔍<input type="text" placeholder="이름 검색" readonly /></div>
+                  <button class="mobile-filter-btn" style="display:inline-flex;">▤ 필터</button>
+                </div>
+                <div class="fm-card-list">
+                  <div class="fm-row-card">
+                    <div class="fm-kv"><span class="k">회원</span><span class="v">김도현</span></div>
+                    <div class="fm-kv"><span class="k">유형</span><span class="v"><span class="pill pill-type">일반회원</span></span></div>
+                    <div class="fm-kv"><span class="k">상태</span><span class="v"><span class="pill pill-status-on">활성</span></span></div>
+                    <div class="fm-kv"><span class="k">가입일</span><span class="v">2026-07-12</span></div>
+                    <div class="fm-kv"><span class="k">관리</span><span class="v"><button class="btn-outline" style="padding:5px 10px;font-size:12px;">정지</button></span></div>
+                  </div>
+                  <div class="fm-row-card">
+                    <div class="fm-kv"><span class="k">회원</span><span class="v">6f2a91c0</span></div>
+                    <div class="fm-kv"><span class="k">유형</span><span class="v"><span class="pill pill-type">일반회원</span></span></div>
+                    <div class="fm-kv"><span class="k">상태</span><span class="v"><span class="pill pill-status-off">정지됨</span></span></div>
+                    <div class="fm-kv"><span class="k">가입일</span><span class="v">2026-06-28</span></div>
+                    <div class="fm-kv"><span class="k">관리</span><span class="v"><button class="btn-outline" style="padding:5px 10px;font-size:12px;">해제</button></span></div>
+                  </div>
+                  <div class="fm-row-card">
+                    <div class="fm-kv"><span class="k">회원</span><span class="v">박준호</span></div>
+                    <div class="fm-kv"><span class="k">유형</span><span class="v"><span class="pill pill-type">일반회원</span></span></div>
+                    <div class="fm-kv"><span class="k">상태</span><span class="v"><span class="pill pill-status-on">활성</span></span></div>
+                    <div class="fm-kv"><span class="k">가입일</span><span class="v">2026-07-11</span></div>
+                    <div class="fm-kv"><span class="k">관리</span><span class="v"><button class="btn-outline" style="padding:5px 10px;font-size:12px;">정지</button></span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PHONE C: 전체매물 -->
+        <div class="phone-unit">
+          <div class="phone-unit-label">(c) 전체매물 mobile</div>
+          <div class="device-frame">
+            <div class="device-notch"></div>
+            <div class="device-screen">
+              <div class="fm-topbar">
+                <div class="hamburger-btn">☰</div>
+                <div class="brand-row" style="padding:0;"><div class="brand-badge" style="width:28px;height:28px;font-size:12px;">차</div><div class="brand-text"><div class="name">차장님</div><div class="role">관리자</div></div></div>
+              </div>
+              <div class="fm-body">
+                <div><div class="fm-page-title">전체매물</div><div class="fm-page-sub">판매완료 포함 전체 조회</div></div>
+                <div class="fm-search-row">
+                  <div class="search-pill">🔍<input type="text" placeholder="차량명 검색" readonly /></div>
+                  <button class="mobile-filter-btn" style="display:inline-flex;">▤ 필터</button>
+                </div>
+                <div class="fm-card-list">
+                  <div class="fm-row-card">
+                    <div class="fm-row-thumbline"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title" style="font-size:14px;">그랜저 하이브리드</div><div class="row-meta">2022년식 · 3.2만km</div></div></div>
+                    <div class="fm-kv"><span class="k">가격</span><span class="v"><span class="price-amber" style="font-size:16px;">₩ 4,180만</span></span></div>
+                    <div class="fm-kv"><span class="k">상태</span><span class="v"><span class="pill pill-status-on">판매중</span></span></div>
+                    <div class="fm-kv"><span class="k">조회수</span><span class="v">3,412</span></div>
+                  </div>
+                  <div class="fm-row-card">
+                    <div class="fm-row-thumbline"><div class="thumb placeholder sm" style="font-size:13px;">📷</div><div class="row-info"><div class="row-title" style="font-size:14px;">아이오닉6 롱레인지</div><div class="row-meta">2023년식 · 사진 준비중</div></div></div>
+                    <div class="fm-kv"><span class="k">가격</span><span class="v"><span class="price-amber" style="font-size:16px;">₩ 4,850만</span></span></div>
+                    <div class="fm-kv"><span class="k">상태</span><span class="v"><span class="pill pill-status-on">판매중</span></span></div>
+                    <div class="fm-kv"><span class="k">조회수</span><span class="v">2,540</span></div>
+                  </div>
+                  <div class="fm-row-card">
+                    <div class="fm-row-thumbline"><div class="thumb sm">5:3</div><div class="row-info"><div class="row-title" style="font-size:14px;">쏘렌토 디젤 4WD</div><div class="row-meta">2020년식 · 6.8만km</div></div></div>
+                    <div class="fm-kv"><span class="k">가격</span><span class="v"><span class="price-amber" style="font-size:16px;">₩ 2,690만</span></span></div>
+                    <div class="fm-kv"><span class="k">상태</span><span class="v"><span class="pill pill-status-off">판매완료</span></span></div>
+                    <div class="fm-kv"><span class="k">조회수</span><span class="v">2,301</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer-caption">목업 v2 — 관리자 웹(운영자용) 디자인 시스템 통일 + 반응형. 기존 6화면 리스킨(신규 기능 없음). web 전용.</div>
+  </main>
+</div>
+
+<script>
+  // generic open/close toggles for sidebar drawer + mobile filter bottom sheets
+  document.querySelectorAll('[data-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-toggle');
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('open');
+      if (id === 'sidebar') {
+        var ov = document.getElementById('sidebarOverlay-main');
+        if (ov) ov.classList.toggle('open');
+      } else {
+        var sheetOv = document.getElementById('ov-' + id.replace('sheet-', ''));
+        if (sheetOv) sheetOv.classList.toggle('open');
+      }
+    });
+  });
+  document.querySelectorAll('[data-close]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-close');
+      var el = document.getElementById(id);
+      if (el) el.classList.remove('open');
+      btn.classList.remove('open');
+    });
+  });
+</script>
+
+</body>
+</html>
