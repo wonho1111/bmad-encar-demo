@@ -60,3 +60,20 @@
 - **마이그레이션 순서(additive)**: 0011 이미지(text[] nullable + image_credits) → 0012 신뢰속성+backfill(accident_free 병존) → 0013 role CHECK 완화(admin 존치) → 0014 view_count + increment RPC. 전부 additive, 상호 충돌 없음.
 - **배포 순서**: db(마이그레이션)→api(Cloud Run)→web(Vercel), 새 필드 nullable 하위호환(3개 따로 배포라 순서 안 맞으면 카드 렌더 깨짐).
 - **관측성 사각(다음 증분)**: LangSmith는 api RAG만 봄. 웹소켓 구독실패·이미지 업로드실패는 구조화 로그 한 줄 정도만(전면 APM은 과설계).
+
+## 아키텍처 단계 스코프 조정 (2026-07-13, bmad-create-architecture 완료 반영)
+
+> 증분 아키텍처(`_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md`, status:complete, 8스텝)가 위 열린 항목(OI-3/4·마이그 순서·신뢰속성 등)을 확정했다. 아래 3건은 **PRD §6 범위 진술과 달라진 스코프**라 정직하게 기록한다(PRD 본문은 status:final 불변, 이 조정이 우선).
+
+1. **관리자 웹 = "UI 통일"로 스코프 조정** (PRD §6 "관리자 웹 UI 전면 개편은 범위 밖"과 상이). 사용자 결정으로 **운영자용 관리자 6화면(대시보드·회원관리·전체매물·매물상세·거래내역·채팅관리)을 신규 디자인 시스템으로 통일 + PC/모바일 브라우저 반응형** 적용 — **UI-only(신규 기능·개발/운영 배관 없음)**. 회원관리 buyer/seller 필터 정리(FR52~54)도 포함. 목업=`ux-designs/admin-web-increment-2026-07-12/admin-mockups-2.html`.
+
+2. **찜 기반 "인기 매물" 신호 = 보류(deferred).** FR55 찜 기본(토글·내 찜 목록)은 범위 내 유지. 조회수 외 **찜 수를 반영한 복합 인기신호**(favorite count·가중합)는 **이번 증분 밖** → `implementation-artifacts/deferred-work.md ①`. 지금 랜딩 인기 정렬은 view_count만.
+
+3. **문서 기반 차량상태(성능점검표·보험처리이력) = 보류(deferred).** PRD 범위밖이던 "실제 보험이력·성능기록부 API 연동"과 별개로, **자체 간소양식 문서 → 상태필드 자동반영 + 다운로드** 기능은 **이번 증분 밖** → `deferred-work.md ②`. 신뢰 모델은 자기신고+면책 유지(검증 등급 격상 없음), OCR·임베딩 없음, 이미지 Storage 인프라 재사용.
+
+**열린 항목 확정 요약(아키텍처가 닫음, 위 addendum 초기 서술을 정정·확장):**
+- **OI-3 이미지** = **비공개 버킷 + 서명 URL**(공개 버킷 아님) · **`listing_images` 테이블**(text[] 아님, cascade·credit jsonb) · TTL 3600s · 매물당 10장/5MB · api는 storage_path만 반환.
+- **OI-4 실시간** = **Supabase Realtime "Broadcast from Database"**(postgres_changes 아님) · 토픽 `chat:room:{room_id}` · 갭보정 `created_at >=` + `client_message_id` dedup.
+- **신뢰속성** = `accident_status` **text + CHECK**(무사고/단순교환/사고, native enum 아님) + is_single_owner + is_non_smoker(nullable). 무사고만 초록뱃지.
+- **마이그레이션** = 0011~0018(위 "0011~0014" 목록을 아키텍처가 확장: +wishlists·멱등키·realtime broadcast·chat_room_reads).
+- 상세·정정 전문 = 아키텍처 문서 "Core Architectural Decisions" + "Architecture Validation Results"(독립 3인 검증 정정 포함).
