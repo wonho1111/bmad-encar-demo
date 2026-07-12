@@ -1,0 +1,1074 @@
+<meta charset="UTF-8">
+<title>차장님 — 매물 등록 &amp; 회원가입</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* ============================================================
+   차장님 — 폼 (매물 등록 · 회원가입)
+   -----------------------------------------------------------
+   TOKENS
+     surface-base        #FAFAF8
+     surface-raised        #FFFFFF
+     ink-primary              #1A1E1D
+     ink-secondary              #565F5D
+     ink-muted                    #8B928F
+     border-hairline                 #E6E3DD
+     brand-petrol                       #1E6E6A
+     brand-petrol-strong                  #14514E
+     accent-amber                           #F0A339
+     price-emphasis                           #E08A1B
+     trust-badge bg/ink                         #E7F3EC / #1F7A44
+     danger                                       #C0392B
+
+   CRAFT BAR
+     shadow-card  : 0 1px 2px rgba(20,35,32,.04), 0 14px 32px -18px rgba(20,45,45,.18)
+     shadow-focus : 0 0 0 4px rgba(30,110,106,.14)
+     radius-card  : 16px   radius-field : 12px   radius-chip : 999px
+   ============================================================ */
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #EFECE4;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    color: #1A1E1D;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 48px 40px 140px;
+  }
+
+  /* ---------- page header ---------- */
+
+  .page-header {
+    margin-bottom: 44px;
+  }
+
+  .page-header .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #14514E;
+    background: #E7F0EF;
+    border: 1px solid #CFE1DF;
+    padding: 5px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+
+  .page-header h1 {
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 8px;
+    color: #14231F;
+  }
+
+  .page-header p {
+    font-size: 14px;
+    color: #6B7370;
+    margin: 0;
+    line-height: 1.7;
+  }
+
+  section.showcase { margin-bottom: 80px; }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .section-head .num {
+    font-size: 13px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: #1E6E6A;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .section-head h2 { font-size: 18px; font-weight: 700; margin: 0; color: #1A1E1D; }
+  .section-head .desc { font-size: 13px; color: #8B928F; }
+
+  /* ---------- lanes: desktop + mobile side by side ---------- */
+
+  .lane {
+    display: flex;
+    align-items: flex-start;
+    gap: 40px;
+    flex-wrap: wrap;
+  }
+
+  .lane-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #8B928F;
+    text-transform: uppercase;
+    margin: 0 0 14px;
+  }
+
+  .desktop-col { width: 720px; max-width: 100%; }
+  .mobile-col { width: 390px; max-width: 100%; }
+
+  .mobile-frame {
+    background: #12100D;
+    border-radius: 34px;
+    padding: 14px 10px;
+    box-shadow: 0 30px 60px -24px rgba(20, 30, 28, 0.45);
+  }
+
+  .mobile-screen {
+    background: #FAFAF8;
+    border-radius: 22px;
+    overflow: hidden;
+    min-height: 640px;
+  }
+
+  .mobile-screen .form-scroll {
+    padding: 20px 16px 32px;
+  }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px 6px;
+    font-weight: 700;
+    font-size: 15px;
+    color: #14231F;
+  }
+
+  .mobile-topbar .back {
+    width: 28px; height: 28px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #565F5D;
+  }
+
+  /* ---------- form shell ---------- */
+
+  form.listing-form { display: flex; flex-direction: column; gap: 18px; }
+
+  .form-card {
+    background: #FFFFFF;
+    border: 1px solid #E6E3DD;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(20,35,32,.04), 0 14px 32px -18px rgba(20,45,45,.18);
+    padding: 24px;
+  }
+
+  .mobile-col .form-card { padding: 18px 16px; border-radius: 14px; }
+
+  .form-card .card-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #14231F;
+    margin: 0 0 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .form-card .card-title .optional-tag {
+    font-size: 11px;
+    font-weight: 700;
+    color: #8B928F;
+    background: #F1EFE9;
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+
+  .form-card .card-sub {
+    font-size: 13px;
+    color: #8B928F;
+    margin: 0 0 18px;
+    line-height: 1.6;
+  }
+
+  /* ---------- field grid ---------- */
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 18px;
+  }
+
+  .mobile-col .field-grid { grid-template-columns: 1fr; }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field.span-2 { grid-column: span 2; }
+  .mobile-col .field.span-2 { grid-column: span 1; }
+
+  label.field-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #3E4543;
+  }
+
+  label.field-label .req { color: #C0392B; margin-left: 2px; }
+
+  .input, select.input, textarea.input {
+    width: 100%;
+    height: 46px;
+    border: 1px solid #E6E3DD;
+    border-radius: 12px;
+    padding: 0 14px;
+    font-size: 14.5px;
+    font-family: inherit;
+    color: #1A1E1D;
+    background: #FCFBF9;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  select.input {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'><path d='M3 5.5L7 9.5L11 5.5' stroke='%23565F5D' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+
+  textarea.input { height: auto; min-height: 118px; padding: 12px 14px; resize: vertical; line-height: 1.6; }
+
+  .input:focus, select.input:focus, textarea.input:focus {
+    border-color: #1E6E6A;
+    background: #FFFFFF;
+    box-shadow: 0 0 0 4px rgba(30,110,106,.14);
+  }
+
+  .input::placeholder { color: #ADB2AF; }
+
+  .input-suffix-wrap { position: relative; }
+  .input-suffix-wrap .input { padding-right: 46px; }
+  .input-suffix {
+    position: absolute;
+    right: 14px; top: 50%; transform: translateY(-50%);
+    font-size: 13px; font-weight: 600; color: #8B928F;
+    pointer-events: none;
+  }
+
+  .helper-text { font-size: 12px; color: #8B928F; line-height: 1.5; }
+  .helper-text.error { color: #C0392B; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+
+  .field.has-error .input {
+    border-color: #C0392B;
+    background: #FDF3F1;
+  }
+  .field.has-error .input:focus {
+    box-shadow: 0 0 0 4px rgba(192,57,43,.12);
+  }
+
+  /* ---------- photo uploader ---------- */
+
+  .dropzone {
+    border: 1.5px dashed #C7CDC9;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #FBFAF7 0%, #F5F3ED 100%);
+    padding: 28px 16px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    cursor: pointer;
+  }
+
+  .dropzone svg { color: #1E6E6A; }
+
+  .dropzone-title { font-size: 14px; font-weight: 700; color: #2C3230; margin: 4px 0 0; }
+  .dropzone-sub { font-size: 12px; color: #9BA19E; margin: 0; }
+
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .mobile-col .photo-grid { grid-template-columns: repeat(3, 1fr); }
+
+  .photo-thumb {
+    position: relative;
+    aspect-ratio: 5 / 3;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(20,35,32,.06);
+  }
+
+  .photo-thumb.g1 { background: linear-gradient(135deg,#3E5C58,#1D3634); }
+  .photo-thumb.g2 { background: linear-gradient(135deg,#6E7A72,#33413C); }
+  .photo-thumb.g3 { background: linear-gradient(135deg,#8A7350,#4A3B26); }
+
+  .photo-thumb .badge-rep {
+    position: absolute;
+    top: 6px; left: 6px;
+    background: #1E6E6A;
+    color: #FFFFFF;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    padding: 3px 7px;
+    border-radius: 999px;
+  }
+
+  .photo-thumb .thumb-remove {
+    position: absolute;
+    top: 5px; right: 5px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: rgba(20,20,18,.55);
+    color: #fff;
+    border: none;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  .photo-thumb .drag-handle {
+    position: absolute;
+    bottom: 5px; left: 6px;
+    color: rgba(255,255,255,.85);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+
+  .photo-add-tile {
+    aspect-ratio: 5 / 3;
+    border: 1.5px dashed #C7CDC9;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9BA19E;
+    font-size: 22px;
+    font-weight: 300;
+    background: #FBFAF7;
+  }
+
+  .photo-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .mobile-col .photo-meta { flex-direction: column; gap: 4px; }
+
+  .photo-count { font-size: 12.5px; font-weight: 700; color: #3E4543; }
+  .photo-note { font-size: 11.5px; color: #9BA19E; line-height: 1.5; }
+
+  .photo-hint {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #F3F6F4;
+    border: 1px solid #E2E8E4;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    color: #565F5D;
+    line-height: 1.55;
+  }
+
+  .photo-hint svg { flex: none; margin-top: 1px; color: #1E6E6A; }
+
+  /* ---------- price ---------- */
+
+  .price-row { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+  .price-row .field { flex: 1 1 220px; }
+  .price-preview {
+    background: linear-gradient(135deg, #FFF6E7, #FFEFD4);
+    border: 1px solid #F4DBA4;
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: right;
+  }
+  .price-preview .pv-label { font-size: 11px; color: #A9772C; font-weight: 700; margin-bottom: 2px; }
+  .price-preview .pv-value { font-size: 22px; font-weight: 800; color: #E08A1B; letter-spacing: -0.01em; }
+
+  /* ---------- trust section ---------- */
+
+  .honesty-notice {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: #FBF7EE;
+    border: 1px solid #EEDFC0;
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: #6B5B33;
+    line-height: 1.6;
+    margin-bottom: 18px;
+  }
+
+  .honesty-notice svg { flex: none; color: #B8862F; margin-top: 2px; }
+  .honesty-notice b { color: #4E4020; }
+
+  .trust-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .trust-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #E6E3DD;
+    border-radius: 12px;
+    padding: 13px 16px;
+  }
+
+  .trust-row.on { border-color: #BFE0CB; background: #F3FAF5; }
+
+  .trust-row .trust-copy { display: flex; flex-direction: column; gap: 2px; }
+  .trust-row .trust-title { font-size: 14px; font-weight: 700; color: #1A1E1D; }
+  .trust-row .trust-desc { font-size: 12px; color: #8B928F; }
+
+  .trust-check {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1.5px solid #D5D1C8;
+    color: transparent;
+    flex: none;
+  }
+
+  .trust-row.on .trust-check {
+    background: #1F7A44;
+    border-color: #1F7A44;
+    color: #FFFFFF;
+  }
+
+  /* ---------- options chips ---------- */
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 9px; margin-bottom: 10px; }
+
+  .chip {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 999px;
+    border: 1.5px solid #E6E3DD;
+    color: #565F5D;
+    background: #FCFBF9;
+  }
+
+  .chip.selected {
+    background: #1E6E6A;
+    border-color: #1E6E6A;
+    color: #FFFFFF;
+  }
+
+  .options-note {
+    font-size: 12px;
+    color: #8B928F;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .options-note svg { color: #F0A339; flex: none; }
+
+  /* ---------- bottom actions ---------- */
+
+  .form-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    padding-top: 6px;
+  }
+
+  .btn-primary {
+    flex: 1;
+    height: 52px;
+    border-radius: 12px;
+    border: none;
+    background: #1E6E6A;
+    color: #FFFFFF;
+    font-size: 15.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    box-shadow: 0 10px 24px -10px rgba(20,80,76,.55);
+  }
+  .btn-primary:hover { background: #14514E; }
+
+  .btn-quiet {
+    height: 52px;
+    padding: 0 20px;
+    border-radius: 12px;
+    border: none;
+    background: transparent;
+    color: #8B928F;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .mobile-col .form-actions { flex-direction: column-reverse; gap: 8px; }
+  .mobile-col .btn-primary { width: 100%; }
+  .mobile-col .btn-quiet { width: 100%; }
+
+  /* ============================================================
+     SIGNUP
+     ============================================================ */
+
+  .signup-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
+  .signup-card {
+    width: 440px;
+    max-width: 100%;
+    background: #FFFFFF;
+    border: 1px solid #E6E3DD;
+    border-radius: 18px;
+    box-shadow: 0 1px 2px rgba(20,35,32,.04), 0 20px 44px -20px rgba(20,45,45,.22);
+    padding: 40px 36px 32px;
+  }
+
+  .signup-mark {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #1E6E6A, #14514E);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 17px;
+    margin: 0 auto 18px;
+  }
+
+  .signup-card h2 {
+    font-size: 20px;
+    font-weight: 800;
+    text-align: center;
+    color: #14231F;
+    margin: 0 0 6px;
+  }
+
+  .signup-card .signup-sub {
+    text-align: center;
+    font-size: 13px;
+    color: #8B928F;
+    margin: 0 0 22px;
+    line-height: 1.6;
+  }
+
+  .no-role-note {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #F0F7F5;
+    border: 1px solid #D3E7E2;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+    color: #2F5A55;
+    line-height: 1.55;
+    margin-bottom: 22px;
+  }
+  .no-role-note svg { flex: none; color: #1E6E6A; margin-top: 1px; }
+
+  form.signup-form { display: flex; flex-direction: column; gap: 16px; }
+
+  .strength-meter { display: flex; gap: 5px; margin-top: 2px; }
+  .strength-meter .bar { flex: 1; height: 4px; border-radius: 999px; background: #E6E3DD; }
+  .strength-meter .bar.fill { background: #F0A339; }
+  .strength-label { font-size: 12px; color: #B8862F; font-weight: 600; }
+
+  .match-hint {
+    font-size: 12px;
+    color: #1F7A44;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .match-hint svg { color: #1F7A44; }
+
+  .signup-card .btn-primary { width: 100%; margin-top: 4px; }
+
+  .signup-footer {
+    text-align: center;
+    font-size: 13px;
+    color: #8B928F;
+    margin-top: 18px;
+  }
+  .signup-footer a { color: #1E6E6A; font-weight: 700; text-decoration: none; }
+
+</style>
+
+<div class="page">
+
+  <div class="page-header">
+    <span class="eyebrow">UX DESIGN · FORMS</span>
+    <h1>차장님 — 매물 등록 &amp; 회원가입</h1>
+    <p>실제 서비스에 넣을 수 있는 수준의 폼 크래프트. 매물 등록은 데스크톱(720px)과 모바일(390px)을 나란히 비교하고, 회원가입은 역할 선택 없이 단순화된 구조를 보여줍니다.</p>
+  </div>
+
+  <!-- ============================================================
+       FORM 1 — 매물 등록
+       ============================================================ -->
+
+  <section class="showcase">
+    <div class="section-head">
+      <span class="num">1</span>
+      <h2>매물 등록 — 내 차 팔기</h2>
+      <span class="desc">사진(선택) → 차량 정보 → 가격 → 신뢰 정보 → 옵션 → 설명</span>
+    </div>
+
+    <div class="lane">
+
+      <!-- ---------- DESKTOP ---------- -->
+      <div class="desktop-col">
+        <p class="lane-label">Desktop · 720px</p>
+
+        <form class="listing-form">
+
+          <!-- 사진 -->
+          <div class="form-card">
+            <p class="card-title">사진 <span class="optional-tag">선택</span></p>
+            <p class="card-sub">차의 첫인상이에요. 없어도 등록은 되지만, 있으면 문의가 훨씬 잘 와요.</p>
+
+            <div class="dropzone">
+              <svg width="30" height="30" viewBox="0 0 30 30" fill="none"><path d="M15 20V8M15 8L10 13M15 8L20 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 21V23.5C6 24.6 6.9 25.5 8 25.5H22C23.1 25.5 24 24.6 24 23.5V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <p class="dropzone-title">사진을 끌어다 놓거나 클릭해 업로드</p>
+              <p class="dropzone-sub">JPG · PNG, 장당 최대 20MB</p>
+            </div>
+
+            <div class="photo-grid">
+              <div class="photo-thumb g1">
+                <span class="badge-rep">대표</span>
+                <span class="drag-handle">⠿⠿</span>
+              </div>
+              <div class="photo-thumb g2">
+                <button class="thumb-remove">✕</button>
+                <span class="drag-handle">⠿⠿</span>
+              </div>
+              <div class="photo-thumb g3">
+                <button class="thumb-remove">✕</button>
+                <span class="drag-handle">⠿⠿</span>
+              </div>
+              <div class="photo-add-tile">+</div>
+            </div>
+
+            <div class="photo-meta">
+              <span class="photo-count">3 / 10</span>
+              <span class="photo-note">최대 10장 · 5:3 비율로 표시 · 첫 사진이 대표사진 (드래그로 순서 변경)</span>
+            </div>
+
+            <div class="photo-hint">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 7v3.2M7.5 4.6v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <span>사진은 선택이에요. 없어도 등록되지만, 사진이 있으면 문의가 훨씬 잘 와요.</span>
+            </div>
+          </div>
+
+          <!-- 차량 정보 -->
+          <div class="form-card">
+            <p class="card-title">차량 정보</p>
+            <p class="card-sub">차량등록증 기준으로 정확히 입력해 주세요.</p>
+
+            <div class="field-grid">
+              <div class="field">
+                <label class="field-label">제조사<span class="req">*</span></label>
+                <select class="input"><option>현대</option></select>
+              </div>
+              <div class="field">
+                <label class="field-label">모델<span class="req">*</span></label>
+                <input class="input" placeholder="예: 그랜저 IG" value="그랜저 IG">
+              </div>
+              <div class="field">
+                <label class="field-label">연식<span class="req">*</span></label>
+                <select class="input"><option>2021년</option></select>
+              </div>
+              <div class="field has-error">
+                <label class="field-label">주행거리<span class="req">*</span></label>
+                <div class="input-suffix-wrap">
+                  <input class="input" placeholder="0">
+                  <span class="input-suffix">km</span>
+                </div>
+                <span class="helper-text error">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 3.8V7M6.5 9.1V9.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  주행거리를 입력해 주세요
+                </span>
+              </div>
+              <div class="field">
+                <label class="field-label">연료<span class="req">*</span></label>
+                <select class="input"><option>가솔린</option></select>
+              </div>
+              <div class="field">
+                <label class="field-label">변속기<span class="req">*</span></label>
+                <select class="input"><option>자동</option></select>
+              </div>
+              <div class="field">
+                <label class="field-label">배기량</label>
+                <div class="input-suffix-wrap">
+                  <input class="input" placeholder="0" value="2999">
+                  <span class="input-suffix">cc</span>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label">색상</label>
+                <select class="input"><option>펄 화이트</option></select>
+              </div>
+              <div class="field span-2">
+                <label class="field-label">지역<span class="req">*</span></label>
+                <select class="input"><option>서울 강남구</option></select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 가격 -->
+          <div class="form-card">
+            <p class="card-title">가격</p>
+            <p class="card-sub">주변 시세를 참고해 합리적인 가격을 입력해 주세요.</p>
+
+            <div class="price-row">
+              <div class="field">
+                <label class="field-label">가격<span class="req">*</span></label>
+                <div class="input-suffix-wrap">
+                  <input class="input" value="2,780">
+                  <span class="input-suffix">만원</span>
+                </div>
+              </div>
+              <div class="price-preview">
+                <div class="pv-label">미리보기</div>
+                <div class="pv-value">2,780만원</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 신뢰 정보 -->
+          <div class="form-card">
+            <p class="card-title">신뢰 정보 <span class="optional-tag">판매자 제공</span></p>
+
+            <div class="honesty-notice">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5L14.5 4.8V8.2C14.5 12 11.7 14.3 8 14.9C4.3 14.3 1.5 12 1.5 8.2V4.8L8 1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.6V9.4M8 11.1V11.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              <span><b>실제와 다르게 표기하면 신고·제재될 수 있어요.</b> 입력하신 내용은 &lsquo;판매자 제공 정보&rsquo;로 매물 카드에 표시됩니다.</span>
+            </div>
+
+            <div class="trust-list">
+              <div class="trust-row on">
+                <div class="trust-copy">
+                  <span class="trust-title">무사고</span>
+                  <span class="trust-desc">보험 처리된 사고 이력이 없어요</span>
+                </div>
+                <span class="trust-check">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8L5.2 9.5L10.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </div>
+              <div class="trust-row on">
+                <div class="trust-copy">
+                  <span class="trust-title">1인 소유</span>
+                  <span class="trust-desc">등록 이후 소유주가 바뀐 적이 없어요</span>
+                </div>
+                <span class="trust-check">
+                  <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8L5.2 9.5L10.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </div>
+              <div class="trust-row">
+                <div class="trust-copy">
+                  <span class="trust-title">비흡연 차량</span>
+                  <span class="trust-desc">차 안에서 흡연한 적이 없어요</span>
+                </div>
+                <span class="trust-check"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 옵션 -->
+          <div class="form-card">
+            <p class="card-title">옵션</p>
+            <p class="card-sub">해당하는 옵션을 모두 선택해 주세요.</p>
+
+            <div class="chip-row">
+              <span class="chip selected">파노라마 선루프</span>
+              <span class="chip selected">어라운드뷰</span>
+              <span class="chip">헤드업디스플레이</span>
+              <span class="chip selected">스마트키</span>
+              <span class="chip">후방카메라</span>
+              <span class="chip">열선시트</span>
+              <span class="chip">통풍시트</span>
+              <span class="chip">크루즈컨트롤</span>
+              <span class="chip">하이패스</span>
+            </div>
+            <div class="options-note">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1L7.9 5.1H12.2L8.7 7.6L10.1 11.7L6.5 9.2L2.9 11.7L4.3 7.6L0.8 5.1H5.1L6.5 1Z" fill="currentColor"/></svg>
+              희소 옵션은 카드에 먼저 노출돼요.
+            </div>
+          </div>
+
+          <!-- 설명 -->
+          <div class="form-card">
+            <p class="card-title">설명</p>
+            <div class="field">
+              <textarea class="input" placeholder="차량 상태, 관리 이력, 특이사항 등을 자유롭게 적어 주세요.">가족이 타던 차로 1년에 두 번 정기 점검 받았습니다. 실내 흡연 없고 큰 흠집 없이 깨끗하게 관리했어요.</textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-quiet">임시저장</button>
+            <button type="button" class="btn-primary">등록하기</button>
+          </div>
+
+        </form>
+      </div>
+
+      <!-- ---------- MOBILE ---------- -->
+      <div class="mobile-col">
+        <p class="lane-label">Mobile · 390px</p>
+
+        <div class="mobile-frame">
+          <div class="mobile-screen">
+            <div class="mobile-topbar">
+              <span class="back">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M11 3.5L5.5 9L11 14.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              매물 등록
+            </div>
+
+            <div class="form-scroll">
+              <form class="listing-form">
+
+                <div class="form-card">
+                  <p class="card-title">사진 <span class="optional-tag">선택</span></p>
+                  <p class="card-sub">없어도 등록되지만, 있으면 문의가 잘 와요.</p>
+
+                  <div class="dropzone">
+                    <svg width="26" height="26" viewBox="0 0 30 30" fill="none"><path d="M15 20V8M15 8L10 13M15 8L20 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 21V23.5C6 24.6 6.9 25.5 8 25.5H22C23.1 25.5 24 24.6 24 23.5V21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    <p class="dropzone-title">끌어다 놓거나 클릭해 업로드</p>
+                    <p class="dropzone-sub">JPG · PNG, 장당 최대 20MB</p>
+                  </div>
+
+                  <div class="photo-grid">
+                    <div class="photo-thumb g1">
+                      <span class="badge-rep">대표</span>
+                      <span class="drag-handle">⠿⠿</span>
+                    </div>
+                    <div class="photo-thumb g2">
+                      <button class="thumb-remove">✕</button>
+                      <span class="drag-handle">⠿⠿</span>
+                    </div>
+                    <div class="photo-thumb g3">
+                      <button class="thumb-remove">✕</button>
+                      <span class="drag-handle">⠿⠿</span>
+                    </div>
+                    <div class="photo-add-tile">+</div>
+                  </div>
+
+                  <div class="photo-meta">
+                    <span class="photo-count">3 / 10</span>
+                    <span class="photo-note">최대 10장 · 5:3 비율 · 첫 사진이 대표사진(드래그로 순서 변경)</span>
+                  </div>
+
+                  <div class="photo-hint">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 7v3.2M7.5 4.6v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <span>사진은 선택이에요. 있으면 문의가 훨씬 잘 와요.</span>
+                  </div>
+                </div>
+
+                <div class="form-card">
+                  <p class="card-title">차량 정보</p>
+                  <div class="field-grid">
+                    <div class="field">
+                      <label class="field-label">제조사<span class="req">*</span></label>
+                      <select class="input"><option>현대</option></select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">모델<span class="req">*</span></label>
+                      <input class="input" value="그랜저 IG">
+                    </div>
+                    <div class="field">
+                      <label class="field-label">연식<span class="req">*</span></label>
+                      <select class="input"><option>2021년</option></select>
+                    </div>
+                    <div class="field has-error">
+                      <label class="field-label">주행거리<span class="req">*</span></label>
+                      <div class="input-suffix-wrap">
+                        <input class="input" placeholder="0">
+                        <span class="input-suffix">km</span>
+                      </div>
+                      <span class="helper-text error">
+                        <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="6.5" r="5.5" stroke="currentColor" stroke-width="1.3"/><path d="M6.5 3.8V7M6.5 9.1V9.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                        주행거리를 입력해 주세요
+                      </span>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">연료<span class="req">*</span></label>
+                      <select class="input"><option>가솔린</option></select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">변속기<span class="req">*</span></label>
+                      <select class="input"><option>자동</option></select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">배기량</label>
+                      <div class="input-suffix-wrap">
+                        <input class="input" value="2999">
+                        <span class="input-suffix">cc</span>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">색상</label>
+                      <select class="input"><option>펄 화이트</option></select>
+                    </div>
+                    <div class="field">
+                      <label class="field-label">지역<span class="req">*</span></label>
+                      <select class="input"><option>서울 강남구</option></select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-card">
+                  <p class="card-title">가격</p>
+                  <div class="field">
+                    <label class="field-label">가격<span class="req">*</span></label>
+                    <div class="input-suffix-wrap">
+                      <input class="input" value="2,780">
+                      <span class="input-suffix">만원</span>
+                    </div>
+                  </div>
+                  <div class="price-preview" style="margin-top:10px; text-align:left;">
+                    <div class="pv-label">미리보기</div>
+                    <div class="pv-value">2,780만원</div>
+                  </div>
+                </div>
+
+                <div class="form-card">
+                  <p class="card-title">신뢰 정보 <span class="optional-tag">판매자 제공</span></p>
+                  <div class="honesty-notice">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1.5L14.5 4.8V8.2C14.5 12 11.7 14.3 8 14.9C4.3 14.3 1.5 12 1.5 8.2V4.8L8 1.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6.6V9.4M8 11.1V11.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <span><b>실제와 다르면 신고·제재될 수 있어요.</b> &lsquo;판매자 제공 정보&rsquo;로 표시됩니다.</span>
+                  </div>
+                  <div class="trust-list">
+                    <div class="trust-row on">
+                      <div class="trust-copy"><span class="trust-title">무사고</span></div>
+                      <span class="trust-check"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8L5.2 9.5L10.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                    </div>
+                    <div class="trust-row on">
+                      <div class="trust-copy"><span class="trust-title">1인 소유</span></div>
+                      <span class="trust-check"><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8L5.2 9.5L10.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                    </div>
+                    <div class="trust-row">
+                      <div class="trust-copy"><span class="trust-title">비흡연 차량</span></div>
+                      <span class="trust-check"></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-card">
+                  <p class="card-title">옵션</p>
+                  <div class="chip-row">
+                    <span class="chip selected">파노라마 선루프</span>
+                    <span class="chip selected">어라운드뷰</span>
+                    <span class="chip">헤드업디스플레이</span>
+                    <span class="chip selected">스마트키</span>
+                    <span class="chip">후방카메라</span>
+                    <span class="chip">열선시트</span>
+                  </div>
+                  <div class="options-note">
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M6.5 1L7.9 5.1H12.2L8.7 7.6L10.1 11.7L6.5 9.2L2.9 11.7L4.3 7.6L0.8 5.1H5.1L6.5 1Z" fill="currentColor"/></svg>
+                    희소 옵션은 카드에 먼저 노출돼요.
+                  </div>
+                </div>
+
+                <div class="form-card">
+                  <p class="card-title">설명</p>
+                  <textarea class="input" placeholder="차량 상태를 자유롭게 적어 주세요.">가족이 타던 차로 정기 점검 꾸준히 받았습니다.</textarea>
+                </div>
+
+                <div class="form-actions">
+                  <button type="button" class="btn-primary">등록하기</button>
+                  <button type="button" class="btn-quiet">임시저장</button>
+                </div>
+
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FORM 2 — 회원가입
+       ============================================================ -->
+
+  <section class="showcase">
+    <div class="section-head">
+      <span class="num">2</span>
+      <h2>회원가입</h2>
+      <span class="desc">역할(구매자/판매자) 선택 없음 — 가입 후 언제든 사고팔 수 있어요</span>
+    </div>
+
+    <div class="signup-wrap">
+      <div class="signup-card">
+        <div class="signup-mark">차</div>
+        <h2>회원가입</h2>
+        <p class="signup-sub">이메일로 간단하게 시작하세요.</p>
+
+        <div class="no-role-note">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 7v3.2M7.5 4.6v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <span>차를 사고파는 건 가입 후 언제든 할 수 있어요. 지금은 계정만 만들면 돼요.</span>
+        </div>
+
+        <form class="signup-form">
+          <div class="field">
+            <label class="field-label">이메일<span class="req">*</span></label>
+            <input class="input" placeholder="you@example.com" value="minji.kim@gmail.com">
+          </div>
+
+          <div class="field">
+            <label class="field-label">비밀번호<span class="req">*</span></label>
+            <input class="input" type="password" value="••••••••••">
+            <div class="strength-meter">
+              <span class="bar fill"></span>
+              <span class="bar fill"></span>
+              <span class="bar"></span>
+            </div>
+            <span class="strength-label">보통 — 특수문자를 추가하면 더 안전해요</span>
+          </div>
+
+          <div class="field">
+            <label class="field-label">비밀번호 확인<span class="req">*</span></label>
+            <input class="input" type="password" value="••••••••••">
+            <span class="match-hint">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8L5.2 9.5L10.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              비밀번호가 일치해요
+            </span>
+          </div>
+
+          <div class="field">
+            <label class="field-label">닉네임<span class="req">*</span></label>
+            <input class="input" placeholder="다른 사용자에게 보여질 이름" value="민지">
+            <span class="helper-text">2~12자, 나중에 언제든 바꿀 수 있어요.</span>
+          </div>
+
+          <button type="button" class="btn-primary">가입하기</button>
+        </form>
+
+        <p class="signup-footer">이미 계정이 있으세요? <a href="#">로그인</a></p>
+      </div>
+    </div>
+  </section>
+
+</div>

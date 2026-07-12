@@ -1,0 +1,765 @@
+<meta charset="UTF-8">
+<title>차장님 — 매물 카드 최종</title>
+<style>
+/* ============================================================
+   차장님 — 매물 카드 최종 (레이아웃 B · 초록 신뢰뱃지 · amber 가격 전용)
+   -----------------------------------------------------------
+   LIGHT TOKENS (T2 — 밝은 본문 + petrol 구조색)
+     surface-base       #FAFAF8
+     surface-raised      #FFFFFF
+     ink-primary          #1A1E1D
+     ink-secondary        #565F5D
+     ink-muted            #8B928F
+     border-hairline       #E6E3DD
+     brand-petrol         #1E6E6A
+     brand-petrol-strong   #14514E
+     accent-amber          #F0A339   (general accent — not used on badges)
+     price-emphasis          #E08A1B  (PRICE ONLY)
+     trust-badge bg/ink        #E7F3EC / #1F7A44  (calm green — NOT amber)
+     placeholder bg            #F1EFE9
+
+   DARK TOKENS
+     surface-base        #201F1C
+     surface-raised       #2B2A26
+     ink-primary            #F5F3EE
+     ink-secondary           #C9C6BE
+     border-hairline           #3B3934
+     brand-petrol                #4FA39D
+     price-emphasis                 #F5B860
+     trust-badge bg/ink               #1E3A2A / #7FCE9E
+
+   CRAFT BAR
+     shadow-rest : 0 1px 2px rgba(0,0,0,.04), 0 10px 30px -14px rgba(20,45,45,.16)
+     shadow-hover: 0 4px 10px rgba(0,0,0,.06), 0 22px 44px -16px rgba(20,45,45,.30)
+     radius-card : 16px   radius-chip : 9px
+   ============================================================ */
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #EEEBE3;
+    font-family: -apple-system, "Segoe UI Variable", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    color: #1A1E1D;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 56px 40px 120px;
+  }
+
+  .page-header {
+    margin-bottom: 56px;
+  }
+
+  .page-header .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #14514E;
+    background: #E7F0EF;
+    border: 1px solid #CFE1DF;
+    padding: 5px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+
+  .page-header h1 {
+    font-size: 27px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+    color: #14231F;
+  }
+
+  .page-header p {
+    font-size: 14px;
+    color: #6B7370;
+    margin: 0;
+    line-height: 1.7;
+  }
+
+  /* ---------- section shell ---------- */
+
+  section.showcase {
+    margin-bottom: 72px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .section-head .num {
+    font-size: 13px;
+    font-weight: 800;
+    color: #FFFFFF;
+    background: #1E6E6A;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+
+  .section-head h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+    color: #1A1E1D;
+  }
+
+  .section-head .desc {
+    font-size: 13px;
+    color: #8B928F;
+    margin-left: 4px;
+  }
+
+  .surface-panel {
+    background: #FAFAF8;
+    border: 1px solid #EDEAE2;
+    border-radius: 22px;
+    padding: 44px;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 36px;
+    align-items: flex-start;
+  }
+
+  .card-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .state-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #8B928F;
+    text-transform: uppercase;
+    padding-left: 4px;
+  }
+
+  /* ============================================================
+     CARD COMPONENT
+     ============================================================ */
+
+  .card {
+    --surface-raised: #FFFFFF;
+    --ink-primary: #1A1E1D;
+    --ink-secondary: #565F5D;
+    --ink-muted: #8B928F;
+    --border-hairline: #E6E3DD;
+    --petrol: #1E6E6A;
+    --petrol-strong: #14514E;
+    --petrol-tint-bg: #EAF3F2;
+    --price: #E08A1B;
+    --trust-bg: #E7F3EC;
+    --trust-ink: #1F7A44;
+    --placeholder-bg: #F1EFE9;
+
+    width: 380px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-hairline);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 10px 30px -14px rgba(20,45,45,.16);
+    transition: transform .28s cubic-bezier(.2,.7,.3,1), box-shadow .28s cubic-bezier(.2,.7,.3,1);
+  }
+
+  .card--hero { width: 420px; }
+
+  .card:hover,
+  .card.is-hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 10px rgba(0,0,0,.06), 0 24px 46px -16px rgba(20,45,45,.30);
+  }
+
+  /* ---- photo ---- */
+
+  .card__photo {
+    position: relative;
+    aspect-ratio: 5 / 3;
+    border-radius: 16px 16px 0 0;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse 60% 45% at 26% 18%, rgba(255,255,255,.60), rgba(255,255,255,0) 60%),
+      linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.12) 100%),
+      linear-gradient(135deg, #EFF1F0 0%, #DBDFDE 26%, #AEB6B4 52%, #CBD1CF 76%, #F2F3F2 100%);
+  }
+
+  .card__photo::after {
+    content: "";
+    position: absolute;
+    left: 8%;
+    right: 8%;
+    bottom: 10%;
+    height: 14%;
+    background: radial-gradient(ellipse at center, rgba(20,30,29,.16) 0%, rgba(20,30,29,0) 72%);
+    filter: blur(1px);
+  }
+
+  .card__photo-badge {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 10px 5px 8px;
+    border-radius: 999px;
+    background: rgba(10,14,13,.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .card__photo-badge svg { width: 13px; height: 13px; opacity: .9; }
+
+  /* ---- placeholder (no photo) ---- */
+
+  .card__placeholder {
+    position: relative;
+    aspect-ratio: 5 / 3;
+    border-radius: 16px 16px 0 0;
+    overflow: hidden;
+    background: var(--placeholder-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .card__placeholder svg {
+    width: 40px;
+    height: 40px;
+    stroke: var(--ink-muted);
+    opacity: .55;
+  }
+
+  .card__placeholder span {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    letter-spacing: -0.01em;
+  }
+
+  /* ---- trust badge row ---- */
+
+  .card__trust-row {
+    padding: 14px 20px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .card__trust-badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .trust-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--trust-ink);
+    background: var(--trust-bg);
+    border-radius: 999px;
+    padding: 4px 9px 4px 7px;
+  }
+
+  .trust-badge svg { width: 10px; height: 10px; }
+
+  .card__trust-disclaimer {
+    font-size: 11px;
+    color: var(--ink-muted);
+    white-space: nowrap;
+    flex: none;
+  }
+
+  /* ---- body ---- */
+
+  .card__body {
+    padding: 14px 20px 20px;
+  }
+
+  .card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .card__title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--ink-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.4;
+    margin: 2px 0 0;
+  }
+
+  .card__heart {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-hairline);
+    box-shadow: 0 3px 8px rgba(20,30,29,.10);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: -2px;
+  }
+
+  .card__heart svg {
+    width: 17px;
+    height: 17px;
+    stroke: var(--ink-secondary);
+    fill: none;
+    stroke-width: 1.8;
+  }
+
+  .card__meta {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-secondary);
+    margin: 6px 0 0;
+    letter-spacing: -0.005em;
+  }
+
+  .card__meta .dot {
+    color: var(--ink-muted);
+    margin: 0 6px;
+  }
+
+  .card__price {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--price);
+    margin: 10px 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 14px;
+  }
+
+  .chip {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--petrol-strong);
+    background: var(--petrol-tint-bg);
+    border: 1px solid rgba(30,110,106,.22);
+    border-radius: 9px;
+    padding: 5px 10px;
+    letter-spacing: -0.01em;
+  }
+
+  .chip--more {
+    color: var(--ink-muted);
+    background: transparent;
+    border: 1px solid var(--border-hairline);
+  }
+
+  /* ============================================================
+     DARK SECTION OVERRIDE
+     ============================================================ */
+
+  .surface-panel--dark {
+    background: #201F1C;
+    border-color: #34332E;
+  }
+
+  .surface-panel--dark .section-head-inline h2,
+  .surface-panel--dark .state-label { color: #C9C6BE; }
+
+  .theme-dark .card {
+    --surface-raised: #2B2A26;
+    --ink-primary: #F5F3EE;
+    --ink-secondary: #C9C6BE;
+    --ink-muted: #82877F;
+    --border-hairline: #3B3934;
+    --petrol: #4FA39D;
+    --petrol-strong: #8FD6D0;
+    --petrol-tint-bg: rgba(79,163,157,.14);
+    --price: #F5B860;
+    --trust-bg: #1E3A2A;
+    --trust-ink: #7FCE9E;
+    --placeholder-bg: #33322D;
+    border-color: #3B3934;
+    box-shadow: 0 1px 2px rgba(0,0,0,.30), 0 14px 34px -14px rgba(0,0,0,.55);
+  }
+
+  .theme-dark .card:hover,
+  .theme-dark .card.is-hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,.35), 0 26px 50px -16px rgba(0,0,0,.65);
+  }
+
+  .theme-dark .card__heart {
+    box-shadow: 0 3px 10px rgba(0,0,0,.40);
+  }
+
+  /* ---------- grid density row ---------- */
+
+  .grid-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(300px, 1fr));
+    gap: 24px;
+  }
+
+  .grid-row .card { width: 100%; }
+
+  @media (max-width: 1100px) {
+    .grid-row { grid-template-columns: repeat(2, minmax(280px, 1fr)); }
+  }
+</style>
+
+<div class="page">
+
+  <header class="page-header">
+    <span class="eyebrow">차장님 · UX DESIGN SIGN-OFF</span>
+    <h1>매물 카드 최종 (레이아웃 B · 초록 신뢰뱃지 · amber 가격 전용)</h1>
+    <p>photo → 신뢰뱃지 줄 → 제목/가격 → 희소옵션 칩 순서의 레이아웃 B. 신뢰뱃지는 차분한 그린, 가격만 amber로 강조합니다. 찜 버튼은 사진 밖 본문 헤더 우측에 배치됩니다.</p>
+  </header>
+
+  <!-- ① 기본 · 호버 -->
+  <section class="showcase">
+    <div class="section-head">
+      <span class="num">1</span>
+      <h2>기본 · 호버</h2>
+      <span class="desc">히어로 카드 — 정지 상태와 호버(살짝 떠오름) 상태 비교</span>
+    </div>
+    <div class="surface-panel">
+      <div class="row">
+
+        <div class="card-slot">
+          <span class="state-label">기본</span>
+          <article class="card card--hero">
+            <div class="card__photo">
+              <span class="card__photo-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+                3장
+              </span>
+            </div>
+            <div class="card__trust-row">
+              <div class="card__trust-badges">
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span>
+              </div>
+              <span class="card__trust-disclaimer">판매자 제공 정보</span>
+            </div>
+            <div class="card__body">
+              <div class="card__header">
+                <h3 class="card__title">[현대] 그랜저 IG · 2021년</h3>
+                <button class="card__heart" aria-label="찜하기">
+                  <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+                </button>
+              </div>
+              <p class="card__meta">4.2만km<span class="dot">·</span>가솔린<span class="dot">·</span>경기</p>
+              <p class="card__price">2,780만원</p>
+              <div class="card__chips">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip">V2L</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="card-slot">
+          <span class="state-label">호버</span>
+          <article class="card card--hero is-hover">
+            <div class="card__photo">
+              <span class="card__photo-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+                3장
+              </span>
+            </div>
+            <div class="card__trust-row">
+              <div class="card__trust-badges">
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span>
+              </div>
+              <span class="card__trust-disclaimer">판매자 제공 정보</span>
+            </div>
+            <div class="card__body">
+              <div class="card__header">
+                <h3 class="card__title">[현대] 그랜저 IG · 2021년</h3>
+                <button class="card__heart" aria-label="찜하기">
+                  <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+                </button>
+              </div>
+              <p class="card__meta">4.2만km<span class="dot">·</span>가솔린<span class="dot">·</span>경기</p>
+              <p class="card__price">2,780만원</p>
+              <div class="card__chips">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip">V2L</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 사진 준비중 -->
+  <section class="showcase">
+    <div class="section-head">
+      <span class="num">2</span>
+      <h2>사진 준비중</h2>
+      <span class="desc">사진 미등록 매물 · 신뢰뱃지 2개만 확보된 경우(부분 검증)</span>
+    </div>
+    <div class="surface-panel">
+      <div class="row">
+        <div class="card-slot">
+          <span class="state-label">사진 없음</span>
+          <article class="card card--hero">
+            <div class="card__placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+              <span>사진 준비중</span>
+            </div>
+            <div class="card__trust-row">
+              <div class="card__trust-badges">
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+              </div>
+              <span class="card__trust-disclaimer">판매자 제공 정보</span>
+            </div>
+            <div class="card__body">
+              <div class="card__header">
+                <h3 class="card__title">[기아] K5 · 2020년</h3>
+                <button class="card__heart" aria-label="찜하기">
+                  <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+                </button>
+              </div>
+              <p class="card__meta">6.8만km<span class="dot">·</span>LPG<span class="dot">·</span>서울</p>
+              <p class="card__price">1,940만원</p>
+              <div class="card__chips">
+                <span class="chip">스마트키</span>
+                <span class="chip">후방센서</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ③ 그리드 밀도 -->
+  <section class="showcase">
+    <div class="section-head">
+      <span class="num">3</span>
+      <h2>그리드 밀도</h2>
+      <span class="desc">2~3열 목록에서의 스캔 밀도 · 옵션은 대표 1개 + "외 N개"로 압축</span>
+    </div>
+    <div class="surface-panel">
+      <div class="grid-row">
+
+        <article class="card">
+          <div class="card__photo">
+            <span class="card__photo-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+              5장
+            </span>
+          </div>
+          <div class="card__trust-row">
+            <div class="card__trust-badges">
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+            </div>
+            <span class="card__trust-disclaimer">판매자 제공</span>
+          </div>
+          <div class="card__body">
+            <div class="card__header">
+              <h3 class="card__title">[벤츠] E클래스 · 2019년</h3>
+              <button class="card__heart" aria-label="찜하기">
+                <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+              </button>
+            </div>
+            <p class="card__meta">8.1만km<span class="dot">·</span>디젤<span class="dot">·</span>인천</p>
+            <p class="card__price">3,150만원</p>
+            <div class="card__chips">
+              <span class="chip">가죽시트</span>
+              <span class="chip chip--more">외 2개</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__photo">
+            <span class="card__photo-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+              7장
+            </span>
+          </div>
+          <div class="card__trust-row">
+            <div class="card__trust-badges">
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span>
+            </div>
+            <span class="card__trust-disclaimer">판매자 제공</span>
+          </div>
+          <div class="card__body">
+            <div class="card__header">
+              <h3 class="card__title">[BMW] 3시리즈 · 2022년</h3>
+              <button class="card__heart" aria-label="찜하기">
+                <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+              </button>
+            </div>
+            <p class="card__meta">2.4만km<span class="dot">·</span>가솔린<span class="dot">·</span>부산</p>
+            <p class="card__price">3,890만원</p>
+            <div class="card__chips">
+              <span class="chip">어라운드뷰</span>
+              <span class="chip chip--more">외 1개</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__photo">
+            <span class="card__photo-badge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+              4장
+            </span>
+          </div>
+          <div class="card__trust-row">
+            <div class="card__trust-badges">
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+            </div>
+            <span class="card__trust-disclaimer">판매자 제공</span>
+          </div>
+          <div class="card__body">
+            <div class="card__header">
+              <h3 class="card__title">[현대] 아반떼 CN7 · 2023년</h3>
+              <button class="card__heart" aria-label="찜하기">
+                <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+              </button>
+            </div>
+            <p class="card__meta">1.2만km<span class="dot">·</span>가솔린<span class="dot">·</span>대전</p>
+            <p class="card__price">2,050만원</p>
+            <div class="card__chips">
+              <span class="chip">스마트키</span>
+              <span class="chip chip--more">외 3개</span>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ④ 다크모드 -->
+  <section class="showcase">
+    <div class="section-head">
+      <span class="num">4</span>
+      <h2>다크모드</h2>
+      <span class="desc">히어로 카드 + 사진 준비중 카드 — 다크 서피스에서의 대비 확인</span>
+    </div>
+    <div class="surface-panel surface-panel--dark theme-dark">
+      <div class="row">
+
+        <div class="card-slot">
+          <span class="state-label">기본</span>
+          <article class="card card--hero">
+            <div class="card__photo">
+              <span class="card__photo-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+                3장
+              </span>
+            </div>
+            <div class="card__trust-row">
+              <div class="card__trust-badges">
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span>
+              </div>
+              <span class="card__trust-disclaimer">판매자 제공 정보</span>
+            </div>
+            <div class="card__body">
+              <div class="card__header">
+                <h3 class="card__title">[현대] 그랜저 IG · 2021년</h3>
+                <button class="card__heart" aria-label="찜하기">
+                  <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+                </button>
+              </div>
+              <p class="card__meta">4.2만km<span class="dot">·</span>가솔린<span class="dot">·</span>경기</p>
+              <p class="card__price">2,780만원</p>
+              <div class="card__chips">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip">V2L</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="card-slot">
+          <span class="state-label">사진 없음</span>
+          <article class="card card--hero">
+            <div class="card__placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg>
+              <span>사진 준비중</span>
+            </div>
+            <div class="card__trust-row">
+              <div class="card__trust-badges">
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+                <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+              </div>
+              <span class="card__trust-disclaimer">판매자 제공 정보</span>
+            </div>
+            <div class="card__body">
+              <div class="card__header">
+                <h3 class="card__title">[기아] K5 · 2020년</h3>
+                <button class="card__heart" aria-label="찜하기">
+                  <svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+                </button>
+              </div>
+              <p class="card__meta">6.8만km<span class="dot">·</span>LPG<span class="dot">·</span>서울</p>
+              <p class="card__price">1,940만원</p>
+              <div class="card__chips">
+                <span class="chip">스마트키</span>
+                <span class="chip">후방센서</span>
+              </div>
+            </div>
+          </article>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+</div>

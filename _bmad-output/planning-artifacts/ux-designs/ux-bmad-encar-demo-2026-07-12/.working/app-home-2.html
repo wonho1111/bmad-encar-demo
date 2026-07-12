@@ -1,0 +1,752 @@
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/*
+  Design tokens (차장님 design system):
+  --surface-base:   #FAFAF8
+  --surface-raised: #FFFFFF
+  --ink-primary:    #1A1E1D
+  --ink-secondary:  #565F5D
+  --ink-muted:      #8B928F
+  --border:         #E6E3DD
+  --brand-petrol:        #1E6E6A
+  --brand-petrol-strong: #14514E
+  --petrol-deepest:      #0F3D3E
+  --accent-amber:   #F0A339
+  --price:          #E08A1B   (price text only)
+  --trust-bg:       #E7F3EC
+  --trust-ink:      #1F7A44
+*/
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: "Pretendard Variable", Pretendard, -apple-system, sans-serif;
+  background: #F1EFE9;
+  color: #1A1E1D;
+  padding: 40px 24px 80px;
+}
+
+.page-header {
+  max-width: 900px;
+  margin: 0 auto 8px;
+}
+
+.page-header h1 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #1A1E1D;
+  letter-spacing: -0.02em;
+}
+
+.page-header p {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #8B928F;
+}
+
+.stage {
+  max-width: 900px;
+  margin: 32px auto 0;
+  display: flex;
+  justify-content: center;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ---------- Phone frame (Android style, no notch) ---------- */
+.phone {
+  width: 390px;
+  height: 830px;
+  background: #0D0D0C;
+  border-radius: 38px;
+  padding: 12px;
+  box-shadow: 0 30px 60px -20px rgba(15,20,19,0.45), 0 4px 12px rgba(15,20,19,0.15);
+  position: relative;
+}
+
+.phone-screen {
+  width: 100%;
+  height: 100%;
+  background: #FAFAF8;
+  border-radius: 26px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- status bar (Android hints) ---------- */
+.statusbar {
+  height: 34px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1A1E1D;
+  background: #14514E;
+}
+.statusbar.on-dark { color: #FFFFFF; }
+.statusbar .icons { display:flex; gap:5px; align-items:center; }
+.statusbar svg { display:block; }
+
+/* ---------- app bar ---------- */
+.appbar {
+  flex: 0 0 auto;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #14514E 0%, #0F3D3E 100%);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.logo-word {
+  font-size: 16px;
+  font-weight: 800;
+  color: #FFFFFF;
+  letter-spacing: -0.02em;
+}
+
+.appbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: #fff;
+}
+
+.avatar-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.9);
+  border: 1.5px solid rgba(255,255,255,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #14514E;
+}
+
+/* ---------- AI hero (top of home, prominent) ---------- */
+.ai-hero {
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, #14514E 0%, #0F3D3E 100%);
+  padding: 18px 20px 24px;
+  border-radius: 0 0 22px 22px;
+  position: relative;
+  overflow: hidden;
+}
+.ai-hero::before {
+  content:"";
+  position: absolute;
+  top: -40px; right: -40px;
+  width: 170px; height: 170px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(240,163,57,0.28), transparent 70%);
+}
+.hero-car {
+  position: absolute;
+  right: -6px;
+  bottom: 10px;
+  opacity: 0.14;
+  z-index: 0;
+}
+.ai-hero-inner { position: relative; z-index: 1; }
+
+.ai-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #F0A339;
+  letter-spacing: 0.03em;
+  margin-bottom: 8px;
+}
+.ai-hero h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: #FFFFFF;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+  line-height: 1.32;
+}
+.ai-hero h2 .amber { color: #F0A339; }
+
+.ai-search-pill {
+  background: #FFFFFF;
+  border-radius: 14px;
+  padding: 6px 6px 6px 14px;
+  font-size: 13px;
+  color: #8B928F;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 6px 16px -4px rgba(15,20,19,0.25);
+}
+.ai-search-pill .placeholder { flex: 1 1 auto; }
+.ai-search-btn {
+  flex: 0 0 auto;
+  background: #F0A339;
+  color: #FFFFFF;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 9px 14px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.suggest-row {
+  display: flex;
+  gap: 7px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.suggest-chip {
+  background: rgba(255,255,255,0.14);
+  border: 1px solid rgba(255,255,255,0.22);
+  color: #EAF2F0;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ---------- content ---------- */
+.content {
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 16px 16px 0;
+  position: relative;
+  background: #FAFAF8;
+}
+
+.content::after {
+  content: "";
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 30px;
+  background: linear-gradient(to bottom, rgba(250,250,248,0), #FAFAF8);
+  pointer-events: none;
+}
+
+.chip-row {
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+.chip {
+  flex: 0 0 auto;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid #E6E3DD;
+  background: #FFFFFF;
+  color: #565F5D;
+  white-space: nowrap;
+}
+.chip.active {
+  background: #14514E;
+  border-color: #14514E;
+  color: #fff;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 20px 0 10px;
+}
+.section-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1A1E1D;
+  letter-spacing: -0.01em;
+}
+.section-more {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8B928F;
+}
+
+/* ---------- listing card (mobile compact) ---------- */
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mcard {
+  display: flex;
+  gap: 10px;
+  background: #FFFFFF;
+  border-radius: 14px;
+  padding: 8px;
+  box-shadow: 0 1px 2px rgba(15,20,19,0.04), 0 4px 10px rgba(15,20,19,0.05);
+}
+
+.mcard-photo {
+  width: 108px;
+  height: 78px;
+  border-radius: 10px;
+  flex: 0 0 auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.photo-a {
+  background: linear-gradient(150deg, #E4E0D6 0%, #CFC9BA 55%, #B9B2A0 100%);
+}
+.photo-b {
+  background: linear-gradient(150deg, #D9E4E0 0%, #C3D6CF 55%, #A9C2B8 100%);
+}
+.photo-c {
+  background: linear-gradient(150deg, #E6DED2 0%, #D3C6B2 55%, #BCAB8E 100%);
+}
+.photo-pending {
+  background: #ECEAE4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #ADA89D;
+  text-align: center;
+}
+
+.count-badge {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  background: rgba(15,20,19,0.55);
+  backdrop-filter: blur(2px);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.heart-off {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mcard-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.trust-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.trust-pill {
+  background: #E7F3EC;
+  color: #1F7A44;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.provided-tag {
+  font-size: 8.5px;
+  color: #8B928F;
+  font-weight: 600;
+}
+
+.mcard-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1A1E1D;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcard-price {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #E08A1B;
+}
+
+.opt-chip-row {
+  display: flex;
+  gap: 4px;
+}
+.opt-chip {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #14514E;
+  background: #EAF2F0;
+  padding: 2px 5px;
+  border-radius: 5px;
+}
+
+.bottom-spacer { height: 18px; }
+
+/* ---------- bottom nav (Material 3, 4 tabs, no FAB) ---------- */
+.bottomnav {
+  flex: 0 0 auto;
+  height: 76px;
+  background: #FFFFFF;
+  border-top: 1px solid #E6E3DD;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 9px;
+  position: relative;
+  z-index: 10;
+}
+
+.nav-item {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #8B928F;
+  position: relative;
+}
+
+.nav-item.active { color: #14514E; }
+.nav-item.active .nav-pill {
+  background: #E7F1EF;
+}
+
+.nav-item .nav-icon-wrap {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-pill {
+  width: 46px;
+  height: 26px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.nav-item .unread-dot {
+  position: absolute;
+  top: -1px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #E23D3D;
+  border: 1.5px solid #fff;
+}
+
+.nav-item span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Android gesture hint bar */
+.gesture-hint {
+  flex: 0 0 auto;
+  height: 22px;
+  background: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gesture-hint .bar {
+  width: 120px;
+  height: 4px;
+  border-radius: 999px;
+  background: #1A1E1D;
+  opacity: 0.85;
+}
+
+/* ---------- caption legend ---------- */
+.legend {
+  width: 390px;
+  margin-top: 20px;
+  background: #FFFFFF;
+  border: 1px solid #E6E3DD;
+  border-radius: 12px;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  color: #565F5D;
+  line-height: 1.75;
+  text-align: center;
+}
+.legend b { color: #14514E; font-weight: 800; }
+</style>
+
+<div class="page-header">
+  <h1>차장님 — 모바일 앱 홈 (최종 · AI=홈 상단, 하단 4탭, FAB 없음)</h1>
+  <p>디자인 리뷰에서 확정된 최종 구조 · AI 검색은 홈 최상단 히어로(당근마켓형 FAB 없음), 하단 4탭(홈·찜·채팅·내차팔기), 프로필은 우상단 아바타 단일 진입점</p>
+</div>
+
+<div class="stage">
+  <div class="column">
+    <div class="phone">
+      <div class="phone-screen">
+
+        <div class="statusbar on-dark">
+          <span>9:41</span>
+          <span class="icons">
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none"><rect x="0" y="6" width="3" height="5" rx="0.5" fill="#fff"/><rect x="4.5" y="4" width="3" height="7" rx="0.5" fill="#fff"/><rect x="9" y="2" width="3" height="9" rx="0.5" fill="#fff"/><rect x="13.5" y="0" width="3" height="11" rx="0.5" fill="#fff"/></svg>
+            <svg width="15" height="11" viewBox="0 0 15 11" fill="none"><path d="M7.5 2.2C10 2.2 12.2 3.2 13.8 4.8L12.4 6.2C11.1 4.9 9.4 4.2 7.5 4.2C5.6 4.2 3.9 4.9 2.6 6.2L1.2 4.8C2.8 3.2 5 2.2 7.5 2.2Z" fill="#fff"/><circle cx="7.5" cy="8.6" r="1.3" fill="#fff"/></svg>
+            <svg width="24" height="11" viewBox="0 0 24 11" fill="none"><rect x="0.5" y="0.5" width="20" height="10" rx="2.5" stroke="#fff"/><rect x="2" y="2" width="15" height="7" rx="1.3" fill="#fff"/><rect x="21.5" y="3.5" width="1.5" height="4" rx="0.7" fill="#fff"/></svg>
+          </span>
+        </div>
+
+        <div class="appbar">
+          <div class="logo">
+            <div class="logo-badge">차</div>
+            <div class="logo-word">차장님</div>
+          </div>
+          <div class="appbar-right">
+            <div class="icon-btn">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M12 3C9.5 3 7.5 5 7.5 7.5V11L5.5 14.5C5.3 14.9 5.6 15.5 6 15.5H18C18.4 15.5 18.7 14.9 18.5 14.5L16.5 11V7.5C16.5 5 14.5 3 12 3Z" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/><path d="M9.5 18C9.9 19 10.8 19.5 12 19.5C13.2 19.5 14.1 19 14.5 18" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div class="avatar-btn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="#14514E" stroke-width="1.8"/><path d="M5 20C5.6 16.5 8.4 15 12 15C15.6 15 18.4 16.5 19 20" stroke="#14514E" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-hero">
+          <svg class="hero-car" width="220" height="110" viewBox="0 0 220 110" fill="none">
+            <path d="M10 78 L28 46 C33 38 42 33 52 33 L150 33 C160 33 169 38 174 46 L192 78 L192 90 L10 90 Z" fill="#FFFFFF"/>
+            <rect x="4" y="78" width="196" height="14" rx="7" fill="#FFFFFF"/>
+            <path d="M56 40 L70 40 L64 60 L48 60 Z" fill="#0F3D3E"/>
+            <path d="M76 40 L128 40 L134 60 L82 60 Z" fill="#0F3D3E"/>
+            <circle cx="46" cy="92" r="14" fill="#FFFFFF"/>
+            <circle cx="46" cy="92" r="7" fill="#0F3D3E"/>
+            <circle cx="156" cy="92" r="14" fill="#FFFFFF"/>
+            <circle cx="156" cy="92" r="7" fill="#0F3D3E"/>
+          </svg>
+          <div class="ai-hero-inner">
+            <div class="ai-eyebrow">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3L13.7 9.3L20 11L13.7 12.7L12 19L10.3 12.7L4 11L10.3 9.3L12 3Z" fill="#F0A339"/></svg>
+              AI 매물 검색
+            </div>
+            <h2>원하는 차를 <span class="amber">말</span>로 찾으세요</h2>
+            <div class="ai-search-pill">
+              <span class="placeholder">예: 3천만원대 무사고 SUV</span>
+              <span class="ai-search-btn">검색</span>
+            </div>
+            <div class="suggest-row">
+              <span class="suggest-chip">가성비 좋은 첫차</span>
+              <span class="suggest-chip">전기 SUV</span>
+              <span class="suggest-chip">무사고 세단</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="content">
+          <div class="chip-row">
+            <div class="chip active">전체</div>
+            <div class="chip">경차</div>
+            <div class="chip">세단</div>
+            <div class="chip">SUV</div>
+            <div class="chip">전기</div>
+            <div class="chip">수입</div>
+          </div>
+
+          <div class="section-head">
+            <div class="section-title">지금 인기</div>
+            <div class="section-more">전체보기 →</div>
+          </div>
+          <div class="card-list">
+            <div class="mcard">
+              <div class="mcard-photo photo-a">
+                <div class="count-badge">12장</div>
+                <div class="heart-off">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 20C12 20 3 14.5 3 8.5C3 5.5 5.5 3.5 8 3.5C10 3.5 11.3 4.7 12 5.8C12.7 4.7 14 3.5 16 3.5C18.5 3.5 21 5.5 21 8.5C21 14.5 12 20 12 20Z" stroke="#565F5D" stroke-width="1.6"/></svg>
+                </div>
+              </div>
+              <div class="mcard-body">
+                <div class="trust-row">
+                  <span class="trust-pill">무사고</span>
+                  <span class="trust-pill">1인소유</span>
+                  <span class="provided-tag">판매자 제공 정보</span>
+                </div>
+                <div class="mcard-title">2022 아반떼 스마트 1.6</div>
+                <div class="mcard-price">1,680만원</div>
+                <div class="opt-chip-row">
+                  <span class="opt-chip">선루프</span>
+                  <span class="opt-chip">스마트키</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mcard">
+              <div class="mcard-photo photo-pending">사진 준비중</div>
+              <div class="mcard-body">
+                <div class="trust-row">
+                  <span class="trust-pill">무사고</span>
+                  <span class="provided-tag">판매자 제공 정보</span>
+                </div>
+                <div class="mcard-title">2023 아이오닉5 롱레인지</div>
+                <div class="mcard-price">4,450만원</div>
+                <div class="opt-chip-row">
+                  <span class="opt-chip">V2L</span>
+                  <span class="opt-chip">어라운드뷰</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mcard">
+              <div class="mcard-photo photo-b">
+                <div class="count-badge">8장</div>
+                <div class="heart-off">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 20C12 20 3 14.5 3 8.5C3 5.5 5.5 3.5 8 3.5C10 3.5 11.3 4.7 12 5.8C12.7 4.7 14 3.5 16 3.5C18.5 3.5 21 5.5 21 8.5C21 14.5 12 20 12 20Z" stroke="#565F5D" stroke-width="1.6"/></svg>
+                </div>
+              </div>
+              <div class="mcard-body">
+                <div class="trust-row">
+                  <span class="trust-pill">비흡연</span>
+                  <span class="provided-tag">판매자 제공 정보</span>
+                </div>
+                <div class="mcard-title">2021 쏘렌토 1.6 터보 하이브리드</div>
+                <div class="mcard-price">3,190만원</div>
+                <div class="opt-chip-row">
+                  <span class="opt-chip">통풍시트</span>
+                  <span class="opt-chip">HUD</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-head">
+            <div class="section-title">방금 올라온 매물</div>
+            <div class="section-more">전체보기 →</div>
+          </div>
+          <div class="card-list">
+            <div class="mcard">
+              <div class="mcard-photo photo-c">
+                <div class="count-badge">15장</div>
+                <div class="heart-off">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 20C12 20 3 14.5 3 8.5C3 5.5 5.5 3.5 8 3.5C10 3.5 11.3 4.7 12 5.8C12.7 4.7 14 3.5 16 3.5C18.5 3.5 21 5.5 21 8.5C21 14.5 12 20 12 20Z" stroke="#565F5D" stroke-width="1.6"/></svg>
+                </div>
+              </div>
+              <div class="mcard-body">
+                <div class="trust-row">
+                  <span class="trust-pill">1인소유</span>
+                  <span class="provided-tag">판매자 제공 정보</span>
+                </div>
+                <div class="mcard-title">2020 그랜저 IG 2.5 프리미엄</div>
+                <div class="mcard-price">2,340만원</div>
+                <div class="opt-chip-row">
+                  <span class="opt-chip">크루즈</span>
+                  <span class="opt-chip">열선</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="bottom-spacer"></div>
+        </div>
+
+        <div class="bottomnav">
+          <div class="nav-item active">
+            <div class="nav-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 11L12 4L20 11V19C20 19.6 19.6 20 19 20H15V14H9V20H5C4.4 20 4 19.6 4 19V11Z" fill="#14514E"/></svg>
+            </div>
+            <span>홈</span>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon-wrap">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 20C12 20 3 14.5 3 8.5C3 5.5 5.5 3.5 8 3.5C10 3.5 11.3 4.7 12 5.8C12.7 4.7 14 3.5 16 3.5C18.5 3.5 21 5.5 21 8.5C21 14.5 12 20 12 20Z" stroke="#8B928F" stroke-width="1.8"/></svg>
+            </div>
+            <span>찜</span>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon-wrap">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 5H20V16H8L4 19V5Z" stroke="#8B928F" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              <div class="unread-dot"></div>
+            </div>
+            <span>채팅</span>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon-wrap">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none">
+                <path d="M3 15L4 10.5C4.3 9.4 5.3 8.6 6.5 8.6H14.5C15.7 8.6 16.7 9.4 17 10.5L18 15" stroke="#8B928F" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="2.2" y="15" width="16.6" height="3.4" rx="1.5" stroke="#8B928F" stroke-width="1.6"/>
+                <circle cx="6" cy="18.4" r="1.3" fill="#8B928F"/>
+                <circle cx="14.5" cy="18.4" r="1.3" fill="#8B928F"/>
+                <circle cx="19.2" cy="6.2" r="4" fill="#F0A339"/>
+                <path d="M19.2 4.4V8M17.4 6.2H21" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span>내차팔기</span>
+          </div>
+        </div>
+
+        <div class="gesture-hint"><div class="bar"></div></div>
+
+      </div>
+    </div>
+
+    <div class="legend">
+      <b>AI검색</b> = 홈 최상단 (FAB 아님) · <b>하단 4탭</b> = 홈·찜·채팅·내차팔기 · <b>프로필</b> = 우상단 아바타 · <b>내매물관리</b> = 프로필 안 · <b>문의 개시</b> = 매물 상세에서만
+    </div>
+  </div>
+</div>
+</content>
+</invoke>

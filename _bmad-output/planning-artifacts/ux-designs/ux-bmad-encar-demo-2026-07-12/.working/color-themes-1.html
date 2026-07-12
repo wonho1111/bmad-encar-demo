@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>차장님 — 컬러 테마 탐색 (petrol + amber)</title>
+<style>
+  /* ============================================================
+     차장님 컬러 테마 탐색 — petrol(청록) + amber(호박색) 팔레트
+     4개 변주 × 라이트/다크 × (매물카드 + 랜딩히어로)
+     ============================================================ */
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: #e9e9e4;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "맑은 고딕", Roboto, sans-serif;
+    color: #1a1a1a;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 1320px; margin: 0 auto; padding: 40px 24px 100px; }
+
+  .page-header { margin-bottom: 12px; }
+  .page-header h1 { font-size: 28px; font-weight: 800; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .page-header p { font-size: 14px; color: #55554e; margin: 0; line-height: 1.6; }
+  .page-header .tag-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .page-header .tag {
+    font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    background: #1a1a1a; color: #fff;
+  }
+
+  hr.sep { border: none; border-top: 1px solid #d4d4cc; margin: 44px 0; }
+
+  /* ---------- 변주 섹션 ---------- */
+  .variation { margin-top: 56px; }
+  .variation-head { margin-bottom: 18px; }
+  .variation-head .v-num {
+    display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .06em;
+    color: #8a8a80; margin-bottom: 4px; text-transform: uppercase;
+  }
+  .variation-head h2 { font-size: 22px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .variation-head .register { font-size: 13.5px; color: #5c5c52; font-style: normal; }
+
+  /* ---------- 토큰 칩 표 ---------- */
+  .token-table-wrap { margin: 18px 0 26px; overflow-x: auto; border: 1px solid #dcdcd2; border-radius: 12px; }
+  table.token-table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 12.5px; background: #fff; }
+  table.token-table th, table.token-table td {
+    padding: 8px 12px; text-align: left; border-bottom: 1px solid #eceae2; white-space: nowrap;
+  }
+  table.token-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8a8a80; font-weight: 700; background: #f7f7f2; }
+  table.token-table tr:last-child td { border-bottom: none; }
+  .token-name { font-weight: 700; color: #2a2a24; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; }
+  .swatch-cell { display: flex; align-items: center; gap: 8px; }
+  .swatch {
+    width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); flex-shrink: 0;
+  }
+  .hex { font-family: "SFMono-Regular", Consolas, monospace; font-size: 11.5px; color: #4a4a42; }
+
+  /* ---------- 라이트/다크 나란히 배치 ---------- */
+  .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  @media (max-width: 880px) { .mode-grid { grid-template-columns: 1fr; } }
+
+  .mode-panel {
+    border-radius: 18px;
+    padding: 26px;
+    position: relative;
+  }
+  .mode-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px; margin-bottom: 18px;
+  }
+
+  .snippet-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+    opacity: .55; margin: 0 0 8px 2px;
+  }
+
+  /* ============================================================
+     공용 컴포넌트 — 매물 카드
+     ============================================================ */
+  .card-outer { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 28px; }
+  .listing-card {
+    flex: 1; min-width: 0;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-hairline);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .heart-btn {
+    flex-shrink: 0;
+    width: 38px; height: 38px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-hairline);
+    color: var(--accent-amber);
+    font-size: 17px;
+    margin-top: 2px;
+  }
+
+  .photo-area {
+    aspect-ratio: 5 / 3;
+    width: 100%;
+    background: var(--placeholder-bg);
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  }
+  .photo-icon {
+    width: 40px; height: 30px; border-radius: 5px;
+    border: 2px solid var(--ink-muted);
+    position: relative;
+    opacity: .7;
+  }
+  .photo-icon::before {
+    content: ""; position: absolute; top: -7px; left: 10px; width: 14px; height: 6px;
+    background: var(--ink-muted); border-radius: 2px 2px 0 0;
+  }
+  .photo-icon::after {
+    content: ""; position: absolute; top: 50%; left: 50%; width: 12px; height: 12px;
+    border: 2px solid var(--ink-muted); border-radius: 50%; transform: translate(-50%, -50%);
+  }
+  .photo-caption { font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+  .photo-count-badge {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(10, 10, 8, .55); color: #fff;
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    backdrop-filter: blur(2px);
+  }
+
+  .card-body { padding: 14px 16px 16px; }
+  .trust-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .trust-badge {
+    background: var(--trust-badge-bg); color: var(--trust-badge-ink);
+    font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 6px;
+    letter-spacing: -0.01em;
+  }
+  .disclaimer { font-size: 10.5px; color: var(--ink-muted); margin-bottom: 10px; }
+  .card-title { font-size: 15.5px; font-weight: 700; color: var(--ink-primary); margin: 0 0 6px; letter-spacing: -0.01em; }
+  .card-price { font-size: 23px; font-weight: 800; color: var(--price-emphasis); margin-bottom: 7px; letter-spacing: -0.02em; }
+  .card-meta { font-size: 12.5px; color: var(--ink-secondary); margin-bottom: 11px; }
+  .option-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .option-chip {
+    border: 1px solid var(--brand-petrol); color: var(--brand-petrol);
+    font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+    background: transparent;
+  }
+
+  /* ============================================================
+     공용 컴포넌트 — 랜딩 히어로
+     ============================================================ */
+  .hero {
+    border-radius: 16px;
+    padding: 26px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-eyebrow { font-size: 12px; font-weight: 700; opacity: .85; margin-bottom: 6px; letter-spacing: .01em; }
+  .hero-title { font-size: 18px; font-weight: 800; margin: 0 0 16px; letter-spacing: -0.01em; }
+  .search-bar {
+    background: var(--surface-raised);
+    border-radius: 999px;
+    padding: 13px 8px 13px 18px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  .search-placeholder { font-size: 13.5px; color: var(--ink-muted); }
+  .search-btn {
+    flex-shrink: 0;
+    background: var(--accent-amber);
+    color: var(--search-btn-ink, #241503);
+    border-radius: 999px;
+    padding: 9px 18px;
+    font-size: 13px; font-weight: 800;
+    white-space: nowrap;
+  }
+  .chip-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .quick-chip {
+    border-radius: 999px; padding: 6px 15px; font-size: 12.5px; font-weight: 600;
+  }
+
+  .footnote { font-size: 11.5px; color: #8a8a80; margin-top: 40px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-header">
+    <h1>차장님 — 컬러 테마 탐색 (petrol + amber)</h1>
+    <p>
+      petrol(딥 청록 — 신뢰·정비 전문성) + amber(따뜻한 호박색 — CTA·가격 강조) 조합으로 4개의 서로 다른 톤을 탐색합니다.
+      각 변주는 라이트/다크 모드를 함께 제공하며, 실제 매물 카드와 랜딩 히어로 UI로 검증합니다.
+    </p>
+    <div class="tag-row">
+      <span class="tag">4 VARIATIONS</span>
+      <span class="tag">LIGHT + DARK</span>
+      <span class="tag">KOREAN UI COPY</span>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       변주 1 — 정비소의 신뢰
+       petrol: #0F3D3E(light) / #2E7A76(dark accent)
+       amber:  #C8862B(light) / #D99A3E(dark)
+  ============================================================ -->
+  <div class="variation">
+    <div class="variation-head">
+      <span class="v-num">Variation 01</span>
+      <h2>정비소의 신뢰</h2>
+      <div class="register">딥 petrol이 화면을 지배하고, amber는 CTA·가격에만 절제해서 씁니다. 차분하고 전문적이며 확신을 주는 톤.</div>
+    </div>
+
+    <div class="token-table-wrap">
+      <table class="token-table">
+        <thead><tr><th>토큰</th><th>라이트</th><th>다크</th></tr></thead>
+        <tbody>
+          <tr><td class="token-name">surface-base</td><td class="swatch-cell"><span class="swatch" style="background:#F4F6F5"></span><span class="hex">#F4F6F5</span></td><td class="swatch-cell"><span class="swatch" style="background:#0B211F"></span><span class="hex">#0B211F</span></td></tr>
+          <tr><td class="token-name">surface-raised</td><td class="swatch-cell"><span class="swatch" style="background:#FFFFFF"></span><span class="hex">#FFFFFF</span></td><td class="swatch-cell"><span class="swatch" style="background:#123634"></span><span class="hex">#123634</span></td></tr>
+          <tr><td class="token-name">ink-primary</td><td class="swatch-cell"><span class="swatch" style="background:#10231F"></span><span class="hex">#10231F</span></td><td class="swatch-cell"><span class="swatch" style="background:#EAF3F1"></span><span class="hex">#EAF3F1</span></td></tr>
+          <tr><td class="token-name">ink-secondary</td><td class="swatch-cell"><span class="swatch" style="background:#3E5551"></span><span class="hex">#3E5551</span></td><td class="swatch-cell"><span class="swatch" style="background:#B9CBC8"></span><span class="hex">#B9CBC8</span></td></tr>
+          <tr><td class="token-name">ink-muted</td><td class="swatch-cell"><span class="swatch" style="background:#6E827E"></span><span class="hex">#6E827E</span></td><td class="swatch-cell"><span class="swatch" style="background:#83A19C"></span><span class="hex">#83A19C</span></td></tr>
+          <tr><td class="token-name">border-hairline</td><td class="swatch-cell"><span class="swatch" style="background:#D8E0DE"></span><span class="hex">#D8E0DE</span></td><td class="swatch-cell"><span class="swatch" style="background:#1F4A46"></span><span class="hex">#1F4A46</span></td></tr>
+          <tr><td class="token-name">brand-petrol</td><td class="swatch-cell"><span class="swatch" style="background:#0F3D3E"></span><span class="hex">#0F3D3E</span></td><td class="swatch-cell"><span class="swatch" style="background:#2E7A76"></span><span class="hex">#2E7A76</span></td></tr>
+          <tr><td class="token-name">brand-petrol-strong</td><td class="swatch-cell"><span class="swatch" style="background:#0A2A2B"></span><span class="hex">#0A2A2B</span></td><td class="swatch-cell"><span class="swatch" style="background:#3F9A94"></span><span class="hex">#3F9A94</span></td></tr>
+          <tr><td class="token-name">accent-amber</td><td class="swatch-cell"><span class="swatch" style="background:#C8862B"></span><span class="hex">#C8862B</span></td><td class="swatch-cell"><span class="swatch" style="background:#D99A3E"></span><span class="hex">#D99A3E</span></td></tr>
+          <tr><td class="token-name">price-emphasis</td><td class="swatch-cell"><span class="swatch" style="background:#B8721A"></span><span class="hex">#B8721A</span></td><td class="swatch-cell"><span class="swatch" style="background:#E8B159"></span><span class="hex">#E8B159</span></td></tr>
+          <tr><td class="token-name">trust-badge-bg</td><td class="swatch-cell"><span class="swatch" style="background:#E4EEEC"></span><span class="hex">#E4EEEC</span></td><td class="swatch-cell"><span class="swatch" style="background:#163F3C"></span><span class="hex">#163F3C</span></td></tr>
+          <tr><td class="token-name">trust-badge-ink</td><td class="swatch-cell"><span class="swatch" style="background:#14514F"></span><span class="hex">#14514F</span></td><td class="swatch-cell"><span class="swatch" style="background:#9FD6CE"></span><span class="hex">#9FD6CE</span></td></tr>
+          <tr><td class="token-name">placeholder-bg</td><td class="swatch-cell"><span class="swatch" style="background:#E7EDEC"></span><span class="hex">#E7EDEC</span></td><td class="swatch-cell"><span class="swatch" style="background:#14322F"></span><span class="hex">#14322F</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mode-grid">
+      <!-- LIGHT -->
+      <div class="mode-panel" style="background:#F4F6F5;
+        --surface-base:#F4F6F5; --surface-raised:#FFFFFF; --ink-primary:#10231F; --ink-secondary:#3E5551; --ink-muted:#6E827E;
+        --border-hairline:#D8E0DE; --brand-petrol:#0F3D3E; --brand-petrol-strong:#0A2A2B; --accent-amber:#C8862B;
+        --price-emphasis:#B8721A; --trust-badge-bg:#E4EEEC; --trust-badge-ink:#14514F; --placeholder-bg:#E7EDEC;">
+        <span class="mode-label" style="background:#0F3D3E1a; color:#0F3D3E;">☀ 라이트</span>
+
+        <div class="snippet-label" style="color:#3E5551;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#3E5551;">랜딩 히어로</div>
+        <div class="hero" style="background:linear-gradient(135deg,#0F3D3E,#155351);">
+          <div class="hero-eyebrow" style="color:#BFE3DE;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#fff;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar">
+            <span class="search-placeholder">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#241503;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:rgba(255,255,255,.14); color:#fff;">SUV</span>
+            <span class="quick-chip" style="background:rgba(255,255,255,.14); color:#fff;">경차</span>
+            <span class="quick-chip" style="background:rgba(255,255,255,.14); color:#fff;">전기차</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DARK -->
+      <div class="mode-panel" style="background:#0B211F;
+        --surface-base:#0B211F; --surface-raised:#123634; --ink-primary:#EAF3F1; --ink-secondary:#B9CBC8; --ink-muted:#83A19C;
+        --border-hairline:#1F4A46; --brand-petrol:#2E7A76; --brand-petrol-strong:#3F9A94; --accent-amber:#D99A3E;
+        --price-emphasis:#E8B159; --trust-badge-bg:#163F3C; --trust-badge-ink:#9FD6CE; --placeholder-bg:#14322F;">
+        <span class="mode-label" style="background:rgba(217,154,62,.18); color:#E8B159;">🌙 다크</span>
+
+        <div class="snippet-label" style="color:#83A19C;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#83A19C;">랜딩 히어로</div>
+        <div class="hero" style="background:linear-gradient(135deg,#0A2A2B,#163F3C);">
+          <div class="hero-eyebrow" style="color:#7FC2BA;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#EAF3F1;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar">
+            <span class="search-placeholder">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#241503;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:rgba(255,255,255,.08); color:#EAF3F1;">SUV</span>
+            <span class="quick-chip" style="background:rgba(255,255,255,.08); color:#EAF3F1;">경차</span>
+            <span class="quick-chip" style="background:rgba(255,255,255,.08); color:#EAF3F1;">전기차</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="sep" />
+
+  <!-- ============================================================
+       변주 2 — 밝은 직거래
+       petrol: #1E6E6A(light accent) / #4FA39D(dark accent)
+       amber:  #F0A339 (both, warm/friendly)
+  ============================================================ -->
+  <div class="variation">
+    <div class="variation-head">
+      <span class="v-num">Variation 02</span>
+      <h2>밝은 직거래</h2>
+      <div class="register">거의 화이트/뉴트럴 표면, petrol은 포인트로만. amber는 더 따뜻하고 친근하게. 가볍고 일상적인 톤.</div>
+    </div>
+
+    <div class="token-table-wrap">
+      <table class="token-table">
+        <thead><tr><th>토큰</th><th>라이트</th><th>다크</th></tr></thead>
+        <tbody>
+          <tr><td class="token-name">surface-base</td><td class="swatch-cell"><span class="swatch" style="background:#FAFAF8"></span><span class="hex">#FAFAF8</span></td><td class="swatch-cell"><span class="swatch" style="background:#201F1C"></span><span class="hex">#201F1C</span></td></tr>
+          <tr><td class="token-name">surface-raised</td><td class="swatch-cell"><span class="swatch" style="background:#FFFFFF"></span><span class="hex">#FFFFFF</span></td><td class="swatch-cell"><span class="swatch" style="background:#2B2A26"></span><span class="hex">#2B2A26</span></td></tr>
+          <tr><td class="token-name">ink-primary</td><td class="swatch-cell"><span class="swatch" style="background:#1A1E1D"></span><span class="hex">#1A1E1D</span></td><td class="swatch-cell"><span class="swatch" style="background:#F5F3EE"></span><span class="hex">#F5F3EE</span></td></tr>
+          <tr><td class="token-name">ink-secondary</td><td class="swatch-cell"><span class="swatch" style="background:#565F5D"></span><span class="hex">#565F5D</span></td><td class="swatch-cell"><span class="swatch" style="background:#C9C6BE"></span><span class="hex">#C9C6BE</span></td></tr>
+          <tr><td class="token-name">ink-muted</td><td class="swatch-cell"><span class="swatch" style="background:#8B928F"></span><span class="hex">#8B928F</span></td><td class="swatch-cell"><span class="swatch" style="background:#948F85"></span><span class="hex">#948F85</span></td></tr>
+          <tr><td class="token-name">border-hairline</td><td class="swatch-cell"><span class="swatch" style="background:#E6E3DD"></span><span class="hex">#E6E3DD</span></td><td class="swatch-cell"><span class="swatch" style="background:#3B3934"></span><span class="hex">#3B3934</span></td></tr>
+          <tr><td class="token-name">brand-petrol</td><td class="swatch-cell"><span class="swatch" style="background:#1E6E6A"></span><span class="hex">#1E6E6A</span></td><td class="swatch-cell"><span class="swatch" style="background:#4FA39D"></span><span class="hex">#4FA39D</span></td></tr>
+          <tr><td class="token-name">brand-petrol-strong</td><td class="swatch-cell"><span class="swatch" style="background:#14514E"></span><span class="hex">#14514E</span></td><td class="swatch-cell"><span class="swatch" style="background:#6BBAB4"></span><span class="hex">#6BBAB4</span></td></tr>
+          <tr><td class="token-name">accent-amber</td><td class="swatch-cell"><span class="swatch" style="background:#F0A339"></span><span class="hex">#F0A339</span></td><td class="swatch-cell"><span class="swatch" style="background:#F0A339"></span><span class="hex">#F0A339</span></td></tr>
+          <tr><td class="token-name">price-emphasis</td><td class="swatch-cell"><span class="swatch" style="background:#E08A1B"></span><span class="hex">#E08A1B</span></td><td class="swatch-cell"><span class="swatch" style="background:#F5B860"></span><span class="hex">#F5B860</span></td></tr>
+          <tr><td class="token-name">trust-badge-bg</td><td class="swatch-cell"><span class="swatch" style="background:#FDEFDA"></span><span class="hex">#FDEFDA</span></td><td class="swatch-cell"><span class="swatch" style="background:#3A2E1C"></span><span class="hex">#3A2E1C</span></td></tr>
+          <tr><td class="token-name">trust-badge-ink</td><td class="swatch-cell"><span class="swatch" style="background:#8A5A12"></span><span class="hex">#8A5A12</span></td><td class="swatch-cell"><span class="swatch" style="background:#F0C177"></span><span class="hex">#F0C177</span></td></tr>
+          <tr><td class="token-name">placeholder-bg</td><td class="swatch-cell"><span class="swatch" style="background:#F1EFE9"></span><span class="hex">#F1EFE9</span></td><td class="swatch-cell"><span class="swatch" style="background:#2A2924"></span><span class="hex">#2A2924</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mode-grid">
+      <!-- LIGHT -->
+      <div class="mode-panel" style="background:#FAFAF8;
+        --surface-base:#FAFAF8; --surface-raised:#FFFFFF; --ink-primary:#1A1E1D; --ink-secondary:#565F5D; --ink-muted:#8B928F;
+        --border-hairline:#E6E3DD; --brand-petrol:#1E6E6A; --brand-petrol-strong:#14514E; --accent-amber:#F0A339;
+        --price-emphasis:#E08A1B; --trust-badge-bg:#FDEFDA; --trust-badge-ink:#8A5A12; --placeholder-bg:#F1EFE9;">
+        <span class="mode-label" style="background:#1E6E6A1a; color:#1E6E6A;">☀ 라이트</span>
+
+        <div class="snippet-label" style="color:#565F5D;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#565F5D;">랜딩 히어로</div>
+        <div class="hero" style="background:#EDF6F4; border:1px solid #DCEBE8;">
+          <div class="hero-eyebrow" style="color:#1E6E6A;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#1A1E1D;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar" style="box-shadow:0 1px 3px rgba(0,0,0,.06); border:1px solid #E6E3DD;">
+            <span class="search-placeholder">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#3E2503;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:#FFFFFF; border:1px solid #CFE4E1; color:#14514E;">SUV</span>
+            <span class="quick-chip" style="background:#FFFFFF; border:1px solid #CFE4E1; color:#14514E;">경차</span>
+            <span class="quick-chip" style="background:#FFFFFF; border:1px solid #CFE4E1; color:#14514E;">전기차</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DARK -->
+      <div class="mode-panel" style="background:#201F1C;
+        --surface-base:#201F1C; --surface-raised:#2B2A26; --ink-primary:#F5F3EE; --ink-secondary:#C9C6BE; --ink-muted:#948F85;
+        --border-hairline:#3B3934; --brand-petrol:#4FA39D; --brand-petrol-strong:#6BBAB4; --accent-amber:#F0A339;
+        --price-emphasis:#F5B860; --trust-badge-bg:#3A2E1C; --trust-badge-ink:#F0C177; --placeholder-bg:#2A2924;">
+        <span class="mode-label" style="background:rgba(240,163,57,.16); color:#F5B860;">🌙 다크</span>
+
+        <div class="snippet-label" style="color:#948F85;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#948F85;">랜딩 히어로</div>
+        <div class="hero" style="background:#2A332F; border:1px solid #3B3934;">
+          <div class="hero-eyebrow" style="color:#8FCFC7;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#F5F3EE;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar" style="box-shadow:0 1px 3px rgba(0,0,0,.3);">
+            <span class="search-placeholder">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#3E2503;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:#33413C; color:#CDEAE5;">SUV</span>
+            <span class="quick-chip" style="background:#33413C; color:#CDEAE5;">경차</span>
+            <span class="quick-chip" style="background:#33413C; color:#CDEAE5;">전기차</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="sep" />
+
+  <!-- ============================================================
+       변주 3 — 프리미엄 다크-포워드
+       petrol: #0E4744 / #157A73(dark accent, brighter)
+       amber:  gold-leaning #B4903A(light) / #D4AF37(dark)
+  ============================================================ -->
+  <div class="variation">
+    <div class="variation-head">
+      <span class="v-num">Variation 03</span>
+      <h2>프리미엄 다크-포워드</h2>
+      <div class="register">더 진하고 깊은 petrol, 금빛에 가까운 amber. 강한 입체감·대비로 고급스럽고 신뢰도 높은 톤.</div>
+    </div>
+
+    <div class="token-table-wrap">
+      <table class="token-table">
+        <thead><tr><th>토큰</th><th>라이트</th><th>다크</th></tr></thead>
+        <tbody>
+          <tr><td class="token-name">surface-base</td><td class="swatch-cell"><span class="swatch" style="background:#EEF0EC"></span><span class="hex">#EEF0EC</span></td><td class="swatch-cell"><span class="swatch" style="background:#081716"></span><span class="hex">#081716</span></td></tr>
+          <tr><td class="token-name">surface-raised</td><td class="swatch-cell"><span class="swatch" style="background:#FFFFFF"></span><span class="hex">#FFFFFF</span></td><td class="swatch-cell"><span class="swatch" style="background:#102826"></span><span class="hex">#102826</span></td></tr>
+          <tr><td class="token-name">ink-primary</td><td class="swatch-cell"><span class="swatch" style="background:#0B1F1C"></span><span class="hex">#0B1F1C</span></td><td class="swatch-cell"><span class="swatch" style="background:#F7F5EF"></span><span class="hex">#F7F5EF</span></td></tr>
+          <tr><td class="token-name">ink-secondary</td><td class="swatch-cell"><span class="swatch" style="background:#2E4744"></span><span class="hex">#2E4744</span></td><td class="swatch-cell"><span class="swatch" style="background:#C3CFCB"></span><span class="hex">#C3CFCB</span></td></tr>
+          <tr><td class="token-name">ink-muted</td><td class="swatch-cell"><span class="swatch" style="background:#62716E"></span><span class="hex">#62716E</span></td><td class="swatch-cell"><span class="swatch" style="background:#7E938E"></span><span class="hex">#7E938E</span></td></tr>
+          <tr><td class="token-name">border-hairline</td><td class="swatch-cell"><span class="swatch" style="background:#CBD3CE"></span><span class="hex">#CBD3CE</span></td><td class="swatch-cell"><span class="swatch" style="background:#1D3D3A"></span><span class="hex">#1D3D3A</span></td></tr>
+          <tr><td class="token-name">brand-petrol</td><td class="swatch-cell"><span class="swatch" style="background:#0E4744"></span><span class="hex">#0E4744</span></td><td class="swatch-cell"><span class="swatch" style="background:#157A73"></span><span class="hex">#157A73</span></td></tr>
+          <tr><td class="token-name">brand-petrol-strong</td><td class="swatch-cell"><span class="swatch" style="background:#072E2C"></span><span class="hex">#072E2C</span></td><td class="swatch-cell"><span class="swatch" style="background:#0E4744"></span><span class="hex">#0E4744</span></td></tr>
+          <tr><td class="token-name">accent-amber</td><td class="swatch-cell"><span class="swatch" style="background:#B4903A"></span><span class="hex">#B4903A</span></td><td class="swatch-cell"><span class="swatch" style="background:#D4AF37"></span><span class="hex">#D4AF37</span></td></tr>
+          <tr><td class="token-name">price-emphasis</td><td class="swatch-cell"><span class="swatch" style="background:#9C7822"></span><span class="hex">#9C7822</span></td><td class="swatch-cell"><span class="swatch" style="background:#E8C766"></span><span class="hex">#E8C766</span></td></tr>
+          <tr><td class="token-name">trust-badge-bg</td><td class="swatch-cell"><span class="swatch" style="background:#E9E1C8"></span><span class="hex">#E9E1C8</span></td><td class="swatch-cell"><span class="swatch" style="background:#14332F"></span><span class="hex">#14332F</span></td></tr>
+          <tr><td class="token-name">trust-badge-ink</td><td class="swatch-cell"><span class="swatch" style="background:#6B5417"></span><span class="hex">#6B5417</span></td><td class="swatch-cell"><span class="swatch" style="background:#D4AF37"></span><span class="hex">#D4AF37</span></td></tr>
+          <tr><td class="token-name">placeholder-bg</td><td class="swatch-cell"><span class="swatch" style="background:#E3E7E1"></span><span class="hex">#E3E7E1</span></td><td class="swatch-cell"><span class="swatch" style="background:#0C1F1D"></span><span class="hex">#0C1F1D</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mode-grid">
+      <!-- LIGHT -->
+      <div class="mode-panel" style="background:#EEF0EC;
+        --surface-base:#EEF0EC; --surface-raised:#FFFFFF; --ink-primary:#0B1F1C; --ink-secondary:#2E4744; --ink-muted:#62716E;
+        --border-hairline:#CBD3CE; --brand-petrol:#0E4744; --brand-petrol-strong:#072E2C; --accent-amber:#B4903A;
+        --price-emphasis:#9C7822; --trust-badge-bg:#E9E1C8; --trust-badge-ink:#6B5417; --placeholder-bg:#E3E7E1;">
+        <span class="mode-label" style="background:#0E47441a; color:#0E4744;">☀ 라이트</span>
+
+        <div class="snippet-label" style="color:#2E4744;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card" style="box-shadow:0 4px 16px rgba(11,31,28,.10);">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#2E4744;">랜딩 히어로</div>
+        <div class="hero" style="background:linear-gradient(160deg,#0B2C2A,#0E4744 60%,#145E59); box-shadow:0 10px 30px rgba(11,31,28,.18);">
+          <div class="hero-eyebrow" style="color:#D4AF37;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#F7F5EF;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar">
+            <span class="search-placeholder">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#241703; background:#B4903A;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:rgba(212,175,55,.12); border:1px solid rgba(212,175,55,.4); color:#E8C766;">SUV</span>
+            <span class="quick-chip" style="background:rgba(212,175,55,.12); border:1px solid rgba(212,175,55,.4); color:#E8C766;">경차</span>
+            <span class="quick-chip" style="background:rgba(212,175,55,.12); border:1px solid rgba(212,175,55,.4); color:#E8C766;">전기차</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DARK -->
+      <div class="mode-panel" style="background:#081716;
+        --surface-base:#081716; --surface-raised:#102826; --ink-primary:#F7F5EF; --ink-secondary:#C3CFCB; --ink-muted:#7E938E;
+        --border-hairline:#1D3D3A; --brand-petrol:#157A73; --brand-petrol-strong:#0E4744; --accent-amber:#D4AF37;
+        --price-emphasis:#E8C766; --trust-badge-bg:#14332F; --trust-badge-ink:#D4AF37; --placeholder-bg:#0C1F1D;">
+        <span class="mode-label" style="background:rgba(212,175,55,.16); color:#D4AF37;">🌙 다크</span>
+
+        <div class="snippet-label" style="color:#7E938E;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card" style="box-shadow:0 8px 28px rgba(0,0,0,.45); border-color:#1D3D3A;">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#7E938E;">랜딩 히어로</div>
+        <div class="hero" style="background:linear-gradient(160deg,#051211,#0E4744 70%,#157A73); box-shadow:0 10px 34px rgba(0,0,0,.5); border:1px solid #1D3D3A;">
+          <div class="hero-eyebrow" style="color:#D4AF37;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#F7F5EF;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar" style="background:#102826; box-shadow:0 4px 18px rgba(0,0,0,.4);">
+            <span class="search-placeholder" style="color:#7E938E;">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#241703; background:#D4AF37;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:rgba(212,175,55,.14); border:1px solid rgba(212,175,55,.45); color:#E8C766;">SUV</span>
+            <span class="quick-chip" style="background:rgba(212,175,55,.14); border:1px solid rgba(212,175,55,.45); color:#E8C766;">경차</span>
+            <span class="quick-chip" style="background:rgba(212,175,55,.14); border:1px solid rgba(212,175,55,.45); color:#E8C766;">전기차</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="sep" />
+
+  <!-- ============================================================
+       변주 4 — 선명한 실용
+       petrol: #0B8C82(light) / #17B5A6(dark, high-chroma)
+       amber:  #FF9E1B(light) / #FFB238(dark, vivid)
+  ============================================================ -->
+  <div class="variation">
+    <div class="variation-head">
+      <span class="v-num">Variation 04</span>
+      <h2>선명한 실용</h2>
+      <div class="register">채도 높은 청록 + 선명한 amber. 활기차고 한눈에 훑기 좋은, 마켓플레이스다운 분주한 톤.</div>
+    </div>
+
+    <div class="token-table-wrap">
+      <table class="token-table">
+        <thead><tr><th>토큰</th><th>라이트</th><th>다크</th></tr></thead>
+        <tbody>
+          <tr><td class="token-name">surface-base</td><td class="swatch-cell"><span class="swatch" style="background:#FFFFFF"></span><span class="hex">#FFFFFF</span></td><td class="swatch-cell"><span class="swatch" style="background:#0A1E1B"></span><span class="hex">#0A1E1B</span></td></tr>
+          <tr><td class="token-name">surface-raised</td><td class="swatch-cell"><span class="swatch" style="background:#F7F9F8"></span><span class="hex">#F7F9F8</span></td><td class="swatch-cell"><span class="swatch" style="background:#123430"></span><span class="hex">#123430</span></td></tr>
+          <tr><td class="token-name">ink-primary</td><td class="swatch-cell"><span class="swatch" style="background:#10201D"></span><span class="hex">#10201D</span></td><td class="swatch-cell"><span class="swatch" style="background:#EFFBF8"></span><span class="hex">#EFFBF8</span></td></tr>
+          <tr><td class="token-name">ink-secondary</td><td class="swatch-cell"><span class="swatch" style="background:#435954"></span><span class="hex">#435954</span></td><td class="swatch-cell"><span class="swatch" style="background:#A9C8C1"></span><span class="hex">#A9C8C1</span></td></tr>
+          <tr><td class="token-name">ink-muted</td><td class="swatch-cell"><span class="swatch" style="background:#79908A"></span><span class="hex">#79908A</span></td><td class="swatch-cell"><span class="swatch" style="background:#6F948C"></span><span class="hex">#6F948C</span></td></tr>
+          <tr><td class="token-name">border-hairline</td><td class="swatch-cell"><span class="swatch" style="background:#DCE6E2"></span><span class="hex">#DCE6E2</span></td><td class="swatch-cell"><span class="swatch" style="background:#1E4A43"></span><span class="hex">#1E4A43</span></td></tr>
+          <tr><td class="token-name">brand-petrol</td><td class="swatch-cell"><span class="swatch" style="background:#0B8C82"></span><span class="hex">#0B8C82</span></td><td class="swatch-cell"><span class="swatch" style="background:#17B5A6"></span><span class="hex">#17B5A6</span></td></tr>
+          <tr><td class="token-name">brand-petrol-strong</td><td class="swatch-cell"><span class="swatch" style="background:#056B63"></span><span class="hex">#056B63</span></td><td class="swatch-cell"><span class="swatch" style="background:#3FD9C8"></span><span class="hex">#3FD9C8</span></td></tr>
+          <tr><td class="token-name">accent-amber</td><td class="swatch-cell"><span class="swatch" style="background:#FF9E1B"></span><span class="hex">#FF9E1B</span></td><td class="swatch-cell"><span class="swatch" style="background:#FFB238"></span><span class="hex">#FFB238</span></td></tr>
+          <tr><td class="token-name">price-emphasis</td><td class="swatch-cell"><span class="swatch" style="background:#F17B00"></span><span class="hex">#F17B00</span></td><td class="swatch-cell"><span class="swatch" style="background:#FFC768"></span><span class="hex">#FFC768</span></td></tr>
+          <tr><td class="token-name">trust-badge-bg</td><td class="swatch-cell"><span class="swatch" style="background:#E1F7F2"></span><span class="hex">#E1F7F2</span></td><td class="swatch-cell"><span class="swatch" style="background:#123F38"></span><span class="hex">#123F38</span></td></tr>
+          <tr><td class="token-name">trust-badge-ink</td><td class="swatch-cell"><span class="swatch" style="background:#036B5F"></span><span class="hex">#036B5F</span></td><td class="swatch-cell"><span class="swatch" style="background:#4FE0CC"></span><span class="hex">#4FE0CC</span></td></tr>
+          <tr><td class="token-name">placeholder-bg</td><td class="swatch-cell"><span class="swatch" style="background:#EAF6F3"></span><span class="hex">#EAF6F3</span></td><td class="swatch-cell"><span class="swatch" style="background:#0E2925"></span><span class="hex">#0E2925</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mode-grid">
+      <!-- LIGHT -->
+      <div class="mode-panel" style="background:#FFFFFF; border:1px solid #EAEAE4;
+        --surface-base:#FFFFFF; --surface-raised:#F7F9F8; --ink-primary:#10201D; --ink-secondary:#435954; --ink-muted:#79908A;
+        --border-hairline:#DCE6E2; --brand-petrol:#0B8C82; --brand-petrol-strong:#056B63; --accent-amber:#FF9E1B;
+        --price-emphasis:#F17B00; --trust-badge-bg:#E1F7F2; --trust-badge-ink:#036B5F; --placeholder-bg:#EAF6F3;">
+        <span class="mode-label" style="background:#0B8C821a; color:#056B63;">☀ 라이트</span>
+
+        <div class="snippet-label" style="color:#435954;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card" style="border:1.5px solid #DCE6E2;">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge" style="background:rgba(11,140,130,.75);">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn" style="border-color:#DCE6E2;">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#435954;">랜딩 히어로</div>
+        <div class="hero" style="background:radial-gradient(circle at 15% 20%, rgba(255,255,255,.25) 0, transparent 45%), linear-gradient(120deg,#0B8C82,#0FA79B 55%,#12C2B4);">
+          <div class="hero-eyebrow" style="color:#EAFFFA;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#fff;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar">
+            <span class="search-placeholder">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#301900; background:#FF9E1B;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:#fff; color:#056B63; font-weight:800;">SUV</span>
+            <span class="quick-chip" style="background:#fff; color:#056B63; font-weight:800;">경차</span>
+            <span class="quick-chip" style="background:#fff; color:#056B63; font-weight:800;">전기차</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- DARK -->
+      <div class="mode-panel" style="background:#0A1E1B;
+        --surface-base:#0A1E1B; --surface-raised:#123430; --ink-primary:#EFFBF8; --ink-secondary:#A9C8C1; --ink-muted:#6F948C;
+        --border-hairline:#1E4A43; --brand-petrol:#17B5A6; --brand-petrol-strong:#3FD9C8; --accent-amber:#FFB238;
+        --price-emphasis:#FFC768; --trust-badge-bg:#123F38; --trust-badge-ink:#4FE0CC; --placeholder-bg:#0E2925;">
+        <span class="mode-label" style="background:rgba(255,178,56,.16); color:#FFC768;">🌙 다크</span>
+
+        <div class="snippet-label" style="color:#6F948C;">매물 카드</div>
+        <div class="card-outer">
+          <div class="listing-card" style="border:1.5px solid #1E4A43;">
+            <div class="photo-area">
+              <div class="photo-icon"></div>
+              <div class="photo-caption">사진 준비중</div>
+              <span class="photo-count-badge" style="background:rgba(23,181,166,.55);">3장</span>
+            </div>
+            <div class="card-body">
+              <div class="trust-row">
+                <span class="trust-badge">무사고</span>
+                <span class="trust-badge">1인소유</span>
+                <span class="trust-badge">비흡연</span>
+              </div>
+              <div class="disclaimer">판매자 제공 정보</div>
+              <div class="card-title">[현대] 그랜저 IG · 2021년</div>
+              <div class="card-price">2,780만원</div>
+              <div class="card-meta">4.2만km · 가솔린 · 경기</div>
+              <div class="option-row">
+                <span class="option-chip">파노라마선루프</span>
+                <span class="option-chip">어라운드뷰</span>
+              </div>
+            </div>
+          </div>
+          <div class="heart-btn" style="border-color:#1E4A43;">♡</div>
+        </div>
+
+        <div class="snippet-label" style="color:#6F948C;">랜딩 히어로</div>
+        <div class="hero" style="background:radial-gradient(circle at 15% 20%, rgba(23,181,166,.35) 0, transparent 50%), linear-gradient(120deg,#0E2925,#123F38 55%,#125A4F);">
+          <div class="hero-eyebrow" style="color:#4FE0CC;">차장님 AI 검색</div>
+          <div class="hero-title" style="color:#EFFBF8;">원하는 차, 말하듯 검색해보세요</div>
+          <div class="search-bar" style="background:#123430;">
+            <span class="search-placeholder" style="color:#6F948C;">예: 3천만원대 흰색 SUV 무사고</span>
+            <span class="search-btn" style="--search-btn-ink:#301900; background:#FFB238;">검색</span>
+          </div>
+          <div class="chip-row">
+            <span class="quick-chip" style="background:#123F38; color:#4FE0CC; font-weight:800;">SUV</span>
+            <span class="quick-chip" style="background:#123F38; color:#4FE0CC; font-weight:800;">경차</span>
+            <span class="quick-chip" style="background:#123F38; color:#4FE0CC; font-weight:800;">전기차</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    모든 스와치·컴포넌트는 인라인 CSS custom property로 구성되어 있어, 채택된 변주의 토큰 값만 프로덕션 디자인 시스템으로 옮기면 됩니다.
+    "3장" 배지는 실제로는 사진이 있을 때 노출되는 요소지만, 이 목업에서는 "사진 준비중" 빈 상태와 배지 UI를 한 화면에서 함께 검증하기 위해 같이 표기했습니다.
+  </div>
+
+</div>
+</body>
+</html>

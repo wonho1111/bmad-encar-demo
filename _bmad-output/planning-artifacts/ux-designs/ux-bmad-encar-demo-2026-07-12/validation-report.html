@@ -1,0 +1,81 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>차장님 — UX 스파인 검증 리포트</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root{--base:#FAFAF8;--raised:#fff;--ink:#1A1E1D;--sec:#565F5D;--muted:#676D69;--bd:#E6E3DD;--petrol:#1E6E6A;--petrol-s:#14514E;--amber:#F0A339;--price:#C0730F;--green-bg:#E7F3EC;--green-ink:#1B6E3D;--crit:#C0392B;--warn-bg:#FDEFDA;--warn-ink:#8A5A12}
+@media(prefers-color-scheme:dark){:root{--base:#201F1C;--raised:#2B2A26;--ink:#F5F3EE;--sec:#C9C6BE;--muted:#A6A196;--bd:#3B3934;--petrol:#4FA39D;--green-bg:#1E3A2A;--green-ink:#7FCE9E;--warn-bg:#3A2E1C;--warn-ink:#F0C177}}
+*{box-sizing:border-box}body{margin:0;font-family:"Pretendard Variable",Pretendard,-apple-system,"Malgun Gothic",sans-serif;background:var(--base);color:var(--ink);line-height:1.6;font-size:15px}
+.wrap{max-width:900px;margin:0 auto;padding:40px 22px 80px}
+.hero{background:linear-gradient(135deg,var(--petrol-s),#0F3D3E);color:#F5FAF9;border-radius:20px;padding:30px 28px;margin-bottom:26px}
+.hero h1{margin:0 0 8px;font-size:26px;font-weight:800;letter-spacing:-.02em}
+.hero .badge{display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:4px 12px;font-size:12px;font-weight:600;margin-right:6px}
+.meta{color:#A8C4C0;font-size:13px;margin-top:12px}
+h2{font-size:19px;font-weight:700;margin:32px 0 12px;letter-spacing:-.01em}
+.verdict{background:var(--raised);border:1px solid var(--bd);border-radius:14px;padding:18px 20px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 30px -14px rgba(0,0,0,.12)}
+table{width:100%;border-collapse:collapse;background:var(--raised);border:1px solid var(--bd);border-radius:12px;overflow:hidden;font-size:14px;margin-top:6px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--bd)}th{background:color-mix(in srgb,var(--petrol) 8%,var(--raised));font-weight:700}tr:last-child td{border-bottom:none}
+.ok{color:var(--green-ink);font-weight:700}
+.sev{display:inline-block;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:700;margin-right:6px}
+.sev.c{background:var(--crit);color:#fff}.sev.h{background:var(--warn-bg);color:var(--warn-ink);border:1px solid var(--warn-ink)}
+.f{background:var(--raised);border:1px solid var(--bd);border-left:3px solid var(--crit);border-radius:10px;padding:12px 15px;margin:8px 0}
+.f.h{border-left-color:var(--amber)}
+.f b{color:var(--petrol)}
+.chk{color:var(--green-ink);font-weight:700}
+.files{display:flex;flex-wrap:wrap;gap:8px}.files code{background:var(--raised);border:1px solid var(--bd);border-radius:8px;padding:5px 10px;font-size:13px}
+.note{color:var(--sec);font-size:13px}
+</style></head><body><div class="wrap">
+<div class="hero">
+<span class="badge">UX 스파인 검증</span><span class="badge">풀 리뷰 · 렌즈 4개</span>
+<h1>차장님 — UI·이미지 고도화 증분</h1>
+<div class="meta">DESIGN.md + EXPERIENCE.md · 2026-07-12 · 루브릭 · 접근성 · 일관성 · 엣지케이스 병렬 검증 → <b style="color:#F5B860">critical 전부 + 접근성/일관성 high 반영 · 엣지 high 7건은 교차검증 후 후속 반영(정정 참조)</b></div>
+</div>
+
+<div class="verdict" style="border-left:4px solid var(--crit)">
+<b>정정 (2026-07-12):</b> 초판은 "Critical 10 / High 14 — 전부 반영 ✅"로 <b>과대보고</b>했다. 이후 <b>독립 교차검증</b>에서 엣지케이스 High 7개가 실제로는 스파인에 부재했고, 그중 2개(되묻기 무한루프·매우 긴 질의)는 초판에서 조용히 medium/low로 강등돼 있었음이 드러났다. 원인 = <b>자기채점 편향(self-scoring bias)</b>. 누락 7건은 후속 패스에서 스파인에 실제 상태·거동·마이크로카피까지 추가해 해소(아래 "High 엣지케이스" 절). 독립 opus 검증으로 반영 확인 완료.
+</div>
+
+<div class="verdict">
+<b>종합:</b> 다운스트림(아키텍처·dev)이 깔끔히 소스 추출 가능한 <b>강한 계약</b> — 토큰 17개 전부 라이트/다크 hex, <code>{token}</code> 참조 전부 해소, 정경 순서·필수 섹션 모두 present. 리뷰가 잡은 실질 결함 2군(<b>접근성 대비 미달</b>, <b>실패·경계 경로 공백</b>)은 이번 Finalize에서 스파인에 직접 반영. 대비는 실제 hex로 재계산해 토큰 조정.
+</div>
+
+<h2>카테고리 판정 (리뷰 → 반영)</h2>
+<table>
+<tr><th>렌즈 / 카테고리</th><th>판정</th><th>반영</th></tr>
+<tr><td>Flow / Token / Component / State / Visual (루브릭)</td><td>strong~adequate</td><td class="ok">✅ 커버리지 보강</td></tr>
+<tr><td>접근성 (대비·a11y)</td><td style="color:var(--crit)">❌ 대비 미달 다수</td><td class="ok">✅ 토큰 재계산·floor 보강</td></tr>
+<tr><td>일관성 (모순 2)</td><td style="color:var(--warn-ink)">⚠ warn-amber·목업 라벨</td><td class="ok">✅ 해소</td></tr>
+<tr><td>엣지케이스 (실패경로)</td><td style="color:var(--crit)">❌ 구조 공백</td><td class="ok">✅ crit/high 반영</td></tr>
+</table>
+
+<h2>Critical (10) — 전부 반영 <span class="chk">✅</span></h2>
+<div class="f"><b>접근성 · amber CTA 글자</b> 흰색 2.10:1 → <b>어두운 잉크 #1A1E1D (8.02:1)</b>, 흰색 금지 규칙.</div>
+<div class="f"><b>접근성 · ink-muted</b> meta·면책 3.04:1 → light <b>#676D69 (5.06:1)</b>.</div>
+<div class="f"><b>접근성 · price-emphasis</b> 가격 2.68:1 → light <b>#C0730F (3.68:1)</b>. 다크 ink-muted 4.46 → #A6A196 (5.58).</div>
+<div class="f"><b>일관성 · landing 목업</b> 폐기 라벨 → "목업 라벨 확정 전, EXPERIENCE Voice 정답·스파인 우선" 각주.</div>
+<div class="f"><b>엣지 · 자기 매물 문의 차단</b> buyer≠seller → 본인 상세="내 매물 관리" 대체(DB CHECK 정합).</div>
+<div class="f"><b>엣지 · sold/삭제 잔존</b> → 찜=회색+"판매완료" 배지·진입차단, 채팅 헤더 배지+대화 유지.</div>
+<div class="f"><b>엣지 · 사진 업로드 실패/대표 승격</b> → 인라인 오류+재시도, 다음 사진 자동 대표.</div>
+<div class="f"><b>엣지 · 채팅 2000자 상한</b>(기구현 b720370) 드리프트 → Component/Interaction 반영.</div>
+<div class="f"><b>엣지 · 내 차 사기 목록 상태</b> → empty/skeleton/500 추가.</div>
+
+<h2>High — 접근성·일관성 (초판에서 반영 <span class="chk">✅</span>)</h2>
+<div class="f h"><b>일관성 · warn-amber 자기모순</b> → 브랜드 앰버(가격·CTA) ≠ warn-amber(경고 시맨틱) 분리.</div>
+<div class="f h"><b>접근성 floor</b> → 비색 신호 중복, 포커스 트랩(+Esc), 아이콘 ≥44px, AI 대화 스크린리더(role·aria-live), reduced-motion, 히어로 amber 음절 대비.</div>
+<div class="f h"><b>trust-green-ink</b> 4.69→#1B6E3D(5.51) · 권한 RLS 차단·401 만료 복귀 State 추가.</div>
+
+<h2>High — 엣지케이스 (초판 누락 → 후속 반영 <span class="chk">✅</span>)</h2>
+<p class="note">독립 교차검증에서 아래 7건이 초판 "전부 반영"에 실제로는 빠져 있었음(되묻기 무한루프·매우 긴 질의는 초판에서 medium/low로 강등). 후속 패스에서 실제 상태·거동·마이크로카피까지 스파인에 추가·검증 완료.</p>
+<div class="f h"><b>404 · 삭제/미존재/판매완료 매물 URL 직접 접근</b> → "매물을 찾을 수 없어요…" + "매물 목록으로" State.</div>
+<div class="f h"><b>폼 이탈 경고</b> → "저장하지 않고 나가시겠어요?" dirty 가드(사진 유실 방지).</div>
+<div class="f h"><b>채팅 재연결 상대 메시지 갭 보정</b> → "마지막 수신 이후" 재조회로 놓친 상대 메시지 병합(멱등 dedupe).</div>
+<div class="f h"><b>AI 검색 입력 500자 상한</b> → 카운터·초과 방지(채팅 2000자와 별개, 초장문 폭주 방지).</div>
+<div class="f h"><b>AI 되묻기 무한루프 방지</b> → 최대 2~3턴 후 현재 조건으로 결과 강제 제시.</div>
+<div class="f h"><b>"내 매물 관리" 0건 빈 상태</b> → "아직 등록한 매물이 없어요…" Voice·State.</div>
+<div class="f h"><b>"내 정보 수정" 화면 명세</b> → 닉네임 변경(필수·검증)·저장/취소·성공 토스트.</div>
+
+<h2>Medium / Low</h2>
+<p class="note">대부분 반영(상세 가격 30px 대변형·컴포넌트 행·목업 링크). <b>잔존(다운스트림 재판단):</b> 상대가 나간 방 UI 세부·픽셀·모션 디테일 등 — 스파인은 상태 정의 원칙까지 커밋, 픽셀·세부는 dev 재량.</p>
+
+<h2>Reviewer 파일</h2>
+<div class="files"><code>review-rubric.md</code><code>review-accessibility.md</code><code>review-consistency.md</code><code>review-edge-cases.md</code></div>
+</div></body></html>

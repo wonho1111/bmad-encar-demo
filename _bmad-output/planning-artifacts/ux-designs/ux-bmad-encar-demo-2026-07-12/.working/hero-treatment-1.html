@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>차장님 — AI 히어로 배경 깊이감 (H1 글로우 · H2 차 실루엣 · H3 AI 모티프)</title>
+<style>
+/* ============================================================
+   차장님 — 히어로 배경 깊이감 3안 (2026-07-12)
+   -----------------------------------------------------------
+   PALETTE (concrete hex)
+   brand-petrol            #1E6E6A
+   brand-petrol-strong     #14514E
+   petrol-deepest          #0F3D3E
+   accent-amber            #F0A339
+   price-emphasis          #E08A1B
+   surface-base (light)    #FAFAF8
+   surface-raised          #FFFFFF
+   ink-primary             #1A1E1D
+   ink-secondary           #565F5D
+   border-hairline         #E6E3DD
+   hero-text               #EAF2F0
+   hero-text-muted         #A8C4C0
+   hero gradient base      linear-gradient(135deg,#14514E 0%, #0F3D3E 100%)
+   ============================================================ */
+
+:root{
+  --brand-petrol:#1E6E6A;
+  --brand-petrol-strong:#14514E;
+  --petrol-deepest:#0F3D3E;
+  --accent-amber:#F0A339;
+  --price-emphasis:#E08A1B;
+  --surface-base:#FAFAF8;
+  --surface-raised:#FFFFFF;
+  --ink-primary:#1A1E1D;
+  --ink-secondary:#565F5D;
+  --border-hairline:#E6E3DD;
+  --hero-text:#EAF2F0;
+  --hero-text-muted:#A8C4C0;
+  --font: -apple-system, "Segoe UI Variable", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:#E9E7E0;}
+body{
+  font-family:var(--font);
+  color:var(--ink-primary);
+  -webkit-font-smoothing:antialiased;
+  padding:36px 0 80px;
+}
+
+.page{
+  max-width:1440px;
+  margin:0 auto;
+  background:var(--surface-base);
+  box-shadow:0 30px 80px -30px rgba(15,30,29,.35);
+  border-radius:18px;
+  overflow:hidden;
+}
+
+/* ---------- page head ---------- */
+.page-head{
+  padding:38px 48px 26px;
+  background:#fff;
+  border-bottom:1px solid var(--border-hairline);
+}
+.page-head h1{font-size:21px;font-weight:800;letter-spacing:-.01em;}
+.page-head p{font-size:13.5px;color:var(--ink-secondary);margin-top:6px;line-height:1.6;}
+.page-head .legend{
+  display:flex;gap:18px;margin-top:16px;flex-wrap:wrap;
+}
+.page-head .legend span{
+  font-size:12px;color:var(--ink-secondary);
+  background:var(--surface-base);
+  border:1px solid var(--border-hairline);
+  padding:5px 12px;border-radius:999px;
+  font-weight:600;
+}
+.page-head .legend b{color:var(--brand-petrol-strong);font-weight:800;}
+
+/* ---------- label bar between treatments ---------- */
+.label-bar{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  padding:18px 48px;
+  background:#fff;
+  border-top:1px solid var(--border-hairline);
+  border-bottom:1px solid var(--border-hairline);
+}
+.label-tag{
+  font-size:11px;font-weight:800;letter-spacing:.04em;
+  color:#fff;background:var(--brand-petrol-strong);
+  padding:4px 10px;border-radius:6px;
+}
+.label-name{font-size:15.5px;font-weight:800;color:var(--ink-primary);}
+.label-desc{font-size:13px;color:var(--ink-secondary);}
+
+.divider{height:22px;background:#EFEDE6;}
+
+/* ==================================================
+   HERO — shared structure
+   ================================================== */
+.hero{
+  position:relative;
+  width:100%;
+  overflow:hidden;
+  color:var(--hero-text);
+}
+.hero-inner{
+  position:relative;
+  z-index:3;
+  max-width:1220px;
+  margin:0 auto;
+  padding:22px 48px 60px;
+}
+
+/* nav */
+.hero-nav{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 0 0;
+}
+.nav-left{display:flex;align-items:center;gap:10px;}
+.logo-mark{
+  width:32px;height:32px;border-radius:9px;
+  background:linear-gradient(145deg,#2C8A85,var(--brand-petrol));
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:800;font-size:14px;
+  box-shadow:0 4px 12px -4px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.25);
+}
+.logo-word{font-size:16.5px;font-weight:800;color:var(--hero-text);letter-spacing:-.01em;}
+.nav-center{display:flex;gap:30px;}
+.nav-center a{
+  font-size:13.5px;color:rgba(234,242,240,.82);text-decoration:none;font-weight:500;
+}
+.nav-right{display:flex;gap:10px;align-items:center;}
+.btn-outline{
+  font-family:inherit;
+  border:1px solid rgba(255,255,255,.38);
+  background:rgba(255,255,255,.04);
+  color:var(--hero-text);
+  padding:8px 18px;border-radius:999px;
+  font-size:13px;font-weight:600;cursor:pointer;
+}
+.btn-solid{
+  font-family:inherit;
+  border:none;
+  background:var(--accent-amber);
+  color:#241705;
+  padding:8px 18px;border-radius:999px;
+  font-size:13px;font-weight:800;cursor:pointer;
+  box-shadow:0 10px 22px -8px rgba(240,163,57,.55);
+}
+
+/* content */
+.hero-eyebrow{
+  display:inline-flex;align-items:center;gap:7px;
+  margin-top:50px;
+  font-size:12.5px;font-weight:700;letter-spacing:.09em;
+  color:var(--hero-text-muted);
+}
+.hero-eyebrow::before{
+  content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--accent-amber);
+  box-shadow:0 0 10px 2px rgba(240,163,57,.7);
+}
+.hero-headline{
+  margin-top:14px;
+  font-size:44px;line-height:1.28;font-weight:800;
+  letter-spacing:-.015em;
+  color:var(--hero-text);
+  max-width:560px;
+}
+.hero-headline .amber{color:var(--accent-amber);}
+.hero-sub{
+  margin-top:16px;
+  font-size:15px;line-height:1.65;
+  color:var(--hero-text-muted);
+  max-width:470px;
+}
+
+/* search */
+.search-wrap{margin-top:30px;max-width:640px;}
+.search-pill{
+  display:flex;align-items:center;gap:12px;
+  background:#fff;
+  border-radius:999px;
+  padding:7px 7px 7px 22px;
+  box-shadow:0 24px 46px -16px rgba(8,30,30,.6), inset 0 1px 3px rgba(15,30,29,.05);
+}
+.search-pill svg{flex-shrink:0;color:#8A928F;}
+.search-placeholder{
+  flex:1;font-size:14px;color:#8D928F;font-weight:500;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.search-go{
+  font-family:inherit;border:none;cursor:pointer;
+  background:var(--accent-amber);
+  color:#241705;font-weight:800;font-size:14px;
+  padding:12px 26px;border-radius:999px;
+  box-shadow:0 10px 22px -8px rgba(240,163,57,.65);
+  flex-shrink:0;
+}
+
+/* suggestion chips */
+.chip-row{margin-top:18px;display:flex;flex-wrap:wrap;gap:9px;max-width:640px;}
+.chip-suggest{
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.16);
+  color:#DCEBE8;
+  font-size:12.5px;font-weight:500;
+  padding:8px 15px;border-radius:999px;
+  backdrop-filter:blur(2px);
+}
+
+/* ==================================================
+   HERO BACKGROUND — H1 글로우 · 메시
+   ================================================== */
+.hero--h1{
+  background:
+    radial-gradient(620px 460px at -6% -18%, rgba(44,138,133,.55), transparent 62%),
+    radial-gradient(560px 480px at 66% 8%, rgba(240,163,57,.16), transparent 58%),
+    radial-gradient(720px 560px at 112% 108%, rgba(34,150,148,.38), transparent 62%),
+    linear-gradient(135deg,#14514E 0%, #0F3D3E 100%);
+}
+.hero--h1::before{
+  /* faint large-scale mesh: crossed diagonal hairlines */
+  content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background-image:
+    repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0px, rgba(255,255,255,.035) 1px, transparent 1px, transparent 88px),
+    repeating-linear-gradient(25deg, rgba(255,255,255,.025) 0px, rgba(255,255,255,.025) 1px, transparent 1px, transparent 120px);
+}
+.hero--h1::after{
+  /* ultra-subtle grain via inline SVG feTurbulence */
+  content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+  opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ==================================================
+   HERO BACKGROUND — H2 차 실루엣
+   ================================================== */
+.hero--h2{
+  background:
+    radial-gradient(520px 420px at 4% 6%, rgba(44,138,133,.4), transparent 60%),
+    linear-gradient(120deg,#14514E 0%, #0F3D3E 100%);
+}
+.h2-car{
+  position:absolute;right:-4%;bottom:-6%;z-index:1;
+  width:56%;min-width:520px;pointer-events:none;
+  -webkit-mask-image:linear-gradient(to right, transparent 0%, rgba(0,0,0,.55) 26%, #000 55%);
+  mask-image:linear-gradient(to right, transparent 0%, rgba(0,0,0,.55) 26%, #000 55%);
+}
+.h2-car svg{display:block;width:100%;height:auto;}
+
+/* ==================================================
+   HERO BACKGROUND — H3 AI 모티프
+   ================================================== */
+.hero--h3{
+  background:
+    radial-gradient(560px 440px at -4% -12%, rgba(44,138,133,.5), transparent 60%),
+    linear-gradient(135deg,#14514E 0%, #0F3D3E 100%);
+}
+.h3-orb{position:absolute;border-radius:50%;z-index:1;pointer-events:none;filter:blur(46px);}
+.h3-orb--1{width:260px;height:260px;top:-60px;right:180px;background:radial-gradient(circle,rgba(240,163,57,.30),transparent 70%);}
+.h3-orb--2{width:320px;height:320px;bottom:-120px;right:-40px;background:radial-gradient(circle,rgba(56,178,172,.30),transparent 70%);}
+.h3-orb--3{width:200px;height:200px;top:110px;right:420px;background:radial-gradient(circle,rgba(234,242,240,.10),transparent 70%);}
+.h3-streak{
+  position:absolute;z-index:1;pointer-events:none;
+  width:640px;height:120px;right:-80px;top:-20px;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.10) 45%, transparent 70%);
+  transform:rotate(18deg);filter:blur(6px);
+}
+.h3-svg{position:absolute;inset:0;z-index:2;pointer-events:none;width:100%;height:100%;}
+
+/* ==================================================
+   BODY STRIP (light, below every hero)
+   ================================================== */
+.body-strip{background:var(--surface-base);padding:30px 48px 46px;}
+.cat-row{display:flex;flex-wrap:wrap;gap:9px;}
+.cat-chip{
+  font-family:inherit;font-size:13.5px;font-weight:600;
+  padding:8px 18px;border-radius:999px;
+  border:1px solid var(--border-hairline);
+  background:#fff;color:var(--ink-secondary);cursor:default;
+}
+.cat-chip.active{
+  background:var(--brand-petrol);border-color:var(--brand-petrol);color:#fff;
+  box-shadow:0 6px 16px -6px rgba(30,110,106,.55);
+}
+
+.section-title{
+  margin-top:30px;margin-bottom:16px;
+  font-size:18.5px;font-weight:800;color:var(--ink-primary);
+  display:flex;align-items:baseline;gap:8px;
+}
+.section-title small{font-size:13px;font-weight:600;color:var(--ink-secondary);}
+
+.card-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:16px;
+}
+.listing-card{
+  background:var(--surface-raised);
+  border:1px solid var(--border-hairline);
+  border-radius:14px;overflow:hidden;
+  box-shadow:0 10px 26px -14px rgba(26,30,29,.16);
+}
+.card-thumb{
+  height:132px;
+  background:linear-gradient(150deg,#EEECE5,#DEDBD1);
+  display:flex;align-items:center;justify-content:center;
+  position:relative;
+}
+.card-thumb svg{opacity:.28;color:var(--ink-secondary);width:56px;height:56px;}
+.card-body{padding:13px 15px 16px;}
+.card-title{font-size:14px;font-weight:700;color:var(--ink-primary);}
+.card-spec{font-size:12px;color:var(--ink-secondary);margin-top:4px;}
+.card-price{font-size:16px;font-weight:800;color:var(--price-emphasis);margin-top:9px;}
+.pill-safe{
+  display:inline-flex;align-items:center;gap:4px;
+  background:#E3F5E9;color:#1E8A4C;
+  font-size:11px;font-weight:700;
+  padding:3px 9px;border-radius:999px;margin-top:9px;
+}
+.pill-safe svg{width:10px;height:10px;}
+
+/* footer note */
+.reco-note{
+  padding:22px 48px 40px;background:#fff;
+  border-top:1px solid var(--border-hairline);
+}
+.reco-note p{font-size:13px;color:var(--ink-secondary);line-height:1.7;max-width:900px;}
+.reco-note b{color:var(--brand-petrol-strong);}
+
+@media (max-width:1080px){
+  .card-grid{grid-template-columns:repeat(2,1fr);}
+  .hero-headline{font-size:34px;}
+  .nav-center{display:none;}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="page-head">
+    <h1>차장님 — AI 히어로 배경 깊이감</h1>
+    <p>어두운 페트롤(petrol) 히어로 배경이 "허전해 보인다"는 피드백에 대한 3가지 배경 처리안. 콘텐츠는 동일하고 배경 깊이감(depth)만 다르다.</p>
+    <div class="legend">
+      <span><b>H1</b> 글로우·메시</span>
+      <span><b>H2</b> 차 실루엣</span>
+      <span><b>H3</b> AI 모티프</span>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       H1 — 글로우 · 메시
+  ============================================================ -->
+  <div class="label-bar">
+    <span class="label-tag">H1</span>
+    <span class="label-name">글로우 · 메시</span>
+    <span class="label-desc">레이어드 라디얼 글로우 + 미세 대각선 메시 + 아주 옅은 노이즈로, 토스·린어(Linear) 류의 모던 SaaS 깊이감을 만든다.</span>
+  </div>
+
+  <section class="hero hero--h1">
+    <div class="hero-inner">
+      <nav class="hero-nav">
+        <div class="nav-left">
+          <span class="logo-mark">차</span>
+          <span class="logo-word">차장님</span>
+        </div>
+        <div class="nav-center">
+          <a href="#">매물 탐색</a>
+          <a href="#">내 차 팔기</a>
+          <a href="#">문의</a>
+        </div>
+        <div class="nav-right">
+          <button class="btn-outline">로그인</button>
+          <button class="btn-solid">내 차 등록</button>
+        </div>
+      </nav>
+
+      <div class="hero-eyebrow">AI 매물 검색</div>
+      <h2 class="hero-headline">원하는 차를 <span class="amber">말</span><br><span class="amber">로</span> 찾으세요</h2>
+      <p class="hero-sub">"3천만원대 무사고 흰색 SUV"처럼 그냥 말하듯 검색하면, AI가 조건에 맞는 직거래 매물을 바로 골라줍니다.</p>
+
+      <div class="search-wrap">
+        <div class="search-pill">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="search-placeholder">예: 3천만원 이하 하이브리드 세단 추천해줘</span>
+          <button class="search-go">검색</button>
+        </div>
+      </div>
+
+      <div class="chip-row">
+        <span class="chip-suggest">가성비 좋은 첫차</span>
+        <span class="chip-suggest">4천만원대 전기 SUV</span>
+        <span class="chip-suggest">주행거리 짧은 무사고 세단</span>
+        <span class="chip-suggest">7인승 디젤 패밀리카</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="body-strip">
+    <div class="cat-row">
+      <button class="cat-chip active">전체</button>
+      <button class="cat-chip">경차</button>
+      <button class="cat-chip">세단</button>
+      <button class="cat-chip">SUV</button>
+      <button class="cat-chip">전기</button>
+      <button class="cat-chip">친환경</button>
+      <button class="cat-chip">수입</button>
+      <button class="cat-chip">화물</button>
+      <button class="cat-chip">승합</button>
+    </div>
+    <div class="section-title">지금 인기 · 많이 보고 있는 매물</div>
+    <div class="card-grid">
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">현대 아반떼 CN7 하이브리드</div>
+          <div class="card-spec">2022년 · 3.1만km · 서울</div>
+          <div class="card-price">2,180만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">기아 스포티지 NQ5</div>
+          <div class="card-spec">2023년 · 1.8만km · 경기</div>
+          <div class="card-price">3,450만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">테슬라 모델Y</div>
+          <div class="card-spec">2023년 · 2.4만km · 인천</div>
+          <div class="card-price">5,290만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">제네시스 GV70</div>
+          <div class="card-spec">2022년 · 3.9만km · 서울</div>
+          <div class="card-price">4,780만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ============================================================
+       H2 — 차 실루엣
+  ============================================================ -->
+  <div class="label-bar">
+    <span class="label-tag">H2</span>
+    <span class="label-name">차 실루엣</span>
+    <span class="label-desc">오른쪽으로 흘러나가는 대형 고스트 차량 실루엣(SVG line-art)으로, 텍스트는 온전히 살리면서 "자동차 카탈로그"임을 즉시 각인시킨다.</span>
+  </div>
+
+  <section class="hero hero--h2">
+    <div class="h2-car">
+      <svg viewBox="0 0 600 300" xmlns="http://www.w3.org/2000/svg">
+        <g fill="rgba(234,242,240,0.10)" stroke="rgba(234,242,240,0.16)" stroke-width="2">
+          <path d="M40,230 L40,215 C40,205 46,197 55,193 L95,178 C110,150 145,120 190,108 C220,100 250,96 280,96 C330,96 375,104 405,122 C430,137 448,150 460,168 L500,172 C520,174 535,180 545,190 C555,200 558,210 558,220 L558,232 C558,240 552,246 544,246 L520,246 L520,236 C520,214 502,196 480,196 C458,196 440,214 440,236 L440,246 L220,246 L220,236 C220,214 202,196 180,196 C158,196 140,214 140,236 L140,246 L60,246 C49,246 40,238 40,228 Z"/>
+          <circle cx="180" cy="236" r="34"/>
+          <circle cx="480" cy="236" r="34"/>
+        </g>
+        <g fill="rgba(15,61,62,0.55)">
+          <circle cx="180" cy="236" r="15"/>
+          <circle cx="480" cy="236" r="15"/>
+        </g>
+        <path d="M112,178 C128,152 158,128 195,116 C222,108 250,105 278,105 C318,105 352,113 378,128" fill="none" stroke="rgba(234,242,240,0.14)" stroke-width="2"/>
+      </svg>
+    </div>
+    <div class="hero-inner">
+      <nav class="hero-nav">
+        <div class="nav-left">
+          <span class="logo-mark">차</span>
+          <span class="logo-word">차장님</span>
+        </div>
+        <div class="nav-center">
+          <a href="#">매물 탐색</a>
+          <a href="#">내 차 팔기</a>
+          <a href="#">문의</a>
+        </div>
+        <div class="nav-right">
+          <button class="btn-outline">로그인</button>
+          <button class="btn-solid">내 차 등록</button>
+        </div>
+      </nav>
+
+      <div class="hero-eyebrow">AI 매물 검색</div>
+      <h2 class="hero-headline">원하는 차를 <span class="amber">말</span><br><span class="amber">로</span> 찾으세요</h2>
+      <p class="hero-sub">"3천만원대 무사고 흰색 SUV"처럼 그냥 말하듯 검색하면, AI가 조건에 맞는 직거래 매물을 바로 골라줍니다.</p>
+
+      <div class="search-wrap">
+        <div class="search-pill">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="search-placeholder">예: 3천만원 이하 하이브리드 세단 추천해줘</span>
+          <button class="search-go">검색</button>
+        </div>
+      </div>
+
+      <div class="chip-row">
+        <span class="chip-suggest">가성비 좋은 첫차</span>
+        <span class="chip-suggest">4천만원대 전기 SUV</span>
+        <span class="chip-suggest">주행거리 짧은 무사고 세단</span>
+        <span class="chip-suggest">7인승 디젤 패밀리카</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="body-strip">
+    <div class="cat-row">
+      <button class="cat-chip active">전체</button>
+      <button class="cat-chip">경차</button>
+      <button class="cat-chip">세단</button>
+      <button class="cat-chip">SUV</button>
+      <button class="cat-chip">전기</button>
+      <button class="cat-chip">친환경</button>
+      <button class="cat-chip">수입</button>
+      <button class="cat-chip">화물</button>
+      <button class="cat-chip">승합</button>
+    </div>
+    <div class="section-title">지금 인기 · 많이 보고 있는 매물</div>
+    <div class="card-grid">
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">현대 아반떼 CN7 하이브리드</div>
+          <div class="card-spec">2022년 · 3.1만km · 서울</div>
+          <div class="card-price">2,180만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">기아 스포티지 NQ5</div>
+          <div class="card-spec">2023년 · 1.8만km · 경기</div>
+          <div class="card-price">3,450만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">테슬라 모델Y</div>
+          <div class="card-spec">2023년 · 2.4만km · 인천</div>
+          <div class="card-price">5,290만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">제네시스 GV70</div>
+          <div class="card-spec">2022년 · 3.9만km · 서울</div>
+          <div class="card-price">4,780만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ============================================================
+       H3 — AI 모티프
+  ============================================================ -->
+  <div class="label-bar">
+    <span class="label-tag">H3</span>
+    <span class="label-name">AI 모티프</span>
+    <span class="label-desc">흐린 오브(orb), 대화 말풍선 윤곽선, 점-그리드 별자리(constellation), 대각선 빛줄기로 "스마트/AI"를 은은하게 표현한다.</span>
+  </div>
+
+  <section class="hero hero--h3">
+    <div class="h3-orb h3-orb--1"></div>
+    <div class="h3-orb h3-orb--2"></div>
+    <div class="h3-orb h3-orb--3"></div>
+    <div class="h3-streak"></div>
+    <svg class="h3-svg" viewBox="0 0 1220 340" preserveAspectRatio="none">
+      <defs>
+        <pattern id="dotgrid" width="26" height="26" patternUnits="userSpaceOnUse">
+          <circle cx="1.4" cy="1.4" r="1.4" fill="rgba(234,242,240,0.16)"/>
+        </pattern>
+      </defs>
+      <rect x="640" y="0" width="580" height="340" fill="url(#dotgrid)"
+            style="mask-image:radial-gradient(560px 340px at 900px 160px, black 40%, transparent 78%);
+                   -webkit-mask-image:radial-gradient(560px 340px at 900px 160px, black 40%, transparent 78%);"/>
+
+      <!-- constellation -->
+      <g stroke="rgba(234,242,240,0.28)" stroke-width="1">
+        <line x1="760" y1="70" x2="840" y2="110"/>
+        <line x1="840" y1="110" x2="800" y2="180"/>
+        <line x1="840" y1="110" x2="930" y2="90"/>
+        <line x1="930" y1="90" x2="1000" y2="150"/>
+        <line x1="800" y1="180" x2="880" y2="230"/>
+        <line x1="1000" y1="150" x2="1080" y2="120"/>
+      </g>
+      <g fill="#F0A339">
+        <circle cx="760" cy="70" r="3"/>
+        <circle cx="930" cy="90" r="2.5"/>
+      </g>
+      <g fill="rgba(234,242,240,0.7)">
+        <circle cx="840" cy="110" r="3"/>
+        <circle cx="800" cy="180" r="2.5"/>
+        <circle cx="1000" cy="150" r="3"/>
+        <circle cx="880" cy="230" r="2.5"/>
+        <circle cx="1080" cy="120" r="2.5"/>
+      </g>
+
+      <!-- chat bubble outlines -->
+      <g fill="none" stroke="rgba(234,242,240,0.22)" stroke-width="1.6">
+        <path d="M900,40 h140 a14,14 0 0 1 14,14 v58 a14,14 0 0 1 -14,14 h-96 l-22,20 v-20 h-22 a14,14 0 0 1 -14,-14 v-58 a14,14 0 0 1 14,-14 Z"/>
+        <path d="M1010,190 h110 a12,12 0 0 1 12,12 v46 a12,12 0 0 1 -12,12 h-70 l-18,16 v-16 h-22 a12,12 0 0 1 -12,-12 v-46 a12,12 0 0 1 12,-12 Z"/>
+      </g>
+    </svg>
+
+    <div class="hero-inner">
+      <nav class="hero-nav">
+        <div class="nav-left">
+          <span class="logo-mark">차</span>
+          <span class="logo-word">차장님</span>
+        </div>
+        <div class="nav-center">
+          <a href="#">매물 탐색</a>
+          <a href="#">내 차 팔기</a>
+          <a href="#">문의</a>
+        </div>
+        <div class="nav-right">
+          <button class="btn-outline">로그인</button>
+          <button class="btn-solid">내 차 등록</button>
+        </div>
+      </nav>
+
+      <div class="hero-eyebrow">AI 매물 검색</div>
+      <h2 class="hero-headline">원하는 차를 <span class="amber">말</span><br><span class="amber">로</span> 찾으세요</h2>
+      <p class="hero-sub">"3천만원대 무사고 흰색 SUV"처럼 그냥 말하듯 검색하면, AI가 조건에 맞는 직거래 매물을 바로 골라줍니다.</p>
+
+      <div class="search-wrap">
+        <div class="search-pill">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="M21 21l-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span class="search-placeholder">예: 3천만원 이하 하이브리드 세단 추천해줘</span>
+          <button class="search-go">검색</button>
+        </div>
+      </div>
+
+      <div class="chip-row">
+        <span class="chip-suggest">가성비 좋은 첫차</span>
+        <span class="chip-suggest">4천만원대 전기 SUV</span>
+        <span class="chip-suggest">주행거리 짧은 무사고 세단</span>
+        <span class="chip-suggest">7인승 디젤 패밀리카</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="body-strip">
+    <div class="cat-row">
+      <button class="cat-chip active">전체</button>
+      <button class="cat-chip">경차</button>
+      <button class="cat-chip">세단</button>
+      <button class="cat-chip">SUV</button>
+      <button class="cat-chip">전기</button>
+      <button class="cat-chip">친환경</button>
+      <button class="cat-chip">수입</button>
+      <button class="cat-chip">화물</button>
+      <button class="cat-chip">승합</button>
+    </div>
+    <div class="section-title">지금 인기 · 많이 보고 있는 매물</div>
+    <div class="card-grid">
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">현대 아반떼 CN7 하이브리드</div>
+          <div class="card-spec">2022년 · 3.1만km · 서울</div>
+          <div class="card-price">2,180만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">기아 스포티지 NQ5</div>
+          <div class="card-spec">2023년 · 1.8만km · 경기</div>
+          <div class="card-price">3,450만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">테슬라 모델Y</div>
+          <div class="card-spec">2023년 · 2.4만km · 인천</div>
+          <div class="card-price">5,290만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+      <article class="listing-card">
+        <div class="card-thumb"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 11l1.5-4.5A2 2 0 018.4 5h7.2a2 2 0 011.9 1.5L19 11h1a1 1 0 011 1v4a1 1 0 01-1 1h-1a2 2 0 11-4 0H9a2 2 0 11-4 0H4a1 1 0 01-1-1v-4a1 1 0 011-1h1zm2.1 0h9.8l-1-3H8.1l-1 3z"/></svg></div>
+        <div class="card-body">
+          <div class="card-title">제네시스 GV70</div>
+          <div class="card-spec">2022년 · 3.9만km · 서울</div>
+          <div class="card-price">4,780만원</div>
+          <div class="pill-safe"><svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>무사고</div>
+        </div>
+      </article>
+    </div>
+  </div>
+
+  <div class="reco-note">
+    <p><b>추천</b> — H2(차 실루엣)가 "허전함" 문제를 가장 직접적으로 해결합니다. 어두운 면을 그냥 장식이 아니라 "이곳은 자동차 카탈로그"라는 의미 있는 형태로 채우기 때문입니다. H1(글로우)은 가장 안전하고 세련된 SaaS 느낌이라 보완 레이어로 함께 써도 좋고, H3(AI 모티프)는 AI 검색 정체성은 잘 살지만 자동차 마켓 본질과는 다소 거리감이 있습니다.</p>
+  </div>
+
+</div>
+</body>
+</html>
