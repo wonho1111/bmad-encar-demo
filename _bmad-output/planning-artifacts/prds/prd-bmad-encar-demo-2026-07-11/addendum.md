@@ -77,3 +77,12 @@
 - **신뢰속성** = `accident_status` **text + CHECK**(무사고/단순교환/사고, native enum 아님) + is_single_owner + is_non_smoker(nullable). 무사고만 초록뱃지.
 - **마이그레이션** = 0011~0018(위 "0011~0014" 목록을 아키텍처가 확장: +wishlists·멱등키·realtime broadcast·chat_room_reads).
 - 상세·정정 전문 = 아키텍처 문서 "Core Architectural Decisions" + "Architecture Validation Results"(독립 3인 검증 정정 포함).
+
+## 관리자 웹 UI 통일 — FR 정식화 (2026-07-13, epics 단계 party-mode 반영)
+
+> 위 "아키텍처 단계 스코프 조정 1번"(관리자 UI 통일)을 **정식 FR로 승격**한다. 근거: epics 단계 독립검증(Mary)에서 "FR 없는 에픽=근거 없는 스토리=추적성 붕괴"를 지적 → 에픽이 소유할 FR을 부여. PRD 본문(status:final)은 불변이며, 이 addendum FR이 관리자 UI 에픽의 추적 근거다. **UI-only 스코프(신규 기능·운영 배관 없음) 재확인.**
+
+- **FR59 관리자 6화면 디자인 통일** — 관리자 웹 6화면(대시보드·회원관리·전체매물·매물상세·거래내역·채팅관리)을 이 증분의 신규 디자인 시스템(페트롤+앰버 `@theme` 토큰·카드/뱃지/버튼/타이포 위계)으로 **리스킨 통일**한다. **신규 기능·개발/운영 배관(스토리지 정리·미처리 큐·신고/차단)은 없다**(다음 증분). 목업=`ux-designs/admin-web-increment-2026-07-12/admin-mockups-2.html`.
+- **FR60 관리자 반응형** — 관리자 웹은 PC/모바일 브라우저 **단일 코드 반응형**으로 대응한다. **D5 반응형 무결성(project-context 규칙13) 필수 준수** — 필터 버튼·라벨 줄바꿈 어긋남·레이아웃 깨짐 금지(관리자도 예외 없음).
+- **FR61 회원관리 역할통합 반영** — 회원관리 화면은 역할 통합(F14/FR52~54)을 반영해 **구매자/판매자 구분 필터를 정리**한다(account_type = admin/일반 축 기준). 관리자 권한(admin)은 존치.
+- *범위 밖(관리자, 다음 증분): 관리자 신규 기능·대시보드 통계 고도화·스토리지 고아 청소·신고/차단 큐 — `deferred-work.md`.*

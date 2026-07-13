@@ -1,6 +1,6 @@
 ---
 name: bmad-encar-demo
-description: "차장님 — 중고차 직거래 마켓플레이스 UI·이미지 고도화 증분(FR26~58)의 시각 정체성 스파인. 밝은 본문 + 딥 petrol 히어로, amber는 가격·CTA 전용."
+description: "차장님 — 중고차 직거래 마켓플레이스 UI·이미지 고도화 증분(FR26~61, 관리자 UI 통일 포함)의 시각 정체성 스파인. 밝은 본문 + 딥 petrol 히어로, amber는 가격·CTA 전용."
 status: final
 updated: 2026-07-12
 sources:
