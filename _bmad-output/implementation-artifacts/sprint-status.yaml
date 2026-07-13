@@ -1,5 +1,5 @@
 # generated: 2026-06-19T18:28:17
-# last_updated: 2026-06-19T18:28:17
+# last_updated: 2026-07-13T12:00:00
 # project: bmad-encar-demo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-10T00:00:00
+last_updated: 2026-07-13T12:00:00
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -104,3 +104,92 @@ development_status:
   7-5-구매자-판매자-문의-채팅: done
   7-6-sm1-통합-시연-검증: done
   epic-7-retrospective: done
+
+  # ===== 증분 (Increment 2026-07-12) — Epic 8~16 =====
+
+  # --- Epic 8: 증분 기반 게이트 (접근제어·디자인·계약·배포) ---
+  epic-8: in-progress
+  8-1-디자인-시스템-토큰-파운데이션: review
+  8-2-ui-프리미티브-반응형-상태-접근성: backlog
+  8-3-listingcard-공유-계약-셸-개정: backlog
+  8-4-ac-db-1-커넥션-풀-롤-격리-커넥션-풀-fr50: backlog
+  8-5-fr58-비로그인-접근-토대: backlog
+  8-6-ac-deploy-1-배포-순서-마이그레이션-게이트: backlog
+  epic-8-retrospective: optional
+
+  # --- Epic 9: 매물 이미지 ---
+  epic-9: backlog
+  9-1-listing-images-스키마-비공개-버킷-storage-rls: backlog
+  9-2-서명-url-헬퍼-아티팩트-범용: backlog
+  9-3-사진-업로더-등록-수정: backlog
+  9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: backlog
+  9-5-상세-페이지-골격-사진-갤러리: backlog
+  9-6-ai-응답-카드-사진: backlog
+  9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: backlog
+  epic-9-retrospective: optional
+
+  # --- Epic 10: 신뢰속성·옵션·찜·판매자 정보 ---
+  epic-10: backlog
+  10-1-신뢰속성-스키마-락스텝-반영: backlog
+  10-2-신뢰-뱃지-표시-면책-라벨: backlog
+  10-3-옵션-통제어휘-우선순위-상수-저장구조-정비: backlog
+  10-4-옵션-하이브리드-피커-등록: backlog
+  10-5-찜-wishlist: backlog
+  10-6-판매자-정보-섹션: backlog
+  10-7-신뢰속성-옵션-통합-검증-sm-c: backlog
+  epic-10-retrospective: optional
+
+  # --- Epic 11: AI 히어로 랜딩 + 내비 ---
+  epic-11: backlog
+  11-1-view-count-스키마-increment-rpc-하드닝: backlog
+  11-2-상단-내비-재구성: backlog
+  11-3-ai-히어로-랜딩-히어로-차종-칩: backlog
+  11-4-인기-최신-매물-그리드: backlog
+  11-5-반응형-뷰포트-e2e-감사-sm-b: backlog
+  epic-11-retrospective: optional
+
+  # --- Epic 12: 실시간 문의 채팅 ---
+  epic-12: backlog
+  12-1-멱등키-마이그레이션: backlog
+  12-2-realtime-broadcast-참가자-인가-rls: backlog
+  12-3-실시간-송수신-전환-폴링-제거: backlog
+  12-4-재연결-배너-갭-보정: backlog
+  12-5-안읽음-배지-방-목록-정렬: backlog
+  12-6-실시간-채팅-검증-sm-e: backlog
+  epic-12-retrospective: optional
+
+  # --- Epic 13: AI 검색 RAG 고도화 ---
+  epic-13: backlog
+  13-1-sql-guard-하이브리드-정비-g2-baseline: backlog
+  13-2-4분기-라우팅: backlog
+  13-3-하이브리드-검색-sql-벡터: backlog
+  13-4-조건-좁혀-되묻기-clarify: backlog
+  13-5-부드러운-거절: backlog
+  13-6-가이드-문서-content-활용-거리-컷오프: backlog
+  13-7-langsmith-트레이싱: backlog
+  13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b: backlog
+  epic-13-retrospective: optional
+
+  # --- Epic 14: 계정 역할 통합 나머지 ---
+  epic-14: backlog
+  14-1-role-check-완화-마이그레이션: backlog
+  14-2-가입-역할선택-제거-트리거-기본-role: backlog
+  14-3-소유권-기반-판매-게이트: backlog
+  epic-14-retrospective: optional
+
+  # --- Epic 15: 관리자 웹 UI 통일 (UI-only) ---
+  epic-15: backlog
+  15-1-관리자-6화면-디자인-리스킨: backlog
+  15-2-관리자-반응형: backlog
+  15-3-회원관리-역할통합-반영: backlog
+  epic-15-retrospective: optional
+
+  # --- Epic 16: Flutter 앱 증분 반영 ---
+  epic-16: backlog
+  16-1-디자인-토큰-미러-하단-4탭-내비: backlog
+  16-2-이미지-카드-재설계-앱: backlog
+  16-3-신뢰속성-찜-앱: backlog
+  16-4-실시간-채팅-앱: backlog
+  16-5-4분기-ai-응답-되묻기-칩-앱: backlog
+  16-6-sm-d-통합-시연-검증-앱: backlog
+  epic-16-retrospective: optional
