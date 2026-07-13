@@ -104,3 +104,23 @@
 - **표시(이어받을 때)**: 문서 있는 매물에 "성능점검표/보험이력 다운로드" 버튼(상세 신뢰 섹션, 비로그인 열람 허용, 서명URL), 없으면 버튼 숨김(기존 100건). 시드 문서는 마스킹 샘플(차대번호 등 개인정보) — Sally.
 - **⚠️ 이어받기 전 확인 권장(Mary, 미검증)**: 개인 직거래(C2C)의 성능점검기록부 법적 의무 범위 · 각 사 인기 랭킹 공식.
 - **관련**: 이 두 문서 데이터는 기술부채 #11(옵션 text[] 쉼표 라운드트립, `SellForm.tsx`)과 무관하나, 상태 필드 자동반영 로직은 SellForm 확장 시 함께 검토.
+
+## Deferred from: code review of story-8.1 (2026-07-13)
+
+### ✅ 결정됨: Pretendard 로딩을 CDN `<link>` → self-host `next/font/local`로 전환 (사용자 결정 2026-07-13)
+
+아래 defer 2건은 **뿌리가 같다**(둘 다 수동 CDN `<link>` 방식의 부작용). self-host로 바꾸면 **한 번에 종결**된다. 데모 범위에선 현행 CDN 수용, **아래 작업으로 승격 확정**.
+
+- **defer #1 — CDN `<link>` 렌더 블로킹** (`web/src/app/layout.tsx`): Pretendard를 jsDelivr CDN stylesheet로 `<head>`에서 로드 → 느린(실패 아님) CDN이 first paint를 지연시킬 수 있음. 명확한 실패(404/거부)는 폴백 스택이 빠르게 구제하지만 latency는 구제 못 함.
+- **defer #2 — FOUT/CLS(metric-matched fallback 상실)** (`web/src/app/layout.tsx`): 수동 `<link>`가 next/font의 자동 size-adjust/ascent-override fallback을 잃음 → Pretendard 스왑 시 텍스트 리플로우(CLS).
+
+**왜 self-host:** Pretendard는 Google Fonts에 없어 `next/font/google`은 불가하지만, `next/font/local`(폰트 파일 직접 제공)은 가능. next/font가 ① 폰트 self-host(외부 CDN 의존 제거 → #1 해소) ② 자동 fallback metric 보정(size-adjust → #2 해소)을 공짜로 제공.
+
+**구현 노트(착수 시):**
+1. Pretendard **Variable** `.woff2`를 `web/` 안에 배치(예: `web/src/app/fonts/` 또는 `web/public/fonts/`). 폰트 바이너리를 저장소에 추가하게 됨(현행 CDN은 파일 미포함이었음).
+2. `next/font/local`로 로드 → `variable`을 `globals.css`의 `--font-sans` 우선순위에 연결(스택 자체는 폴백용으로 유지).
+3. `layout.tsx`의 수동 `<link rel="stylesheet">` + `preconnect` 제거, `<html>`에 폰트 클래스 적용.
+4. **⚠️ Next 16 관례 다름** — 코드 전 `node_modules/next/dist/docs/`의 next/font 가이드 선독(web/AGENTS.md 원칙). next/font/local API·metadata 관례 확인.
+5. 검증: 브라우저 computed `font-family`=Pretendard·FOUT 없음(CLS 관찰)·`next build`·라이트/다크 E2E 재확인.
+
+**시점:** 별도 후속 작업(작은 스토리 규모). 데모 실배포/실사용 전환 시점. **완료 시 위 defer 2건 종결.**

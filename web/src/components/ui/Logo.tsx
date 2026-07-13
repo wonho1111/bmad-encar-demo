@@ -19,7 +19,7 @@ export default function Logo({ size = "md" }: { size?: LogoSize }) {
     <span className="inline-flex select-none items-center gap-2">
       <span
         aria-hidden
-        className={`inline-flex items-center justify-center rounded-card bg-brand-petrol font-extrabold text-surface-base ${s.badge}`}
+        className={`inline-flex items-center justify-center rounded-badge bg-brand-petrol font-extrabold text-surface-base ${s.badge}`}
       >
         차
       </span>
