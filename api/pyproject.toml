@@ -10,7 +10,7 @@ dependencies = [
   "fastapi==0.137.1",
   "uvicorn[standard]",
   "supabase",            # JWT 검증(auth.get_user) — 추가 비밀값 불필요
-  "psycopg[binary]",     # 읽기전용 롤 직결(SET ROLE)
+  "psycopg[binary,pool]",  # 읽기전용 롤 트랜잭션 격리(SET LOCAL) + 커넥션 풀(AC-DB-1)
   "pydantic-settings",   # config.py env 로드(fail-loud)
 ]
 

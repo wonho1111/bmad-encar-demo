@@ -1,5 +1,13 @@
 # Deferred Work
 
+## Deferred from: code review of story-8-4-ac-db-1-커넥션-풀-롤-격리-커넥션-풀-fr50 (2026-07-14)
+
+- **`psycopg[binary,pool]` 버전 미고정** [api/pyproject.toml, api/requirements.txt] — `ConnectionPool(..., open=True)` 생성자 패턴이 최신 `psycopg_pool`에서 지양되는 추세라, 버전 미고정 상태로는 향후 업그레이드 시 경고/동작 변경 위험. 버전 핀 추가를 고려.
+- **누수 부재 테스트가 psycopg_pool의 비공식 보장(동일 물리 커넥션 재사용)에 의존** [api/tests/test_readonly.py] — `max_size=1`이 순차 재사용을 강제하긴 하나, 헬스체크 등으로 커넥션이 교체될 가능성은 라이브러리가 공식 보장하는 계약이 아님. 향후 psycopg_pool 내부 동작이 바뀌면 테스트가 잘못된 이유로 통과/flaky해질 수 있음.
+- **DSN 포트(:6543) 전제가 주석에만 있고 코드로 검증되지 않음** [api/app/db/readonly.py, api/app/config.py] — `.env`가 실수로 :5432(세션 풀러)를 가리켜도 코드가 조용히 그대로 동작함. `SET LOCAL`은 풀러 종류와 무관하게 동작하므로 롤 누수가 재발하진 않지만, 의도한 성능 특성을 잃음. 우선순위 낮음.
+
+---
+
 ## 🟢 결정 완료 — 메인화면 개편 타이밍 (2026-06-24, party-mode 2라운드)
 
 > Epic 6 후 데모 사용에서 나온 검토 3건(정렬 불일치 · 관리자 돌아가기 · 메인화면 개편)을 party-mode 2라운드로 결정.
@@ -104,6 +112,14 @@
 - **표시(이어받을 때)**: 문서 있는 매물에 "성능점검표/보험이력 다운로드" 버튼(상세 신뢰 섹션, 비로그인 열람 허용, 서명URL), 없으면 버튼 숨김(기존 100건). 시드 문서는 마스킹 샘플(차대번호 등 개인정보) — Sally.
 - **⚠️ 이어받기 전 확인 권장(Mary, 미검증)**: 개인 직거래(C2C)의 성능점검기록부 법적 의무 범위 · 각 사 인기 랭킹 공식.
 - **관련**: 이 두 문서 데이터는 기술부채 #11(옵션 text[] 쉼표 라운드트립, `SellForm.tsx`)과 무관하나, 상태 필드 자동반영 로직은 SellForm 확장 시 함께 검토.
+
+## Deferred from: code review of story 8-2 (2026-07-14)
+
+- **Skeleton — AC3 "카드/행 조합" 중 행(row) 조합 누락** [web/src/components/ui/Skeleton.tsx] — `CardSkeleton`(카드형)만 제공되고 행(row)형 스켈레톤이 없다. AC3 원문은 "스켈레톤 로딩(`<Skeleton>` + 카드/행 조합)"으로 두 조합을 요구하지만, 채팅 목록·관리자 테이블 등 어떤 화면 기준의 행 형태를 만들지 스펙에 정의가 없어 지금 임의로 만들면 재작업 위험이 있다고 판단해 이월. **이월 사유(사용자): 소비처 생길 때 화면 기준으로.** 실제 소비 에픽(12 채팅·15 관리자 등)에서 행 형태가 필요해지면 그 화면 기준으로 `RowSkeleton` 추가할 것.
+- **FocusTrap — 언마운트/숨김된 트리거로 복귀 시도 시 조용히 no-op** [web/src/components/ui/FocusTrap.tsx:243-246] — 트랩이 닫힐 때 열리기 전 활성 요소(`triggerRef.current`)로 포커스를 복귀시키는데, 그 요소가 그 사이 DOM에서 제거되거나 숨겨졌으면 `.focus()` 호출이 조용히 아무 일도 하지 않는다(크래시 없음, 포커스가 브라우저 기본값인 `<body>`로 남음). 트리거가 리스트 아이템처럼 삭제될 수 있는 맥락에서 소비될 경우, 포커스 복귀 실패에 대한 폴백(예: 컨테이너나 상위 랜드마크로 이동)을 검토할 것.
+- **FocusTrap — `open=false`일 때 `children` 전체 언마운트, 내부 상태 소실** [web/src/components/ui/FocusTrap.tsx:249] — 트랩이 닫히면 `null`을 반환해 자식을 완전히 언마운트한다. 폼 입력값·스크롤 위치 등 자식의 내부 상태가 매번 사라지는 동작이 문서화돼 있지 않다. 실제 모달/바텀시트 UI를 붙이는 소비 에픽(11 내비 드롭다운·필터 바텀시트 등)에서 이 동작이 의도와 맞는지 확인하고, 상태 보존이 필요하면 CSS로 숨기는 방식으로 바꿀 것.
+- **ErrorState — `tone="danger"`가 텍스트 색만 바꾸고 재시도 버튼은 톤 무관 동일** [web/src/components/ui/ErrorState.tsx:167-179] — `tone` prop이 메시지 텍스트 색만 전환하고 재시도 버튼 스타일은 항상 동일해, 파괴적/위험 에러와 일반 에러가 버튼 상으로는 시각 구분되지 않는다. 실제로 `tone="danger"`를 쓰는 소비 화면이 생기면 버튼도 톤에 맞춰 스타일 분기할지 검토할 것.
+- **FocusTrap — 컨테이너에 `role="dialog"`/`aria-modal="true"` 미부착** [web/src/components/ui/FocusTrap.tsx] — 실제 모달 UI는 소비 에픽 몫(non-goal)이라는 스토리 경계상 FocusTrap 자체는 역할 속성을 강제하지 않는다. **소비 스토리 규약(사용자 확정)**: 모달·바텀시트·로그인 게이트 소비 스토리는 FocusTrap 컨테이너에 `role="dialog"` + `aria-modal="true"` + `aria-labelledby`를 반드시 부착한다(UX-DR22 접근성 바닥). 드롭다운·리스트박스는 `menu`/`listbox` role을 사용한다. 8.2 코드리뷰에서 FocusTrap이 `...rest` props를 컨테이너 div로 전달하도록 patch돼, 이 부착이 가능해졌다(11 내비 드롭다운·필터 바텀시트, 8.5 로그인 게이트 등 소비 에픽에서 반드시 적용할 것).
 
 ## Deferred from: code review of story-8.1 (2026-07-13)
 

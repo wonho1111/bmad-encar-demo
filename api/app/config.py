@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     supabase_url: str | None = None
     supabase_anon_key: str | None = None
 
-    # 읽기전용 DB 직결 (Session pooler 문자열)
+    # 읽기전용 DB 직결 (Transaction pooler :6543 문자열 — AC-DB-1, SET LOCAL ROLE 트랜잭션 격리 전제)
     database_url: str | None = None
 
     # CORS 허용 오리진(쉼표 구분, 정확 매칭)
