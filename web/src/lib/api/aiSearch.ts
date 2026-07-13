@@ -8,7 +8,7 @@
 //   POST {NEXT_PUBLIC_API_BASE_URL}/ai/search
 //   headers: Authorization: Bearer <supabase access_token>, Content-Type: application/json
 //   body:    { query, context? }    // context = 직전 대화(멀티턴, 최대 12턴)
-//   200:     { answer, listings[] } // listings 원소 = ListingCardData 7필드
+//   200:     { answer, listings[] } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
 import type { ListingCardData } from '@/components/listings/ListingCard';
 

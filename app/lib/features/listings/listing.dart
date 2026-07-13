@@ -1,5 +1,5 @@
 // 매물 데이터 모델 — 목록 카드(요약 7필드)와 상세(15필드+메타)를 표현한다.
-// 사진 없음(서비스 전체가 사진 미사용). DB·JSON 키는 snake_case 그대로 읽는다(통신선 통일, 변환 없음).
+// 현재 사진 렌더 없음(image_url 계약 자리는 예약, 값 채움·표시는 Epic 9). DB·JSON 키는 snake_case 그대로 읽는다(통신선 통일, 변환 없음).
 //   (web ListingCardData 7필드 계약과 동일: id·manufacturer·model·year·price·mileage·region)
 //
 // fromMap 은 Supabase select 결과(Map<String,dynamic>) 또는 /ai/search 응답 원소를 받는다.
@@ -27,6 +27,12 @@ class ListingCardData {
     required this.mileage,
     required this.region,
     this.sellerName,
+    this.imageUrl,
+    this.viewCount,
+    this.imageCount,
+    this.accidentStatus,
+    this.isSingleOwner,
+    this.isNonSmoker,
   });
 
   final String id;
@@ -37,6 +43,13 @@ class ListingCardData {
   final int mileage; // km
   final String region;
   final String? sellerName; // 판매자 표시 이름(0007 비정규화). AI 결과 등 없으면 미표시.
+  // 증분 신규 — 전부 nullable(DB 컬럼 아직 없음, 값 채움은 후속 에픽)
+  final String? imageUrl; // 대표 서명 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
+  final int? viewCount; // Epic 11
+  final int? imageCount; // Epic 9
+  final String? accidentStatus; // '무사고'|'단순교환'|'사고'|null — Dart는 별도 enum 없이 nullable String으로 단순 통과(A2). Epic 10
+  final bool? isSingleOwner; // Epic 10
+  final bool? isNonSmoker; // Epic 10
 
   /// Map(Supabase row 또는 /ai/search 원소) → 카드. 7필드가 올바른 타입이 아니면 null(깨진 원소 제외).
   /// web aiSearch.ts 의 isValidListing 런타임 가드와 같은 목적 — 카드 렌더 도중 터지는 것을 막는다.
@@ -70,6 +83,12 @@ class ListingCardData {
       mileage: mileage,
       region: region,
       sellerName: sellerName is String ? sellerName : null,
+      imageUrl: raw['image_url'] is String ? raw['image_url'] as String : null,
+      viewCount: _asInt(raw['view_count']),
+      imageCount: _asInt(raw['image_count']),
+      accidentStatus: raw['accident_status'] is String ? raw['accident_status'] as String : null,
+      isSingleOwner: raw['is_single_owner'] is bool ? raw['is_single_owner'] as bool : null,
+      isNonSmoker: raw['is_non_smoker'] is bool ? raw['is_non_smoker'] as bool : null,
     );
   }
 }

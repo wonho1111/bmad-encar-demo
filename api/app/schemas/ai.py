@@ -58,7 +58,9 @@ class SearchRequest(BaseModel):
 
 
 class ListingCard(BaseModel):
-    """매물 카드 — architecture.md 확정 7필드(사진/썸네일 없음)."""
+    """매물 카드 — conventions.md §4 확정 계약. 증분 신규 6필드는 전부 nullable
+    (값 채움은 후속 에픽: image_url·image_count=Epic 9, accident_status·is_single_owner·
+    is_non_smoker=Epic 10, view_count=Epic 11)."""
 
     id: str
     manufacturer: str
@@ -67,6 +69,12 @@ class ListingCard(BaseModel):
     price: int       # 원(KRW)
     mileage: int     # km
     region: str
+    image_url: str | None = None
+    view_count: int | None = None
+    image_count: int | None = None
+    accident_status: Literal["무사고", "단순교환", "사고"] | None = None
+    is_single_owner: bool | None = None
+    is_non_smoker: bool | None = None
 
 
 class SearchResponse(BaseModel):

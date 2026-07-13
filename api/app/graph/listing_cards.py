@@ -3,6 +3,7 @@
 두 노드 모두 동일한 7필드를 동일한 순서로 SELECT 해서 ListingCard로 매핑한다.
 그 "컬럼 순서"가 두 곳에서 갈라지면(예: 한쪽만 컬럼을 추가) 매핑이 조용히 어긋나므로,
 SELECT 컬럼 문자열과 튜플→ListingCard 매핑을 **이 한 곳(단일출처)** 에 둔다(drift 방지, AR5).
+(+ 증분 nullable 6필드, 기본 None — Epic 9/10/11이 값을 채울 때 SELECT_COLUMNS와 락스텝 확장)
 [Source: architecture.md#Format Patterns(ListingCard 7필드); docs/conventions.md §4]
 """
 

@@ -37,10 +37,43 @@
 
 - **AI 검색 응답:** `{ "answer": string, "listings": ListingCard[] }`
   - 0건이면 `listings: []` + `answer`에 조건 완화 안내(FR17).
-- **ListingCard 필드(snake_case):** `id, manufacturer, model, year, price, mileage, region` (사진 없음 — 썸네일 필드 없음).
+  - AI 검색 응답 카드(`SearchResponse.listings[]`)는 아래 **ListingCard와 동일한 계약을 공유**한다(별도 카드 타입 없음).
+- **ListingCard 필드(snake_case):**
+  - 기존(필수): `id, manufacturer, model, year, price, mileage, region`
+  - 기존(nullable): `seller_name`(판매자 표시 이름, 0007 비정규화 — web/app은 Supabase에서 직접 읽어 노출, api 응답엔 포함되지 않음)
+  - 증분 신규(전부 nullable — 컬럼 자체가 아직 DB에 없어 항상 `null`, 값 채움은 후속 에픽):
+    | 필드 | 타입 | 값 채움 |
+    |---|---|---|
+    | `image_url` | string\|null (대표 서명 URL) | Epic 9 |
+    | `image_count` | int\|null | Epic 9 |
+    | `view_count` | int\|null | Epic 11 |
+    | `accident_status` | `'무사고'\|'단순교환'\|'사고'`\|null | Epic 10 |
+    | `is_single_owner` | bool\|null | Epic 10 |
+    | `is_non_smoker` | bool\|null | Epic 10 |
+  - `image_url`이 null이면 클라가 "사진 준비중" 5:3 플레이스홀더를 렌더하는 것이 **계약의 일부**다. 변형 세트(`thumb`/`card`/`full`)는 클라이언트 렌더 파생이며 wire 계약이 아니다.
+  - **찜(wishlist) 여부는 ListingCard wire 필드가 아니다.** "내가 찜했는지"는 사용자별 오버레이라 별도 조회/조인으로 처리한다(계약 오염 방지, Epic 10.5가 구현).
+  - **계약-외 값 정규화(소비처 공통 — 값 채우는 Epic 9/10/11이 준수):** 소비처(web·app)의 파싱 관례가 서로 달라(예: Dart는 `is bool` strict, api Pydantic은 lax 강제변환) 같은 행을 다르게 볼 수 있으므로, 렌더 소비처는 아래를 **동일하게** 방어적으로 처리한다 —
+    - `image_url`: **`null` 또는 빈 문자열(`""`) 모두** "사진 준비중" 플레이스홀더로 취급한다(빈 URL로 깨진 이미지 렌더 금지).
+    - `accident_status`: `'무사고'|'단순교환'|'사고'` **3값 밖(또는 `""`)이면 신뢰 뱃지를 표시하지 않는다**(= `null`과 동일 취급). 초록 뱃지는 `'무사고'`일 때만(project-context 규칙 신뢰속성).
+    - `view_count`·`image_count`: **음수는 `0`으로 하한 처리**한다("조회 -3" 등 노출 금지).
+    - `is_single_owner`·`is_non_smoker`: `true`/`false`/미상(`null`)의 **3상태**다 — `null`(미상)을 `false`로 오해해 "1인소유 아님"으로 단정하지 않는다.
+  - **런타임 가드 범위 주의:** web `isValidListing`(`aiSearch.ts`)은 필수 7필드만 검증하고 신규 nullable 필드는 검증하지 않는다 — 신규 필드를 읽는 렌더 소비처가 위 정규화로 스스로 방어한다.
 - **에러 포맷:** `{ "error": { "code": string, "message": string } }`
   - 사용자 노출 `message`는 한국어, HTTP 상태코드는 정확히(400/401/403/404/422/500).
 - **날짜:** ISO 8601 문자열(UTC). **불리언:** `true/false`. **null:** 빈 문자열 대신 명시적 `null`.
+
+### 4.1 계약 변경 체크리스트
+
+ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한다:
+
+1. 이 문서(`docs/conventions.md` §4) — 단일 출처
+2. web `ListingCard.tsx`의 `ListingCardData`
+3. api `schemas/ai.py`의 `ListingCard`
+4. app `listing.dart`의 `ListingCardData`
+
+필드 자리(nullable 계약)뿐 아니라 **실제 값까지 채울 때**는 위 4곳에 더해 `api/app/graph/listing_cards.py`의 `SELECT_COLUMNS`·`api/app/db/sql_guard.py`의 `ALLOWED_COLUMNS`도 락스텝으로 갱신해야 한다(DB 컬럼이 실제로 생긴 시점).
+
+또한 값을 채우는 에픽은 위 **"계약-외 값 정규화(소비처 공통)"** 규칙을 렌더 코드에 반영한다(빈 문자열 image_url·도메인 밖 accident_status·음수 count·bool 3상태). web `isValidListing`은 신규 필드를 검증하지 않으므로 소비처가 방어적으로 읽어야 한다.
 
 ## 5. 환경변수 배치 (요약)
 
