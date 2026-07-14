@@ -440,7 +440,7 @@ psql:<stdin>:2: ERROR:  role "undeclared_role" does not exist
 - **Task 5**: red 1(천연)~red 4 전부 실제 도커 재현 후 원문을 위 Debug Log에 기록. `0004_guide_documents.sql`에 `0006:22-26`과 동일한 멱등 DO 블록 복사 삽입(새 패턴 발명 없음) — green 1에서 0004·0006 양쪽 통과 확인(0006 쪽은 no-op). 원격은 `ai_readonly`가 이미 존재하므로 **재적용/따라잡기 패치 불필요**로 판단(판정규칙 (a) 3조건 전부 충족 — 멱등 가드 추가만·원격 델타 0·기존 객체 정의 불변) → dev 자율 처리, 원격 건드리지 않음. `0004:2-3`·`0006:18-20` 주석을 "과거 사실 기록"으로 갱신.
 - **Task 6**: 원장 표(epics-increment-2026-07-12.md:258-266)는 이미 8.5가 0011~0019로 정본화 완료 — 대조만 하고 재작성 안 함. 같은 파일 106행의 예시(role=0018, wishlists=0013)만 시프트 반영해 정정(role=0019, wishlists=0014). `docs/conventions.md`에 §9(마이그레이션 정책: 파일명 규약·판정규칙·"레시피" 결정+근거 3가지·불변식 재명명) 신규 절 추가.
 - **Task 6b**: 게이트 사각지대 3항목을 런북 §8에 그대로 반영(반증된 "authenticated가 못 읽는다" 주장은 되살리지 않음). `docs/tech-debt.md`에 신규 항목 #18(테이블 GRANT 플랫폼 의존) 박제 — 8.5가 우연히 발견한 사실 포함.
-- **Task 7**: 로컬 게이트 최종 통과 출력 캡처(위 "green 최종"). GitHub Actions push 확인·배포 순서 실측 관찰은 아래 Change Log에 기록.
+- **Task 7**: 로컬 게이트 최종 통과 출력 캡처(위 "green 최종"). `git push origin develop`(커밋 `16ba221`) 후 **GitHub Actions "Migration Gate" 워크플로 초록 확인**(run 29345681782, conclusion=success, 로그에 "=== 마이그레이션 게이트 통과 ===" 확인). Vercel MCP `list_deployments`로 같은 커밋 sha(`16ba2215...`)의 Preview 배포가 `develop` push 직후 자동 생성·READY 상태임을 실측 확인 — 런북 §1·§3의 "develop push → Vercel Preview 자동 배포" 서술과 일치. 이 스토리는 `api/` 파일을 건드리지 않아 Cloud Run dev 재배포는 관찰 대상 아님(변경 없으므로 트리거 무의미).
 
 ### File List
 
