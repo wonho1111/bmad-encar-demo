@@ -15,9 +15,14 @@
 | 우선순위 | 건수 | 한 줄 |
 |---|---|---|
 | 🔴 필수 | 1 | 안드로이드 서명 (※ 시드 평문 비번은 2026-07-11 세션변수 주입으로 해소 → 부록. 앱 픽셀 E2E·AI 라이브 호출도 실폰 검증으로 해소 → 부록) |
-| 🟡 조건부 | 9 | DB 커넥션 풀·채팅 멱등키·폴링 무알림·본문 길이·재오픈 차단·오픈리다이렉트·options 쉼표·타입·테이블 GRANT 플랫폼 의존 |
-| 🟢 품질/테스트 | 5 | AI 정규화 회귀테스트 · FR17 경로 · LIMIT 파싱 · 가이드 거리 컷오프 · 컨트롤러 단위테스트 |
+| 🟡 조건부 | **8** | 채팅 멱등키·폴링 무알림·재오픈 차단·options 쉼표·타입·테이블 GRANT 플랫폼 의존 · **관리자 운영 실사용 미확인** · **거래일 `sold_at` 부재** |
+| 🟢 품질/테스트 | 5 | AI 정규화 회귀테스트 · FR17 경로 · LIMIT 파싱 · 가이드 거리 컷오프 · Riverpod 컨트롤러 테스트 |
+| 🔒 구조적 보류 | **1** | 완전 계정 삭제(`service_role` 키 금지가 프로젝트 규칙) |
 | ⚪ 의도적 보류 | 3 | 데스크톱 반응형(Cut) · 관리자 대시보드(Cut) · "홈이 탐색 직접 품기" |
+| ✅ 해소 | **3** | DB 커넥션 풀(8.4) · 채팅 본문 길이(0010) · open-redirect(8.5) |
+
+> **⚠️ 이 대장이 단일 출처다 (2026-07-15 Epic 8 회고 결정 A1).**
+> 이번 회고에서 **대장 3건이 실제와 어긋나 있는 것**(#5·#8·#10이 해소됐는데 🟡로 남음)이 발견됐다. 원인은 기록장부가 4개(`sprint-status.yaml`·이 파일·`deferred-work.md`·회고 8개)로 흩어져 서로를 참조하지 않은 것이다. **회고 액션·리뷰 지적은 회고 문서에만 적지 말고 반드시 여기(또는 `deferred-work.md`)에 항목으로 등록하고, 해소하면 여기서 닫는다.** 회고는 "왜"를 갖고, 이 대장이 "무엇/상태"를 갖는다.
 
 ---
 
@@ -42,6 +47,7 @@
 - **내용:** `readonly_connection()`이 호출마다 새 psycopg 연결을 열고 풀이 없음 → 동시 부하 시 Supabase Session 풀러(:5432, 낮은 연결한도) 고갈 가능. `connect_timeout` 미설정이라 풀러가 멈추면 무한 대기. 동기 호출이 `async def` 안에서 실행돼 이벤트 루프 블록.
 - **트리거:** AI 검색 동시 사용자가 늘어날 때.
 - **해소:** 실제 DB 경로가 붙은 지금, 커넥션 풀 + `connect_timeout` + 스레드풀/async 드라이버 도입. (원래 4.3에서 도입 예정이었던 항목)
+- ✅ **해소 완료 (Story 8.4, `e1057df`)** — `api/app/db/readonly.py`에 `psycopg_pool.ConnectionPool` 도입(`max_size=8`), `SET LOCAL ROLE`로 트랜잭션 스코프 롤 격리, `asyncio.to_thread`로 논블로킹화, `PoolTimeout` → 503 한국어 안내. 8.5 코드리뷰가 죽은 풀 영구 캐시·liveness·종료 훅까지 보강. *(✎ 2026-07-15 회고: 이 항목은 8.4가 해소했는데 대장이 🟡로 남아 있었다 — drift 3건 중 하나.)*
 
 ### 6. 채팅 커밋 후 응답 유실 시 중복 전송 (멱등키 부재)
 - **위치:** `web/.../chat/[roomId]/ChatRoomMessages.tsx` (handleSubmit catch)
@@ -60,6 +66,7 @@
 - **내용:** `body`가 `text`(무제한), 클라는 `trim()`만. 초대용량 붙여넣기가 그대로 INSERT → 행·폴링 페이로드 비대화.
 - **트리거:** 대용량 텍스트 붙여넣기.
 - **해소:** 입력창 `maxLength` + 서버측 길이 컷.
+- ✅ **해소 완료 (2026-07-11, `b720370`)** — 3층 강제: DB CHECK(`0010_chat_message_length.sql`, `char_length(body) <= 2000`) + web 입력창 `maxLength` + `sendMessage` 길이 가드. 값은 `web/src/lib/constants.ts`의 `CHAT.MESSAGE_MAX_LENGTH`가 미러링. 계약은 `docs/conventions.md` §7. *(✎ 2026-07-15 회고: drift 3건 중 하나.)*
 
 ### 9. sold→on_sale 재오픈 DB 미차단 (단방향 트리거 없음)
 - **위치:** `supabase/migrations/0002_listings.sql`, `web/.../sell/ListingActions.tsx`
@@ -72,6 +79,8 @@
 - **내용:** proxy가 보호경로 차단 시 `/login?redirectedFrom=<pathname>`을 동봉하지만 로그인 화면은 안 읽고 항상 `/`로 이동(현재 무해).
 - **트리거:** "로그인 후 원래 위치 복귀" 기능 도입 시.
 - **해소:** `redirectedFrom` 값이 `/`로 시작하는 상대경로인지 검증(`//`·`http(s):`·역슬래시 차단)해 오픈 리다이렉트 방지.
+- ✅ **해소 완료 (Story 8.5, `5bc6463`)** — 트리거가 실제로 발동했다(비로그인 열람을 열며 "로그인 후 복귀"가 필요해짐). `web/src/lib/auth/redirect.ts`의 `resolveSafeRedirect`가 `//`·`http(s):`·역슬래시를 차단하고, 8.5 코드리뷰가 `/login` 자기참조 데드엔드까지 추가 차단. **web 최초의 단위 테스트**(`redirect.test.ts` + Vitest)로 방어 케이스 고정.
+- 📌 **이 항목의 교훈(회고 2026-07-15)**: Epic 1·2·3·4 회고에 **네 번 연속 "이연"** 으로 등장했고 매번 *"현재 미사용이라 무해"* 로 넘겼다. **그 판단은 네 번 다 옳았다** — 실제로 필요해진 8.5에서 고쳤다. **미루는 판단은 틀린 게 아니다. 고친 뒤 대장을 안 닫은 것만 틀렸다.**
 
 ### 11. options(text[]) 쉼표 포함 값 라운드트립 손실
 - **위치:** `web/.../sell/SellForm.tsx`
@@ -90,10 +99,33 @@
 - **오늘 무해한 이유:** Supabase 전제(사용자 확정, 납품 계획 없음)이고, 재해 복구 시에도 새 Supabase 프로젝트가 같은 기본 GRANT를 자동으로 준다.
 - **트리거(언제 문제되나):** 자체 호스팅·타 클라우드 이관·"맨 Postgres로도 선다"는 납품 요구가 생기는 순간.
 - **8.5가 우연히 발견한 사실:** anon+listings에 대해서만 이 의존을 끊었다 — **체계적으로 찾은 게 아니라 다른 일(FR58) 하다 우연히 걸린 것**이다. 나머지(authenticated 전 경로)가 얼마나 되는지 아무도 세어본 적 없다.
-- **해소:** 각 테이블 마이그에 명시 `grant select ... to authenticated`를 추가한 뒤, 프렐류드(`scripts/migration-check-prelude.sql`)의 `alter default privileges` 한 줄을 제거한다(판정규칙 (a) 해당 — 원격 델타 0이라 dev 자율로 안전, `docs/conventions.md` §9.3). 비용 ≈ 테이블당 1~2줄.
+- **해소:** 각 테이블 마이그에 명시 `grant select ... to authenticated`를 추가한 뒤, 프렐류드(`scripts/migration-check-prelude.sql`)의 `alter default privileges` 한 줄을 제거한다. 비용 ≈ 테이블당 1~2줄.
+- **⚠️ 착수 시 판정: (b) — 사용자 승인이 필요하다** (`docs/conventions.md` §9.3). *(2026-07-15 코드리뷰 정정: 이 항목은 원래 "(a) 해당 — dev 자율로 안전"이라 적혀 있었으나 **틀렸다.** §9.3 (a)는 3조건을 **전부** 만족해야 하는데, 조건①이 "수정이 **멱등 가드 추가만**"이고 조건③이 "기존 객체 정의 불변 — **GRANT 대상 변경은 이 틀 밖**"이다. 명시 GRANT 추가는 가드가 아니고 정확히 GRANT 대상 변경이라 **두 조건을 동시에 어긴다**. 규칙을 만든 커밋이 그 규칙의 첫 적용 사례에서 스스로를 위반하고 있었던 것 — 이대로 뒀으면 다음 사람이 이 항목을 근거로 마이그 여러 개에 GRANT를 자율 추가하고 사후 보고해 §9.3 방어선이 첫 실사용에서 뚫렸을 것이다.)*
+- **참고:** "원격 델타 0"은 사실이다(원격엔 플랫폼이 이미 같은 GRANT를 발급했으므로 재적용해도 상태가 안 변한다). 그러나 §9.3의 (a)/(b)는 **델타만이 아니라 변경의 성격**으로 가른다 — 델타 0이어도 GRANT 대상을 건드리면 (b)다.
 - **근거:** `docs/deployment-runbook.md` §8-① · `_bmad-output/implementation-artifacts/8-6-ac-deploy-1-배포-순서-마이그레이션-게이트.md`
 
 ---
+
+### 19. Epic 6 관리자 4화면 운영 실사용 미확인 (Epic 6 회고 이월)
+- **위치:** 운영 `https://bmad-encar-demo.vercel.app/admin` (회원·매물·거래·채팅)
+- **내용:** Epic 6 회고가 액션으로 남긴 "main 배포 반영 후 운영 /admin 4화면 실사용 확인"이 **수행 흔적이 없다.** `main` 병합·배포 자체는 확인됨(`94c62ec`, Vercel Production READY). 코드는 preview E2E로 검증됐으므로 결함 가능성은 낮으나 **운영 화면을 사람이 본 적이 없다.**
+- **트리거:** 데모·제출 시연 직전.
+- **해소:** 운영 /admin 4화면 클릭 1회.
+- 📌 *(2026-07-15 회고 A2 등록: Epic 6 회고 → Epic 7 회고가 추적하지 않아 1개월간 소실됐던 항목. 회고 체인 끊김의 실물.)*
+
+### 20. 거래일이 `updated_at` 근사 (정확한 `sold_at` 부재, Epic 6 회고 이월)
+- **위치:** 관리자 거래 내역 화면 · `listings` 테이블
+- **내용:** 거래일을 `updated_at`으로 근사 표시한다. **타임존 차이로 ±1일 어긋날 수 있다.** 실측 확인: `supabase/migrations/` 전수 grep 결과 `sold_at` 컬럼 **0건 = 미구현 확정**.
+- **트리거:** 거래일 정확도가 요구될 때(정산·리포트 등). 데모 범위에선 무해.
+- **해소:** `sold_at timestamptz` 컬럼 추가(nullable, additive) + 구매완료 액션에서 기록 + KST 표시. 마이그 신규 1장.
+- 📌 *(2026-07-15 회고 A2 등록. Epic 6 회고가 "정확과 간이를 투명하게 구분해 남긴다"는 좋은 판단으로 남긴 항목인데, 대장에 등록하지 않아 추적이 끊겼다.)*
+
+### 21. 🔒 완전 계정 삭제 불가 — 구조적 보류 (Epic 6 회고 이월)
+- **위치:** 관리자 회원 관리 (`profiles` 행만 삭제)
+- **내용:** 회원 "삭제"가 `profiles` 행만 제거하고 **`auth.users`의 로그인 계정 자체는 남는다.** 삭제하려면 `service_role` 키 + `auth.admin.deleteUser()`가 필요한데, **`service_role` 키 금지가 이 프로젝트의 확립된 규칙**이다(`_bmad-output/project-context.md` 규칙 6 · `docs/conventions.md` §5).
+- **왜 🔒인가:** 다른 부채처럼 "나중에 하면 되는 것"이 아니다. **해소하려면 프로젝트 보안 규칙 자체를 바꿔야 한다.** 규칙을 유지하는 한 영구 보류다.
+- **트리거:** 개인정보 완전 삭제가 법적·계약적으로 요구될 때. 그 순간 **규칙 6 재검토가 선행**돼야 한다(사용자 승인 필요).
+- 📌 *(2026-07-15 회고 A2 등록. 이전엔 "미해결"로만 떠돌았으나 실은 **결정된 절충**이다 — 라벨을 정확히 하는 게 이 등록의 목적.)*
 
 ## 🟢 품질 / 테스트 보강 (기능 정상, 회귀 보호 부족)
 
@@ -119,10 +151,12 @@
 - **내용:** 가이드 검색이 거리와 무관하게 항상 최근접 1건(`ORDER BY embedding <=> q LIMIT 1`) → 의미상 동떨어진 가이드도 "근거"로 첨부돼 오도 가능.
 - **해소:** 코사인 거리 컷오프(`WHERE embedding <=> q < threshold`) 적용. (4.5 answer_node 소관으로 명시됨)
 
-### 17. Flutter 컨트롤러 단위 테스트 부재 (Epic 7 이월)
-- **위치:** `app/lib/features/**/` 컨트롤러
-- **내용:** 전역 Supabase 의존으로 컨트롤러 단위 테스트 미작성, live 스모크로 갈음.
-- **해소:** fake Supabase 클라이언트 도입 시 보강(선택).
+### 17. Flutter **Riverpod 컨트롤러** 단위 테스트 부재 (Epic 7 이월)
+- **위치:** `app/lib/features/**/` 의 Riverpod 컨트롤러
+- **내용:** 전역 Supabase 의존 때문에 **컨트롤러 계층**은 단위 테스트를 못 쓰고 live 스모크로 갈음했다.
+- ⚠️ **범위 정정 (2026-07-15 회고 — 실측)**: Epic 7 회고의 *"컨트롤러 단위 테스트 부재"* 라는 표현이 **"Flutter에 테스트가 없다"로 오독됐다.** 실제로는 `app/test/`에 **10개 파일 · 테스트 77개**가 있다(`listing_form_test` 17 · `listing_filters_test` 11 · `listing_model_test` 12 · `ai_search_test` 8 · `widget_test` 8 · `chat_model_test` 6 · `listing_error_test` 4 · `chat_dedupe_test` 4 · `listing_form_edit_test` 5 · `number_format_test` 2). 없는 건 **`ProviderContainer` 기반 컨트롤러 테스트뿐**이고, 순수 함수·모델·파싱·검증 로직은 커버돼 있다.
+- **트리거:** `_bmad-output/project-context.md` 규칙 12가 이미 조건부로 규정 — *"컨트롤러 로직이 복잡해질 때"*. 즉 **신규 부채가 아니라 이미 관리 중인 조건부 항목**이다.
+- **해소:** Supabase를 리포지토리로 감싸 fake 주입 → `ProviderContainer.test`로 폴링 상태 전이·필터 조합 검증.
 
 ---
 

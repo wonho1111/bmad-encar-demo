@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-15 (dev-story: 8.6 review)
+last_updated: 2026-07-15 (retrospective: epic-8 done)
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -108,14 +108,14 @@ development_status:
   # ===== 증분 (Increment 2026-07-12) — Epic 8~16 =====
 
   # --- Epic 8: 증분 기반 게이트 (접근제어·디자인·계약·배포) ---
-  epic-8: in-progress
+  epic-8: done
   8-1-디자인-시스템-토큰-파운데이션: done
   8-2-ui-프리미티브-반응형-상태-접근성: done
   8-3-listingcard-공유-계약-셸-개정: done
   8-4-ac-db-1-커넥션-풀-롤-격리-커넥션-풀-fr50: done
-  8-5-fr58-비로그인-접근-토대: review
-  8-6-ac-deploy-1-배포-순서-마이그레이션-게이트: review
-  epic-8-retrospective: optional
+  8-5-fr58-비로그인-접근-토대: done
+  8-6-ac-deploy-1-배포-순서-마이그레이션-게이트: done
+  epic-8-retrospective: done
 
   # --- Epic 9: 매물 이미지 ---
   epic-9: backlog
