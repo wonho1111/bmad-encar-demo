@@ -1,5 +1,15 @@
 # Deferred Work
 
+## Deferred from: code review of story-8.6 (2026-07-15)
+
+Story 8.6 코드리뷰(opus 3레이어 + 실측 재검증)에서 나온 **실재하나 지금 조치하지 않는** 항목. 전부 게이트(`scripts/check_migrations.py`)의 구조적 대가이고, **Epic 9~16이 마이그 8개를 얹을 때 되살아난다.**
+
+- **`--single-transaction`이 `create index concurrently`류를 원천 차단** — Epic 13(RAG)이 무중단 HNSW 인덱스를 얹는 순간, 원격 `apply_migration`에선 통과하는데 **게이트만 `cannot run inside a transaction block`으로 red**가 난다. 실측: 현재 12개 마이그 전량에 `concurrently`·`vacuum`·`alter system`·`reindex` **0건**이라 오늘은 무해. `--single-transaction`+첫 실패 중단은 Task 3이 강한 근거(게이트 출력이 거짓말하는 것 방지)로 명령한 것이라 되돌리면 안 된다. 진짜 문제는 **게이트가 마이그 작성 방식을 몰래 제약하는데 그 제약이 어느 문서에도 없다**는 것 → 런북 §8 사각지대 추가 후보. **재판단 시점: Epic 13 착수.** [scripts/check_migrations.py:143]
+- **`0004`·`0006`의 `create role ai_readonly` 이중 보유 = 조용한 드리프트 장치** — 둘 다 `if not exists` 가드라, 미래에 0006을 `login`·`connection limit` 등 **다른 속성으로 고치면 fresh DB에선 0004가 먼저 만들고 0006은 no-op** → 롤이 0006 의도와 다르게 생성된다. 에러 0건 + 프로브 3건 통과 = **게이트 초록**, 그런데 원격은 0006 정의를 가져 fresh ≠ 원격. 이번 in-place 수정(party-mode 안 A, **사용자 확정**)이 치른 구조적 대가다. 런북 §8-②가 "fresh DB == 원격을 보증하지 않는다"를 이미 인정하나, **그 사각지대의 원인을 이번 패치가 하나 더 만들었다**는 사실은 안 적혔다. **재판단 시점: 0006의 롤 정의를 바꿔야 할 때.** [supabase/migrations/0004_guide_documents.sql:52-56, 0006_readonly_role.sql:24-28]
+- **프렐류드 `auth.users` 3컬럼 스텁이 실제 플랫폼보다 좁다 — 양방향 오류** — false red(미래 마이그가 `created_at`·`last_sign_in_at`·`phone` 참조 시 원격은 정상인데 게이트만 red)뿐 아니라 **false green**도 열려 있다: 실제 `auth.users.email`은 `varchar(255)`+unique인데 스텁은 `text`+무제약이라, **unique 위반을 유발하는 마이그가 fresh에선 통과하고 원격에서 터진다.** 런북 §8-③은 *"프렐류드가 선언한 것에 대한 의존은 안 잡힌다"* 만 인정하고 **선언이 실제보다 좁아서 생기는 오류**는 다루지 않는다. 실측: 현재 마이그 중 해당 컬럼 참조 0건. **재판단 시점: 마이그가 `auth.users`의 3컬럼 밖을 참조할 때.** [scripts/migration-check-prelude.sql:531-535]
+
+---
+
 ## 🟢 결정 완료 — 마이그레이션은 "레시피"다 + 테이블 GRANT 명시는 보류 (2026-07-14, party-mode + 실측)
 
 **계기**: Story 8.6(마이그 게이트) 설계 중, **구현 한 줄 전에** 결함 3종이 나옴. 상세·교훈은 `8-6-ac-deploy-1-배포-순서-마이그레이션-게이트.md`의 **"이 스토리가 남기는 교훈"** 절 참조(Epic 8 회고 재료).

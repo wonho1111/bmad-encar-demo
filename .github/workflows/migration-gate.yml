@@ -20,6 +20,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # 없으면 GitHub 기본 360분까지 러너를 점유한다. 도커 기동+마이그 12개 적용은
+    # 실측 1~2분이라 15분이면 넉넉하고, 넘으면 그건 스톨이지 정상 실행이 아니다.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
