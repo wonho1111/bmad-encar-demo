@@ -19,16 +19,23 @@
 """
 
 import contextlib
+import logging
 import threading
 
 from psycopg_pool import ConnectionPool
 
 from ..config import require, settings
 
+logger = logging.getLogger(__name__)
+
 READONLY_ROLE = "ai_readonly"
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
+
+# 풀 생성 시 "실제로 연결이 되는지" 확인하며 기다릴 시간(초).
+# 이 시간을 넘기면 풀을 캐시하지 않고 폐기한다 — 아래 _get_pool 주석 참조.
+_POOL_OPEN_TIMEOUT = 10
 
 
 def _get_pool() -> ConnectionPool:
@@ -36,13 +43,22 @@ def _get_pool() -> ConnectionPool:
 
     asyncio.to_thread로 여러 요청이 동시에 첫 호출을 할 수 있으므로(AC-DB-1 코드리뷰
     패치), 락으로 감싸 풀이 중복 생성되지 않게 한다(더블체크락).
+
+    ⚠️ 생성 직후 wait()로 연결을 검증하고, 실패하면 풀을 버리고 예외를 올린다(코드리뷰 패치).
+       왜: ConnectionPool(open=True)는 커넥션을 백그라운드로 열기 때문에 **DSN이 틀렸거나
+       DB가 죽어 있어도 생성자는 그냥 성공한다.** 그대로 캐시하면 그 뒤 모든 요청이 대여
+       타임아웃(PoolTimeout)을 맞고, 라우터는 그걸 "사용자가 많아 풀이 고갈됐다"로 오진해
+       응답한다(사실은 아무도 없음). 진짜 원인은 어디에도 안 뜨고, DB를 고쳐도 죽은 풀이
+       영구 캐시돼 프로세스를 재시작해야 살아난다. wait()가 그 두 상황을 여기서 갈라준다 —
+       연결 불가는 생성 시점에 진짜 원인과 함께 터지고, `_pool`은 None으로 남아 다음 요청이
+       다시 시도한다.
     """
     global _pool
     if _pool is None:
         with _pool_lock:
             if _pool is None:  # 락을 기다리는 동안 다른 스레드가 이미 만들었을 수 있음
                 dsn = require("DATABASE_URL", settings.database_url)
-                _pool = ConnectionPool(
+                pool = ConnectionPool(
                     dsn,
                     min_size=1,
                     max_size=8,
@@ -50,6 +66,12 @@ def _get_pool() -> ConnectionPool:
                     # 사용자를 오래 붙잡는다 — 코드리뷰 패치, FR50 "부하 상황에서도 안정적").
                     timeout=5,
                     open=True,
+                    # 대여 전 커넥션이 살아있는지 확인한다(코드리뷰 패치).
+                    # 왜: min_size=1이라 트래픽이 없으면 커넥션 1개가 무기한 유휴로 남는데
+                    # (max_idle은 min_size 초과분만 회수한다), 그 사이 풀러가 유휴 커넥션을
+                    # 끊으면 다음 요청의 첫 문장이 OperationalError로 터진다(PoolTimeout이
+                    # 아니라 catch-all 500). check가 죽은 커넥션을 조용히 교체해준다.
+                    check=ConnectionPool.check_connection,
                     kwargs={
                         "connect_timeout": 10,
                         # 트랜잭션 풀러(:6543)는 커넥션을 트랜잭션 단위로 갈아끼우므로
@@ -57,7 +79,33 @@ def _get_pool() -> ConnectionPool:
                         "prepare_threshold": None,
                     },
                 )
+                try:
+                    pool.wait(timeout=_POOL_OPEN_TIMEOUT)
+                except Exception:
+                    # 연결 자체가 안 되는 풀은 캐시하지 않는다 — 캐시하면 위 docstring의
+                    # "죽은 풀 영구 캐시 + 부하로 오진" 상태가 된다. 진짜 원인을 로그에 남기고
+                    # 그대로 올려보낸다(라우터의 catch-all이 500으로 감싼다 — PoolTimeout이
+                    # 아니므로 "사용자가 많아요" 오안내가 나가지 않는다).
+                    logger.exception("DB 커넥션 풀 초기화 실패 — DATABASE_URL·DB 상태를 확인하세요")
+                    pool.close()
+                    raise
+                _pool = pool
     return _pool
+
+
+def close_pool() -> None:
+    """커넥션 풀을 닫는다(앱 종료 훅에서 호출 — main.py lifespan).
+
+    왜 필요한가: 풀은 모듈 싱글턴이라 아무도 닫아주지 않으면, SIGTERM(Cloud Run 스케일다운·
+    매 재배포)마다 최대 8개의 서버측 세션과 풀 워커 스레드가 정리되지 않은 채 프로세스가
+    사라진다. 롤링 배포가 반복되면 고아 세션이 쌓여 Supabase 커넥션 상한을 밀어붙인다 —
+    풀을 도입해 막으려던 바로 그 실패 모드다(코드리뷰 패치).
+    """
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
 
 
 @contextlib.contextmanager

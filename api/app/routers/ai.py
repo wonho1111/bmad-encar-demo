@@ -5,7 +5,12 @@
   공통 계약 {answer, listings[]}로 돌려준다.
   (4.3까지는 sql_rag_node를 직접 호출했다. 그 한 줄을 그래프 호출로 교체한 것이 4.5의 핵심.)
 
-인증(get_current_user)·응답 계약({answer, listings[]})·에러 포맷은 4.1 확정값 그대로 유지한다.
+인증(get_current_user — 로그인 필수)·응답 계약({answer, listings[]})·에러 포맷은 4.1 확정값
+그대로 유지한다.
+8.5(FR58): 열람(매물 목록·상세)은 anon에 열었으나 **이 엔드포인트는 로그인 필수로 남긴다**.
+  검색 1회 = Gemini 호출 3회 내외 = 실제 과금이므로 "열람"이 아니라 "행동"이고, JWT가 호출자를
+  식별하는 유일한 수단(= 유일한 과금 울타리)이기 때문이다. ai_readonly·sql_guard는 DB 권한을
+  지키지 API 키 지출은 막지 않는다. 계약 원문: docs/conventions.md §8.
 경로 A가 그래프 안에서 던지는 SqlGuardError도 여기까지 전파돼 똑같이 400으로 잡힌다(회귀 0).
 4.6: context(직전 대화 맥락)를 run_search에 전달해 멀티턴을 지원한다(FR18). 맥락은 요청 본문에서만
   오고 서버·DB에 저장하지 않는다(무상태). 맥락이 없으면 단일턴으로 4.5까지와 동일하게 동작한다.
@@ -34,7 +39,8 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 @router.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchResponse:
-    # get_current_user 의존성이 미인증 요청을 401로 막는다(AC3).
+    # get_current_user 의존성: 유효 토큰이 없으면 401. AI 검색은 호출당 Gemini 실비가 나가는
+    # "행동"이라 로그인 필수다(conventions.md §8) — 신원이 유일한 과금 울타리다.
     try:
         # 맥락화→라우터→경로→answer 그래프. context가 있으면 후속 질의를 독립 질의로 재작성해 반영(FR18).
         # 동기 파이프라인 전체(LLM+DB)를 스레드풀로 넘겨 이벤트 루프를 막지 않는다(AC-DB-1 FR50).

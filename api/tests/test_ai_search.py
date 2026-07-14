@@ -1,8 +1,8 @@
 """/ai/search HTTP 계약 회귀 테스트 — 그래프(run_search) 모킹으로 네트워크 없이 검증(AC6).
 
 4.5에서 라우터가 sql_rag_node 직접호출 → run_search(그래프)로 바뀌었다. 그 교체 이후에도
-기존 계약(200 {answer, listings[]} / 401 미인증 / 422 빈질의 / 400 SqlGuardError)이
-그대로 보존되는지(회귀 0) 확인한다. 인증 의존성은 가짜 사용자로 오버라이드한다.
+기존 계약(200 {answer, listings[]} / 422 빈질의 / 400 SqlGuardError)이 그대로 보존되는지
+(회귀 0) 확인한다. 인증 의존성은 가짜 사용자로 오버라이드한다.
 """
 
 from fastapi.testclient import TestClient
@@ -72,9 +72,9 @@ def test_search_sql_guard_error_returns_400(monkeypatch):
 
 
 def test_search_without_token_returns_401():
+    # 인증 없이 호출하면 라우트 본문에 닿기 전 401(AI 검색은 로그인 필수 — conventions.md §8).
     r = client.post("/ai/search", json={"query": "3천만원 이하 SUV"})
     assert r.status_code == 401
-    assert r.json()["error"]["code"] == "unauthorized"
 
 
 def test_search_empty_query_returns_422():
@@ -157,5 +157,24 @@ def test_search_is_stateless_across_requests(monkeypatch):
         client.post("/ai/search", json={"query": "안녕"})  # context 없음
         assert seen[0] is not None and len(seen[0]) == 1
         assert seen[1] is None  # 둘째 요청은 맥락이 전혀 없다(서버가 첫째를 기억 안 함)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_pool_timeout_returns_503(monkeypatch):
+    # 8.4 코드리뷰 패치 회귀: DB 커넥션 풀 대여가 타임아웃되면 catch-all 500이 아니라 503으로
+    # 안내해야 한다. 이 테스트가 없으면, 그래프 노드가 PoolTimeout을 내부에서 감싸버려
+    # 라우터의 except PoolTimeout에 애초에 닿지 못하게 되어도 아무도 눈치채지 못한다.
+    from psycopg_pool import PoolTimeout
+
+    def _raise(query, context=None):
+        raise PoolTimeout("pool exhausted")
+
+    monkeypatch.setattr("app.routers.ai.run_search", _raise)
+    _auth()
+    try:
+        r = client.post("/ai/search", json={"query": "3천만원 이하 SUV"})
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "pool_exhausted"
     finally:
         app.dependency_overrides.clear()

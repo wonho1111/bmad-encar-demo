@@ -5,8 +5,8 @@
 //   2) listings를 조회하되 판매중(on_sale)만 — FR11 단일 규칙은 buyerListingsQuery(@/lib/listings)에서 비롯된다.
 //   3) 결과를 ListingCard로 렌더. 0건이면 빈 상태 안내, 조회 실패면 별도 한국어 에러 안내(0건과 구분).
 //
-// 보호: proxy가 /search 비로그인 1차 차단. 여기선 로그인 사용자(구매자·판매자 공통)가 on_sale을 본다.
-//   별도 역할 게이트 없음 — on_sale은 RLS상 모두에게 공개라 구매자·판매자 모두 탐색 가능.
+// 열람: FR58(8.5)부터 /search는 비로그인(anon)도 열람 가능한 공개 경로 — proxy 차단 없음.
+//   on_sale만 보이는 FR11 규칙은 buyerListingsQuery + DB RLS가 집행. 로그인 사용자는 상단바에 역할 라벨이 추가로 붙는다.
 //
 // FR11 비노출 규칙(판매완료는 구매자에게 안 보임)과 이중 방어 근거는 @/lib/listings 한 곳에 모았다(단일 출처).
 //
@@ -142,7 +142,7 @@ export default async function SearchPage({
 
   return (
     <>
-      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} />
+      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/search" />
       <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold">매물 탐색</h1>

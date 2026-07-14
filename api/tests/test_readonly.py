@@ -3,9 +3,14 @@
 라이브 DB 검증이라 DATABASE_URL이 없으면 skip(거짓 통과 금지).
 DB 차원 보장은 Supabase MCP로도 별도 검증함(스토리 Completion Notes 참조).
 
-red→green 증거: `test_role_does_not_leak_across_reused_connection`은 readonly.py가
-세션 레벨 `SET ROLE`(과거 방식)로 되돌아가면 실패(red)하고, `SET LOCAL ROLE`(현재 방식)이면
-통과(green)한다 — 2번째 요청이 같은 물리 커넥션에서 직전 ai_readonly 롤을 물려받는지 검사하기 때문.
+`test_role_does_not_leak_across_reused_connection`이 실제로 잡는 것(코드리뷰 정정):
+  현재의 풀 구조를 유지한 채 `SET LOCAL ROLE` → 세션 `SET ROLE`로 바뀌는 회귀 → **red**.
+  같은 물리 커넥션(max_size=1)을 두 번 대여해, 첫 요청의 롤이 두 번째로 새는지 보기 때문이다.
+  이게 현실적인 회귀 클래스다(풀은 그대로 두고 롤 설정 방식만 잘못 건드리는 경우).
+⚠️ 잡지 못하는 것: 풀 자체를 버리고 `psycopg.connect()`로 매번 새 커넥션을 여는 옛 구현으로
+  되돌아가는 경우. 그 구현은 모듈 싱글턴 `_pool`을 읽지 않으므로 아래 fixture의 monkeypatch가
+  무력해지고, 검사 대상 커넥션이 run_select와 무관해져 **초록으로 통과한다.**
+  (이 파일은 "풀 위에서 롤이 새지 않는가"를 지키지, "풀을 쓰고 있는가"를 지키지는 않는다.)
 """
 
 import psycopg

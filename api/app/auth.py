@@ -1,11 +1,21 @@
-"""Supabase JWT 검증 — 로그인한 사용자만 AI 검색을 쓰게 한다(AC3).
+"""Supabase JWT 검증 — 로그인한 사용자만 통과.
 
 방식 A(채택): supabase-py `auth.get_user(token)`로 Auth 서버에 토큰을 검증시킨다.
   · 장점: 추가 비밀값 불필요(SUPABASE_URL + ANON_KEY만), 폐기 토큰까지 서버가 판정.
   · 미인증(헤더 없음/형식 오류)은 네트워크 호출 전에 바로 401 → 비밀값 없이도 401 경로 동작.
 대안 B(JWKS 로컬 검증)는 성능 이슈 발생 시 후속에서 교체(스토리 Dev Notes 참조).
+
+FR58(8.5) 접근 게이트 계약 — 상세는 `docs/conventions.md` §8:
+  · **열람**(매물 목록·상세)은 anon 허용 — DB RLS의 anon SELECT 정책(0011)이 담당하며
+    이 모듈을 거치지 않는다.
+  · **행동**(AI 검색·문의·등록·찜)은 로그인 필수. `/ai/search`도 여기 속한다 —
+    검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "보기만 하는" 열람이 아니다.
+  ⚠️ `ai_readonly` 롤과 `sql_guard`는 **DB 권한**을 지키지 **API 키 지출**은 막지 않는다.
+    "인증을 완화해도 권한 누수가 없다"는 참이지만 "열어도 안전하다"를 뜻하지 않는다 —
+    JWT가 호출자를 식별하는 유일한 수단이고, 그게 곧 유일한 과금 울타리다.
 """
 
+import asyncio
 import logging
 
 from fastapi import Depends, HTTPException
@@ -40,15 +50,8 @@ def _auth_unavailable() -> HTTPException:
     )
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-):
-    """유효한 Bearer 토큰이면 사용자 객체를 반환, 아니면 401."""
-    if credentials is None or not credentials.credentials:
-        raise _unauthorized()
-
-    token = credentials.credentials
-
+def _validate_token(token: str):
+    """토큰을 Supabase Auth 서버에 검증시켜 사용자 객체를 반환. 무효면 401, 전송 실패면 503."""
     # 토큰이 있을 때만 Supabase 설정이 필요 → 이 시점에 fail-loud로 검증.
     url = require("SUPABASE_URL", settings.supabase_url)
     key = require("SUPABASE_ANON_KEY", settings.supabase_anon_key)
@@ -75,6 +78,19 @@ async def get_current_user(
     if user is None:
         raise _unauthorized("유효하지 않은 인증 토큰입니다.")
     return user
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+):
+    """유효한 Bearer 토큰이면 사용자 객체를 반환, 아니면 401."""
+    if credentials is None or not credentials.credentials:
+        raise _unauthorized()
+    # _validate_token은 Auth 서버로 네트워크 왕복을 하는 동기 함수다. 이 의존성이 async라
+    # FastAPI가 스레드풀로 빼주지 않으므로, 직접 호출하면 왕복 내내 이벤트 루프가 멈춘다
+    # (Auth 지연 시 /health까지 함께 막힘). to_thread로 넘겨 루프를 놓아준다 —
+    # 8.4가 run_search에 적용한 것과 같은 이유(FR50/NFR8 논블로킹).
+    return await asyncio.to_thread(_validate_token, credentials.credentials)
 
 
 def _is_transport_error(exc: Exception) -> bool:

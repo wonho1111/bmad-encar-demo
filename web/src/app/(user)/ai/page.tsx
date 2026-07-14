@@ -37,7 +37,7 @@ export default async function AiSearchPage() {
 
   return (
     <>
-      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} />
+      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/ai" />
       <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold">AI 검색</h1>

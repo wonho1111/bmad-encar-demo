@@ -4,15 +4,22 @@
 // "중고차 직거래" 제목을 홈(/)으로 가는 링크로 두어, 모든 화면에서 공통 홈 버튼 역할을 한다
 //   (검색·상세를 오가다 한 번에 홈으로 돌아갈 진입점이 없던 문제 해소).
 // 서버/클라이언트 어디서든 쓰는 표현용 컴포넌트(상태 없음). 로그아웃 동작만 클라이언트 컴포넌트에 위임.
+// FR58(8.5): 열람 경로(/search·/listings)가 anon에 열리면서 이 헤더도 비로그인으로 렌더될 수 있다 —
+//   email 유무로 로그인 여부를 판별해, 비로그인이면 "로그아웃" 대신 로그인 링크를 보여준다
+//   (내비 전체 재구성은 Epic 11.2 몫 — 여기선 이 최소 수정만).
 import Link from 'next/link';
 import LogoutButton from '@/components/auth/LogoutButton';
 
 export default function AppHeader({
   roleLabel,
   email,
+  currentPath,
 }: {
   roleLabel?: string | null;
   email?: string | null;
+  // 헤더는 서버 컴포넌트라 현재 경로를 스스로 알 수 없어 호출부가 넘긴다 —
+  //   로그인 링크에 redirectedFrom으로 실어 로그인 후 원위치로 복귀시킨다(conventions.md §8).
+  currentPath?: string;
 }) {
   return (
     <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
@@ -24,7 +31,16 @@ export default function AppHeader({
         {roleLabel && <span className="font-medium text-zinc-500">{roleLabel}</span>}
         {email && <span className="text-zinc-500">{email}</span>}
       </div>
-      <LogoutButton />
+      {email ? (
+        <LogoutButton />
+      ) : (
+        <Link
+          href={currentPath ? `/login?redirectedFrom=${encodeURIComponent(currentPath)}` : '/login'}
+          className="text-sm font-medium hover:underline"
+        >
+          로그인
+        </Link>
+      )}
     </header>
   );
 }

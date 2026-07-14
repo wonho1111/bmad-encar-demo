@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   //   관리자는 홈으로 가면 /admin으로 다시 유도되므로, 로그아웃 동선을 관리 영역 안에 둔다.
   return (
     <>
-      <AppHeader roleLabel={ROLE_LABEL[USER_ROLE.ADMIN]} email={user.email} />
+      <AppHeader roleLabel={ROLE_LABEL[USER_ROLE.ADMIN]} email={user.email} currentPath="/admin" />
       {children}
     </>
   );

@@ -140,3 +140,10 @@
 5. 검증: 브라우저 computed `font-family`=Pretendard·FOUT 없음(CLS 관찰)·`next build`·라이트/다크 E2E 재확인.
 
 **시점:** 별도 후속 작업(작은 스토리 규모). 데모 실배포/실사용 전환 시점. **완료 시 위 defer 2건 종결.**
+
+---
+
+## Deferred from: code review of story-8.5 (2026-07-14)
+
+- **defer #1 — 취소·삭제된 토큰 보유자가 공개 페이지에서 401 데드엔드** (`web/src/lib/api/aiSearch.ts:60-62`): `supabase.auth.getSession()`은 `expires_at`이 미래이기만 하면 서버에 묻지 않고 캐시 세션을 돌려준다 → 이미 폐기된(계정 삭제·세션 강제만료·타 기기 비번변경) 토큰인 줄 모른 채 `Authorization` 헤더에 붙인다. 서버는 `_validate_token`에서 `user is None`을 받아 401 "유효하지 않은 인증 토큰입니다."를 던지고, 사용자는 그 문구를 빨간 알럿으로 본다. 재시도해도 동일 — 쿠키가 지워지지 않아 같은 토큰이 계속 나간다. 역설: `/ai`는 **공개** 페이지라 같은 사람이 시크릿창에선 멀쩡히 쓴다. 서버측 401은 §8 계약상 의도된 동작(무효 토큰을 조용히 anon으로 강등하지 않음)이므로 방어는 클라이언트 몫 — 401 시 헤더 없이 1회 재시도, 또는 `signOut()` 후 anon 재요청. **왜 defer:** 드문 경로 + "무효 토큰 사용자를 조용히 anon으로 떨어뜨릴 것인가"는 제품 판단이 필요.
+- **defer #2 — anon 허용 테스트가 두 파일에 중복(약한 사본 포함)** (`api/tests/test_auth.py:367-377`, `api/tests/test_ai_search.py:339-348`): `test_search_without_token_allowed_anon`가 동명·동일 monkeypatch·동일 요청으로 양쪽에 있고, `test_ai_search.py` 사본은 `assert r.json()["listings"] == []` 본문 검증이 빠진 약한 버전이라 응답 계약이 퇴행해도 초록으로 통과한다. **왜 defer:** 8.5가 만든 중복이 아니라 선행 `test_search_without_token_returns_401` 시절부터 있던 구조를 그대로 갱신한 것(pre-existing). 정리하려면 "인증 계약 테스트는 test_auth.py 소유"라는 파일 경계 결정이 선행돼야 함.

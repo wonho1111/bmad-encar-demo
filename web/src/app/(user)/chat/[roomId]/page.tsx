@@ -71,7 +71,9 @@ export default async function ChatRoomPage({
     console.error('[chat/room] 채팅방 조회 실패:', error);
   }
 
-  const header = <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} />;
+  const header = (
+    <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath={`/chat/${roomId}`} />
+  );
 
   const backLink = (
     <Link

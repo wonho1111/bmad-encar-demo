@@ -92,7 +92,7 @@ export default async function Home() {
 
     return (
       <>
-        <AppHeader roleLabel={roleLabel} email={user.email} />
+        <AppHeader roleLabel={roleLabel} email={user.email} currentPath="/" />
         <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
           {/* ① 본인 정보 영역 — 역할 배지 + 표시 이름(이메일 @앞부분; 이메일 전체는 상단바에 있음).
               그 아래에 자주 쓰는 동선을 엔카 마이페이지 스타일의 "텍스트 메뉴"로 둔다(버튼처럼 보이지 않게, hover 시 강조).
