@@ -103,7 +103,7 @@ date: '2026-07-12'
 
 **마이그레이션 (additive, forward-only, RLS 동거 — 규칙 10):**
 
-> ⚠️ **아래 0011~0018 번호는 아키텍처 논리 라벨**이다. **실제 파일 번호는 문서 상단 "마이그레이션 원장" 표가 정본**(에픽/개발 순서로 재부여 — 예: role=원장 0018, wishlists=원장 0013). 이중 번호 혼동 방지.
+> ⚠️ **아래 0011~0018 번호는 아키텍처 논리 라벨**이다. **실제 파일 번호는 문서 상단 "마이그레이션 원장" 표가 정본**(에픽/개발 순서로 재부여 — 예: role=원장 0019, wishlists=원장 0014). 이중 번호 혼동 방지. (2026-07-15 정정: 8.5의 0011 삽입으로 시프트된 원장과 이 예시가 어긋나 있었음 — 본표 258~266행이 정본.)
 
 - 0011 `listing_images`(id·listing_id FK ON DELETE CASCADE·storage_path·sort_order·is_cover·credit jsonb) + 비공개 버킷 + Storage RLS(본인 경로) + `ai_readonly using(true)` SELECT 정책(CR2).
 - 0012 신뢰속성: `accident_status text + CHECK('무사고'·'단순교환'·'사고')` + `is_single_owner bool` + `is_non_smoker bool`(전부 nullable=미입력 제3상태, 기존 100건 NULL 유지·backfill 없음).

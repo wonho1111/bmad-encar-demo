@@ -14,9 +14,11 @@
 --     **AI 검색 쿼리(4.3+)가 WHERE status='on_sale'로 직접 책임**진다(Epic 3 회고 액션 #4 정합).
 --   · 쓰기(INSERT/UPDATE/DELETE)는 어디에도 GRANT하지 않는다 → DB가 거부(NFR2 보장).
 --
--- 번호 갭 메모: 0003(chat·Epic5)·0004(guide_documents·4.2)·0005(admin·Epic6)는 아직 미생성.
---   0006은 현재 존재하는 테이블(profiles·listings)에만 의존하므로 먼저 적용 가능.
---   guide_documents(4.2)에는 그 마이그레이션에서 동일한 ai_readonly SELECT 정책을 추가한다.
+-- 번호 갭 메모(과거 사실 기록 — 원격에 실제 있었던 순서, 지금의 요구사항 아님):
+--   적용 당시 0003(chat·Epic5)·0004(guide_documents·4.2)·0005(admin·Epic6)는 아직 미생성이었고,
+--   0006은 그때 존재하던 테이블(profiles·listings)에만 의존해 먼저 적용됐다.
+--   guide_documents(0004)는 이후 Story 8.6에서 이 파일의 ai_readonly 생성 가드(아래 ①)와
+--   동일한 멱등 DO 블록을 자체 보유하도록 수정돼, 이제 앞 번호 마이그만으로 self-contained하다.
 
 -- ── 1) 읽기전용 롤 생성 (멱등) ───────────────────────────────────────
 do $$ begin

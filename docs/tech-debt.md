@@ -6,6 +6,7 @@
 - **출처:** `_bmad-output/implementation-artifacts/deferred-work.md`(코드리뷰 이월분) + Epic 7 회고 + 코드 스캔(TODO)
 - **기준 상태:** 모든 에픽(1~7) + 회고 done. develop = main = 원격 완전 동기, 워킹트리 클린, 릴리스 태그 `v1.0.0`.
 - **읽는 법:** 🔴 = 운영/제출 전 필수 · 🟡 = 조건부(지금 무해, 조건 바뀌면 위험) · 🟢 = 품질·테스트 보강 · ⚪ = 의도적 보류(부채 아님, 참고용)
+- **배포 순서·마이그레이션 게이트:** `docs/deployment-runbook.md` 참조.
 
 ---
 
@@ -14,7 +15,7 @@
 | 우선순위 | 건수 | 한 줄 |
 |---|---|---|
 | 🔴 필수 | 1 | 안드로이드 서명 (※ 시드 평문 비번은 2026-07-11 세션변수 주입으로 해소 → 부록. 앱 픽셀 E2E·AI 라이브 호출도 실폰 검증으로 해소 → 부록) |
-| 🟡 조건부 | 8 | DB 커넥션 풀·채팅 멱등키·폴링 무알림·본문 길이·재오픈 차단·오픈리다이렉트·options 쉼표·타입 |
+| 🟡 조건부 | 9 | DB 커넥션 풀·채팅 멱등키·폴링 무알림·본문 길이·재오픈 차단·오픈리다이렉트·options 쉼표·타입·테이블 GRANT 플랫폼 의존 |
 | 🟢 품질/테스트 | 5 | AI 정규화 회귀테스트 · FR17 경로 · LIMIT 파싱 · 가이드 거리 컷오프 · 컨트롤러 단위테스트 |
 | ⚪ 의도적 보류 | 3 | 데스크톱 반응형(Cut) · 관리자 대시보드(Cut) · "홈이 탐색 직접 품기" |
 
@@ -82,6 +83,15 @@
 - **위치:** `web/src/app/(user)/sell/page.tsx:21`
 - **내용:** cosmetic. `LISTING_STATUS.ON_SALE` 비교는 정상이나 union 타입이면 오타·미정의 status 비교를 컴파일타임에 잡음.
 - **해소:** 다른 select 타입 정리 시 union으로 좁힘.
+
+### 18. 테이블 GRANT가 마이그에 없고 Supabase 플랫폼 기본에 의존
+- **위치:** 마이그레이션 전체(`0011_listings_anon_select.sql`의 `anon`+`listings`만 예외 — 명시 REVOKE/GRANT로 이 의존을 끊었음).
+- **내용:** `grant select on <table> to authenticated`가 어느 마이그레이션에도 없다(profiles·chat_rooms·chat_messages 포함). `authenticated` 데이터 경로 전체가 Supabase 플랫폼이 기본으로 발급하는 GRANT(`pg_default_acl`)에 암묵 의존한다. 마이그레이션 게이트(Story 8.6)의 프렐류드가 이 기본 GRANT를 실측 재현해 fresh DB에서도 통과하지만, 그건 **Supabase 플랫폼 위에서만** 참이다.
+- **오늘 무해한 이유:** Supabase 전제(사용자 확정, 납품 계획 없음)이고, 재해 복구 시에도 새 Supabase 프로젝트가 같은 기본 GRANT를 자동으로 준다.
+- **트리거(언제 문제되나):** 자체 호스팅·타 클라우드 이관·"맨 Postgres로도 선다"는 납품 요구가 생기는 순간.
+- **8.5가 우연히 발견한 사실:** anon+listings에 대해서만 이 의존을 끊었다 — **체계적으로 찾은 게 아니라 다른 일(FR58) 하다 우연히 걸린 것**이다. 나머지(authenticated 전 경로)가 얼마나 되는지 아무도 세어본 적 없다.
+- **해소:** 각 테이블 마이그에 명시 `grant select ... to authenticated`를 추가한 뒤, 프렐류드(`scripts/migration-check-prelude.sql`)의 `alter default privileges` 한 줄을 제거한다(판정규칙 (a) 해당 — 원격 델타 0이라 dev 자율로 안전, `docs/conventions.md` §9.3). 비용 ≈ 테이블당 1~2줄.
+- **근거:** `docs/deployment-runbook.md` §8-① · `_bmad-output/implementation-artifacts/8-6-ac-deploy-1-배포-순서-마이그레이션-게이트.md`
 
 ---
 
