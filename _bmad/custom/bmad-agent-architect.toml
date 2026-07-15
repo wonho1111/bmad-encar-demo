@@ -1,0 +1,9 @@
+# Team override for bmad-agent-architect (Winston).
+# 레포에 커밋됨. 병합 규칙·배치 근거는 `bmad-agent-dev.toml` 헤더 참조(같은 이유로 여기 둔다).
+
+[agent]
+persistent_facts = [
+  # 공유 계약의 정본. 설계가 계약면(wire 필드·마이그레이션 정책·접근 게이트)을 직접 건드리므로
+  # 요약본이 아니라 정본을 봐야 한다. 경위는 `bmad-agent-dev.toml` 참조.
+  "file:{project-root}/docs/conventions.md",
+]

@@ -1,0 +1,22 @@
+# Team override for bmad-agent-dev (Amelia).
+# 레포에 커밋됨 — 이 프로젝트의 모든 개발자·에이전트에 적용된다.
+# 병합 규칙(SKILL.md Step 1): base(skill install) → team(이 파일) → user(*.user.toml).
+#   스칼라는 덮어쓰기, 배열(persistent_facts 등)은 append.
+#
+# 왜 스킬 설치본(.claude/skills/*/customize.toml)이 아니라 여기냐:
+#   설치본은 벤더 파일이라 BMAD 업그레이드가 덮어쓴다. 프로젝트 고유 설정은 여기 둔다.
+
+[agent]
+persistent_facts = [
+  # 공유 계약의 정본을 dev 에이전트 컨텍스트에 직접 넣는다.
+  #
+  # 왜: project-context.md는 "충돌하면 conventions가 우선"이라 선언만 하고 값은 안 갖는다.
+  #     정본이 컨텍스트에 없으면 에이전트는 "정본이 딴 데 있다"는 사실만 알고
+  #     내용은 모르는 채로 코딩한다.
+  #
+  # 실측 경위(2026-07-15): 예전엔 project-context.md가 conventions의 요약본을 들고 있었고
+  #     그 요약이 원본보다 늙어서 "4초 폴링"(코드는 3000ms)·"마이그 0001~0009"(실제 12개)·
+  #     "사진 필드 없음"(실제 image_url 등 6개 계약됨)이 매 세션 사실로 주입되고 있었다.
+  #     dev 에이전트를 실제로 띄워 물어 red 확인 → 요약 제거 + 정본 주입 → green 확인.
+  "file:{project-root}/docs/conventions.md",
+]
