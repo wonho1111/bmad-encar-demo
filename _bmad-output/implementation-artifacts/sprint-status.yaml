@@ -141,6 +141,7 @@ development_status:
 
   # --- Epic 11: AI 히어로 랜딩 + 내비 ---
   epic-11: backlog
+  11-0-pretendard-self-host-전환: backlog
   11-1-view-count-스키마-increment-rpc-하드닝: backlog
   11-2-상단-내비-재구성: backlog
   11-3-ai-히어로-랜딩-히어로-차종-칩: backlog

@@ -670,6 +670,38 @@ So that 이 에픽의 핵심 성공 지표(SM-C)가 착지한다.
 
 서비스 진입점이 AI 검색 히어로 랜딩이 된다 — 딥 petrol 히어로 + 인기(view_count)/최신 2단 그리드 + 차종 칩. 상단 내비를 소비자 자연어로 재구성한다(Epic 9/10의 완성된 카드 재사용). 반응형 뷰포트 E2E 감사를 여기서 소유.
 
+### Story 11.0: Pretendard self-host 전환 (기술부채 #40)
+
+As a 방문자,
+I want 첫 화면 글자가 지연 없이 곧바로 제 모양으로 뜨길,
+So that 히어로(11.3)의 첫인상이 폰트가 덜컥 바뀌며 무너지지 않는다.
+
+> **왜 Epic 11 첫 스토리인가:** 이 부채의 증상(첫 페인트 지연 + 글자 덜컥임=FOUT/CLS)이 **11.3 히어로가 노리는 바로 그 화면**에서 가장 도드라진다. 큰 글자 + 첫 진입이라 폰트 스왑이 그대로 보인다. 히어로를 만들기 전에 바닥을 깔아야 한다. (Story 8.1이 낳은 부채 — 8.1 코드리뷰 defer #1·#2, 뿌리가 같아 self-host 전환 1건으로 동시 종결. 방향은 2026-07-13 사용자 확정.)
+
+**Acceptance Criteria:**
+
+**Given** 현재 `web/src/app/layout.tsx`가 Pretendard를 jsDelivr CDN `<link rel="stylesheet">`(dynamic-subset) + `preconnect`로 로드하고 폰트 파일이 레포에 없는 상태
+**When** `next/font/local`로 self-host 전환하면
+**Then** Pretendard Variable `.woff2`가 `web/` 안에 배치되고 **OFL 1.1 라이선스 텍스트가 동봉**된다
+**And** `globals.css`의 `--font-sans`가 로컬 폰트 변수를 우선 참조한다(폴백 스택 `system-ui, -apple-system, …`은 유지)
+**And** `layout.tsx`의 수동 `<link rel="stylesheet">` + `preconnect`가 제거된다
+**And** 8.1이 명시한 보존 항목(`suppressHydrationWarning` · `min-h-full flex flex-col` · `h-full antialiased`)은 **그대로 둔다**
+
+**Given** 전환 후 브라우저에서 랜딩을 열면
+**When** 실측하면
+**Then** computed `font-family`가 Pretendard이고 `document.fonts.check()`가 400/800 weight에 true(8.1과 동일 검증 방식)
+**And** **네트워크 탭에 `cdn.jsdelivr.net` 요청이 더는 없다**(제거 검증 — "지웠다"가 아니라 "안 나간다"를 본다)
+**And** `<Logo>` 컴포넌트("차" 800 weight)가 라이트/다크 양쪽에서 회귀 없다(8.1 산출물 확인)
+**And** `next build` 통과
+
+**Dev Notes (착수 시 실측할 것 — 추측 금지):**
+- ⚠️ **폰트 파일 용량을 먼저 재라.** 현재 CDN은 **dynamic-subset**(쓰는 글자만 내려받음)이라 가벼웠다. self-host는 **정적 서브셋을 따로 만들지 않는 한 한글 전체(11,172 음절)를 통째로** 받는다 → **요청 수↓ vs 페이로드↑ 맞바꿈**. 받아서 `ls -la`로 재고, 과하면 서브셋 생성을 검토한다. *(이 트레이드오프는 기존 tech-debt #40 노트에 없었다 — 2026-07-16 조사에서 발견.)*
+- **가변축은 `45 920`이다** (흔히 가정하는 `100 900`이 아님). `next/font/local`에서 `weight`는 가변 폰트면 **생략 가능** — 명시할 거면 이 값을 써야 한다.
+- 조달: GitHub `orioncactus/pretendard` releases → `dist/web/variable/woff2/PretendardVariable.woff2`. 라이선스 **OFL 1.1**(상업적 사용·재배포 허용, 라이선스 파일 동봉이 관례).
+- ⚠️ **Next 16 문서 선독**(`web/AGENTS.md` 원칙): `node_modules/next/dist/docs/`의 `01-app/01-getting-started/13-fonts.md`·`03-api-reference/02-components/font.md`. *(2026-07-16 확인: `next/font/local` API에 Next 16 특유의 함정은 없었다 — 표준 시그니처 그대로. `adjustFontFallback` 기본값이 로컬은 `'Arial'` 문자열이라는 점만 Google 쪽과 다르나 그대로 두면 된다.)*
+- **DB·API 무관.** 건드리는 파일 3~4개(폰트 바이너리 + LICENSE, `layout.tsx`, `globals.css`). 작은 스토리.
+- 검증은 `11-5-반응형-뷰포트-e2e-감사-sm-b`가 시각 게이트로 이미 있으므로 별도 회귀 장치를 새로 만들 필요 없다.
+
 ### Story 11.1: view_count 스키마 + increment RPC 하드닝
 
 As a 구매자,
