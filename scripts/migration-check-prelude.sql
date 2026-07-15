@@ -62,3 +62,29 @@ end $$;
 -- 실측 재현이라 넣을 뿐, 이걸 근거로 마이그에서 service_role을 쓰지 마라.
 alter default privileges in schema public
   grant all on tables to anon, authenticated, service_role;
+
+-- ── storage 스키마 최소 스텁 (0012_listing_images가 참조 — 2026-07-16 원격 실측 기반, Story 9.1) ──
+--   실측 근거: information_schema.columns(storage.buckets/objects 전체 컬럼) + pg_class.relrowsecurity를
+--   원격에서 직접 조회(Story 9.1 Task 1). 이 레포 최초의 storage 마이그라 스텁이 아예 없었다.
+--   "정당한 확장" 기준 충족: 실제 Supabase 플랫폼에 있는 걸 스텁이 빠뜨려 red가 나는 경우다(우회 아님).
+--   스텁은 0012가 실제로 건드리는 컬럼만 담는다(선례: auth.users 3컬럼 스텁과 동일 원칙) — owner 등
+--   나머지 실컬럼은 원격엔 있지만 여기 없다(마이그가 안 쓰므로 필요 없음).
+create schema if not exists storage;
+
+create table if not exists storage.buckets (
+  id                  text primary key,
+  name                text not null,
+  public              boolean,
+  file_size_limit     bigint,
+  allowed_mime_types  text[]
+);
+
+create table if not exists storage.objects (
+  id         uuid primary key default gen_random_uuid(),
+  bucket_id  text,
+  name       text
+);
+
+-- 원격 실측(2026-07-16): relrowsecurity = true — 플랫폼이 이미 켜둔 상태를 재현.
+-- (0012는 이 문을 스스로 켜지 않는다 — 원격에서 소유자가 아닌 롤이 건드리면 실패할 수 있어서다.)
+alter table storage.objects enable row level security;

@@ -88,7 +88,7 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 ## 6. 판매완료 비노출 (FR11)
 
 - `status='sold'` 매물은 구매자의 **모든 경로**(목록·필터·상세·AI SQL·문서 RAG)에서 노출되지 않는다.
-- 강제 지점: RLS(authenticated = `0002_listings`에 동거, anon = `0011_listings_anon_select`) + `api/db/sql_guard.py` + 문서 RAG 결과 필터. (구현은 Epic 2~4, anon 경로는 Epic 8.5)
+- 강제 지점: RLS(authenticated = `0002_listings`에 동거, anon = `0011_listings_anon_select`) + `api/db/sql_guard.py` + 문서 RAG 결과 필터 + **`storage.objects` 읽기 RLS**(`0012_listing_images.sql` — 매물 사진 서명 URL은 그 이미지가 가리키는 매물이 `status='on_sale'`이거나 본인 소유일 때만 발급 가능. Epic 9). (구현은 Epic 2~4, anon 경로는 Epic 8.5)
 - **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). anon 열람은 §8이 상술한다.
 
 ## 7. 채팅 메시지 길이 (Chat Message Length)
@@ -180,3 +180,16 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 ### 9.4 배포·게이트
 
 배포 순서·부분배포 정합성·롤백·마이그 적용 절차(Supabase MCP `apply_migration`)·게이트가 증명하는 것과 안 하는 것은 `docs/deployment-runbook.md`가 상술한다. **각 에픽 첫 마이그 스토리는 마이그레이션 게이트(CI) 통과가 DoD다.**
+
+## 10. 이미지 스토리지 계약 (Story 9.1)
+
+- **버킷**: `listing-images`(비공개, `public=false`).
+- **경로 규칙**: `{user_id}/{listing_id}/{filename}` — **첫 세그먼트가 소유자**다(Storage 쓰기 RLS가 이 사실에 의존).
+- **등록 순서**: **매물 행을 먼저 insert해 `listing_id`를 얻은 뒤** 그 경로로 업로드한다(스테이징 경로·이동 없음).
+- **상한**: 매물당 최대 **10장** · 장당 최대 **5MB** · 허용 MIME `image/jpeg`·`image/png`·`image/webp` 3종.
+  - 3개 상한은 전부 **DB(Storage 설정·트리거)에 박는다** — 클라 검증은 우회 가능하다.
+  - MIME 제한의 이유: 비공개 버킷이라도 서명 URL은 브라우저가 그대로 연다 — 타입 제한이 없으면 `.html`/`.svg` 업로드가 우리 도메인에서 실행되는 저장형 XSS가 된다.
+- **`listing_images.storage_path`** = 버킷 내 key **전체**(`{user_id}/{listing_id}/{filename}`, 버킷명 미포함) — `storage.objects.name`과 **글자 그대로 같아야** Storage RLS의 조인이 성립한다.
+- **`SIGNED_URL_TTL = 3600`초**(1시간, 사용자 확정 2026-07-13). 서명 URL 발급 구현은 Story 9.2.
+- **api는 서명 URL을 절대 발급하지 않는다** — `storage_path`만 반환한다. 서명은 web(서버측)·app(Flutter 클라측)이 한다.
+- 근거: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md` ADR-IMG-01·CR2·"확정된 값"(2026-07-13) · 마이그레이션 `supabase/migrations/0012_listing_images.sql`.

@@ -130,6 +130,11 @@
 - **⚠️ 2026-07-15 대장 일원화 시 정정**: `deferred-work.md`가 이 항목을 **"판정규칙 (a) 해당(원격 델타 0 → 안전)"** 으로 들고 있었다 — 위 (b) 판정과 **정반대**다. 코드리뷰가 (a)→(b)로 정정했는데 한쪽만 고쳐서 생긴 라이브 모순이었고, 통합하며 (b)로 통일했다. **Epic 9의 첫 마이그레이션이 이 축을 건드린다** — 착수 시 이 항목을 근거로 GRANT를 자율 추가하지 말 것.
 - 🔗 **인수조건으로 심어짐 (2026-07-16)** — `epics-increment-2026-07-12.md` **Story 9.1**에 (a′) 절차를 AC로 박았다(이 에픽의 첫 마이그가 그 축을 건드리므로). 규칙 정본인 `docs/conventions.md`는 dev 에이전트에 자동 주입되지만, **주입은 "알게" 하고 AC는 "하게" 한다** — 둘 다 둔다.
 - **근거:** `docs/deployment-runbook.md` §8-① · `_bmad-output/implementation-artifacts/8-6-ac-deploy-1-배포-순서-마이그레이션-게이트.md`
+- ✅ **Story 9.1이 이번에 명시한 범위 (2026-07-16, `0012_listing_images.sql`) — 닫지 않음.**
+  - **적용 전 실측**(델타 확인): `information_schema.role_table_grants`를 원격에서 떠본 결과 `listing_images`는 신규 테이블이라 비교 대상 자체가 없었다(기존 5개 테이블 — `chat_messages`·`chat_rooms`·`guide_documents`·`listings`·`profiles`만 GRANT 존재, 이번 마이그가 건드리지 않아 그 축의 델타는 0).
+  - **신규 테이블에 대해 명시한 것**: `anon`은 0011과 같은 모양(`revoke select` 후 컬럼 스코프 `grant select(id, listing_id, storage_path, sort_order, is_cover, credit)`). `ai_readonly`는 0004 선례대로 `grant select on public.listing_images to ai_readonly` 명시.
+  - **명시하지 않고 남긴 것**: `authenticated`에 대한 `listing_images` 명시 GRANT는 **이번에 추가하지 않았다** — 플랫폼 기본(`alter default privileges`)에 그대로 위임. 이유: AC6이 "새로 만드는 테이블만 명시"라 했고, 그 범위는 anon(FR58 컬럼 차단)·ai_readonly(명시 GRANT 관례)로 한정했다 — authenticated까지 명시하는 건 #18의 "나머지 테이블(authenticated 전 경로)" 축을 건드리는 것이라 범위 밖.
+  - **남은 범위(변화 없음)**: `profiles`·`chat_rooms`·`chat_messages`·`guide_documents`·`listings`의 `authenticated` GRANT 명시 및 프렐류드의 `alter default privileges` 제거는 여전히 열려 있다.
 
 ---
 
@@ -194,6 +199,12 @@
   - **Story 9.1**(FK가 태어나는 곳) — 전략을 (a)고정 id / (b)자식 정리 순서 / (c)근거 있는 이월 중 택해 **기록에 남긴다**. Epic 10.5 `wishlists`가 두 번째 자식이라는 것도 함께 본다.
   - **Story 9.7**(시드를 실제로 돌리는 곳) — **두 번 연속 실행해 이미지 행 수가 유지되는지 센다.** ⚠️ **"에러 없음"으로 갈음 금지** — `ON DELETE CASCADE`는 조용히 지우므로 **에러 0건이 곧 정상이 아니다.** 이게 이 항목의 핵심이다.
   - 한 곳만 심으면 다른 스토리가 그냥 지나간다 — 판단(9.1)과 검증(9.7)은 다른 일이다.
+- ✅ **Story 9.1 판단 완료(2026-07-16) — (c) 근거 있는 이월을 택함(닫지 않음).**
+  - **실측**: `supabase/seed.sql:196`이 여전히 `delete from public.listings where seller_id = v_seller_id;` 후 새 uuid로 재삽입(고정 id 아님) — 확인됨. `listing_images.listing_id`는 `ON DELETE CASCADE`(0012).
+  - **왜 지금 무해한가**: Story 9.1은 `seed.sql`을 고치지 않고 `listing_images`에 행을 넣지도 않는다(DB 전용 스토리, 사진 시딩은 9.7의 일) — 그래서 오늘 시점엔 지울 이미지 행 자체가 0건이다.
+  - **9.7이 실제로 할 일(여기서 미리 못박음)**: 9.7이 사진을 시드에 추가할 때는 **같은 seed.sql 실행 안에서** listings delete+재삽입 **직후** 그 새 `listing_id`로 이미지를 삽입해야 한다(옛 이미지는 cascade로 같이 지워지고, 새 이미지가 새 id로 다시 채워짐) — 이게 사실상 (b) 자식 정리 순서를 만족시킨다. 9.7의 AC(두 번 연속 실행 후 이미지 행 수 카운트)가 이걸 실측으로 검증한다.
+  - **진짜 위험은 seed.sql 밖에 있다**: seed.sql이 모르는 데이터 — **실사용자가 그 시드 매물에 올린 사진**·**Epic 10.5 `wishlists`의 실제 찜 기록** — 은 (b)로 못 구제한다. seed.sql은 자기가 만든 행만 다시 만들 뿐, 그 사이 사용자가 쌓은 데이터를 복원할 방법이 없다. **Epic 10.5 착수 시 이 사실을 근거로 (a) 고정 id를 재고할 것** — wishlists는 사용자 행동의 결과물이라 이미지보다 유실 시 체감 피해가 크다.
+  - **이월 사유**: 데모/과제용 단일 공유 DB(런북 §2)에서 `seed.sql` 재실행은 드문 수동 작업이고, 지금 당장 39건 INSERT문 전체를 고정 id로 바꾸는 건 이 스토리 범위(DB 전용, 마이그 1개) 밖의 큰 변경이다. (a)로 미리 확정하지 않고 10.5 시점에 그때의 요구(찜 데이터 보존 필요성)를 보고 다시 판단하는 게 낫다.
 
 ### 28. `e2e-checklist.md`가 정상 동작을 실패로 판정 (문서 부채)
 - **위치:** `docs/e2e-checklist.md:24`
