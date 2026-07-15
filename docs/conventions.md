@@ -185,10 +185,21 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 - **버킷**: `listing-images`(비공개, `public=false`).
 - **경로 규칙**: `{user_id}/{listing_id}/{filename}` — **첫 세그먼트가 소유자**다(Storage 쓰기 RLS가 이 사실에 의존).
+  - ✅ **이 규칙은 DB가 강제한다**(`0013_listing_images_path_integrity.sql`) — `listing_images` 삽입·수정 시 트리거가 소유자를 **`storage_path`에서 파싱하지 않고 `listings`에서 직접 구해** 대조한다(CLAUDE.md B9 "중요한 값은 서버·DB가 직접 구한다"). 세그먼트가 정확히 3개가 아니거나 소유자·매물이 안 맞으면 거부.
+  - **왜 트리거까지 필요했나**: `0012`는 이 규칙을 이 문서에만 두고 `storage_path`를 무검증 자유 문자열로 받았다. 그런데 Storage 읽기 RLS가 바로 그 문자열로 조인하므로, 판매자가 자기 매물에 **남의 경로**를 적으면 남의 비공개 사진이 anon에게 열렸다(원격 실측 재현: anon 0행 → 1행). **규약을 문서에만 두면 규약이 아니다.**
 - **등록 순서**: **매물 행을 먼저 insert해 `listing_id`를 얻은 뒤** 그 경로로 업로드한다(스테이징 경로·이동 없음).
 - **상한**: 매물당 최대 **10장** · 장당 최대 **5MB** · 허용 MIME `image/jpeg`·`image/png`·`image/webp` 3종.
-  - 3개 상한은 전부 **DB(Storage 설정·트리거)에 박는다** — 클라 검증은 우회 가능하다.
+  - 3개 상한은 **클라가 아니라 서버 쪽에 둔다** — 클라 검증은 우회 가능하다.
+  - ⚠️ **강제하는 주체가 셋 다 다르다 (9.1 코드리뷰 정정, 2026-07-16 — 전엔 "전부 DB에 박는다"고 적혀 있었으나 사실보다 강했다):**
+
+    | 상한 | 누가 강제하나 | 지금 상태 |
+    |---|---|---|
+    | 10장 | `listing_images`의 **BEFORE INSERT 트리거**(Postgres) | ⚠️ **INSERT만** — `listing_id`+`storage_path`를 함께 바꾸는 UPDATE로 **우회된다**(실측, `docs/tech-debt.md` #43). 동시 삽입 경합도 미해결(#49) |
+    | 5MB | **Storage API 서버** (Postgres 아님 — `storage.buckets`는 값을 보관만 한다) | 마이그레이션 게이트는 이 축을 **전혀 증명하지 못한다**(스텁이 평범한 테이블이라 값만 들어간다) |
+    | MIME 3종 | **Storage API 서버** (위와 동일) | 위와 동일 |
+
   - MIME 제한의 이유: 비공개 버킷이라도 서명 URL은 브라우저가 그대로 연다 — 타입 제한이 없으면 `.html`/`.svg` 업로드가 우리 도메인에서 실행되는 저장형 XSS가 된다.
+  - 버킷 설정(비공개·5MB·MIME)은 `on conflict do nothing`이라 **버킷이 이미 존재하면 셋 다 조용히 무효**다(#44).
 - **`listing_images.storage_path`** = 버킷 내 key **전체**(`{user_id}/{listing_id}/{filename}`, 버킷명 미포함) — `storage.objects.name`과 **글자 그대로 같아야** Storage RLS의 조인이 성립한다.
 - **`SIGNED_URL_TTL = 3600`초**(1시간, 사용자 확정 2026-07-13). 서명 URL 발급 구현은 Story 9.2.
 - **api는 서명 URL을 절대 발급하지 않는다** — `storage_path`만 반환한다. 서명은 web(서버측)·app(Flutter 클라측)이 한다.
