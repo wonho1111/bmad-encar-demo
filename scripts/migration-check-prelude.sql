@@ -88,3 +88,4 @@ create table if not exists storage.objects (
 -- 원격 실측(2026-07-16): relrowsecurity = true — 플랫폼이 이미 켜둔 상태를 재현.
 -- (0012는 이 문을 스스로 켜지 않는다 — 원격에서 소유자가 아닌 롤이 건드리면 실패할 수 있어서다.)
 alter table storage.objects enable row level security;
+-- storage 스텁은 여기까지(Story 9.1, 0012 전용).
