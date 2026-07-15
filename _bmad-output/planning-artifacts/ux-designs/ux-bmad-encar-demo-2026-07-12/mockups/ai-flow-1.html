@@ -1,0 +1,831 @@
+<meta charset="UTF-8">
+<title>차장님 — AI 검색 흐름</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* ============================================================
+   차장님 — AI 검색 흐름 (구조형 · 되묻기 · 조합형 · 부드러운 거절)
+   -----------------------------------------------------------
+   TOKENS (card-final-1.html 과 동일 시스템 재사용)
+     surface-base        #FAFAF8
+     surface-raised       #FFFFFF
+     ink-primary            #1A1E1D
+     ink-secondary            #565F5D
+     ink-muted                  #8B928F
+     border-hairline              #E6E3DD
+     brand-petrol                   #1E6E6A
+     brand-petrol-strong              #14514E
+     petrol-deepest                     #0F3D3E
+     accent-amber                         #F0A339  (price 외 강조용)
+     price-emphasis                         #E08A1B  (가격 전용)
+     trust bg/ink                             #E7F3EC / #1F7A44
+     placeholder bg                             #F1EFE9
+
+   CRAFT
+     shadow-rest : 0 1px 2px rgba(0,0,0,.04), 0 10px 30px -14px rgba(20,45,45,.16)
+     radius-shell: 20px(desktop) / 38px(mobile inner)  radius-card: 14px  radius-chip: 8px
+   ============================================================ */
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #EEEBE3;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI Variable", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    color: #1A1E1D;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 56px 40px 120px;
+  }
+
+  .page-header { margin-bottom: 48px; }
+
+  .page-header .eyebrow {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #14514E;
+    background: #E7F0EF;
+    border: 1px solid #CFE1DF;
+    padding: 5px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+
+  .page-header h1 {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+    color: #14231F;
+  }
+
+  .page-header p {
+    font-size: 14px;
+    color: #6B7370;
+    margin: 0;
+    line-height: 1.7;
+    max-width: 760px;
+  }
+
+  /* ---------- frames layout ---------- */
+
+  .frames {
+    display: flex;
+    gap: 56px;
+    align-items: flex-start;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .device { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+  .device-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #8B928F;
+    text-transform: uppercase;
+  }
+
+  /* ============================================================
+     APP SHELL (shared)
+     ============================================================ */
+
+  .app-shell {
+    --surface-base: #FAFAF8;
+    --surface-raised: #FFFFFF;
+    --ink-primary: #1A1E1D;
+    --ink-secondary: #565F5D;
+    --ink-muted: #8B928F;
+    --border: #E6E3DD;
+    --petrol: #1E6E6A;
+    --petrol-strong: #14514E;
+    --petrol-deepest: #0F3D3E;
+    --petrol-tint: #EAF3F2;
+    --amber: #F0A339;
+    --price: #E08A1B;
+    --trust-bg: #E7F3EC;
+    --trust-ink: #1F7A44;
+    --placeholder-bg: #F1EFE9;
+
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-base);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .app-shell::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #1E6E6A 0%, #4FA39D 50%, #1E6E6A 100%);
+    z-index: 3;
+  }
+
+  /* ---- header ---- */
+
+  .app-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px 14px;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .app-header__icon {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: linear-gradient(155deg, #1E6E6A, #0F3D3E);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-header h2 {
+    margin: 0;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--ink-primary);
+    letter-spacing: -0.01em;
+  }
+
+  .app-header span.sub {
+    display: block;
+    margin-top: 1px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ink-muted);
+  }
+
+  /* ---- conversation ---- */
+
+  .app-conv {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 20px 20px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    background: var(--surface-base);
+  }
+
+  .app-conv::-webkit-scrollbar { width: 6px; }
+  .app-conv::-webkit-scrollbar-thumb { background: #D8D4CA; border-radius: 3px; }
+
+  .turn { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+
+  .msg-row { display: flex; width: 100%; }
+  .msg-row.user { justify-content: flex-end; }
+  .msg-row.ai { justify-content: flex-start; }
+
+  .bubble {
+    max-width: 84%;
+    padding: 11px 15px;
+    font-size: 14.5px;
+    font-weight: 500;
+    line-height: 1.58;
+    letter-spacing: -0.01em;
+  }
+
+  .bubble.user {
+    background: var(--petrol);
+    color: #fff;
+    border-radius: 16px 16px 4px 16px;
+  }
+
+  .bubble.ai {
+    background: var(--surface-raised);
+    color: var(--ink-primary);
+    border: 1px solid var(--border);
+    border-radius: 16px 16px 16px 4px;
+    box-shadow: 0 1px 2px rgba(20,30,29,.03);
+  }
+
+  .guide-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    align-self: flex-start;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--petrol-strong);
+    background: var(--petrol-tint);
+    border: 1px solid rgba(30,110,106,.20);
+    border-radius: 999px;
+    padding: 3px 9px 3px 7px;
+  }
+
+  .guide-tag svg { width: 10px; height: 10px; }
+
+  /* ---- result grid / cards ---- */
+
+  .result-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    width: 100%;
+  }
+
+  .lc {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 20px -12px rgba(20,45,45,.18);
+  }
+
+  .lc__photo {
+    position: relative;
+    aspect-ratio: 5 / 3;
+    background:
+      radial-gradient(ellipse 60% 45% at 26% 18%, rgba(255,255,255,.60), rgba(255,255,255,0) 60%),
+      linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.12) 100%),
+      linear-gradient(135deg, #EFF1F0 0%, #DBDFDE 26%, #AEB6B4 52%, #CBD1CF 76%, #F2F3F2 100%);
+  }
+  .lc__photo.grad-b {
+    background:
+      radial-gradient(ellipse 60% 45% at 26% 18%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%),
+      linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.12) 100%),
+      linear-gradient(135deg, #F1EEE6 0%, #E2DCCB 28%, #BFB49A 54%, #DCD5C2 78%, #F3F1E9 100%);
+  }
+  .lc__photo.grad-c {
+    background:
+      radial-gradient(ellipse 60% 45% at 26% 18%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%),
+      linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+      linear-gradient(135deg, #E9EFEE 0%, #CFDBD9 28%, #93AFAB 54%, #C4D3D1 78%, #EEF3F2 100%);
+  }
+  .lc__photo.grad-d {
+    background:
+      radial-gradient(ellipse 60% 45% at 26% 18%, rgba(255,255,255,.50), rgba(255,255,255,0) 60%),
+      linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+      linear-gradient(135deg, #ECEAE6 0%, #D6D2C8 28%, #9C978A 54%, #CFCABD 78%, #F1EFEA 100%);
+  }
+
+  .lc__badge {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    z-index: 2;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(10,14,13,.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: #fff;
+    font-size: 10.5px;
+    font-weight: 600;
+  }
+
+  .lc__placeholder {
+    position: relative;
+    aspect-ratio: 5 / 3;
+    background: var(--placeholder-bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .lc__placeholder svg { width: 26px; height: 26px; stroke: var(--ink-muted); opacity: .55; }
+  .lc__placeholder span { font-size: 10.5px; font-weight: 600; color: var(--ink-muted); }
+
+  .lc__pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 9px 10px 0;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--trust-ink);
+    background: var(--trust-bg);
+    border-radius: 999px;
+    padding: 3px 7px 3px 6px;
+  }
+  .pill svg { width: 8px; height: 8px; }
+
+  .lc__body { padding: 7px 10px 10px; }
+
+  .lc__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+
+  .lc__title {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--ink-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.35;
+  }
+
+  .lc__heart {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lc__heart svg { width: 11px; height: 11px; stroke: var(--ink-secondary); fill: none; stroke-width: 1.9; }
+
+  .lc__price {
+    margin: 5px 0 0;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--price);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lc__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+  .chip-sm {
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--petrol-strong);
+    background: var(--petrol-tint);
+    border: 1px solid rgba(30,110,106,.20);
+    border-radius: 7px;
+    padding: 2.5px 6px;
+    letter-spacing: -0.01em;
+  }
+  .chip-sm.more { color: var(--ink-muted); background: transparent; border-color: var(--border); }
+
+  .cta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 2px 0;
+  }
+  .cta-more { font-size: 12px; font-weight: 600; color: var(--ink-secondary); }
+  .cta-all { font-size: 12px; font-weight: 700; color: var(--petrol-strong); }
+
+  /* ---- clarify / re-offer chip groups (tappable, contextual) ---- */
+
+  .chip-groups { display: flex; flex-direction: column; gap: 10px; padding-left: 2px; }
+  .chip-group__label {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--ink-muted);
+    margin-bottom: 5px;
+    text-transform: uppercase;
+  }
+  .chip-group__row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .achip {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--petrol-strong);
+    background: var(--surface-raised);
+    border: 1.3px solid rgba(30,110,106,.35);
+    border-radius: 999px;
+    padding: 6px 13px;
+    letter-spacing: -0.01em;
+    transition: background .15s ease, border-color .15s ease;
+    cursor: pointer;
+  }
+  .achip:hover { background: var(--petrol-tint); border-color: var(--petrol); }
+
+  .hint-text { font-size: 11.5px; color: var(--ink-muted); padding-left: 2px; }
+
+  /* ---- bottom input bar ---- */
+
+  .app-inputbar {
+    flex: 0 0 auto;
+    background: var(--surface-raised);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px 14px;
+  }
+
+  .suggest-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
+  .suggest-row::-webkit-scrollbar { display: none; }
+
+  .qchip {
+    flex: none;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+    background: var(--surface-base);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    white-space: nowrap;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+    cursor: pointer;
+  }
+  .qchip:hover { border-color: var(--petrol); color: var(--petrol-strong); background: var(--petrol-tint); }
+
+  .suggest-hint {
+    flex: none;
+    font-size: 11px;
+    color: var(--ink-muted);
+    padding-left: 4px;
+    border-left: 1px solid var(--border);
+    margin-left: 2px;
+  }
+
+  .input-row { display: flex; align-items: center; gap: 8px; }
+
+  .input-pill {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    background: var(--surface-base);
+    border: 1.4px solid var(--border);
+    border-radius: 999px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink-muted);
+    letter-spacing: -0.01em;
+  }
+
+  .send-btn {
+    flex: none;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: var(--petrol);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px -3px rgba(20,110,106,.45);
+  }
+  .send-btn svg { width: 17px; height: 17px; }
+
+  /* ============================================================
+     DEVICE VARIANTS
+     ============================================================ */
+
+  .app-shell.desktop {
+    width: 760px;
+    height: 900px;
+    border-radius: 20px;
+    border: 1px solid #E6E3DD;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 22px 50px -20px rgba(20,45,45,.28);
+  }
+
+  .phone-bezel {
+    width: 390px;
+    padding: 10px;
+    background: linear-gradient(155deg, #26251F, #14130F);
+    border-radius: 46px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 24px 54px -18px rgba(20,45,45,.34);
+    position: relative;
+  }
+
+  .phone-bezel .app-shell.mobile {
+    width: 100%;
+    height: 800px;
+    border-radius: 36px;
+  }
+
+  .notch {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 110px;
+    height: 22px;
+    background: #14130F;
+    border-radius: 0 0 16px 16px;
+    z-index: 5;
+  }
+
+  .mobile .app-header { padding: 20px 16px 12px; }
+  .mobile .app-conv { padding: 16px 16px 24px; gap: 18px; }
+  .mobile .app-inputbar { padding: 8px 14px 16px; }
+  .mobile .bubble { font-size: 13.5px; max-width: 88%; }
+  .mobile .result-grid { gap: 8px; }
+  .mobile .lc__title { font-size: 11.5px; }
+  .mobile .lc__price { font-size: 13.5px; }
+</style>
+
+<div class="page">
+
+  <header class="page-header">
+    <span class="eyebrow">차장님 · UX DESIGN SIGN-OFF</span>
+    <h1>차장님 — AI 검색 흐름 (구조형·되묻기·조합형·거절)</h1>
+    <p>자연어 검색창 하나에서 갈라지는 4가지 응답 패턴을 한 대화 흐름으로 확인합니다. ① 조건이 명확하면 매물 카드로 바로 답하고(구조형), ② 모호하면 되물어 좁히고(되묻기), ③ 가이드 지식과 매물을 함께 섞어 답하고(조합형), ④ 무관한 질문엔 정체성을 밝히며 부드럽게 되돌립니다(거절). 데스크톱 760px 중앙 컬럼과 모바일 390px 프레임을 나란히 배치했습니다.</p>
+  </header>
+
+  <div class="frames">
+
+    <!-- ============ DESKTOP FRAME ============ -->
+    <div class="device">
+      <span class="device-label">데스크톱 · 760px 중앙 컬럼</span>
+      <div class="app-shell desktop">
+
+        <div class="app-header">
+          <div class="app-header__icon">AI</div>
+          <div>
+            <h2>AI로 찾기</h2>
+            <span class="sub">원하는 조건을 편하게 말씀해 주세요</span>
+          </div>
+        </div>
+
+        <div class="app-conv">
+
+          <!-- 1. 구조형 -->
+          <div class="turn">
+            <div class="msg-row user"><div class="bubble user">3천만원 이하 무사고 SUV 보여줘</div></div>
+            <div class="msg-row ai"><div class="bubble ai">3천만원 이하 · 무사고 SUV로 12대를 찾았어요. 인기순으로 보여드릴게요.</div></div>
+            <div class="result-grid">
+              <article class="lc">
+                <div class="lc__photo"><span class="lc__badge">6장</span></div>
+                <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span></div>
+                <div class="lc__body">
+                  <div class="lc__header"><h3 class="lc__title">[기아] 스포티지 NQ5 · 2022년</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                  <p class="lc__price">2,860만원</p>
+                  <div class="lc__chips"><span class="chip-sm">어라운드뷰</span><span class="chip-sm more">외 2개</span></div>
+                </div>
+              </article>
+              <article class="lc">
+                <div class="lc__photo grad-b"><span class="lc__badge">4장</span></div>
+                <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                <div class="lc__body">
+                  <div class="lc__header"><h3 class="lc__title">[현대] 투싼 NX4 · 2021년</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                  <p class="lc__price">2,540만원</p>
+                  <div class="lc__chips"><span class="chip-sm">스마트키</span><span class="chip-sm">후방센서</span></div>
+                </div>
+              </article>
+              <article class="lc">
+                <div class="lc__placeholder"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg><span>사진 준비중</span></div>
+                <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                <div class="lc__body">
+                  <div class="lc__header"><h3 class="lc__title">[쉐보레] 트레일블레이저 · 2023년</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                  <p class="lc__price">2,980만원</p>
+                  <div class="lc__chips"><span class="chip-sm">디지털계기판</span></div>
+                </div>
+              </article>
+              <article class="lc">
+                <div class="lc__photo grad-c"><span class="lc__badge">8장</span></div>
+                <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span></div>
+                <div class="lc__body">
+                  <div class="lc__header"><h3 class="lc__title">[르노] QM6 · 2020년</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                  <p class="lc__price">2,190만원</p>
+                  <div class="lc__chips"><span class="chip-sm">가죽시트</span><span class="chip-sm more">외 1개</span></div>
+                </div>
+              </article>
+            </div>
+            <div class="cta-row"><span class="cta-more">더 보기</span><span class="cta-all">이 조건으로 전체보기 →</span></div>
+          </div>
+
+          <!-- 2. 되묻기 -->
+          <div class="turn">
+            <div class="msg-row user"><div class="bubble user">가족이 탈 차 추천해줘</div></div>
+            <div class="msg-row ai"><div class="bubble ai">가족용이라면 몇 가지만 여쭤볼게요 — 조건을 좁히면 더 정확해요.</div></div>
+            <div class="chip-groups">
+              <div>
+                <div class="chip-group__label">인원</div>
+                <div class="chip-group__row"><span class="achip">5인승</span><span class="achip">7인승</span></div>
+              </div>
+              <div>
+                <div class="chip-group__label">예산</div>
+                <div class="chip-group__row"><span class="achip">3천 이하</span><span class="achip">3~5천</span><span class="achip">5천 이상</span></div>
+              </div>
+              <div>
+                <div class="chip-group__label">연료</div>
+                <div class="chip-group__row"><span class="achip">가솔린</span><span class="achip">디젤</span><span class="achip">하이브리드</span><span class="achip">전기</span></div>
+              </div>
+            </div>
+            <div class="hint-text">칩을 눌러도 되고, 직접 입력해도 돼요.</div>
+          </div>
+
+          <!-- 3. 조합형 -->
+          <div class="turn">
+            <div class="msg-row user"><div class="bubble user">장거리 출퇴근에 편한 차 없을까?</div></div>
+            <div class="msg-row ai">
+              <div style="display:flex;flex-direction:column;gap:6px;max-width:84%;">
+                <span class="guide-tag"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h9l3 3v9H4z"/><path d="M7 8h6M7 11h6M7 14h3"/></svg>차장님 가이드 참고</span>
+                <div class="bubble ai">장거리 출퇴근엔 연비와 주행 안정성이 중요해요. 하이브리드·디젤 세단 위주로, 무사고 위주로 골라봤어요.</div>
+              </div>
+            </div>
+            <div class="result-grid">
+              <article class="lc">
+                <div class="lc__photo grad-d"><span class="lc__badge">5장</span></div>
+                <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span></div>
+                <div class="lc__body">
+                  <div class="lc__header"><h3 class="lc__title">[현대] 그랜저 하이브리드 · 2022년</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                  <p class="lc__price">3,780만원</p>
+                  <div class="lc__chips"><span class="chip-sm">통풍시트</span><span class="chip-sm">스마트키</span></div>
+                </div>
+              </article>
+              <article class="lc">
+                <div class="lc__photo"><span class="lc__badge">7장</span></div>
+                <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                <div class="lc__body">
+                  <div class="lc__header"><h3 class="lc__title">[벤츠] E220d · 2020년</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                  <p class="lc__price">3,450만원</p>
+                  <div class="lc__chips"><span class="chip-sm">가죽시트</span><span class="chip-sm more">외 2개</span></div>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <!-- 4. 부드러운 거절 -->
+          <div class="turn">
+            <div class="msg-row user"><div class="bubble user">오늘 날씨 어때?</div></div>
+            <div class="msg-row ai"><div class="bubble ai">저는 중고차 찾기를 도와드리는 차장님이에요 🚗 날씨는 알려드리기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.</div></div>
+            <div class="chip-group__row" style="padding-left:2px;">
+              <span class="achip">가성비 첫차</span><span class="achip">전기 SUV</span><span class="achip">무사고 세단</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="app-inputbar">
+          <div class="suggest-row">
+            <span class="qchip">가성비 첫차</span>
+            <span class="qchip">무사고 세단</span>
+            <span class="qchip">전기 SUV</span>
+            <span class="qchip">5천만원대 세단</span>
+            <span class="suggest-hint">직접 입력도 가능</span>
+          </div>
+          <div class="input-row">
+            <div class="input-pill">예: 3천만원대 무사고 흰색 SUV</div>
+            <div class="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ============ MOBILE FRAME ============ -->
+    <div class="device">
+      <span class="device-label">모바일 · 390px 프레임</span>
+      <div class="phone-bezel">
+        <div class="notch"></div>
+        <div class="app-shell mobile">
+
+          <div class="app-header">
+            <div class="app-header__icon">AI</div>
+            <div>
+              <h2>AI로 찾기</h2>
+              <span class="sub">원하는 조건을 편하게 말씀해 주세요</span>
+            </div>
+          </div>
+
+          <div class="app-conv">
+
+            <!-- 1. 구조형 -->
+            <div class="turn">
+              <div class="msg-row user"><div class="bubble user">3천만원 이하 무사고 SUV 보여줘</div></div>
+              <div class="msg-row ai"><div class="bubble ai">3천만원 이하 · 무사고 SUV로 12대를 찾았어요. 인기순으로 보여드릴게요.</div></div>
+              <div class="result-grid">
+                <article class="lc">
+                  <div class="lc__photo"><span class="lc__badge">6장</span></div>
+                  <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                  <div class="lc__body">
+                    <div class="lc__header"><h3 class="lc__title">[기아] 스포티지 NQ5</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                    <p class="lc__price">2,860만원</p>
+                    <div class="lc__chips"><span class="chip-sm">어라운드뷰</span></div>
+                  </div>
+                </article>
+                <article class="lc">
+                  <div class="lc__photo grad-b"><span class="lc__badge">4장</span></div>
+                  <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                  <div class="lc__body">
+                    <div class="lc__header"><h3 class="lc__title">[현대] 투싼 NX4</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                    <p class="lc__price">2,540만원</p>
+                    <div class="lc__chips"><span class="chip-sm">스마트키</span></div>
+                  </div>
+                </article>
+                <article class="lc">
+                  <div class="lc__placeholder"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7l1.5-3h5L16 7"/><circle cx="12" cy="13.5" r="3.2"/></svg><span>사진 준비중</span></div>
+                  <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                  <div class="lc__body">
+                    <div class="lc__header"><h3 class="lc__title">[쉐보레] 트레일블레이저</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                    <p class="lc__price">2,980만원</p>
+                    <div class="lc__chips"><span class="chip-sm">디지털계기판</span></div>
+                  </div>
+                </article>
+                <article class="lc">
+                  <div class="lc__photo grad-c"><span class="lc__badge">8장</span></div>
+                  <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                  <div class="lc__body">
+                    <div class="lc__header"><h3 class="lc__title">[르노] QM6</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                    <p class="lc__price">2,190만원</p>
+                    <div class="lc__chips"><span class="chip-sm">가죽시트</span></div>
+                  </div>
+                </article>
+              </div>
+              <div class="cta-row"><span class="cta-more">더 보기</span><span class="cta-all">전체보기 →</span></div>
+            </div>
+
+            <!-- 2. 되묻기 -->
+            <div class="turn">
+              <div class="msg-row user"><div class="bubble user">가족이 탈 차 추천해줘</div></div>
+              <div class="msg-row ai"><div class="bubble ai">가족용이라면 몇 가지만 여쭤볼게요 — 조건을 좁히면 더 정확해요.</div></div>
+              <div class="chip-groups">
+                <div>
+                  <div class="chip-group__label">인원</div>
+                  <div class="chip-group__row"><span class="achip">5인승</span><span class="achip">7인승</span></div>
+                </div>
+                <div>
+                  <div class="chip-group__label">예산</div>
+                  <div class="chip-group__row"><span class="achip">3천 이하</span><span class="achip">3~5천</span><span class="achip">5천 이상</span></div>
+                </div>
+                <div>
+                  <div class="chip-group__label">연료</div>
+                  <div class="chip-group__row"><span class="achip">가솔린</span><span class="achip">디젤</span><span class="achip">하이브리드</span><span class="achip">전기</span></div>
+                </div>
+              </div>
+              <div class="hint-text">칩을 눌러도 되고, 직접 입력해도 돼요.</div>
+            </div>
+
+            <!-- 3. 조합형 -->
+            <div class="turn">
+              <div class="msg-row user"><div class="bubble user">장거리 출퇴근에 편한 차 없을까?</div></div>
+              <div class="msg-row ai">
+                <div style="display:flex;flex-direction:column;gap:6px;max-width:88%;">
+                  <span class="guide-tag"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 4h9l3 3v9H4z"/><path d="M7 8h6M7 11h6M7 14h3"/></svg>차장님 가이드 참고</span>
+                  <div class="bubble ai">장거리 출퇴근엔 연비와 주행 안정성이 중요해요. 하이브리드·디젤 세단 위주로, 무사고 위주로 골라봤어요.</div>
+                </div>
+              </div>
+              <div class="result-grid">
+                <article class="lc">
+                  <div class="lc__photo grad-d"><span class="lc__badge">5장</span></div>
+                  <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                  <div class="lc__body">
+                    <div class="lc__header"><h3 class="lc__title">[현대] 그랜저 하이브리드</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                    <p class="lc__price">3,780만원</p>
+                    <div class="lc__chips"><span class="chip-sm">통풍시트</span></div>
+                  </div>
+                </article>
+                <article class="lc">
+                  <div class="lc__photo"><span class="lc__badge">7장</span></div>
+                  <div class="lc__pills"><span class="pill"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span></div>
+                  <div class="lc__body">
+                    <div class="lc__header"><h3 class="lc__title">[벤츠] E220d</h3><button class="lc__heart"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button></div>
+                    <p class="lc__price">3,450만원</p>
+                    <div class="lc__chips"><span class="chip-sm">가죽시트</span></div>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <!-- 4. 부드러운 거절 -->
+            <div class="turn">
+              <div class="msg-row user"><div class="bubble user">오늘 날씨 어때?</div></div>
+              <div class="msg-row ai"><div class="bubble ai">저는 중고차 찾기를 도와드리는 차장님이에요 🚗 날씨는 알려드리기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.</div></div>
+              <div class="chip-group__row" style="padding-left:2px;">
+                <span class="achip">가성비 첫차</span><span class="achip">전기 SUV</span><span class="achip">무사고 세단</span>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="app-inputbar">
+            <div class="suggest-row">
+              <span class="qchip">가성비 첫차</span>
+              <span class="qchip">무사고 세단</span>
+              <span class="qchip">전기 SUV</span>
+              <span class="suggest-hint">직접 입력도 가능</span>
+            </div>
+            <div class="input-row">
+              <div class="input-pill">예: 3천만원대 무사고 흰색 SUV</div>
+              <div class="send-btn"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>

@@ -11,6 +11,24 @@
 --   이 파일은 "데이터의 단일 출처"로 저장소에 보존된다.
 --
 -- 멱등성: 두 번 실행해도 계정이 중복 생성되지 않도록 작성했다.
+--
+-- 🔐 비밀번호 주입(기술부채 #1 해소): 시드 계정 비밀번호는 저장소에 커밋하지 않는다.
+--   실행 전 세션 변수로 주입한다 — 시드 본문과 "같은 execute_sql 호출"에 아래 한 줄을 맨 앞에 붙인다:
+--       SET app.seed_password = '<데모 비밀번호>';
+--   (로컬 비번 파일 supabase/.env.seed 는 .gitignore 처리됨. 템플릿: supabase/seed-secret.example)
+--   미설정 시 아래 게이팅 블록이 즉시 예외를 던져 안전하게 실패한다(fail-closed).
+
+-- ════════════════════════════════════════════════════════════════════
+-- [게이팅] app.seed_password 세션 변수 필수 확인
+-- ════════════════════════════════════════════════════════════════════
+do $$
+begin
+  if coalesce(nullif(current_setting('app.seed_password', true), ''), '') = '' then
+    raise exception '[seed] app.seed_password 세션 변수가 설정되지 않았습니다. '
+      '시드 실행 전 SET app.seed_password = ''<비밀번호>''; 를 같은 호출에 먼저 붙이세요 '
+      '(supabase/.env.seed 참조).';
+  end if;
+end $$;
 
 -- ════════════════════════════════════════════════════════════════════
 -- [Story 1.5] 관리자 계정 시드 (FR4)
@@ -26,12 +44,12 @@
 --   2) auth.users insert 시 트리거가 profiles 행을 buyer로 만든다 →
 --      insert 후 profiles.role을 'admin'으로 승격(UPDATE)해야 한다.
 --
--- ⚠️ 데모 전용 자격증명이다. 운영 전 반드시 비밀번호를 교체할 것.
---     이메일: admin@test.com / 비밀번호: admin123
+-- ⚠️ 데모 전용 계정이다. 이메일: admin@test.com
+--     비밀번호는 세션 변수 app.seed_password 로 주입한다(위 게이팅 참조). 저장소에 평문을 두지 않는다.
 do $$
 declare
   v_email    text := 'admin@test.com';
-  v_password text := 'admin123';
+  v_password text := current_setting('app.seed_password', true);
   v_id       uuid;
 begin
   -- (멱등) 같은 이메일 계정이 없을 때만 새로 생성한다.
@@ -121,11 +139,11 @@ end $$;
 -- embedding: 전부 NULL로 둔다(컬럼 생략 = 기본 NULL). Epic 4(Story 4.2)에서 일괄 적재(backfill).
 --   description·options 텍스트가 그때 코퍼스①(임베딩 대상)이 되므로 자연스러운 한국어로 충실히 작성한다.
 --
--- ⚠️ 데모 전용 자격증명: seller-seed@test.com / seller123 (운영 전 교체).
+-- ⚠️ 데모 전용 계정: seller-seed@test.com (비밀번호는 세션 변수 app.seed_password 로 주입).
 do $$
 declare
   v_email     text := 'seller-seed@test.com';
-  v_password  text := 'seller123';
+  v_password  text := current_setting('app.seed_password', true);
   v_seller_id uuid;
 begin
   -- ── 1) 시드 전용 판매자 계정 (멱등) ──────────────────────────────
@@ -360,7 +378,7 @@ end $$;
 -- ════════════════════════════════════════════════════════════════════
 -- seller-seed2/3@test.com 을 seed.sql 컨벤션대로 생성하고, 각 30/28건 매물을 멱등 삽입한다.
 -- embedding은 NULL(컬럼 생략) → backfill_embeddings.py 가 채운다.
--- ⚠️ 데모 전용 자격증명: seller-seed2@test.com / seller-seed3@test.com (둘 다 비번 seller123)
+-- ⚠️ 데모 전용 계정: seller-seed2@test.com / seller-seed3@test.com (비밀번호는 세션 변수 app.seed_password 로 주입)
 do $$
 declare
   v_emails text[] := array['seller-seed2@test.com','seller-seed3@test.com'];
@@ -377,7 +395,7 @@ begin
       ) values (
         gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', v_email,
-        extensions.crypt('seller123', extensions.gen_salt('bf')), now(),
+        extensions.crypt(current_setting('app.seed_password', true), extensions.gen_salt('bf')), now(),
         '{"provider":"email","providers":["email"]}'::jsonb,
         '{"role":"seller"}'::jsonb, '', '', '', '', now(), now()
       );

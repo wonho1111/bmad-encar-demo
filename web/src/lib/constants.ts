@@ -80,3 +80,11 @@ export const LISTING_RANGES = {
   mileage: { min: 0 }, // km, 음수 불가
   displacement: { min: 0 }, // cc, 전기차 0 허용
 } as const;
+
+/**
+ * 채팅 메시지 제약 (DB CHECK와 일치 — 입력창 maxLength·전송 가드에 공유).
+ * (근거: 0010_chat_message_length.sql, docs/conventions.md §7, 기술부채 #8)
+ */
+export const CHAT = {
+  MESSAGE_MAX_LENGTH: 2000, // 본문 최대 글자 수(trim 후). DB CHECK: char_length(body) <= 2000
+} as const;

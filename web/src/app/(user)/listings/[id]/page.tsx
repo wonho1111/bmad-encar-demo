@@ -6,8 +6,8 @@
 //   3) 찾으면 FR5 15필드 + 설명·옵션·상태를 표시(사진 없음). 못 찾으면 "찾을 수 없음" 안내,
 //      조회 자체가 실패하면 별도 한국어 에러 안내(둘을 구분 — 2-3 edit·3-1 패턴).
 //
-// 보호: proxy가 /listings 비로그인 1차 차단. 여기선 로그인 사용자(구매자·판매자 공통)가 on_sale을 본다.
-//   별도 역할 게이트 없음 — on_sale은 RLS상 모두에게 공개.
+// 열람: FR58(8.5)부터 /listings는 비로그인(anon)도 열람 가능 — on_sale은 RLS상 누구에게나 공개.
+//   로그인 게이트는 "문의하기" 같은 행동에만 적용된다(아래 InquiryButton/로그인 유도 링크 분기 참조).
 //
 // FR11 비노출 규칙(판매완료는 구매자에게 안 보임)과 이중 방어 근거는 @/lib/listings 한 곳에 모았다(단일 출처).
 //
@@ -19,6 +19,7 @@ import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingDetailFields from '@/components/listings/ListingDetailFields';
+import { buttonClasses } from '@/components/ui/Button';
 import InquiryButton from './InquiryButton';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
@@ -85,7 +86,9 @@ export default async function ListingDetailPage({
     console.error('[listings/detail] 매물 상세 조회 실패:', error);
   }
 
-  const header = <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} />;
+  const header = (
+    <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath={`/listings/${id}`} />
+  );
 
   // 조회 실패(네트워크·RLS·DB) — "못 찾음"과 구분해 빨강 에러 안내(AC4).
   if (error) {
@@ -150,9 +153,18 @@ export default async function ListingDetailPage({
             {listing.year}년 · {priceText}
           </p>
           {/* 문의하기 (FR19) — 이 매물의 판매자와 채팅방을 연다(없으면 생성, 있으면 재사용).
+              FR58(8.5): 게이트는 "행동"에만 — 비로그인에게도 어포던스는 보이되, 클릭하면
+              로그인으로 보내고 원래 이 상세로 복귀한다(redirectedFrom).
               본인이 이 매물의 판매자면 숨긴다(자기 자신과 채팅 불가 — DB의 CHECK(buyer<>seller)로도 막힘, 앱측 1차 비노출). */}
-          {user && user.id !== listing.seller_id && (
-            <InquiryButton listingId={listing.id} />
+          {!user ? (
+            <Link
+              href={`/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`}
+              className={buttonClasses({ className: 'w-fit' })}
+            >
+              로그인하고 문의하기
+            </Link>
+          ) : (
+            user.id !== listing.seller_id && <InquiryButton listingId={listing.id} />
           )}
         </section>
 

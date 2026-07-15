@@ -18,6 +18,25 @@ date: '2026-06-18'
 
 # Architecture Decision Document
 
+> # ⚠️ 이 문서는 **2026-06-18 baseline(동결)**이다 — 현행이 아니다.
+>
+> **현행 아키텍처 = [`architecture-increment-2026-07-12.md`](./architecture-increment-2026-07-12.md)** (status: complete, 2026-07-13). 증분이 정정한 결정은 그 문서가 정본이다.
+>
+> **이 문서는 "2026-06-18에 이렇게 결정했다"는 역사**이며, MVP(Epic 1~7)를 만든 근거다. **고치지 않는다** — 고치면 "그때 무슨 근거로 그렇게 했나"를 잃는다. 증분은 원본을 덮어쓰지 않고 별도 문서를 얹는다.
+>
+> ### 이 문서에서 이미 낡은 것 (2026-07-15 실측 — 그대로 따르지 말 것)
+>
+> *(줄 번호를 적지 않는다 — 이 문서가 한 줄만 바뀌어도 다 밀린다. 문자열로 찾아라.)*
+>
+> | 이 문서가 뭐라 하나 | 실제 현행 (2026-07-15 실측) | 정본 |
+> |---|---|---|
+> | 배포 = **"Vercel(우선). AI 번들 초과 시 백엔드만 Cloud Run 분리"** · Vercel 한도 **500MB** | **api는 반드시 Cloud Run**(서울, 운영 `encar-ai-api`·개발 `encar-ai-api-dev`). Vercel은 번들 한도 초과로 **폐기됨** | `_bmad-output/project-context.md` · `docs/deployment-runbook.md` |
+> | 생성 모델 **`gemini-flash-latest`** | **`gemini-3.1-flash-lite`** — 별칭 대신 명시 버전 고정(비용·재현성, Phase B A/B 실측으로 채택) | `api/app/config.py` · `_bmad-output/project-context.md` |
+> | **Next.js 16.2.7** · **Flutter 3.44.0** | Next **16.2.9** · Dart SDK **^3.12.2** | `web/package.json` · `app/pubspec.yaml` |
+> | 채팅 폴링 **3~5초** | 숫자는 **코드가 정본**(`ChatRoomMessages.tsx`의 `POLL_INTERVAL_MS`). Epic 12가 Realtime으로 전환 예정 | 코드 |
+>
+> **경계 계약(임베딩 차원·wire 네이밍·단위·응답/에러 포맷·FR11·접근 게이트·마이그레이션 정책)의 정본은 언제나 [`docs/conventions.md`](../../docs/conventions.md)다.**
+
 _This document builds collaboratively through step-by-step discovery. Sections are appended as we work through each architectural decision together._
 
 ## Project Context Analysis
@@ -502,8 +521,11 @@ bmad-encar-demo/                  # 경량 폴더 모노레포 (단일 git repo)
 ### Implementation Handoff
 
 **AI Agent Guidelines:**
-- 모든 아키텍처 결정을 문서 그대로 따른다.
-- 일관성 규칙(snake_case·단위·응답/에러 포맷)을 전 컴포넌트에 적용한다.
+
+> ⚠️ **아래는 2026-06-18 baseline 기준이다. 지금 이 문서를 "그대로 따르면" 배포처·모델·버전이 틀린다** — 문서 상단의 낡은 항목 표를 먼저 읽어라. 현행은 `architecture-increment-2026-07-12.md`, 경계 계약 정본은 `docs/conventions.md`다.
+
+- 모든 아키텍처 결정을 문서 그대로 따른다. ← **증분이 정정한 것은 예외**(위 경고).
+- 일관성 규칙(snake_case·단위·응답/에러 포맷)을 전 컴포넌트에 적용한다. ← 값은 `docs/conventions.md`가 갖는다.
 - 프로젝트 구조·경계를 준수하고, 아키텍처 질문은 본 문서를 참조한다.
 
 **First Implementation Priority:**

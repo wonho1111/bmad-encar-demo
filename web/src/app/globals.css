@@ -1,26 +1,177 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* ============================================================================
+   차장님 디자인 시스템 토큰 (Story 8.1 파운데이션)
+   정본: _bmad-output/planning-artifacts/ux-designs/.../DESIGN.md frontmatter
+   ── 색 hex는 DESIGN.md에서 글자 그대로 복사. 임의 조정 금지(AC4).
+   ── 색 변경은 반드시 이 파일 한 곳에서만(AC1).
+   ── 라이트=:root, 다크=@media(prefers-color-scheme: dark)로 스왑.
+      수동 테마 토글 UI는 이 스토리 범위 아님.
+   ============================================================================ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  /* 표면 (D1) */
+  --surface-base: #FAFAF8; /* 본문 바탕 */
+  --surface-raised: #FFFFFF; /* 카드·시트·입력 */
+  /* 잉크 (D1) */
+  --ink-primary: #1A1E1D; /* 본문·제목 */
+  --ink-secondary: #565F5D; /* 보조 텍스트 */
+  --ink-muted: #676D69; /* meta·면책·placeholder 글자 (AA 5.06:1) */
+  --border-hairline: #E6E3DD; /* 1px 구분선·카드 테두리 */
+  /* 브랜드 petrol = 신뢰·구조 (D1·D2) */
+  --brand-petrol: #1E6E6A; /* 내비·버튼·포커스·칩 */
+  --brand-petrol-strong: #14514E; /* 강조 구조·히어로 밴드 상단 */
+  --petrol-deepest: #0F3D3E; /* 히어로 그라데이션 종단 */
+  /* 앰버 = 가격·CTA 전용 (D3) */
+  --price-emphasis: #C0730F; /* 가격 숫자 (AA 라이트 흰바탕 3.68:1, 큰 텍스트) */
+  /* 신뢰속성 = 차분한 초록 (D3, amber와 분리) */
+  --trust-green-bg: #E7F3EC; /* 무사고/1인소유/비흡연 칩 바탕 */
+  --trust-green-ink: #1B6E3D; /* 신뢰속성 글자·✓ 글리프 (AA 라이트 5.51:1) */
+  /* 상태 */
+  --placeholder-bg: #F1EFE9; /* 사진 준비중 바탕 */
+  --warn-amber-bg: #FDEFDA; /* 정직성 고지·주의 배너 바탕 */
+  --warn-amber-ink: #8A5A12; /* 주의 배너 글자 */
+  --danger: #C0392B; /* 오류·삭제·파괴적 액션 (AA 라이트 흰바탕 5.44:1) */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* 표면 */
+    --surface-base: #201F1C;
+    --surface-raised: #2B2A26;
+    /* 잉크 */
+    --ink-primary: #F5F3EE;
+    --ink-secondary: #C9C6BE;
+    --ink-muted: #A6A196; /* AA 다크 5.58:1 */
+    --border-hairline: #3B3934;
+    /* 브랜드 petrol */
+    --brand-petrol: #4FA39D;
+    --brand-petrol-strong: #6BBAB4;
+    --petrol-deepest: #0B2E2F;
+    /* 앰버 */
+    --price-emphasis: #F5B860;
+    /* 신뢰속성 */
+    --trust-green-bg: #1E3A2A;
+    --trust-green-ink: #7FCE9E;
+    /* 상태 */
+    --placeholder-bg: #2A2924;
+    --warn-amber-bg: #3A2E1C;
+    --warn-amber-ink: #F0C177;
+    --danger: #F08A7E;
   }
 }
 
+@theme inline {
+  /* ── 색: 위 라이트/다크 스왑 변수에 매핑. inline이라 다크 미디어쿼리가 유틸에 반영됨.
+        (이 색들만 inline인 이유 = var(--surface-base) 등 스왑 변수를 참조하기 때문) ──
+        → bg-surface-base · text-ink-muted · border-border-hairline · text-brand-petrol 등 */
+  --color-surface-base: var(--surface-base);
+  --color-surface-raised: var(--surface-raised);
+  --color-ink-primary: var(--ink-primary);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-border-hairline: var(--border-hairline);
+  --color-brand-petrol: var(--brand-petrol);
+  --color-brand-petrol-strong: var(--brand-petrol-strong);
+  --color-petrol-deepest: var(--petrol-deepest);
+  --color-price-emphasis: var(--price-emphasis);
+  --color-trust-green-bg: var(--trust-green-bg);
+  --color-trust-green-ink: var(--trust-green-ink);
+  --color-placeholder-bg: var(--placeholder-bg);
+  --color-warn-amber-bg: var(--warn-amber-bg);
+  --color-warn-amber-ink: var(--warn-amber-ink);
+  --color-danger: var(--danger);
+}
+
+/* ── 정적 리터럴 토큰: @theme static이라서 선언된 토큰이 (아직 유틸로 안 쓰여도) 항상 :root에 방출된다.
+      → 유틸리티(bg-accent-amber·text-price·rounded-card·shadow-card)와
+        직접 참조(var(--radius-card)·var(--shadow-card)·style={{...}}) 양쪽에서 쓸 수 있다.
+      static이 아닌 plain @theme는 "현재 참조된 토큰"만 방출(트리셰이킹)하므로, 아직 소비 에픽이 없는
+      이 파운데이션 단계에선 raw var 접근이 끊긴다. static으로 그 footgun을 막는다 — 코드리뷰 결정. ── */
+@theme static {
+  /* ── 앰버 CTA: 라이트/다크 동일 상수(스왑 안 됨). ──
+        accent-amber 배경 = #F0A339 (양 모드 동일).
+        amber-ink = amber CTA 위 글자·아이콘 전용 어두운 잉크. 다크에서도 절대 스왑 금지
+        (스왑 시 대비 1.89:1 실패). #F0A339 위 8.02:1 유지. (AC3) */
+  --color-accent-amber: #F0A339;
+  --color-amber-ink: #1A1E1D;
+
+  /* ── 타이포 (AC2): Pretendard 우선, 실패 시 시스템 한글 폰트로 폴백 ── */
+  --font-sans: "Pretendard Variable", Pretendard, system-ui, -apple-system,
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+
+  /* 타이포 스케일 — 권장 weight는 유틸(font-extrabold=800 등)로 페어링.
+     위계: 가격 800 > 차량명 600 > meta 500 (이 대비가 곧 크래프트) */
+  --text-display: 36px; /* 히어로 헤드라인 */
+  --text-display--line-height: 1.15; /* weight 800 */
+  --text-section: 20px; /* 섹션 제목 */
+  --text-section--line-height: 1.3; /* weight 700 */
+  --text-card-title: 16px; /* 차량명 */
+  --text-card-title--line-height: 1.4; /* weight 600 */
+  --text-price: 26px; /* 가격 (price-emphasis) */
+  --text-price--line-height: 1.2; /* weight 800 */
+  --text-body: 15px;
+  --text-body--line-height: 1.6; /* weight 500 */
+  --text-meta: 13px; /* 주행·연료·지역 (ink-muted) */
+  --text-meta--line-height: 1.5; /* weight 500 */
+  --text-caption: 12px; /* 면책·배지 */
+  --text-caption--line-height: 1.4; /* weight 500 */
+
+  /* ── 모양 radius (AC5) — rounded-card / rounded-chip / rounded-badge ──
+     히어로 검색바·버튼은 카드와 조화되는 12~14 계열(Tailwind 기본 rounded-xl 등), 로고 배지=라운드-스퀘어 */
+  --radius-card: 16px;
+  --radius-chip: 9px;
+  --radius-badge: 11px;
+
+  /* ── 겹 그림자 (AC5) — shadow-card / shadow-card-hover / shadow-float ──
+     겹 그림자로 깊이(단일 흐릿한 그림자 = 데모 티).
+     ⚠️ 다크모드 규약: 그림자를 다크에서 무겁게 쓰지 않는다. 대신 border-hairline·표면 밝기차로 층 표현
+        (소비 컴포넌트가 dark:shadow-none + dark:border 등으로 처리). */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 10px 30px -14px rgba(0, 0, 0, 0.18);
+  --shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.05), 0 16px 40px -12px rgba(0, 0, 0, 0.22);
+  --shadow-float: 0 4px 8px rgba(0, 0, 0, 0.06), 0 18px 44px -12px rgba(0, 0, 0, 0.28);
+}
+
+/* 여백: 4pt 리듬(4·8·12·16·20·24) = Tailwind 기본 spacing으로 충족(별도 토큰 불필요).
+   카드 내부 padding 규약 = 18~20px (p-[18px]~p-5). */
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--surface-base);
+  color: var(--ink-primary);
+  /* font-family는 --font-sans(@theme) → Tailwind가 --default-font-family로 상속.
+     Pretendard는 layout.tsx의 CDN dynamic-subset <link>로 로드. */
+}
+
+/* ============================================================================
+   접근성 전역 규칙 (Story 8.2, UX-DR22 — 8.1 토큰 블록은 위에서 그대로 보존)
+   ============================================================================ */
+
+/* 포커스링: 키보드 포커스 시에만(마우스 클릭은 안 보임 — :focus-visible) brand-petrol 링.
+   웹 전 인터랙션 요소가 이 한 규칙으로 키보드 도달 가능해진다. */
+:focus-visible {
+  outline: 2px solid var(--brand-petrol);
+  outline-offset: 2px;
+}
+
+/* OS "동작 줄이기"가 켜지면 애니메이션·전환·부드러운 스크롤을 사실상 제거한다.
+   컴포넌트별 Tailwind `motion-reduce:` 변형과 별개로, 이 전역 규칙이 안전망 역할을 한다. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* CardCarousel 전용 — 스냅 스크롤(1.2장 노출)이 이미 스크롤 가능 신호라 브라우저 기본
+   스크롤바까지 겹치면 지저분하다. 키보드/스크린리더 접근성에는 영향 없음(시각적 숨김만). */
+.scrollbar-hide {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* 구형 Edge */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

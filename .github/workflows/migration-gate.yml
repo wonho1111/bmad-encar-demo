@@ -1,0 +1,31 @@
+name: Migration Gate
+
+# 이 레포 최초의 CI (Story 8.6 Task 3b). supabase/migrations/의 self-containment를 검증한다.
+# 배포 파이프라인(Vercel·Cloud Run 자동 배포)과 완전히 독립이며, 원격 DB에 접속하지 않는다
+# (빈 컨테이너를 매번 새로 띄우고 버린다) — secrets 불필요.
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "supabase/migrations/**"
+      - "scripts/**"
+      - ".github/workflows/migration-gate.yml"
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - "scripts/**"
+      - ".github/workflows/migration-gate.yml"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # 없으면 GitHub 기본 360분까지 러너를 점유한다. 도커 기동+마이그 12개 적용은
+    # 실측 1~2분이라 15분이면 넉넉하고, 넘으면 그건 스톨이지 정상 실행이 아니다.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: python scripts/check_migrations.py

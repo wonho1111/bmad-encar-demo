@@ -1,4 +1,8 @@
-"""AC3 — JWT 검증: 미인증 401, 인증 통과(의존성 오버라이드로 검증)."""
+"""`/ai/search` 인증 게이트 — 무토큰 401, 빈 Bearer 401, 무효 토큰 401, 인증 통과 200.
+
+FR58(8.5)은 열람(매물 목록·상세)만 anon에 열고 이 엔드포인트는 **로그인 필수로 남긴다**:
+검색 1회 = Gemini 호출 3회 내외 = 실제 과금이므로 "열람"이 아니라 "행동"이다(conventions.md §8).
+"""
 
 from fastapi.testclient import TestClient
 
@@ -9,19 +13,47 @@ client = TestClient(app)
 
 
 def test_search_without_token_returns_401():
+    # 토큰 없음 → 네트워크 호출 전에 바로 401(비밀값 없이도 이 경로가 동작해야 한다).
     r = client.post("/ai/search", json={"query": "3천만원 이하 SUV"})
     assert r.status_code == 401
     assert r.json()["error"]["code"] == "unauthorized"
 
 
-def test_search_with_malformed_authorization_returns_401():
-    # "Bearer" 뒤 토큰 없음 → 미인증으로 401.
+def test_search_with_empty_bearer_returns_401():
+    # "Bearer" 뒤 토큰 없음 = 무토큰 취급 → 401.
     r = client.post(
         "/ai/search",
         json={"query": "x"},
         headers={"Authorization": "Bearer"},
     )
     assert r.status_code == 401
+
+
+def test_search_with_invalid_token_returns_401(monkeypatch):
+    # 토큰은 있으나 Auth 서버가 사용자를 못 준 경우 → 401.
+    # env(SUPABASE_URL/ANON_KEY)를 monkeypatch로 채운다: _validate_token이 create_client 전에
+    # require()로 fail-loud 하므로, 이걸 안 채우면 .env 없는 CI에서 401이 아니라 500으로 실패한다.
+    monkeypatch.setattr("app.auth.settings.supabase_url", "https://test.supabase.co")
+    monkeypatch.setattr("app.auth.settings.supabase_anon_key", "test-anon-key")
+
+    class _FakeAuthResp:
+        user = None
+
+    class _FakeAuth:
+        def get_user(self, token):
+            return _FakeAuthResp()
+
+    class _FakeClient:
+        auth = _FakeAuth()
+
+    monkeypatch.setattr("supabase.create_client", lambda url, key: _FakeClient())
+    r = client.post(
+        "/ai/search",
+        json={"query": "x"},
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "unauthorized"
 
 
 def test_search_authorized_returns_contract_shape(monkeypatch):

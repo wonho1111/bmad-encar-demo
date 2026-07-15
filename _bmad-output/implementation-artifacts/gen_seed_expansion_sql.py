@@ -97,7 +97,7 @@ block = f"""
 -- ════════════════════════════════════════════════════════════════════
 -- seller-seed2/3@test.com 을 seed.sql 컨벤션대로 생성하고, 각 30/28건 매물을 멱등 삽입한다.
 -- embedding은 NULL(컬럼 생략) → backfill_embeddings.py 가 채운다.
--- ⚠️ 데모 전용 자격증명: seller-seed2@test.com / seller-seed3@test.com (둘 다 비번 seller123)
+-- ⚠️ 데모 전용 계정: seller-seed2@test.com / seller-seed3@test.com (비밀번호는 세션 변수 app.seed_password 로 주입)
 do $$
 declare
   v_emails text[] := array['seller-seed2@test.com','seller-seed3@test.com'];
@@ -114,7 +114,7 @@ begin
       ) values (
         gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
         'authenticated', 'authenticated', v_email,
-        extensions.crypt('seller123', extensions.gen_salt('bf')), now(),
+        extensions.crypt(current_setting('app.seed_password', true), extensions.gen_salt('bf')), now(),
         '{{"provider":"email","providers":["email"]}}'::jsonb,
         '{{"role":"seller"}}'::jsonb, '', '', '', '', now(), now()
       );

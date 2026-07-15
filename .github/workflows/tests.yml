@@ -1,0 +1,92 @@
+name: Tests
+
+# 층별 단위·통합 테스트 게이트 (기술부채 #29 해소, 2026-07-16).
+#
+# 왜 만들었나: 이 레포의 CI는 migration-gate.yml 하나뿐이었고 paths 필터가
+# supabase/migrations/** 라, api/web/app을 건드리는 push엔 아무 검사도 안 돌았다.
+# 결과: 테스트 250개가 있는데 아무도 안 돌렸다 — 만들 때 한 번 돌리고 끝.
+# 실증(2026-07-16): 로컬에서 pytest를 돌리자 8개 파일이 수집 단계에서 전멸했다.
+# Story 8.4가 추가한 psycopg_pool 의존성이 로컬 환경에 설치된 적이 없었던 것 —
+# CI가 있었으면 8.4 시점에 바로 빨간불이 났을 일이다. 그래서 이 워크플로가 있다.
+#
+# ⚠️ secrets를 넣지 마라. 그게 이 게이트의 안전장치다.
+#   · api/tests/test_readonly.py (2건) — DATABASE_URL이 있으면 **운영 Supabase에 실제 접속**한다.
+#     없으면 자동 skip. 넣지 마라.
+#   · api/tests/test_live_smoke.py (3건) — RUN_LIVE_SMOKE=1이면 **진짜 Gemini를 호출(과금)**한다.
+#     켜지 마라.
+#   넣는 순간 이 게이트는 결정론적 검사에서 라이브·과금·비결정 검사로 바뀐다.
+#
+# 이 게이트가 안 보는 것 (추측 아니라 실측):
+#   · E2E — Playwright 스펙이 레포에 0개다. docs/e2e-*.md는 사람이 읽는 수동 대본이지 코드가 아니다.
+#   · web은 유닛 1파일(6건)뿐 — 표준이 "E2E 우선, Vitest는 순수 유틸 예외"라 원래 그렇다(project-context 규칙 12).
+#   · 마이그레이션 self-containment — migration-gate.yml 소관(경로 분리 유지).
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "api/**"
+      - "web/**"
+      - "app/**"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "api/**"
+      - "web/**"
+      - "app/**"
+      - ".github/workflows/tests.yml"
+
+jobs:
+  api:
+    name: api (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      # requirements.txt엔 dev extras(pytest·httpx)가 의도적으로 빠져 있다.
+      # extras로 설치해야 테스트 실행에 필요한 것까지 온다 — 로컬 venv 드리프트가
+      # 재발하지 않게 설치 경로를 여기 못박는다.
+      - run: python -m pip install --upgrade pip
+      - run: pip install -e ".[ai,dev]"
+      # secrets 없음 → test_readonly(2) · test_live_smoke(3)은 자동 skip, 나머지 167건 검증.
+      - run: python -m pytest -q
+
+  web:
+    name: web (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  app:
+    name: app (flutter test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter test

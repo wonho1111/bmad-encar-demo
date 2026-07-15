@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>차장님 — 매물 카드 레이아웃 변형 (A/B/C)</title>
+<style>
+  :root{
+    --surface-base:#FAFAF8; --surface-raised:#FFFFFF;
+    --ink-primary:#1A1E1D; --ink-secondary:#565F5D; --ink-muted:#8B928F;
+    --border-hairline:#E6E3DD;
+    --brand-petrol:#1E6E6A; --brand-petrol-strong:#14514E;
+    --accent-amber:#F0A339; --price-emphasis:#E08A1B;
+    --trust-badge-bg:#FDEFDA; --trust-badge-ink:#8A5A12;
+    --placeholder-bg:#F1EFE9;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "맑은 고딕", sans-serif;
+    background:#E9E7E0;
+    color:var(--ink-primary);
+    padding:32px 24px 80px;
+  }
+  h1.page-title{
+    font-size:22px; font-weight:800; margin:0 0 4px;
+  }
+  p.page-sub{
+    font-size:13px; color:var(--ink-secondary); margin:0 0 32px;
+  }
+  section.variant-section{
+    margin-bottom:44px;
+  }
+  .variant-head{
+    display:flex; align-items:baseline; gap:10px; margin-bottom:4px; flex-wrap:wrap;
+  }
+  .variant-head h2{
+    font-size:17px; font-weight:800; margin:0;
+    color:var(--brand-petrol-strong);
+  }
+  .variant-head .tag{
+    font-size:11px; font-weight:700; color:var(--brand-petrol-strong);
+    background:rgba(30,110,106,0.10); border:1px solid rgba(30,110,106,0.25);
+    padding:2px 8px; border-radius:999px;
+  }
+  .variant-rationale{
+    font-size:12.5px; color:var(--ink-secondary); margin:0 0 16px; line-height:1.55;
+    max-width:760px;
+  }
+  .grid-context{
+    background:var(--surface-base);
+    border:1px solid var(--border-hairline);
+    border-radius:14px;
+    padding:22px;
+  }
+  .card-row{
+    display:flex; gap:20px; flex-wrap:wrap;
+  }
+  .card-slot{ display:flex; flex-direction:column; gap:6px; }
+  .slot-label{
+    font-size:11px; font-weight:700; color:var(--ink-muted);
+    text-transform:uppercase; letter-spacing:.03em;
+  }
+
+  /* ---------- shared card shell ---------- */
+  .car-card{
+    width:290px;
+    background:var(--surface-raised);
+    border:1px solid var(--border-hairline);
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 1px 3px rgba(20,20,15,0.06);
+    display:flex; flex-direction:column;
+  }
+
+  /* ---------- photo area ---------- */
+  .photo-wrap{
+    position:relative;
+    width:100%;
+    aspect-ratio:5/3;
+    overflow:hidden;
+    background:linear-gradient(135deg, var(--brand-petrol) 0%, var(--brand-petrol-strong) 100%);
+  }
+  .car-shape{ position:absolute; background:rgba(255,255,255,0.16); }
+  .car-body{ width:68%; height:32%; bottom:24%; left:16%; border-radius:40% 40% 16% 16% / 70% 70% 30% 30%; }
+  .car-cabin{ width:38%; height:20%; bottom:46%; left:31%; border-radius:60% 60% 8% 8% / 90% 90% 20% 20%; }
+  .wheel{ position:absolute; width:11%; aspect-ratio:1; border-radius:50%; background:rgba(0,0,0,0.22); bottom:15%; }
+  .wheel-l{ left:23%; } .wheel-r{ left:60%; }
+
+  .photo-count{
+    position:absolute; top:8px; right:8px;
+    display:flex; align-items:center; gap:3px;
+    background:rgba(15,15,12,0.55);
+    color:#fff; font-size:11px; font-weight:600;
+    padding:3px 8px 3px 6px; border-radius:999px;
+    backdrop-filter:blur(2px);
+  }
+  .photo-count svg{ width:12px; height:12px; opacity:.9; }
+
+  .photo-empty{
+    width:100%; aspect-ratio:5/3;
+    background:var(--placeholder-bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+    color:var(--ink-muted);
+  }
+  .photo-empty svg{ width:30px; height:30px; opacity:.8; }
+  .photo-empty span{ font-size:12.5px; font-weight:600; }
+
+  /* ---------- trust badge treatments ---------- */
+  /* Variant A: overlay on photo, petrol-tinted glass pills */
+  .trust-overlay{
+    position:absolute; left:0; right:0; bottom:0;
+    display:flex; gap:6px; flex-wrap:wrap;
+    padding:20px 8px 8px;
+    background:linear-gradient(to top, rgba(6,20,19,0.62), rgba(6,20,19,0));
+  }
+  .trust-pill-a{
+    font-size:10.5px; font-weight:700; color:#fff;
+    background:rgba(20,81,78,0.60);
+    border:1px solid rgba(255,255,255,0.35);
+    padding:3px 8px; border-radius:999px;
+    backdrop-filter:blur(1.5px);
+  }
+
+  /* Variant B: dedicated row below photo, amber trust tokens */
+  .trust-row-b{
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    padding:10px 14px 0;
+  }
+  .trust-pill-b{
+    font-size:11px; font-weight:700; color:var(--trust-badge-ink);
+    background:var(--trust-badge-bg);
+    padding:4px 9px; border-radius:6px;
+  }
+  .disclaimer-b{
+    font-size:10px; color:var(--ink-muted); padding:4px 14px 0;
+  }
+
+  /* Variant C: tiny inline outline pills next to title */
+  .trust-inline-c{
+    font-size:10px; font-weight:600; color:var(--brand-petrol-strong);
+    border:1px solid var(--brand-petrol);
+    padding:1px 6px; border-radius:4px; line-height:1.7;
+    white-space:nowrap;
+  }
+  .disclaimer-c{
+    font-size:9.5px; color:var(--ink-muted); margin-top:1px;
+  }
+
+  /* ---------- body / typography ---------- */
+  .card-body{ padding:12px 14px 14px; display:flex; flex-direction:column; gap:5px; position:relative; }
+  .header-row{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  .title-line{ font-size:15px; font-weight:800; color:var(--ink-primary); line-height:1.3; }
+  .spec-line{ font-size:12px; color:var(--ink-secondary); display:flex; gap:0; flex-wrap:wrap; }
+  .spec-line span{ position:relative; padding-right:9px; margin-right:5px; }
+  .spec-line span:not(:last-child)::after{
+    content:"·"; position:absolute; right:-1px; color:var(--ink-muted);
+  }
+  .price{ font-size:20px; font-weight:800; color:var(--price-emphasis); margin-top:2px; }
+
+  .chip-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+  .chip{
+    font-size:11px; font-weight:600; color:var(--brand-petrol-strong);
+    background:rgba(30,110,106,0.08);
+    border:1px solid rgba(30,110,106,0.22);
+    padding:3px 8px; border-radius:6px;
+  }
+  .chip.more{ color:var(--ink-muted); background:transparent; border-style:dashed; }
+
+  /* ---------- heart button ---------- */
+  .heart-btn{
+    flex-shrink:0;
+    width:30px; height:30px; border-radius:999px;
+    border:1px solid var(--border-hairline);
+    background:var(--surface-raised);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--ink-muted);
+  }
+  .heart-btn svg{ width:15px; height:15px; }
+  .heart-btn.filled{ color:var(--accent-amber); border-color:rgba(240,163,57,0.4); }
+  .heart-abs{ position:absolute; top:10px; right:12px; }
+  .heart-mini{ width:24px; height:24px; }
+  .heart-mini svg{ width:12px; height:12px; }
+
+  /* ---------- dark strip ---------- */
+  .dark-strip{
+    --surface-base:#201F1C; --surface-raised:#2B2A26;
+    --ink-primary:#F5F3EE; --ink-secondary:#C9C6BE; --ink-muted:#948F85;
+    --border-hairline:#3B3934;
+    --brand-petrol:#4FA39D; --brand-petrol-strong:#6BBAB4;
+    --accent-amber:#F0A339; --price-emphasis:#F5B860;
+    --trust-badge-bg:#3A2E1C; --trust-badge-ink:#F0C177;
+    --placeholder-bg:#2A2924;
+    background:var(--surface-base);
+    border-radius:14px;
+    padding:22px;
+  }
+
+  footer.note{
+    max-width:760px; font-size:12px; color:var(--ink-secondary);
+    background:var(--surface-raised); border:1px solid var(--border-hairline);
+    border-radius:10px; padding:14px 16px; line-height:1.6;
+  }
+  footer.note b{ color:var(--ink-primary); }
+</style>
+</head>
+<body>
+
+  <h1 class="page-title">차장님 — 매물 카드 레이아웃 변형 (A/B/C)</h1>
+  <p class="page-sub">신뢰속성(무사고·1인소유·비흡연) 뱃지 배치와 색상 처리를 중심으로 한 3가지 안. 각 안마다 사진 있음(전체 신뢰속성) / 사진 없음(일부 신뢰속성) 두 카드로 비교.</p>
+
+  <!-- ============ VARIANT A ============ -->
+  <section class="variant-section">
+    <div class="variant-head">
+      <h2>Variant A — 오버레이형</h2>
+      <span class="tag">petrol 글래스 뱃지</span>
+    </div>
+    <p class="variant-rationale">신뢰속성을 사진 하단에 반투명 필(petrol 톤)로 올려 사진 공간을 재활용 — 카드가 짧아지고 시각적으로 임팩트 있지만, 사진 위에 텍스트가 겹쳐 사진 자체의 인상은 약해짐. 찜 버튼은 사진 밖 본문 헤더행(제목과 같은 줄, 우측)에 배치.</p>
+    <div class="grid-context">
+      <div class="card-row">
+
+        <!-- A · with photo -->
+        <div class="card-slot">
+          <span class="slot-label">사진 있음 · 신뢰속성 3개</span>
+          <div class="car-card">
+            <div class="photo-wrap">
+              <div class="car-shape car-body"></div>
+              <div class="car-shape car-cabin"></div>
+              <div class="car-shape wheel wheel-l"></div>
+              <div class="car-shape wheel wheel-r"></div>
+              <div class="photo-count">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                3장
+              </div>
+              <div class="trust-overlay">
+                <span class="trust-pill-a">무사고</span>
+                <span class="trust-pill-a">1인소유</span>
+                <span class="trust-pill-a">비흡연</span>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="header-row">
+                <div class="title-line">[현대] 그랜저 IG</div>
+                <div class="heart-btn filled">
+                  <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+                </div>
+              </div>
+              <div class="spec-line"><span>2021년</span><span>4.2만km</span><span>가솔린</span><span>경기</span></div>
+              <div class="price">2,780만원</div>
+              <div class="chip-row">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip">V2L</span>
+              </div>
+              <div class="disclaimer-c" style="margin-top:2px;">※ 신뢰속성은 판매자 제공 정보입니다</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- A · no photo -->
+        <div class="card-slot">
+          <span class="slot-label">사진 없음 · 신뢰속성 2개</span>
+          <div class="car-card">
+            <div class="photo-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.5"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+              <span>사진 준비중</span>
+            </div>
+            <div class="card-body">
+              <div class="header-row">
+                <div class="title-line">[기아] K5 3세대</div>
+                <div class="heart-btn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+                </div>
+              </div>
+              <!-- no photo → trust pills can't overlay photo, so they sit as a plain row here (still petrol-tinted for A consistency) -->
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <span class="trust-pill-b" style="background:rgba(30,110,106,0.10); color:var(--brand-petrol-strong);">무사고</span>
+                <span class="trust-pill-b" style="background:rgba(30,110,106,0.10); color:var(--brand-petrol-strong);">1인소유</span>
+              </div>
+              <div class="spec-line"><span>2020년</span><span>6.8만km</span><span>가솔린</span><span>인천</span></div>
+              <div class="price">1,650만원</div>
+              <div class="chip-row">
+                <span class="chip">스마트크루즈컨트롤</span>
+                <span class="chip">통풍시트</span>
+              </div>
+              <div class="disclaimer-c" style="margin-top:2px;">※ 신뢰속성은 판매자 제공 정보입니다</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT B ============ -->
+  <section class="variant-section">
+    <div class="variant-head">
+      <h2>Variant B — 아래 한 줄형</h2>
+      <span class="tag">amber 뱃지 · 전용 행</span>
+    </div>
+    <p class="variant-rationale">사진은 "3장" 배지만 남기고 완전히 깨끗하게 유지, 신뢰속성은 사진 바로 아래 전용 행에 amber 톤 뱃지로 분리 노출하고 옆에 "판매자 제공 정보" 문구를 붙여 정직성을 확보. 사진·신뢰정보·가격정보가 각각 명확한 구획으로 나뉘어 가장 스캔하기 쉬움. 찜 버튼은 본문 우상단에 절대배치.</p>
+    <div class="grid-context">
+      <div class="card-row">
+
+        <!-- B · with photo -->
+        <div class="card-slot">
+          <span class="slot-label">사진 있음 · 신뢰속성 3개</span>
+          <div class="car-card">
+            <div class="photo-wrap">
+              <div class="car-shape car-body"></div>
+              <div class="car-shape car-cabin"></div>
+              <div class="car-shape wheel wheel-l"></div>
+              <div class="car-shape wheel wheel-r"></div>
+              <div class="photo-count">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                3장
+              </div>
+            </div>
+            <div class="trust-row-b">
+              <span class="trust-pill-b">무사고</span>
+              <span class="trust-pill-b">1인소유</span>
+              <span class="trust-pill-b">비흡연</span>
+            </div>
+            <div class="disclaimer-b">판매자 제공 정보이며 검증되지 않았습니다</div>
+            <div class="card-body">
+              <div class="heart-btn filled heart-abs">
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+              </div>
+              <div class="title-line" style="padding-right:28px;">[현대] 그랜저 IG</div>
+              <div class="spec-line"><span>2021년</span><span>4.2만km</span><span>가솔린</span><span>경기</span></div>
+              <div class="price">2,780만원</div>
+              <div class="chip-row">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip">V2L</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- B · no photo -->
+        <div class="card-slot">
+          <span class="slot-label">사진 없음 · 신뢰속성 2개</span>
+          <div class="car-card">
+            <div class="photo-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.5"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+              <span>사진 준비중</span>
+            </div>
+            <div class="trust-row-b">
+              <span class="trust-pill-b">무사고</span>
+              <span class="trust-pill-b">1인소유</span>
+            </div>
+            <div class="disclaimer-b">판매자 제공 정보이며 검증되지 않았습니다</div>
+            <div class="card-body">
+              <div class="heart-btn heart-abs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+              </div>
+              <div class="title-line" style="padding-right:28px;">[기아] K5 3세대</div>
+              <div class="spec-line"><span>2020년</span><span>6.8만km</span><span>가솔린</span><span>인천</span></div>
+              <div class="price">1,650만원</div>
+              <div class="chip-row">
+                <span class="chip">스마트크루즈컨트롤</span>
+                <span class="chip">통풍시트</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VARIANT C ============ -->
+  <section class="variant-section">
+    <div class="variant-head">
+      <h2>Variant C — 절충/미니멀</h2>
+      <span class="tag">인라인 아웃라인 · 고밀도</span>
+    </div>
+    <p class="variant-rationale">신뢰속성을 제목 옆에 아주 작은 아웃라인 텍스트 필로 붙여 별도 행을 만들지 않고, 옵션도 2개+"외 N"으로 줄여 카드 높이를 최소화 — 목록/그리드에서 스크롤 없이 많은 매물을 훑어보기에 유리하지만 신뢰속성 가독성은 A·B보다 낮음. 찜은 아웃라인 하트로 존재감을 줄임.</p>
+    <div class="grid-context">
+      <div class="card-row">
+
+        <!-- C · with photo -->
+        <div class="card-slot">
+          <span class="slot-label">사진 있음 · 신뢰속성 3개</span>
+          <div class="car-card">
+            <div class="photo-wrap">
+              <div class="car-shape car-body"></div>
+              <div class="car-shape car-cabin"></div>
+              <div class="car-shape wheel wheel-l"></div>
+              <div class="car-shape wheel wheel-r"></div>
+              <div class="photo-count">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                3장
+              </div>
+            </div>
+            <div class="card-body" style="padding:10px 12px 12px; gap:3px;">
+              <div class="heart-mini heart-btn heart-abs" style="top:8px; right:10px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+              </div>
+              <div class="title-line" style="font-size:14px; padding-right:22px;">[현대] 그랜저 IG</div>
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <span class="trust-inline-c">무사고</span>
+                <span class="trust-inline-c">1인소유</span>
+                <span class="trust-inline-c">비흡연</span>
+              </div>
+              <div class="disclaimer-c">※ 판매자 제공, 미검증</div>
+              <div class="spec-line" style="font-size:11.5px;"><span>2021년</span><span>4.2만km</span><span>가솔린</span><span>경기</span></div>
+              <div class="price" style="font-size:18px;">2,780만원</div>
+              <div class="chip-row" style="margin-top:2px;">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip more">외 1</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- C · no photo -->
+        <div class="card-slot">
+          <span class="slot-label">사진 없음 · 신뢰속성 2개</span>
+          <div class="car-card">
+            <div class="photo-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.5"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+              <span>사진 준비중</span>
+            </div>
+            <div class="card-body" style="padding:10px 12px 12px; gap:3px;">
+              <div class="heart-mini heart-btn heart-abs" style="top:8px; right:10px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+              </div>
+              <div class="title-line" style="font-size:14px; padding-right:22px;">[기아] K5 3세대</div>
+              <div style="display:flex; gap:4px; flex-wrap:wrap;">
+                <span class="trust-inline-c">무사고</span>
+                <span class="trust-inline-c">1인소유</span>
+              </div>
+              <div class="disclaimer-c">※ 판매자 제공, 미검증</div>
+              <div class="spec-line" style="font-size:11.5px;"><span>2020년</span><span>6.8만km</span><span>가솔린</span><span>인천</span></div>
+              <div class="price" style="font-size:18px;">1,650만원</div>
+              <div class="chip-row" style="margin-top:2px;">
+                <span class="chip">스마트크루즈컨트롤</span>
+                <span class="chip">통풍시트</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DARK MODE STRIP (Variant B) ============ -->
+  <section class="variant-section">
+    <div class="variant-head">
+      <h2>다크모드 확인 — Variant B</h2>
+      <span class="tag">amber 뱃지가 가장 가독성 좋음</span>
+    </div>
+    <p class="variant-rationale">B안을 다크모드 토큰으로 렌더링. amber 계열 신뢰뱃지(trust-badge-bg/ink)는 명도 대비가 확보돼 라이트·다크 양쪽에서 안정적으로 읽힘.</p>
+    <div class="dark-strip">
+      <div class="card-row">
+
+        <div class="card-slot">
+          <span class="slot-label" style="color:var(--ink-muted);">사진 있음</span>
+          <div class="car-card">
+            <div class="photo-wrap">
+              <div class="car-shape car-body"></div>
+              <div class="car-shape car-cabin"></div>
+              <div class="car-shape wheel wheel-l"></div>
+              <div class="car-shape wheel wheel-r"></div>
+              <div class="photo-count">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg>
+                3장
+              </div>
+            </div>
+            <div class="trust-row-b">
+              <span class="trust-pill-b">무사고</span>
+              <span class="trust-pill-b">1인소유</span>
+              <span class="trust-pill-b">비흡연</span>
+            </div>
+            <div class="disclaimer-b">판매자 제공 정보이며 검증되지 않았습니다</div>
+            <div class="card-body">
+              <div class="heart-btn filled heart-abs">
+                <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+              </div>
+              <div class="title-line" style="padding-right:28px;">[현대] 그랜저 IG</div>
+              <div class="spec-line"><span>2021년</span><span>4.2만km</span><span>가솔린</span><span>경기</span></div>
+              <div class="price">2,780만원</div>
+              <div class="chip-row">
+                <span class="chip">파노라마선루프</span>
+                <span class="chip">어라운드뷰</span>
+                <span class="chip">V2L</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-slot">
+          <span class="slot-label" style="color:var(--ink-muted);">사진 없음</span>
+          <div class="car-card">
+            <div class="photo-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--ink-muted)" stroke-width="1.5"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>
+              <span>사진 준비중</span>
+            </div>
+            <div class="trust-row-b">
+              <span class="trust-pill-b">무사고</span>
+              <span class="trust-pill-b">1인소유</span>
+            </div>
+            <div class="disclaimer-b">판매자 제공 정보이며 검증되지 않았습니다</div>
+            <div class="card-body">
+              <div class="heart-btn heart-abs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7.5-4.6-10-9.3C0.3 8.2 2 4.5 5.6 4c2-.3 3.9.6 5 2.2 1.1-1.6 3-2.5 5-2.2C19.2 4.5 20.9 8.2 19.2 11.7 17.8 16.4 12 21 12 21z"/></svg>
+              </div>
+              <div class="title-line" style="padding-right:28px;">[기아] K5 3세대</div>
+              <div class="spec-line"><span>2020년</span><span>6.8만km</span><span>가솔린</span><span>인천</span></div>
+              <div class="price">1,650만원</div>
+              <div class="chip-row">
+                <span class="chip">스마트크루즈컨트롤</span>
+                <span class="chip">통풍시트</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <footer class="note">
+    <b>판단 메모</b> — trust badge 색상은 세 안 모두 실험했지만(A=petrol 오버레이, B=amber 전용행, C=petrol 아웃라인 인라인), <b>amber(trust-badge-bg/ink) + 사진 아래 전용 행(B안)</b>이 가장 안정적으로 읽힘: 사진 위에 얹지 않아 사진 어디에 놓여도 항상 동일한 대비를 보장하고, petrol과 색상축이 분리돼 있어 "신뢰정보"라는 카테고리가 브랜드 색(옵션 칩·버튼 등)과 시각적으로 섞이지 않음. 신뢰속성이 사진 위에 있으면(A) 사진 톤에 따라 대비가 흔들릴 위험이 있음.
+  </footer>
+
+</body>
+</html>

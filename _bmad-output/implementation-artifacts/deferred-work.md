@@ -1,4 +1,67 @@
-# Deferred Work
+# Deferred Work — ⛔ 동결됨 (경위 보관용)
+
+> ## ⛔ 이 파일에 새 항목을 적지 않는다. 열린 일은 여기 없다.
+>
+> **열린 일 장부는 `docs/tech-debt.md` 하나다** (2026-07-15 통합, CLAUDE.md B8). 이 파일의 열린 항목은 전부 그리로 옮겨졌다.
+>
+> **여기 남은 것은 "왜 그렇게 결정했나"** — party-mode 근거, 실측으로 뒤집힌 주장, 설계 경위다. **지켜야 하는 것이 아니다.** 이유 없는 규칙은 다음 사람이 또 뒤집으므로 근거를 보존한다.
+>
+> - **"지금 뭐가 열려 있나?"** → `docs/tech-debt.md`
+> - **"왜 그렇게 정했나?"** → 이 파일 · 각 에픽 회고
+> - **"지켜야 하는 계약은?"** → `docs/conventions.md`(크로스-파트) · `_bmad-output/project-context.md`(구현 규칙)
+>
+> ### ⚠️ 이 파일을 읽을 때 주의
+> 아래 항목들은 **작성 시점의 판단**이다. 그 뒤 실측·코드리뷰로 뒤집힌 것이 있고, **정정된 최신 판정은 `docs/tech-debt.md`에 있다.** 이 파일과 대장이 어긋나면 **대장이 맞다.**
+>
+> 실제로 그 어긋남이 사고를 냈다 — 아래 "결정 2"의 테이블 GRANT 판정이 대장과 **정반대**(여기 "(a) dev 자율" / 대장 "(b) 사용자 승인")로 1일간 공존했고, Epic 9이 그 축을 건드리기 직전이었다. 2026-07-15에 (b)로 통일했다.
+
+---
+
+## Deferred from: code review of story-8.6 (2026-07-15)
+
+> ↪ **이 절의 3건은 `docs/tech-debt.md` #22·#23·#24로 이관됐다.** 아래는 원 서술(경위).
+
+Story 8.6 코드리뷰(opus 3레이어 + 실측 재검증)에서 나온 **실재하나 지금 조치하지 않는** 항목. 전부 게이트(`scripts/check_migrations.py`)의 구조적 대가이고, **Epic 9~16이 마이그 8개를 얹을 때 되살아난다.**
+
+- **`--single-transaction`이 `create index concurrently`류를 원천 차단** — Epic 13(RAG)이 무중단 HNSW 인덱스를 얹는 순간, 원격 `apply_migration`에선 통과하는데 **게이트만 `cannot run inside a transaction block`으로 red**가 난다. 실측: 현재 12개 마이그 전량에 `concurrently`·`vacuum`·`alter system`·`reindex` **0건**이라 오늘은 무해. `--single-transaction`+첫 실패 중단은 Task 3이 강한 근거(게이트 출력이 거짓말하는 것 방지)로 명령한 것이라 되돌리면 안 된다. 진짜 문제는 **게이트가 마이그 작성 방식을 몰래 제약하는데 그 제약이 어느 문서에도 없다**는 것 → 런북 §8 사각지대 추가 후보. **재판단 시점: Epic 13 착수.** [scripts/check_migrations.py:143]
+- **`0004`·`0006`의 `create role ai_readonly` 이중 보유 = 조용한 드리프트 장치** — 둘 다 `if not exists` 가드라, 미래에 0006을 `login`·`connection limit` 등 **다른 속성으로 고치면 fresh DB에선 0004가 먼저 만들고 0006은 no-op** → 롤이 0006 의도와 다르게 생성된다. 에러 0건 + 프로브 3건 통과 = **게이트 초록**, 그런데 원격은 0006 정의를 가져 fresh ≠ 원격. 이번 in-place 수정(party-mode 안 A, **사용자 확정**)이 치른 구조적 대가다. 런북 §8-②가 "fresh DB == 원격을 보증하지 않는다"를 이미 인정하나, **그 사각지대의 원인을 이번 패치가 하나 더 만들었다**는 사실은 안 적혔다. **재판단 시점: 0006의 롤 정의를 바꿔야 할 때.** [supabase/migrations/0004_guide_documents.sql:52-56, 0006_readonly_role.sql:24-28]
+- **프렐류드 `auth.users` 3컬럼 스텁이 실제 플랫폼보다 좁다 — 양방향 오류** — false red(미래 마이그가 `created_at`·`last_sign_in_at`·`phone` 참조 시 원격은 정상인데 게이트만 red)뿐 아니라 **false green**도 열려 있다: 실제 `auth.users.email`은 `varchar(255)`+unique인데 스텁은 `text`+무제약이라, **unique 위반을 유발하는 마이그가 fresh에선 통과하고 원격에서 터진다.** 런북 §8-③은 *"프렐류드가 선언한 것에 대한 의존은 안 잡힌다"* 만 인정하고 **선언이 실제보다 좁아서 생기는 오류**는 다루지 않는다. 실측: 현재 마이그 중 해당 컬럼 참조 0건. **재판단 시점: 마이그가 `auth.users`의 3컬럼 밖을 참조할 때.** [scripts/migration-check-prelude.sql:531-535]
+
+---
+
+## 🟢 결정 완료 — 마이그레이션은 "레시피"다 + 테이블 GRANT 명시는 보류 (2026-07-14, party-mode + 실측)
+
+**계기**: Story 8.6(마이그 게이트) 설계 중, **구현 한 줄 전에** 결함 3종이 나옴. 상세·교훈은 `8-6-ac-deploy-1-배포-순서-마이그레이션-게이트.md`의 **"이 스토리가 남기는 교훈"** 절 참조(Epic 8 회고 재료).
+
+### 결정 1 — `supabase/migrations/`는 **로그가 아니라 레시피**다 (사용자 확정)
+이 팀은 이걸 결정한 적이 없었다. Amelia는 레시피라 가정해 에픽에 *"번호순=적용순=개발순 강제"* 를 박았고, 실제로는 로그처럼 굴러왔다(살아있는 DB 하나에 뭘 했는지의 기록). **둘 다 문서엔 없었다.**
+- **근거**: ① 원격 Supabase 프로젝트가 **하나뿐** → 날아가면 복구 = fresh DB, **현재 복구 경로 없음**(주 기둥) ② ~~납품 인수 조건~~ → **납품 계획 없음으로 정정(2026-07-14), 이 근거는 지금 비어 있음** ③ Epic 9~16이 마이그 8개 추가.
+- **범위 한정**: **Supabase 전제.** "레포만으로 DB가 선다"는 Supabase 프로젝트 위에서 참이면 된다. 맨 Postgres 이식성은 **목표 아님**(A2 — 없는 시나리오를 위해 짓지 않는다).
+- **불변식의 정확한 이름**("번호순=적용순"이라 부르지 말 것 — 과했고 실측 반증됨, Amelia 부분 철회): *각 마이그는 필요한 선행 상태를 **스스로 만들거나(멱등 가드), 번호가 더 작은 마이그에만 의존**한다. 원격 적용 이력의 순서는 상관없다.* → **번호 갭 무죄, 역방향 의존만 유죄.**
+- **판정 규칙(승인 완료)**: 위반 마이그 M이 뒤 번호 N의 객체를 가정할 때 — **(a) dev 자율**(①멱등 가드 추가만 ②원격 재적용 델타 0 실측 ③기존 객체 정의 불변, **3조건 전부**) / **(b) 사용자 승인**(하나라도 위반. 특히 **원격 따라잡기 패치 필요 = 살아있는 공유 DB를 건드림 = 무조건**).
+- **적발된 위반 1건**: `0004`가 `ai_readonly`(0006 생성)를 가정 → 번호순 적용 실제 실패(`ERROR: role "ai_readonly" does not exist`). 판정 (a) → 8.6에서 in-place 멱등 가드로 해소.
+
+### 결정 2 — 🟡 **테이블 GRANT를 마이그에 명시하는 건 보류**(옵션 1 채택)
+- **사실**: `grant select ... to authenticated`가 **어느 마이그에도 없다**. profiles·chat_rooms·chat_messages·guide_documents 전부. authenticated 경로 전체가 **Supabase 플랫폼 기본 GRANT**에 암묵 의존(0011이 anon+listings에 대해서만 끊음 — 8.5의 성과이며, **체계적으로 찾은 게 아니라 다른 일 하다 우연히 걸린 것**).
+- **⚠️ 반증된 주장(되살리지 말 것)**: *"게이트가 초록이어도 fresh DB는 authenticated가 못 읽는다"* → **2026-07-14 도커 실측 결과 거짓.** 프렐류드가 플랫폼 기본 GRANT를 선언하므로 잘 읽는다(`has_table_privilege(authenticated, listings, select)` = **t**, `set role authenticated; select count(*) from listings` **성공**). party-mode에서 "가장 무서운 발견"으로 채택돼 AC·런북·메모리까지 박혔다가 실측 한 번에 뒤집혔다.
+- **진짜 비용(이게 남은 것)**: 게이트의 초록은 **"마이그 + 선언된 Supabase 계약면 = 도는 DB"**를 뜻하지 **"마이그만으로 = 도는 DB"**를 뜻하지 않는다. 출입증 발급이 마이그가 아니라 프렐류드/플랫폼에 있다 → **맨 Postgres로는 이 레포만으로 못 선다.**
+- **왜 보류가 안전한가**: 복구 시 새 Supabase가 **같은 기본 GRANT를 준다**(실측: `pg_default_acl`이 anon·authenticated·service_role에 `arwdDxtm`) → 근거 ①③ 충족. 근거 ②(납품)는 현재 비어 있음. 새 테이블도 프렐류드가 자동 커버 → **부채가 자라지 않는다.**
+- **언제 살아나나**: 자체 호스팅 · 타 클라우드 이관 · **맨 Postgres 납품 요구**가 생기는 순간.
+- **해소 방향(그때)**: 각 테이블 마이그에 명시 GRANT 추가 → 프렐류드의 `alter default privileges` 한 줄 제거 → 게이트가 *"맨 Postgres에서도 선다"* 를 증명. **비용 ≈ 테이블당 1~2줄.**
+- 🔴 **판정: (b) — 사용자 승인이 필요하다.** 정본은 `docs/tech-debt.md` #18.
+  - ⛔ **여기 원래 적혀 있던 "판정규칙 (a) 해당(원격은 이미 부여돼 있어 델타 0 → 안전)"은 틀렸다** — 2026-07-15 대장 일원화 시 제거했다. §9.3의 (a)는 3조건을 **전부** 만족해야 하는데, 조건①이 *"수정이 **멱등 가드 추가만**"* 이고 조건③이 *"기존 객체 정의 불변 — **GRANT 대상 변경은 이 틀 밖**"* 이다. 명시 GRANT 추가는 가드가 아니고 정확히 GRANT 대상 변경이라 **두 조건을 동시에 어긴다.**
+  - **"원격 델타 0"은 사실이지만 근거가 못 된다** — §9.3의 (a)/(b)는 **델타가 아니라 변경의 성격**으로 가른다. 델타 0이어도 GRANT 대상을 건드리면 (b)다.
+  - 📌 **이 오류가 남긴 교훈(Epic 8 회고)**: 규칙을 만든 그 커밋이 **규칙의 첫 적용 사례에서 스스로를 위반**하고 있었다. 코드리뷰가 대장 쪽만 (b)로 정정했고 이쪽은 1일간 (a)로 남아, **다음 사람이 이 문장을 근거로 마이그 여러 개에 GRANT를 자율 추가하고 사후 보고하면 §9.3 방어선이 첫 실사용에서 뚫릴** 상태였다. 대장이 둘이면 정정도 반쪽이 된다.
+
+---
+
+## Deferred from: code review of story-8-4-ac-db-1-커넥션-풀-롤-격리-커넥션-풀-fr50 (2026-07-14)
+
+- **`psycopg[binary,pool]` 버전 미고정** [api/pyproject.toml, api/requirements.txt] — `ConnectionPool(..., open=True)` 생성자 패턴이 최신 `psycopg_pool`에서 지양되는 추세라, 버전 미고정 상태로는 향후 업그레이드 시 경고/동작 변경 위험. 버전 핀 추가를 고려.
+- **누수 부재 테스트가 psycopg_pool의 비공식 보장(동일 물리 커넥션 재사용)에 의존** [api/tests/test_readonly.py] — `max_size=1`이 순차 재사용을 강제하긴 하나, 헬스체크 등으로 커넥션이 교체될 가능성은 라이브러리가 공식 보장하는 계약이 아님. 향후 psycopg_pool 내부 동작이 바뀌면 테스트가 잘못된 이유로 통과/flaky해질 수 있음.
+- **DSN 포트(:6543) 전제가 주석에만 있고 코드로 검증되지 않음** [api/app/db/readonly.py, api/app/config.py] — `.env`가 실수로 :5432(세션 풀러)를 가리켜도 코드가 조용히 그대로 동작함. `SET LOCAL`은 풀러 종류와 무관하게 동작하므로 롤 누수가 재발하진 않지만, 의도한 성능 특성을 잃음. 우선순위 낮음.
+
+---
 
 ## 🟢 결정 완료 — 메인화면 개편 타이밍 (2026-06-24, party-mode 2라운드)
 
@@ -67,6 +130,14 @@
 
 ## Deferred from: code review of story 4-1 (2026-06-21)
 
+> ✅ **아래 4건은 전부 해소됐다** (2026-07-15 코드 실측 확인 — 이 절이 "열림"으로 보이지만 아니다):
+> - `context` 크기 제약 → **4.6이 해소** [`api/app/schemas/ai.py:47` — `max_length=12` + `ConversationTurn` 원소 타입 강제]
+> - CORS origin → **4.7이 해소** [`api/app/main.py:48-52` — `cors_origins` + `cors_origin_regex` 2단]
+> - `guide_documents` GRANT → **4.2가 해소** [`0004_guide_documents.sql:58` — `grant select ... to ai_readonly` + 가시성 정책]
+> - 커넥션 풀링·타임아웃·async 블로킹 → **8.4가 해소** (대장 #5 ✅)
+>
+> 각 항목이 *"4.6에서 강제할 것"·"4.7 배포 시 명시할 것"* 처럼 **후속 스토리를 지목**했고 그 스토리들이 실제로 이행했는데, **이 파일이 닫히지 않아 1개월간 "열린 것처럼" 보였다.** 대장이 둘이면 닫는 것도 반쪽이 된다는 실물.
+
 - **DB 경로 견고화 — 커넥션 풀링·connect_timeout·async 블로킹 부재** [api/app/db/readonly.py, api/app/auth.py] — `readonly_connection()`은 호출마다 새 psycopg 연결을 열고 풀이 없어 동시 부하 시 Supabase Session 풀러(:5432, 낮은 연결한도)를 고갈시킬 수 있다. `connect_timeout` 미설정이라 풀러가 멈추면 요청이 무한 대기한다. 또 `get_current_user`·psycopg 호출이 동기인데 `async def` 안에서 실행돼 이벤트 루프를 블록한다. 4.1은 stub이라 `run_select`가 실제로 호출되지 않아 현재 영향 없음. 실제 DB 경로가 붙는 4.3에서 풀링·타임아웃·스레드풀/async 드라이버를 함께 도입할 것.
 - **`context` 필드 크기·스키마 제약 없음(대용량 DoS 여지)** [api/app/schemas/ai.py:13] — `context: list | None`이 원소 타입·길이 제한이 없어 수 MB의 중첩 배열을 그대로 수용한다. spec이 "받아두되 무시(4.6)"로 의도한 필드라 현재 미사용·무해. 멀티턴 맥락을 실제로 읽는 4.6에서 원소 스키마·최대 길이를 강제할 것.
 - **CORS 기본 origin이 127.0.0.1/Vercel preview/https 미포함** [api/app/main.py:24] — 기본값 `http://localhost:3000`은 `http://127.0.0.1:3000`·https·다른 포트·Vercel preview 도메인과 정확히 일치하지 않아, 해당 출처의 브라우저 호출이 차단된다. 코드 버그가 아니라 배포 설정 사안. 웹이 이 API를 실제 소비하는 4.7 배포 시 환경변수 `CORS_ORIGINS`에 preview/운영 도메인을 명시할 것.
@@ -82,3 +153,60 @@
 ## Deferred from: code review of 4-4-경로-b-문서-rag (2026-06-21)
 
 - **근거 가이드에 유사도 임계값(거리 컷오프) 없음** [api/app/graph/doc_rag_node.py:64-68] — 가이드 검색이 `ORDER BY embedding <=> %s::vector LIMIT 1`로 거리와 무관하게 항상 최근접 1건을 가져와 `answer`에 무조건 `(참고: {제목})`을 붙인다. 의미상 동떨어진 가이드도 "근거"로 첨부돼 사용자를 오도할 수 있다. 단, 4.4 스펙은 answer를 단순 한국어 근거 요약으로 한정하고 정교한 근거→답변 합성은 4.5 `answer_node` 소관으로 명시했다(범위 밖). 4.5 `answer_node` 도입 시 코사인 거리 컷오프(`WHERE embedding <=> q < threshold`)나 거리 기반 첨부 조건을 적용할 것.
+
+---
+
+## 🟡 증분 아키텍처(bmad-create-architecture) 단계 보류 — 추가 기능 2건 (2026-07-13, party-mode)
+
+> 증분 아키텍처 설계(`_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md`) Step 4 중 사용자가 제기한 2개 기능 안건. party-mode(📋John PM·💻Amelia Dev·📊Mary Analyst·🎨Sally UX)로 다방면 검토 후 **이번 증분엔 넣지 않고 보류**(사용자 결정, "구현까지 끝나면 추후 이어서"). 이번 증분엔 **"지금 하면 싼" 최소 대비만 낮은 우선순위**로 심어둠.
+
+### ① 찜 기반 "인기 매물" 신호 (favorite / wishlist popularity)
+- **무엇**: 랜딩 "인기 매물"을 조회수 단독이 아니라 **찜 수를 반영한 복합 신호**로. 예: `score = view_count + w·wishlist_count`.
+- **왜 보류**: favorite_count 컬럼을 지금 만드는 건 YAGNI + 시드에 실제 찜 데이터가 없어 전부 0(콜드스타트 함정). (John·Amelia·Mary·Sally 합의)
+- **이미 된 대비**: `wishlists(user_id, listing_id)`가 이번 증분(FR55)에 생성됨 → 찜 수는 `COUNT(*) GROUP BY listing_id`로 **언제든 파생 가능**, 스키마 재작업 불필요.
+- **이어받을 때**: (a) 인덱스 `wishlists(listing_id)` 추가(1줄 additive) (b) 집계 쿼리(권장) 또는 필요 시 `listings.favorite_count` 역정규화 — 단 원천(wishlists)이 있으니 트리거 카운터는 정합성 부채, Amelia는 COUNT/집계 강권 (c) 표시 시 **임계값 게이팅(5명↑만 노출, "0명 찜" 낙인 방지)** + 카드 하단 중립 회색 메타(초록/앰버 색 안 씀 — Sally) (d) 봇 방어(view dedup) 없으면 조회수 오염 유입 → 찜 가중치 크게(Mary).
+
+### ② 문서 기반 차량 상태 관리 (성능점검표·보험처리이력)
+- **무엇**: 중고차 표준인 **성능점검표(사고부위·사고여부·영업용 이력)·보험처리이력(소유자 변경이력)** 데이터를 **자체 간소 양식(MD/PDF) 문서 기반으로 관리** + **매물 등록 시 그 데이터를 상태 컬럼으로 자동 반영** + **문서 다운로드**. (순수 기능 구현이 목표 — 검증/면책 "개선"이 아님)
+- **확정된 방식(보류하되 설계 결정은 박제)**: **OCR·임베딩 없음**(자체 구조화 양식이라 파싱 불필요, 의미검색 유스케이스 없음 — Amelia·John). **신뢰 모델은 자기신고+면책 유지**(등급 격상 안 함 — 업계도 성능표·보험이력 오류[자비수리·거짓기재]로 플랫폼 무보증이 표준, 문서는 **"참고자료"로만** 제공 → 거짓 "검증됨" 주장 안 하므로 정직성 문제 없음. D3 초록뱃지·면책 그대로).
+- **스키마(이어받을 때)**: `listing_documents(listing_id fk ON DELETE CASCADE, doc_type enum('inspection','insurance'), storage_path, created_at)` + 상태 필드 `usage_type`(자가용/영업용/렌트/리스) 추가(기존 `accident_status` enum·`is_single_owner`와 함께). **이미지 비공개 버킷+서명URL 인프라 재사용**.
+- **이번 증분 대비(낮은 우선순위, "지금 하면 싼" 것)**: **이미지 Storage 서명URL 헬퍼·업로드 RLS·버킷 경로 규칙을 "이미지 전용"이 아니라 아티팩트 범용으로 작성** → 향후 `listing_documents`가 배관 재작업 없이 재사용. (증분 아키텍처 ADR-IMG-01에 이 설계 지침 반영)
+- **시드 전략**: 기존 100건 = 문서 없음·상태 필드 미입력(as-is). **신규 ~50건(인기 국산 준중형·중형·대형 세단, 사용자가 나중 추가)** = 자체 양식 문서 기반으로 상태 필드 저장 + 다운로드. 문서→태그 도출 로직은 실제 판정 규칙과 일관되게(**주요 골격 수리=유사고 · 외판만 교환=단순교환 · 소유변경 0회=1인소유** — Mary).
+- **표시(이어받을 때)**: 문서 있는 매물에 "성능점검표/보험이력 다운로드" 버튼(상세 신뢰 섹션, 비로그인 열람 허용, 서명URL), 없으면 버튼 숨김(기존 100건). 시드 문서는 마스킹 샘플(차대번호 등 개인정보) — Sally.
+- **⚠️ 이어받기 전 확인 권장(Mary, 미검증)**: 개인 직거래(C2C)의 성능점검기록부 법적 의무 범위 · 각 사 인기 랭킹 공식.
+- **관련**: 이 두 문서 데이터는 기술부채 #11(옵션 text[] 쉼표 라운드트립, `SellForm.tsx`)과 무관하나, 상태 필드 자동반영 로직은 SellForm 확장 시 함께 검토.
+
+## Deferred from: code review of story 8-2 (2026-07-14)
+
+- **Skeleton — AC3 "카드/행 조합" 중 행(row) 조합 누락** [web/src/components/ui/Skeleton.tsx] — `CardSkeleton`(카드형)만 제공되고 행(row)형 스켈레톤이 없다. AC3 원문은 "스켈레톤 로딩(`<Skeleton>` + 카드/행 조합)"으로 두 조합을 요구하지만, 채팅 목록·관리자 테이블 등 어떤 화면 기준의 행 형태를 만들지 스펙에 정의가 없어 지금 임의로 만들면 재작업 위험이 있다고 판단해 이월. **이월 사유(사용자): 소비처 생길 때 화면 기준으로.** 실제 소비 에픽(12 채팅·15 관리자 등)에서 행 형태가 필요해지면 그 화면 기준으로 `RowSkeleton` 추가할 것.
+- **FocusTrap — 언마운트/숨김된 트리거로 복귀 시도 시 조용히 no-op** [web/src/components/ui/FocusTrap.tsx:243-246] — 트랩이 닫힐 때 열리기 전 활성 요소(`triggerRef.current`)로 포커스를 복귀시키는데, 그 요소가 그 사이 DOM에서 제거되거나 숨겨졌으면 `.focus()` 호출이 조용히 아무 일도 하지 않는다(크래시 없음, 포커스가 브라우저 기본값인 `<body>`로 남음). 트리거가 리스트 아이템처럼 삭제될 수 있는 맥락에서 소비될 경우, 포커스 복귀 실패에 대한 폴백(예: 컨테이너나 상위 랜드마크로 이동)을 검토할 것.
+- **FocusTrap — `open=false`일 때 `children` 전체 언마운트, 내부 상태 소실** [web/src/components/ui/FocusTrap.tsx:249] — 트랩이 닫히면 `null`을 반환해 자식을 완전히 언마운트한다. 폼 입력값·스크롤 위치 등 자식의 내부 상태가 매번 사라지는 동작이 문서화돼 있지 않다. 실제 모달/바텀시트 UI를 붙이는 소비 에픽(11 내비 드롭다운·필터 바텀시트 등)에서 이 동작이 의도와 맞는지 확인하고, 상태 보존이 필요하면 CSS로 숨기는 방식으로 바꿀 것.
+- **ErrorState — `tone="danger"`가 텍스트 색만 바꾸고 재시도 버튼은 톤 무관 동일** [web/src/components/ui/ErrorState.tsx:167-179] — `tone` prop이 메시지 텍스트 색만 전환하고 재시도 버튼 스타일은 항상 동일해, 파괴적/위험 에러와 일반 에러가 버튼 상으로는 시각 구분되지 않는다. 실제로 `tone="danger"`를 쓰는 소비 화면이 생기면 버튼도 톤에 맞춰 스타일 분기할지 검토할 것.
+- **FocusTrap — 컨테이너에 `role="dialog"`/`aria-modal="true"` 미부착** [web/src/components/ui/FocusTrap.tsx] — 실제 모달 UI는 소비 에픽 몫(non-goal)이라는 스토리 경계상 FocusTrap 자체는 역할 속성을 강제하지 않는다. **소비 스토리 규약(사용자 확정)**: 모달·바텀시트·로그인 게이트 소비 스토리는 FocusTrap 컨테이너에 `role="dialog"` + `aria-modal="true"` + `aria-labelledby`를 반드시 부착한다(UX-DR22 접근성 바닥). 드롭다운·리스트박스는 `menu`/`listbox` role을 사용한다. 8.2 코드리뷰에서 FocusTrap이 `...rest` props를 컨테이너 div로 전달하도록 patch돼, 이 부착이 가능해졌다(11 내비 드롭다운·필터 바텀시트, 8.5 로그인 게이트 등 소비 에픽에서 반드시 적용할 것).
+
+## Deferred from: code review of story-8.1 (2026-07-13)
+
+### ✅ 결정됨: Pretendard 로딩을 CDN `<link>` → self-host `next/font/local`로 전환 (사용자 결정 2026-07-13)
+
+아래 defer 2건은 **뿌리가 같다**(둘 다 수동 CDN `<link>` 방식의 부작용). self-host로 바꾸면 **한 번에 종결**된다. 데모 범위에선 현행 CDN 수용, **아래 작업으로 승격 확정**.
+
+- **defer #1 — CDN `<link>` 렌더 블로킹** (`web/src/app/layout.tsx`): Pretendard를 jsDelivr CDN stylesheet로 `<head>`에서 로드 → 느린(실패 아님) CDN이 first paint를 지연시킬 수 있음. 명확한 실패(404/거부)는 폴백 스택이 빠르게 구제하지만 latency는 구제 못 함.
+- **defer #2 — FOUT/CLS(metric-matched fallback 상실)** (`web/src/app/layout.tsx`): 수동 `<link>`가 next/font의 자동 size-adjust/ascent-override fallback을 잃음 → Pretendard 스왑 시 텍스트 리플로우(CLS).
+
+**왜 self-host:** Pretendard는 Google Fonts에 없어 `next/font/google`은 불가하지만, `next/font/local`(폰트 파일 직접 제공)은 가능. next/font가 ① 폰트 self-host(외부 CDN 의존 제거 → #1 해소) ② 자동 fallback metric 보정(size-adjust → #2 해소)을 공짜로 제공.
+
+**구현 노트(착수 시):**
+1. Pretendard **Variable** `.woff2`를 `web/` 안에 배치(예: `web/src/app/fonts/` 또는 `web/public/fonts/`). 폰트 바이너리를 저장소에 추가하게 됨(현행 CDN은 파일 미포함이었음).
+2. `next/font/local`로 로드 → `variable`을 `globals.css`의 `--font-sans` 우선순위에 연결(스택 자체는 폴백용으로 유지).
+3. `layout.tsx`의 수동 `<link rel="stylesheet">` + `preconnect` 제거, `<html>`에 폰트 클래스 적용.
+4. **⚠️ Next 16 관례 다름** — 코드 전 `node_modules/next/dist/docs/`의 next/font 가이드 선독(web/AGENTS.md 원칙). next/font/local API·metadata 관례 확인.
+5. 검증: 브라우저 computed `font-family`=Pretendard·FOUT 없음(CLS 관찰)·`next build`·라이트/다크 E2E 재확인.
+
+**시점:** 별도 후속 작업(작은 스토리 규모). 데모 실배포/실사용 전환 시점. **완료 시 위 defer 2건 종결.**
+
+---
+
+## Deferred from: code review of story-8.5 (2026-07-14)
+
+- **defer #1 — 취소·삭제된 토큰 보유자가 공개 페이지에서 401 데드엔드** (`web/src/lib/api/aiSearch.ts:60-62`): `supabase.auth.getSession()`은 `expires_at`이 미래이기만 하면 서버에 묻지 않고 캐시 세션을 돌려준다 → 이미 폐기된(계정 삭제·세션 강제만료·타 기기 비번변경) 토큰인 줄 모른 채 `Authorization` 헤더에 붙인다. 서버는 `_validate_token`에서 `user is None`을 받아 401 "유효하지 않은 인증 토큰입니다."를 던지고, 사용자는 그 문구를 빨간 알럿으로 본다. 재시도해도 동일 — 쿠키가 지워지지 않아 같은 토큰이 계속 나간다. 역설: `/ai`는 **공개** 페이지라 같은 사람이 시크릿창에선 멀쩡히 쓴다. 서버측 401은 §8 계약상 의도된 동작(무효 토큰을 조용히 anon으로 강등하지 않음)이므로 방어는 클라이언트 몫 — 401 시 헤더 없이 1회 재시도, 또는 `signOut()` 후 anon 재요청. **왜 defer:** 드문 경로 + "무효 토큰 사용자를 조용히 anon으로 떨어뜨릴 것인가"는 제품 판단이 필요.
+- **defer #2 — anon 허용 테스트가 두 파일에 중복(약한 사본 포함)** (`api/tests/test_auth.py:367-377`, `api/tests/test_ai_search.py:339-348`): `test_search_without_token_allowed_anon`가 동명·동일 monkeypatch·동일 요청으로 양쪽에 있고, `test_ai_search.py` 사본은 `assert r.json()["listings"] == []` 본문 검증이 빠진 약한 버전이라 응답 계약이 퇴행해도 초록으로 통과한다. **왜 defer:** 8.5가 만든 중복이 아니라 선행 `test_search_without_token_returns_401` 시절부터 있던 구조를 그대로 갱신한 것(pre-existing). 정리하려면 "인증 계약 테스트는 test_auth.py 소유"라는 파일 경계 결정이 선행돼야 함.

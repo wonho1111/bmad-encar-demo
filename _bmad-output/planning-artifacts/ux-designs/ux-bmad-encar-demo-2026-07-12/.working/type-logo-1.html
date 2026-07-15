@@ -1,0 +1,615 @@
+<meta charset="UTF-8" />
+<title>차장님 — 타이포 &amp; 로고 방향</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --surface-base:#FAFAF8;
+    --surface-raised:#FFFFFF;
+    --ink-primary:#1A1E1D;
+    --ink-secondary:#565F5D;
+    --ink-muted:#8B928F;
+    --border:#E6E3DD;
+    --brand-petrol:#1E6E6A;
+    --brand-petrol-strong:#14514E;
+    --petrol-deepest:#0F3D3E;
+    --accent-amber:#F0A339;
+    --price:#E08A1B;
+    --trust-bg:#E7F3EC;
+    --trust-ink:#1F7A44;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--surface-base);
+    color:var(--ink-primary);
+    font-family:"Pretendard Variable",Pretendard,-apple-system,"Malgun Gothic",sans-serif;
+    padding:48px 5vw 96px;
+  }
+  .page-header{
+    max-width:1240px;
+    margin:0 auto 44px;
+  }
+  .page-header h1{
+    font-size:30px;
+    font-weight:800;
+    letter-spacing:-0.02em;
+    margin:0 0 8px;
+  }
+  .page-header p{
+    font-size:14px;
+    color:var(--ink-secondary);
+    margin:0;
+    line-height:1.6;
+  }
+  .wrap{max-width:1240px;margin:0 auto;}
+  section.block{
+    margin-bottom:64px;
+  }
+  .section-label{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:20px;
+  }
+  .section-label .num{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:26px;height:26px;
+    border-radius:8px;
+    background:var(--brand-petrol);
+    color:#fff;
+    font-size:13px;
+    font-weight:700;
+    flex-shrink:0;
+  }
+  .section-label h2{
+    font-size:20px;
+    font-weight:700;
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+  .section-sub{
+    font-size:13px;
+    color:var(--ink-muted);
+    margin:-10px 0 22px 36px;
+    line-height:1.6;
+  }
+
+  /* ===== Section 1: before/after ===== */
+  .compare-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:24px;
+  }
+  @media (max-width:860px){ .compare-grid{grid-template-columns:1fr;} }
+  .compare-col{
+    background:var(--surface-raised);
+    border:1px solid var(--border);
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,20,19,0.04), 0 8px 24px -12px rgba(15,20,19,0.08);
+  }
+  .compare-col .col-title{
+    padding:16px 20px;
+    border-bottom:1px solid var(--border);
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-secondary);
+    background:#F5F4F0;
+  }
+  .compare-col.after .col-title{
+    color:var(--brand-petrol-strong);
+    background:#EEF6F5;
+  }
+  .compare-col .col-body{padding:22px 20px 26px;}
+  .os-font{font-family:-apple-system,BlinkMacSystemFont,"Malgun Gothic",sans-serif;}
+  .pretendard-font{font-family:"Pretendard Variable",Pretendard,sans-serif;}
+
+  .spec-block{margin-bottom:22px;}
+  .spec-block:last-child{margin-bottom:0;}
+  .spec-block .spec-caption{
+    font-size:11px;
+    font-weight:600;
+    color:var(--ink-muted);
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    margin-bottom:10px;
+  }
+
+  /* (a) hero fragment */
+  .hero-frag{
+    border-radius:12px;
+    padding:22px 20px;
+    background:linear-gradient(135deg,var(--brand-petrol) 0%, var(--petrol-deepest) 100%);
+    color:#fff;
+  }
+  .hero-frag h3{
+    margin:0 0 8px;
+    font-size:30px;
+    font-weight:800;
+    line-height:1.25;
+    letter-spacing:-0.02em;
+  }
+  .hero-frag h3 .amber{color:var(--accent-amber);}
+  .hero-frag p{
+    margin:0;
+    font-size:14px;
+    font-weight:500;
+    color:rgba(255,255,255,0.78);
+  }
+
+  /* (b) card fragment */
+  .card-frag{
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:16px 18px;
+    background:var(--surface-raised);
+  }
+  .card-frag .ctitle{
+    font-size:16px;
+    font-weight:600;
+    margin:0 0 4px;
+    color:var(--ink-primary);
+  }
+  .card-frag .cmeta{
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink-muted);
+    margin:0 0 10px;
+  }
+  .card-frag .cprice{
+    font-size:26px;
+    font-weight:800;
+    color:var(--price);
+    margin:0 0 12px;
+    letter-spacing:-0.01em;
+  }
+  .pill-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .pill{
+    background:var(--trust-bg);
+    color:var(--trust-ink);
+    font-size:12px;
+    font-weight:600;
+    padding:4px 10px;
+    border-radius:999px;
+  }
+
+  /* (c) type ramp */
+  .ramp-row{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    padding:9px 0;
+    border-bottom:1px dashed var(--border);
+  }
+  .ramp-row:last-child{border-bottom:none;}
+  .ramp-row .ramp-label{
+    font-size:11px;
+    font-weight:600;
+    color:var(--ink-muted);
+    width:118px;
+    flex-shrink:0;
+  }
+  .ramp-row .ramp-sample{
+    flex:1;
+    color:var(--ink-primary);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .ramp-display{font-size:30px;font-weight:800;}
+  .ramp-title{font-size:20px;font-weight:700;}
+  .ramp-body{font-size:15px;font-weight:500;}
+  .ramp-meta{font-size:13px;font-weight:500;color:var(--ink-secondary);}
+  .ramp-caption{font-size:11px;font-weight:500;color:var(--ink-muted);}
+
+  /* ===== Section 2: type scale table ===== */
+  .scale-table{
+    width:100%;
+    border-collapse:collapse;
+    background:var(--surface-raised);
+    border:1px solid var(--border);
+    border-radius:14px;
+    overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,20,19,0.04), 0 8px 24px -12px rgba(15,20,19,0.08);
+  }
+  .scale-table thead th{
+    text-align:left;
+    font-size:12px;
+    font-weight:700;
+    color:var(--ink-muted);
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    padding:14px 18px;
+    background:#F5F4F0;
+    border-bottom:1px solid var(--border);
+  }
+  .scale-table tbody td{
+    padding:16px 18px;
+    border-bottom:1px solid var(--border);
+    font-size:14px;
+    vertical-align:middle;
+  }
+  .scale-table tbody tr:last-child td{border-bottom:none;}
+  .scale-table .role-name{
+    font-weight:700;
+    color:var(--ink-primary);
+  }
+  .scale-table .mono{
+    font-variant-numeric:tabular-nums;
+    color:var(--ink-secondary);
+  }
+  .scale-table .use{color:var(--ink-secondary);}
+  .scale-table .preview{
+    color:var(--ink-primary);
+    font-weight:var(--pw,700);
+  }
+
+  /* ===== Section 3: logo directions ===== */
+  .logo-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:22px;
+  }
+  @media (max-width:960px){ .logo-grid{grid-template-columns:1fr;} }
+  .logo-card{
+    background:var(--surface-raised);
+    border:1px solid var(--border);
+    border-radius:16px;
+    overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,20,19,0.04), 0 8px 24px -12px rgba(15,20,19,0.08);
+    display:flex;
+    flex-direction:column;
+  }
+  .logo-card .dir-head{
+    padding:16px 20px 4px;
+  }
+  .logo-card .dir-name{
+    font-size:15px;
+    font-weight:700;
+    color:var(--ink-primary);
+    margin:0 0 4px;
+  }
+  .logo-card .dir-rationale{
+    font-size:12.5px;
+    color:var(--ink-secondary);
+    margin:0 0 14px;
+    line-height:1.55;
+  }
+  .swatch{
+    padding:26px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+  }
+  .swatch.light{
+    background:#F5F4F0;
+    border-top:1px solid var(--border);
+  }
+  .swatch.dark{
+    background:linear-gradient(135deg,var(--brand-petrol) 0%, var(--petrol-deepest) 100%);
+  }
+  .wordmark{
+    font-size:26px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  .swatch.light .wordmark{color:var(--ink-primary);}
+  .swatch.dark .wordmark{color:#fff;}
+
+  /* Direction A: badge */
+  .mark-badge{
+    width:44px;height:44px;
+    border-radius:11px;
+    background:var(--brand-petrol);
+    color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:22px;
+    font-weight:800;
+    flex-shrink:0;
+  }
+  .swatch.dark .mark-badge{
+    background:#fff;
+    color:var(--brand-petrol-strong);
+  }
+
+  /* Direction B: speech bubble + car hint */
+  .mark-bubble{
+    position:relative;
+    width:44px;height:38px;
+    flex-shrink:0;
+  }
+  .mark-bubble .bubble-body{
+    position:absolute;
+    inset:0 0 8px 0;
+    background:var(--brand-petrol);
+    border-radius:13px 13px 13px 3px;
+  }
+  .swatch.dark .mark-bubble .bubble-body{background:#fff;}
+  .mark-bubble .car-hint{
+    position:absolute;
+    left:9px;right:9px;bottom:14px;
+    height:5px;
+    border-radius:3px;
+    background:var(--accent-amber);
+  }
+  .mark-bubble .car-hint::before,
+  .mark-bubble .car-hint::after{
+    content:"";
+    position:absolute;
+    bottom:-4px;
+    width:6px;height:6px;
+    border-radius:50%;
+    background:var(--petrol-deepest);
+  }
+  .swatch.dark .mark-bubble .car-hint::before,
+  .swatch.dark .mark-bubble .car-hint::after{background:var(--brand-petrol-strong);}
+  .mark-bubble .car-hint::before{left:2px;}
+  .mark-bubble .car-hint::after{right:2px;}
+
+  /* Direction C: typography only */
+  .wordmark-typo{
+    font-size:28px;
+    font-weight:700;
+    letter-spacing:0.01em;
+    position:relative;
+  }
+  .wordmark-typo .accent-char{
+    position:relative;
+  }
+  .wordmark-typo .accent-char::after{
+    content:"";
+    position:absolute;
+    left:2px;right:2px;
+    bottom:-6px;
+    height:3px;
+    border-radius:2px;
+    background:var(--accent-amber);
+  }
+
+  .note{
+    margin-top:22px;
+    font-size:12.5px;
+    color:var(--ink-muted);
+    background:#F5F4F0;
+    border:1px dashed var(--border);
+    border-radius:10px;
+    padding:12px 16px;
+    line-height:1.6;
+  }
+</style>
+
+<div class="page-header">
+  <h1>차장님 — 타이포 &amp; 로고 방향 (Pretendard 제안)</h1>
+  <p>현재 로고와 폰트가 OS 기본 서체(맑은 고딕 등)로 렌더링되어 밋밋하고 신뢰도가 낮아 보인다는 피드백에 대한 개선 방향 스펙. 아래 ①폰트 비교 ②타입 스케일 확정안 ③워드마크·마크 방향 3가지를 검토 후 확정합니다.</p>
+</div>
+
+<div class="wrap">
+
+  <!-- ① Before / After -->
+  <section class="block">
+    <div class="section-label"><span class="num">1</span><h2>폰트 Before / After</h2></div>
+    <div class="section-sub">동일한 콘텐츠를 OS 기본 서체와 Pretendard로 나란히 렌더링해 차이를 비교합니다.</div>
+
+    <div class="compare-grid">
+      <!-- BEFORE -->
+      <div class="compare-col before os-font">
+        <div class="col-title">현재 (OS 기본 · -apple-system / 맑은 고딕)</div>
+        <div class="col-body">
+          <div class="spec-block">
+            <div class="spec-caption">A. 히어로 헤드라인</div>
+            <div class="hero-frag os-font">
+              <h3>원하는 차를 <span class="amber">말</span>로 찾으세요</h3>
+              <p>AI에게 조건을 말하면 딱 맞는 매물을 찾아드려요</p>
+            </div>
+          </div>
+          <div class="spec-block">
+            <div class="spec-caption">B. 매물 카드</div>
+            <div class="card-frag os-font">
+              <p class="ctitle">[현대] 그랜저 IG · 2021년</p>
+              <p class="cmeta">4.2만km · 가솔린 · 경기</p>
+              <p class="cprice">2,780만원</p>
+              <div class="pill-row">
+                <span class="pill">무사고</span>
+                <span class="pill">1인소유</span>
+                <span class="pill">비흡연</span>
+              </div>
+            </div>
+          </div>
+          <div class="spec-block">
+            <div class="spec-caption">C. 타입 스케일</div>
+            <div>
+              <div class="ramp-row"><span class="ramp-label">Display 34/800</span><span class="ramp-sample ramp-display">그랜저 살까요</span></div>
+              <div class="ramp-row"><span class="ramp-label">Title 20/700</span><span class="ramp-sample ramp-title">인기 매물 모아보기</span></div>
+              <div class="ramp-row"><span class="ramp-label">Body 15/500</span><span class="ramp-sample ramp-body">주행거리와 사고이력을 꼼꼼히 확인하세요</span></div>
+              <div class="ramp-row"><span class="ramp-label">Meta 13/500</span><span class="ramp-sample ramp-meta">4.2만km · 가솔린 · 경기</span></div>
+              <div class="ramp-row"><span class="ramp-label">Caption 11/500</span><span class="ramp-sample ramp-caption">본 가격은 시세 참고용이며 변동될 수 있습니다</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AFTER -->
+      <div class="compare-col after pretendard-font">
+        <div class="col-title">제안 (Pretendard)</div>
+        <div class="col-body">
+          <div class="spec-block">
+            <div class="spec-caption">A. 히어로 헤드라인</div>
+            <div class="hero-frag pretendard-font">
+              <h3>원하는 차를 <span class="amber">말</span>로 찾으세요</h3>
+              <p>AI에게 조건을 말하면 딱 맞는 매물을 찾아드려요</p>
+            </div>
+          </div>
+          <div class="spec-block">
+            <div class="spec-caption">B. 매물 카드</div>
+            <div class="card-frag pretendard-font">
+              <p class="ctitle">[현대] 그랜저 IG · 2021년</p>
+              <p class="cmeta">4.2만km · 가솔린 · 경기</p>
+              <p class="cprice">2,780만원</p>
+              <div class="pill-row">
+                <span class="pill">무사고</span>
+                <span class="pill">1인소유</span>
+                <span class="pill">비흡연</span>
+              </div>
+            </div>
+          </div>
+          <div class="spec-block">
+            <div class="spec-caption">C. 타입 스케일</div>
+            <div>
+              <div class="ramp-row"><span class="ramp-label">Display 34/800</span><span class="ramp-sample ramp-display">그랜저 살까요</span></div>
+              <div class="ramp-row"><span class="ramp-label">Title 20/700</span><span class="ramp-sample ramp-title">인기 매물 모아보기</span></div>
+              <div class="ramp-row"><span class="ramp-label">Body 15/500</span><span class="ramp-sample ramp-body">주행거리와 사고이력을 꼼꼼히 확인하세요</span></div>
+              <div class="ramp-row"><span class="ramp-label">Meta 13/500</span><span class="ramp-sample ramp-meta">4.2만km · 가솔린 · 경기</span></div>
+              <div class="ramp-row"><span class="ramp-label">Caption 11/500</span><span class="ramp-sample ramp-caption">본 가격은 시세 참고용이며 변동될 수 있습니다</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 타입 스케일 확정안 -->
+  <section class="block">
+    <div class="section-label"><span class="num">2</span><h2>타입 스케일 확정안 (Pretendard)</h2></div>
+    <div class="section-sub">전 화면에 공통 적용할 역할별 서체 규격입니다. 실제 CSS 변수/토큰화의 기준이 됩니다.</div>
+
+    <table class="scale-table">
+      <thead>
+        <tr>
+          <th>역할</th>
+          <th>px</th>
+          <th>weight</th>
+          <th>line-height</th>
+          <th>용도</th>
+          <th>미리보기</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="role-name">Display</td>
+          <td class="mono">32–40</td>
+          <td class="mono">800</td>
+          <td class="mono">1.15</td>
+          <td class="use">히어로 헤드라인</td>
+          <td class="preview" style="font-size:22px;font-weight:800;">차를 말로 찾다</td>
+        </tr>
+        <tr>
+          <td class="role-name">Section</td>
+          <td class="mono">20</td>
+          <td class="mono">700</td>
+          <td class="mono">1.3</td>
+          <td class="use">섹션 제목</td>
+          <td class="preview" style="font-size:20px;font-weight:700;">인기 매물</td>
+        </tr>
+        <tr>
+          <td class="role-name">CardTitle</td>
+          <td class="mono">16</td>
+          <td class="mono">600</td>
+          <td class="mono">1.4</td>
+          <td class="use">매물 카드 제목</td>
+          <td class="preview" style="font-size:16px;font-weight:600;">[현대] 그랜저 IG</td>
+        </tr>
+        <tr>
+          <td class="role-name">Price</td>
+          <td class="mono">24–26</td>
+          <td class="mono">800</td>
+          <td class="mono">1.2</td>
+          <td class="use">가격 강조</td>
+          <td class="preview" style="font-size:24px;font-weight:800;color:var(--price);">2,780만원</td>
+        </tr>
+        <tr>
+          <td class="role-name">Body</td>
+          <td class="mono">15</td>
+          <td class="mono">500</td>
+          <td class="mono">1.55</td>
+          <td class="use">본문·설명</td>
+          <td class="preview" style="font-size:15px;font-weight:500;">사고이력을 꼼꼼히 확인하세요</td>
+        </tr>
+        <tr>
+          <td class="role-name">Meta</td>
+          <td class="mono">13</td>
+          <td class="mono">500</td>
+          <td class="mono">1.4</td>
+          <td class="use">부가정보 (주행거리·연료 등)</td>
+          <td class="preview" style="font-size:13px;font-weight:500;color:var(--ink-secondary);">4.2만km · 가솔린 · 경기</td>
+        </tr>
+        <tr>
+          <td class="role-name">Caption / Disclaimer</td>
+          <td class="mono">11–12</td>
+          <td class="mono">500</td>
+          <td class="mono">1.5</td>
+          <td class="use">면책·부가 안내 문구</td>
+          <td class="preview" style="font-size:11px;font-weight:500;color:var(--ink-muted);">시세는 참고용이며 변동될 수 있습니다</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ③ 워드마크 + 마크 방향 -->
+  <section class="block">
+    <div class="section-label"><span class="num">3</span><h2>"차장님" 워드마크 + 마크 방향 (3안)</h2></div>
+    <div class="section-sub">방향성만 확정하는 단계입니다. 각 안을 밝은 배경/짙은 페트롤 히어로 배경에서 함께 확인합니다.</div>
+
+    <div class="logo-grid">
+      <!-- 방향 A -->
+      <div class="logo-card">
+        <div class="dir-head">
+          <p class="dir-name">방향 A · 차 배지</p>
+          <p class="dir-rationale">둥근 사각 페트롤 배지에 굵은 "차" 글자. 안정적이고 신뢰감 있는 인상, 앱 아이콘으로도 바로 활용 가능.</p>
+        </div>
+        <div class="swatch light">
+          <span class="mark-badge">차</span>
+          <span class="wordmark" style="color:var(--brand-petrol-strong);">차장님</span>
+        </div>
+        <div class="swatch dark">
+          <span class="mark-badge">차</span>
+          <span class="wordmark">차장님</span>
+        </div>
+      </div>
+
+      <!-- 방향 B -->
+      <div class="logo-card">
+        <div class="dir-head">
+          <p class="dir-name">방향 B · 말풍선 + 차</p>
+          <p class="dir-rationale">말풍선 형태에 자동차를 연상시키는 힌트를 더해 "말로 찾는 AI + 자동차"라는 서비스 본질을 함축.</p>
+        </div>
+        <div class="swatch light">
+          <span class="mark-bubble">
+            <span class="bubble-body"></span>
+            <span class="car-hint"></span>
+          </span>
+          <span class="wordmark" style="font-weight:700;color:var(--brand-petrol-strong);">차장님</span>
+        </div>
+        <div class="swatch dark">
+          <span class="mark-bubble">
+            <span class="bubble-body"></span>
+            <span class="car-hint"></span>
+          </span>
+          <span class="wordmark" style="font-weight:700;">차장님</span>
+        </div>
+      </div>
+
+      <!-- 방향 C -->
+      <div class="logo-card">
+        <div class="dir-head">
+          <p class="dir-name">방향 C · 타이포only</p>
+          <p class="dir-rationale">아이콘 없이 워드마크만으로 승부. 한 글자에 앰버 언더라인 포인트를 주고 자간을 다듬어 미니멀·모던한 인상.</p>
+        </div>
+        <div class="swatch light">
+          <span class="wordmark-typo" style="color:var(--ink-primary);">차<span class="accent-char">장</span>님</span>
+        </div>
+        <div class="swatch dark">
+          <span class="wordmark-typo" style="color:#fff;">차<span class="accent-char">장</span>님</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">실제 로고 아트워크는 추후 제작 단계 — 여기선 방향성만 확정.</div>
+  </section>
+
+</div>

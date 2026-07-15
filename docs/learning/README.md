@@ -46,4 +46,4 @@
 
 - 기획: [`docs/idea.md`](../idea.md)
 - 코딩 규칙: [`docs/conventions.md`](../conventions.md)
-- E2E 테스트: [`docs/e2e-test-cases.md`](../e2e-test-cases.md)
+- E2E 테스트: 대본·질의셋은 **2026-07-16에 폐기**했다(증분 Epic 9~16이 화면·계약을 대폭 바꾸므로 그 뒤 새로 작성). 자동 검사는 `.github/workflows/tests.yml`(api·web·app 단위 테스트) 참조.

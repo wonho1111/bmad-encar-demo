@@ -22,6 +22,7 @@ import {
   type ChatMessageRow,
 } from '@/lib/messages';
 import Button from '@/components/ui/Button';
+import { CHAT } from '@/lib/constants';
 
 // 폴링 주기 — NFR1 "채팅 폴링 준실시간(3~5초)" 범위의 하단값(체감 응답성↑).
 //   증분 조회(gte 커서)+id dedupe라 요청이 겹쳐도 중복 메시지가 안 생기고, cleanup의 cancelled로 유령 요청도 차단.
@@ -169,6 +170,7 @@ export default function ChatRoomMessages({
           placeholder="메시지를 입력하세요"
           aria-label="메시지 입력"
           disabled={sending}
+          maxLength={CHAT.MESSAGE_MAX_LENGTH} // 길이 상한 1차 방어(기술부채 #8). 전송 가드·DB CHECK와 동일 값.
           className="flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
         />
         <Button type="submit" variant="primary" loading={sending} loadingText="전송 중…">

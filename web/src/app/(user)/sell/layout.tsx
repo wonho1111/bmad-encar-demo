@@ -14,7 +14,7 @@ export default async function SellLayout({ children }: { children: ReactNode }) 
   const user = await requireRole(USER_ROLE.SELLER);
   return (
     <>
-      <AppHeader roleLabel={ROLE_LABEL[USER_ROLE.SELLER]} email={user.email} />
+      <AppHeader roleLabel={ROLE_LABEL[USER_ROLE.SELLER]} email={user.email} currentPath="/sell" />
       {children}
     </>
   );

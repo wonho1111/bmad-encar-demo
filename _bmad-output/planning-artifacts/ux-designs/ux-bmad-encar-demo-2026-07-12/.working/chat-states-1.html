@@ -1,0 +1,672 @@
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<title>차장님 — 채팅 실시간 상태 &amp; 인터랙션</title>
+<style>
+/*
+  ── 디자인 토큰 (design tokens) ─────────────────────────────
+  surface-base        #FAFAF8
+  surface-raised       #FFFFFF
+  ink-primary          #1A1E1D
+  ink-secondary        #565F5D
+  ink-muted            #8B928F
+  border               #E6E3DD
+  brand-petrol         #1E6E6A
+  brand-petrol-strong  #14514E
+  accent-amber         #F0A339
+  price                #E08A1B
+  trust-green bg/ink   #E7F3EC / #1F7A44
+  warn-amber bg/ink    #FDF3E3 / #8A5A12
+  danger               #C0392B
+  radius               16px (카드), 20px (패널)
+*/
+
+:root{
+  --surface-base:#FAFAF8;
+  --surface-raised:#FFFFFF;
+  --ink-primary:#1A1E1D;
+  --ink-secondary:#565F5D;
+  --ink-muted:#8B928F;
+  --border:#E6E3DD;
+  --petrol:#1E6E6A;
+  --petrol-strong:#14514E;
+  --amber:#F0A339;
+  --price:#E08A1B;
+  --trust-bg:#E7F3EC;
+  --trust-ink:#1F7A44;
+  --warn-bg:#FDF3E3;
+  --warn-ink:#8A5A12;
+  --danger:#C0392B;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--surface-base);
+  color:var(--ink-primary);
+  font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;
+  padding:48px 40px 96px;
+}
+
+.page-head{
+  max-width:1400px;
+  margin:0 auto 40px;
+}
+.page-head h1{
+  font-size:26px;
+  font-weight:800;
+  letter-spacing:-0.02em;
+  margin:0 0 8px;
+}
+.page-head p{
+  font-size:14px;
+  color:var(--ink-secondary);
+  margin:0;
+  line-height:1.6;
+}
+
+.grid{
+  max-width:1400px;
+  margin:0 auto;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(380px,1fr));
+  gap:36px 32px;
+  align-items:start;
+}
+
+.panel{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.panel-label{
+  font-size:12.5px;
+  font-weight:700;
+  color:var(--petrol-strong);
+  letter-spacing:0.01em;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.panel-label .dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--petrol);
+  flex:none;
+}
+
+.phone{
+  width:100%;
+  max-width:392px;
+  background:var(--surface-raised);
+  border-radius:24px;
+  box-shadow:0 1px 2px rgba(26,30,29,0.04), 0 12px 32px -12px rgba(26,30,29,0.18);
+  border:1px solid var(--border);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+}
+
+.caption{
+  font-size:12.5px;
+  color:var(--ink-secondary);
+  line-height:1.6;
+  background:var(--surface-raised);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px 14px;
+  max-width:392px;
+}
+.caption b{color:var(--petrol-strong);font-weight:700;}
+
+/* ── 공통: 스크린 헤더 (화면 상단 타이틀바) ───────────────── */
+.screen-header{
+  padding:16px 18px 14px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.screen-title{
+  font-size:16px;
+  font-weight:800;
+  letter-spacing:-0.01em;
+}
+.total-badge{
+  font-size:12px;
+  font-weight:700;
+  color:#fff;
+  background:var(--petrol);
+  border-radius:999px;
+  padding:2px 9px;
+  min-width:20px;
+  text-align:center;
+}
+
+/* ── Panel 1: 채팅방 목록 ─────────────────────────────────── */
+.room-list{padding:6px 0;}
+.room-row{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:13px 18px;
+  border-bottom:1px solid var(--border);
+  cursor:default;
+}
+.room-row:last-child{border-bottom:none;}
+.avatar{
+  width:44px;height:44px;border-radius:50%;
+  flex:none;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:700;font-size:15px;
+  background:linear-gradient(135deg,#2B8C86,#124542);
+}
+.avatar.alt{background:linear-gradient(135deg,#C9C3B4,#8B928F);}
+.room-main{flex:1;min-width:0;}
+.room-top{
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+}
+.room-name{
+  font-size:14.5px;font-weight:600;color:var(--ink-primary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.room-row.unread .room-name{font-weight:800;}
+.room-time{
+  font-size:11.5px;color:var(--ink-muted);flex:none;
+}
+.room-listing{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;color:var(--ink-muted);
+  margin:2px 0 3px;
+}
+.listing-chip{
+  width:16px;height:12px;border-radius:3px;flex:none;
+  background:linear-gradient(135deg,#DCEEE9,#B7D6CE);
+}
+.room-preview{
+  font-size:13px;color:var(--ink-secondary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.room-row.unread .room-preview{color:var(--ink-primary);font-weight:600;}
+.room-row.read .room-name,
+.room-row.read .room-preview,
+.room-row.read .room-time,
+.room-row.read .room-listing{color:var(--ink-muted);font-weight:500;}
+.unread-badge{
+  flex:none;
+  min-width:20px;height:20px;border-radius:999px;
+  background:var(--petrol);
+  color:#fff;font-size:11.5px;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+  padding:0 6px;
+  margin-left:4px;
+}
+
+/* ── 공통: 매물 요약 헤더 (채팅방 상단) ───────────────────── */
+.listing-header{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 18px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface-base);
+}
+.listing-thumb{
+  width:46px;height:46px;border-radius:10px;flex:none;
+  background:linear-gradient(135deg,#DCEEE9 0%,#8FBDB6 55%,#3E8A83 100%);
+}
+.listing-info{flex:1;min-width:0;}
+.listing-name{
+  font-size:13px;font-weight:700;color:var(--ink-primary);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.listing-price{
+  font-size:12.5px;font-weight:800;color:var(--price);
+  margin-top:1px;
+}
+.listing-link{
+  font-size:11.5px;font-weight:700;color:var(--petrol);
+  flex:none;white-space:nowrap;
+}
+
+.realtime-flag{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10.5px;color:var(--ink-muted);
+  padding:6px 18px 0;
+}
+.realtime-flag .pulse{
+  width:6px;height:6px;border-radius:50%;
+  background:#2FA860;
+  box-shadow:0 0 0 3px rgba(47,168,96,0.18);
+}
+
+/* ── 메시지 영역 ──────────────────────────────────────────── */
+.messages{
+  padding:14px 16px;
+  display:flex;flex-direction:column;gap:3px;
+  background:
+    radial-gradient(circle at 15% 8%, rgba(30,110,106,0.03), transparent 40%),
+    var(--surface-base);
+  min-height:220px;
+}
+.msg-row{display:flex;flex-direction:column;margin-bottom:11px;max-width:78%;}
+.msg-row.theirs{align-self:flex-start;align-items:flex-start;}
+.msg-row.mine{align-self:flex-end;align-items:flex-end;}
+.bubble{
+  padding:10px 13px;
+  border-radius:17px;
+  font-size:13.5px;
+  line-height:1.5;
+  word-break:keep-all;
+}
+.bubble.theirs{
+  background:#fff;
+  border:1px solid var(--border);
+  color:var(--ink-primary);
+  border-bottom-left-radius:5px;
+}
+.bubble.mine{
+  background:var(--petrol);
+  color:#fff;
+  border-bottom-right-radius:5px;
+}
+.bubble.mine.sending{
+  background:rgba(30,110,106,0.55);
+  color:rgba(255,255,255,0.92);
+}
+.msg-meta{
+  font-size:10.5px;color:var(--ink-muted);
+  margin-top:4px;
+  display:flex;align-items:center;gap:5px;
+}
+.read-flag{color:var(--petrol);font-weight:700;}
+
+.sending-flag{
+  display:inline-flex;align-items:center;gap:4px;
+  color:var(--ink-muted);
+}
+.spinner{
+  width:10px;height:10px;border-radius:50%;
+  border:1.6px solid rgba(20,81,78,0.25);
+  border-top-color:var(--petrol-strong);
+  flex:none;
+}
+
+/* ── 입력창 ───────────────────────────────────────────────── */
+.composer{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 14px 16px;
+  border-top:1px solid var(--border);
+  background:#fff;
+}
+.composer .input-pill{
+  flex:1;
+  background:var(--surface-base);
+  border:1px solid var(--border);
+  border-radius:999px;
+  padding:10px 16px;
+  font-size:13px;
+  color:var(--ink-muted);
+}
+.send-btn{
+  width:38px;height:38px;border-radius:50%;
+  background:var(--petrol);
+  flex:none;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 10px -3px rgba(30,110,106,0.55);
+}
+
+/* ── Panel 4: 오프라인 배너 ──────────────────────────────── */
+.offline-banner{
+  display:flex;align-items:center;gap:8px;
+  background:var(--warn-bg);
+  color:var(--warn-ink);
+  font-size:12px;
+  font-weight:600;
+  line-height:1.5;
+  padding:9px 16px;
+}
+.offline-banner svg{flex:none;}
+
+/* ── Panel 5: 찜 토글 ─────────────────────────────────────── */
+.heart-strip{
+  padding:22px 18px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.heart-state{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  flex:1;
+}
+.heart-circle{
+  width:56px;height:56px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--surface-base);
+  border:1px solid var(--border);
+  position:relative;
+}
+.heart-circle.active{
+  border-color:transparent;
+  background:radial-gradient(circle,rgba(30,110,106,0.14) 0%, rgba(30,110,106,0) 68%);
+}
+.heart-circle.active::after{
+  content:"";
+  position:absolute;inset:-6px;
+  border-radius:50%;
+  border:1.5px solid rgba(30,110,106,0.35);
+}
+.heart-label{font-size:11.5px;color:var(--ink-secondary);font-weight:600;text-align:center;}
+.heart-arrow{color:var(--ink-muted);font-size:16px;flex:none;margin-top:-24px;}
+
+.toast-wrap{padding:0 18px 20px;}
+.toast{
+  display:flex;align-items:center;gap:8px;
+  background:var(--petrol-strong);
+  color:#fff;
+  font-size:12.5px;
+  font-weight:600;
+  border-radius:12px;
+  padding:11px 14px;
+  box-shadow:0 10px 24px -10px rgba(20,81,78,0.6);
+}
+
+/* ── Panel 6: 빈 상태 ─────────────────────────────────────── */
+.empty-stack{display:flex;flex-direction:column;}
+.empty-block{
+  padding:36px 24px;
+  display:flex;flex-direction:column;align-items:center;
+  text-align:center;
+  gap:12px;
+  border-bottom:1px solid var(--border);
+}
+.empty-block:last-child{border-bottom:none;}
+.empty-icon{
+  width:52px;height:52px;border-radius:50%;
+  background:var(--surface-base);
+  border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  color:var(--ink-muted);
+}
+.empty-title{font-size:13.5px;font-weight:700;color:var(--ink-primary);}
+.empty-desc{font-size:12.5px;color:var(--ink-secondary);line-height:1.6;max-width:260px;}
+.empty-cta{
+  margin-top:2px;
+  font-size:12.5px;font-weight:700;color:#fff;
+  background:var(--petrol);
+  padding:9px 18px;
+  border-radius:999px;
+}
+
+/* ── 반응형 ───────────────────────────────────────────────── */
+@media (max-width:480px){
+  body{padding:32px 18px 72px;}
+  .grid{grid-template-columns:1fr;}
+}
+</style>
+
+<div class="page-head">
+  <h1>차장님 — 채팅 실시간 상태 &amp; 인터랙션</h1>
+  <p>문의 채팅(1:1 실시간 채팅)의 핵심 화면과 상태 전이를 모아봤습니다. 폴링(주기적으로 서버에 새 메시지가 있는지 물어보는 방식) 3초 방식에서<br>
+  실시간(서버가 변경을 즉시 밀어주는 방식) 구독으로 전환하면서 생기는 낙관적 전송·재연결·오프라인 배너 상태를 함께 확인하세요.</p>
+</div>
+
+<div class="grid">
+
+  <!-- ══════════ Panel 1 — 채팅방 목록 ══════════ -->
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>Panel 1 — 채팅방 목록 (메시지함, FR57)</div>
+    <div class="phone">
+      <div class="screen-header">
+        <div class="screen-title">채팅</div>
+        <div class="total-badge">3</div>
+      </div>
+      <div class="room-list">
+
+        <div class="room-row unread">
+          <div class="avatar">민</div>
+          <div class="room-main">
+            <div class="room-top">
+              <div class="room-name">민준님</div>
+              <div class="room-time">오후 3:42</div>
+            </div>
+            <div class="room-listing">
+              <span class="listing-chip"></span>
+              [현대] 그랜저 IG
+            </div>
+            <div class="room-preview">네, 직거래 가능할까요? 이번 주 토요일도 괜찮아요</div>
+          </div>
+          <div class="unread-badge">2</div>
+        </div>
+
+        <div class="room-row unread">
+          <div class="avatar alt">지</div>
+          <div class="room-main">
+            <div class="room-top">
+              <div class="room-name">지훈님</div>
+              <div class="room-time">오후 1:05</div>
+            </div>
+            <div class="room-listing">
+              <span class="listing-chip"></span>
+              [기아] 스포티지 NQ5
+            </div>
+            <div class="room-preview">사고 이력 없는 거 맞죠? 성능 점검 기록 볼 수 있을까요</div>
+          </div>
+          <div class="unread-badge">1</div>
+        </div>
+
+        <div class="room-row unread">
+          <div class="avatar">서</div>
+          <div class="room-main">
+            <div class="room-top">
+              <div class="room-name">서연님</div>
+              <div class="room-time">어제</div>
+            </div>
+            <div class="room-listing">
+              <span class="listing-chip"></span>
+              [BMW] 3시리즈 320i
+            </div>
+            <div class="room-preview">가격 조금만 조율 가능하신가요?</div>
+          </div>
+          <div class="unread-badge">3</div>
+        </div>
+
+        <div class="room-row read">
+          <div class="avatar alt">현</div>
+          <div class="room-main">
+            <div class="room-top">
+              <div class="room-name">현우님</div>
+              <div class="room-time">7월 9일</div>
+            </div>
+            <div class="room-listing">
+              <span class="listing-chip"></span>
+              [현대] 아반떼 CN7
+            </div>
+            <div class="room-preview">감사합니다, 잘 타겠습니다!</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ Panel 2 — 채팅방 정상·실시간 ══════════ -->
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>Panel 2 — 채팅방 (정상 · 실시간)</div>
+    <div class="phone">
+      <div class="listing-header">
+        <div class="listing-thumb"></div>
+        <div class="listing-info">
+          <div class="listing-name">그랜저 IG 2.4 프리미엄</div>
+          <div class="listing-price">2,150만원</div>
+        </div>
+        <div class="listing-link">매물 보기 →</div>
+      </div>
+      <div class="realtime-flag"><span class="pulse"></span>실시간 연결됨</div>
+
+      <div class="messages">
+        <div class="msg-row theirs">
+          <div class="bubble theirs">안녕하세요, 아직 판매 중인가요?</div>
+          <div class="msg-meta">오후 2:10</div>
+        </div>
+        <div class="msg-row mine">
+          <div class="bubble mine">네 가능합니다! 직거래 원하시면 편한 시간 말씀해주세요</div>
+          <div class="msg-meta">오후 2:12</div>
+        </div>
+        <div class="msg-row theirs">
+          <div class="bubble theirs">이번 주 토요일 오후 괜찮으실까요?</div>
+          <div class="msg-meta">오후 2:15</div>
+        </div>
+        <div class="msg-row mine">
+          <div class="bubble mine">좋습니다, 토요일 오후 2시 강남역 근처에서 뵐게요</div>
+          <div class="msg-meta"><span class="read-flag">읽음</span>&nbsp;· 오후 2:16</div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="input-pill">메시지를 입력하세요</div>
+        <div class="send-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 12L20 4L14 20L11 13L4 12Z" fill="#fff"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ Panel 3 — 전송 중 / 낙관적 전송 ══════════ -->
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>Panel 3 — 전송 중 / 낙관적 전송 (멱등키, FR41)</div>
+    <div class="phone">
+      <div class="listing-header">
+        <div class="listing-thumb"></div>
+        <div class="listing-info">
+          <div class="listing-name">그랜저 IG 2.4 프리미엄</div>
+          <div class="listing-price">2,150만원</div>
+        </div>
+        <div class="listing-link">매물 보기 →</div>
+      </div>
+      <div class="realtime-flag"><span class="pulse"></span>실시간 연결됨</div>
+
+      <div class="messages">
+        <div class="msg-row theirs">
+          <div class="bubble theirs">토요일 오후 2시 좋아요, 주차는 가능한가요?</div>
+          <div class="msg-meta">오후 2:17</div>
+        </div>
+        <div class="msg-row mine">
+          <div class="bubble mine sending">네, 건물 지하주차장 이용하시면 됩니다</div>
+          <div class="msg-meta"><span class="sending-flag"><span class="spinner"></span>전송 중…</span></div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="input-pill">메시지를 입력하세요</div>
+        <div class="send-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 12L20 4L14 20L11 13L4 12Z" fill="#fff"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="caption">멱등키(idempotency key, 같은 요청이 여러 번 가도 딱 한 번만 반영되게 하는 고유 식별자)로 중복 전송 방지 — <b>재시도해도 한 번만 전송</b>됩니다.</div>
+  </div>
+
+  <!-- ══════════ Panel 4 — 재연결 / 오프라인 배너 ══════════ -->
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>Panel 4 — 재연결 / 오프라인 배너 (FR42, 비차단)</div>
+    <div class="phone">
+      <div class="listing-header">
+        <div class="listing-thumb"></div>
+        <div class="listing-info">
+          <div class="listing-name">그랜저 IG 2.4 프리미엄</div>
+          <div class="listing-price">2,150만원</div>
+        </div>
+        <div class="listing-link">매물 보기 →</div>
+      </div>
+
+      <div class="offline-banner">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3C7 3 2.7 5.1 0 8.3L2 10.7C4.2 8.1 7.9 6.5 12 6.5C16.1 6.5 19.8 8.1 22 10.7L24 8.3C21.3 5.1 17 3 12 3Z" fill="#8A5A12" opacity="0.35"/><path d="M12 9.5C9.2 9.5 6.6 10.7 4.7 12.7L6.7 15.1C8.1 13.6 9.9 12.8 12 12.8C14.1 12.8 15.9 13.6 17.3 15.1L19.3 12.7C17.4 10.7 14.8 9.5 12 9.5Z" fill="#8A5A12" opacity="0.55"/><circle cx="12" cy="19.5" r="2" fill="#8A5A12"/></svg>
+        연결이 끊겼어요. 다시 연결 중… 메시지는 계속 작성할 수 있어요.
+      </div>
+
+      <div class="messages" style="min-height:170px;">
+        <div class="msg-row theirs">
+          <div class="bubble theirs">토요일 오후 2시 좋아요, 주차는 가능한가요?</div>
+          <div class="msg-meta">오후 2:17</div>
+        </div>
+        <div class="msg-row mine">
+          <div class="bubble mine">네, 건물 지하주차장 이용하시면 됩니다</div>
+          <div class="msg-meta"><span class="read-flag">읽음</span>&nbsp;· 오후 2:18</div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="input-pill" style="color:var(--ink-primary);">계약금 관련해서도…</div>
+        <div class="send-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 12L20 4L14 20L11 13L4 12Z" fill="#fff"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>비차단(non-blocking)</b> — 오프라인에도 입력 가능, 재연결 시 갭 보정(끊긴 동안 놓친 메시지를 자동으로 받아옴).</div>
+  </div>
+
+  <!-- ══════════ Panel 5 — 찜 토글 ══════════ -->
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>Panel 5 — 찜 토글 (FR55) 미니 인터랙션</div>
+    <div class="phone">
+      <div class="screen-header">
+        <div class="screen-title" style="font-size:14px;">매물 카드 · 찜 버튼 상태</div>
+      </div>
+
+      <div class="heart-strip">
+        <div class="heart-state">
+          <div class="heart-circle">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 20.5C12 20.5 3.5 15.4 3.5 9.4C3.5 6.4 5.8 4.3 8.5 4.3C10.1 4.3 11.3 5 12 6.1C12.7 5 13.9 4.3 15.5 4.3C18.2 4.3 20.5 6.4 20.5 9.4C20.5 15.4 12 20.5 12 20.5Z" stroke="#8B928F" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="heart-label">기본</div>
+        </div>
+        <div class="heart-arrow">→</div>
+        <div class="heart-state">
+          <div class="heart-circle active">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 20.5C12 20.5 3.5 15.4 3.5 9.4C3.5 6.4 5.8 4.3 8.5 4.3C10.1 4.3 11.3 5 12 6.1C12.7 5 13.9 4.3 15.5 4.3C18.2 4.3 20.5 6.4 20.5 9.4C20.5 15.4 12 20.5 12 20.5Z" fill="#1E6E6A"/></svg>
+          </div>
+          <div class="heart-label">눌린 직후</div>
+        </div>
+        <div class="heart-arrow">→</div>
+        <div class="heart-state">
+          <div class="heart-circle active">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 20.5C12 20.5 3.5 15.4 3.5 9.4C3.5 6.4 5.8 4.3 8.5 4.3C10.1 4.3 11.3 5 12 6.1C12.7 5 13.9 4.3 15.5 4.3C18.2 4.3 20.5 6.4 20.5 9.4C20.5 15.4 12 20.5 12 20.5Z" fill="#1E6E6A"/></svg>
+          </div>
+          <div class="heart-label">찜 목록에 담김</div>
+        </div>
+      </div>
+
+      <div class="toast-wrap">
+        <div class="toast">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.18)"/><path d="M7 12.5L10.2 15.5L17 8.5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          찜 목록에 담았어요
+        </div>
+      </div>
+    </div>
+    <div class="caption">찜 토글 = <b>낙관적 반영</b>(서버 응답을 기다리지 않고 화면부터 먼저 바꿈), 비로그인 시 로그인 유도.</div>
+  </div>
+
+  <!-- ══════════ Panel 6 — 빈 상태들 ══════════ -->
+  <div class="panel">
+    <div class="panel-label"><span class="dot"></span>Panel 6 — 빈 상태들</div>
+    <div class="phone">
+      <div class="empty-stack">
+        <div class="empty-block">
+          <div class="empty-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H18.5C19.3 4 20 4.7 20 5.5V15.5C20 16.3 19.3 17 18.5 17H9L5 20.5V17H5.5C4.7 17 4 16.3 4 15.5V5.5Z" stroke="#8B928F" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="empty-title">아직 문의한 채팅이 없어요</div>
+          <div class="empty-desc">마음에 드는 매물에서 '문의하기'를 눌러보세요</div>
+          <div class="empty-cta">매물 둘러보기</div>
+        </div>
+
+        <div class="empty-block">
+          <div class="empty-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 20.2C12 20.2 3.9 15.3 3.9 9.6C3.9 6.7 6.1 4.7 8.7 4.7C10.2 4.7 11.4 5.4 12 6.5C12.6 5.4 13.8 4.7 15.3 4.7C17.9 4.7 20.1 6.7 20.1 9.6C20.1 15.3 12 20.2 12 20.2Z" stroke="#8B928F" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="empty-title">찜한 매물이 없어요</div>
+          <div class="empty-desc">♡를 눌러 관심 매물을 모아보세요</div>
+          <div class="empty-cta">매물 둘러보기</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

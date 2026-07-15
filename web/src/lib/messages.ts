@@ -13,6 +13,7 @@
 //
 // 통신선/컬럼은 snake_case(AR5): room_id, sender_id, created_at, body.
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { CHAT } from '@/lib/constants';
 
 // 메시지 1건(통신선 그대로 snake_case). created_at은 ISO 문자열(timestamptz).
 export type ChatMessageRow = {
@@ -96,6 +97,11 @@ export async function sendMessage(
   const trimmed = body.trim();
   if (trimmed === '') {
     return { error: '메시지를 입력해주세요.' };
+  }
+  // 길이 상한 차단(기술부채 #8): DB CHECK(char_length<=2000)가 막기 전에 명확한 한국어로 안내.
+  //   입력창 maxLength가 1차 방어지만, 붙여넣기 등 우회 경로의 최종 클라 방어.
+  if (trimmed.length > CHAT.MESSAGE_MAX_LENGTH) {
+    return { error: `메시지가 너무 깁니다. 최대 ${CHAT.MESSAGE_MAX_LENGTH}자까지 보낼 수 있습니다.` };
   }
 
   const { data, error } = await supabase

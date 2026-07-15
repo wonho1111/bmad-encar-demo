@@ -4,12 +4,14 @@
 //   호출 주소·헤더(인증 토큰)·요청/응답 형태·에러 변환을 한 곳에 격리하면, API 계약이 바뀌어도
 //   이 파일만 고치면 된다. 화면(ChatAssistant)은 searchAi()만 부르고 HTTP 세부는 몰라도 된다.
 //
-// 백엔드 계약(api/app/schemas/ai.py·routers/ai.py, 4.1~4.6 확정):
+// 백엔드 계약(api/app/schemas/ai.py·routers/ai.py, 4.1~4.6):
 //   POST {NEXT_PUBLIC_API_BASE_URL}/ai/search
-//   headers: Authorization: Bearer <supabase access_token>, Content-Type: application/json
+//   headers: Authorization: Bearer <supabase access_token>(필수), Content-Type: application/json
 //   body:    { query, context? }    // context = 직전 대화(멀티턴, 최대 12턴)
-//   200:     { answer, listings[] } // listings 원소 = ListingCardData 7필드
+//   200:     { answer, listings[] } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
+//   FR58(8.5): 열람(매물 목록·상세)은 anon에 열렸지만 **AI 검색은 로그인 필수**다 —
+//     검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "열람"이 아니라 "행동"(docs/conventions.md §8).
 import type { ListingCardData } from '@/components/listings/ListingCard';
 
 // 멀티턴 대화 한 턴(FR18). 서버 스키마(ConversationTurn)와 동일 — content는 서버가 1~2000자로 강제한다.
@@ -29,7 +31,7 @@ export type SearchAiParams = {
   query: string;
   // 직전 대화 맥락(클라이언트 보관분). 없으면(첫 질의) 미동봉 — 서버는 단일턴으로 처리한다.
   context?: ConversationTurn[];
-  // Supabase 세션의 access_token. 없으면 호출 전에 막는다(어차피 서버가 401).
+  // Supabase 세션의 access_token. 없으면(비로그인·세션 만료) 호출하지 않고 바로 throw 한다.
   accessToken: string | null | undefined;
 };
 
@@ -48,26 +50,27 @@ function getApiBaseUrl(): string {
 
 /**
  * 자연어 질의를 AI 검색 API로 보내고 {answer, listings}를 받는다.
- * 인증 토큰이 없거나 비200 응답이면 한국어 메시지를 담은 Error를 throw 한다(조용한 실패 금지 — fail-loud).
+ * 토큰이 없으면 네트워크 호출 없이 바로 throw 한다 — 서버가 어차피 401이고(로그인 필수),
+ * 헛된 왕복을 만들지 않는다.
+ * 비200 응답이면 한국어 메시지를 담은 Error를 throw 한다(조용한 실패 금지 — fail-loud).
  */
 export async function searchAi({ query, context, accessToken }: SearchAiParams): Promise<SearchResult> {
   if (!accessToken) {
-    // 이론상 proxy가 비로그인 진입을 막지만, 세션 만료 등으로 토큰이 없을 수 있어 방어한다.
-    throw new Error('로그인이 필요합니다. 다시 로그인한 뒤 시도해주세요.');
+    throw new Error('로그인이 필요합니다. 로그인한 뒤 다시 시도해주세요.');
   }
-
   const url = `${getApiBaseUrl()}/ai/search`;
   // context가 있으면 동봉, 없으면 키 자체를 빼서 단일턴으로 보낸다(서버 기본값 None과 동일 효과).
   const body = context && context.length > 0 ? { query, context } : { query };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${accessToken}`,
+  };
 
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers,
       body: JSON.stringify(body),
     });
   } catch {

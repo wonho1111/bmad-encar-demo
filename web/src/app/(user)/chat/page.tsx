@@ -74,7 +74,7 @@ export default async function ChatListPage() {
 
   return (
     <>
-      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} />
+      <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/chat" />
       <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold">문의 채팅</h1>

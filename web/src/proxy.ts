@@ -13,13 +13,17 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/session';
 
 // 로그인이 필요한 보호 경로 접두사.
+// FR58(8.5) — 게이트는 "행동"에만(계약 원문: docs/conventions.md §8).
+//   열람 = 서버 자원을 읽기만 함 → anon 허용. 행동 = 상태를 바꾸거나 외부 유료 API를 호출해 청구서를 만듦 → 보호.
+// '/admin'(관리자) — 관리자 전용, 비로그인 1차 차단(역할 2차 게이트는 (admin)/layout.tsx).
 // '/sell'(판매자 매물 등록·관리, Story 2-2~) — 비로그인 1차 차단. 역할(seller) 2차 집행은 (user)/sell 레이아웃의 requireRole.
-// '/search'(구매자 매물 탐색, Story 3-1) — 로그인 사용자(구매자·판매자 공통)만. 역할 게이트 없음(on_sale은 RLS상 모두 공개).
-// '/listings'(구매자 매물 상세, Story 3-2) — /listings/[id] 상세. /search와 동일하게 로그인 사용자만(역할 게이트 없음).
-// '/ai'(AI 검색, Story 4-7) — 자연어 채팅 검색. /search와 동일하게 로그인 사용자만(역할 게이트 없음).
-// '/chat'(문의 채팅, Story 5-2) — 채팅방 목록·진입. 로그인 사용자(구매자·판매자 공통)만 1차 차단.
+// '/ai'(AI 검색) — **행동**이라 보호한다. 검색 1회 = Gemini 호출 3회 내외 = 실제 과금이고, 로그인이
+//   호출자를 식별하는 유일한 수단(= 유일한 과금 울타리)이다. api `/ai/search`도 JWT 필수(2차 게이트).
+// '/chat'(문의 채팅, Story 5-2) — 채팅방 목록·진입(개인 대화함, anon 무의미). 로그인 사용자만 1차 차단.
 //   "그 방의 당사자(buyer/seller)만" 보는 참여자 한정은 DB의 RLS(chat_rooms_select_participant)가 집행 → 여기선 비로그인만 막는다.
-const PROTECTED_PREFIXES = ['/admin', '/sell', '/search', '/listings', '/ai', '/chat'];
+// '/search'·'/listings'는 **열람**이라 보호하지 않는다(anon 허용, DB는 0011 anon SELECT 정책이 담당).
+//   페이지는 공개지만 그 안의 "행동"(문의 등)만 각 컴포넌트(2차 게이트)에서 redirectedFrom으로 로그인 유도.
+const PROTECTED_PREFIXES = ['/admin', '/sell', '/ai', '/chat'];
 
 function redirectToLogin(request: NextRequest, pathname: string) {
   const url = request.nextUrl.clone();

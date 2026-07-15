@@ -4,7 +4,7 @@
 fastapi==0.137.1
 uvicorn[standard]
 supabase
-psycopg[binary]
+psycopg[binary,pool]
 pydantic-settings
 langgraph==1.2.4
 langchain-google-genai

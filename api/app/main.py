@@ -4,6 +4,7 @@
 모든 에러 응답은 공통 포맷 {error:{code,message}}로 통일(architecture.md).
 """
 
+import contextlib
 import logging
 
 from fastapi import FastAPI
@@ -13,15 +14,31 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
+from .db.readonly import close_pool
 from .routers import ai
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app: FastAPI):
+    """앱 수명주기 훅 — 기동 시엔 아무것도 하지 않고, 종료 시 DB 커넥션 풀을 닫는다.
+
+    기동 시 풀을 열지 않는 이유: 비밀값 없이도 /health가 떠야 한다(config.py 설계).
+    풀은 최초 run_select 때 지연 생성된다(readonly.py).
+    종료 시 닫는 이유: 풀은 모듈 싱글턴이라 아무도 닫지 않으면 SIGTERM(Cloud Run
+    스케일다운·매 재배포)마다 서버측 세션이 정리되지 않은 채 남는다(코드리뷰 패치).
+    """
+    yield
+    close_pool()
+
 
 app = FastAPI(
     title="encar-demo AI Search API",
     version="0.1.0",
     description="중고차 직거래 데모 — AI 자연어 검색 전용 백엔드(FastAPI + LangGraph). "
     "클라이언트는 Supabase에 직접 접근하고, 이 API는 AI 검색에만 쓰인다(읽기전용).",
+    lifespan=lifespan,
 )
 
 # CORS — 웹에서 브라우저 호출 허용.

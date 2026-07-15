@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>차장님 — 매물 상세 (데스크톱 · 모바일)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* ============================================================
+   차장님 — 매물 상세 (Listing Detail) 목업 (2026-07-12)
+   -----------------------------------------------------------
+   CONFIRMED DESIGN TOKENS
+   surface-base          #FAFAF8
+   surface-raised        #FFFFFF
+   ink-primary           #1A1E1D
+   ink-secondary         #565F5D
+   ink-muted             #8B928F
+   border                #E6E3DD
+   brand-petrol          #1E6E6A
+   brand-petrol-strong   #14514E
+   petrol-deepest        #0F3D3E
+   accent-amber          #F0A339
+   price-emphasis        #E08A1B   (가격 전용)
+   trust-badge bg/ink    #E7F3EC / #1F7A44
+   CRAFT
+   shadow-rest  : 0 1px 2px rgba(0,0,0,.04), 0 10px 30px -14px rgba(20,45,45,.16)
+   radius-card  : 16px   radius-chip : 9px
+   ============================================================ */
+:root{
+  --surface-base:#FAFAF8;
+  --surface-raised:#FFFFFF;
+  --ink-primary:#1A1E1D;
+  --ink-secondary:#565F5D;
+  --ink-muted:#8B928F;
+  --border:#E6E3DD;
+  --petrol:#1E6E6A;
+  --petrol-strong:#14514E;
+  --petrol-deepest:#0F3D3E;
+  --petrol-tint-bg:#EAF3F2;
+  --amber:#F0A339;
+  --price:#E08A1B;
+  --trust-bg:#E7F3EC;
+  --trust-ink:#1F7A44;
+  --unread-red:#E5484D;
+  --font:"Pretendard Variable",Pretendard,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{background:#EDEAE2;}
+body{font-family:var(--font);color:var(--ink-primary);-webkit-font-smoothing:antialiased;padding:44px 32px 100px;}
+
+/* ---------- report head ---------- */
+.report-head{max-width:1900px;margin:0 auto 40px;padding:0 4px;}
+.report-head .eyebrow{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--petrol-strong);background:#E7F0EF;border:1px solid #CFE1DF;padding:5px 12px;border-radius:999px;margin-bottom:12px;}
+.report-head h1{font-size:26px;font-weight:800;letter-spacing:-.01em;color:#14231F;}
+.report-head p{font-size:13.5px;color:var(--ink-secondary);margin-top:8px;line-height:1.7;max-width:900px;}
+
+.layout-row{max-width:1900px;margin:0 auto;display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;}
+.frame-col{display:flex;flex-direction:column;gap:12px;}
+.frame-label{display:flex;align-items:center;gap:10px;}
+.frame-label .tag{font-size:11px;font-weight:800;letter-spacing:.05em;color:#fff;background:var(--petrol-strong);padding:4px 11px;border-radius:6px;}
+.frame-label .w{font-size:12px;color:var(--ink-muted);font-weight:600;}
+.frame-caption{font-size:12.5px;color:var(--ink-secondary);line-height:1.65;max-width:1080px;padding:2px 4px;}
+.frame-caption b{color:var(--petrol-strong);font-weight:700;}
+
+/* ---------- browser chrome (desktop) ---------- */
+.browser-chrome{width:1080px;height:36px;background:#EDEBE4;border:1px solid var(--border);border-bottom:none;border-radius:16px 16px 0 0;display:flex;align-items:center;gap:7px;padding:0 15px;}
+.browser-chrome .dot{width:9px;height:9px;border-radius:50%;background:#D9D5CB;}
+.browser-chrome .url{margin-left:10px;font-size:11px;color:var(--ink-muted);background:#fff;border:1px solid var(--border);border-radius:999px;padding:4px 13px;flex:1;max-width:340px;}
+.desktop-screen{width:1080px;border:1px solid var(--border);border-radius:0 0 16px 16px;overflow:hidden;box-shadow:0 34px 68px -26px rgba(15,30,29,.32);background:var(--surface-base);}
+
+/* ============================================================
+   TOP NAV (shared)
+   ============================================================ */
+.topnav{display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid var(--border);padding:13px 40px;position:relative;z-index:30;}
+.topnav-left{display:flex;align-items:center;gap:30px;}
+.brand{display:flex;align-items:center;gap:8px;}
+.logo-mark{width:29px;height:29px;border-radius:8px;background:linear-gradient(145deg,#2C8A85,var(--petrol));color:#fff;font-weight:800;font-size:12.5px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px -4px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.25);flex:none;}
+.logo-word{font-weight:800;color:var(--ink-primary);font-size:15px;letter-spacing:-.01em;white-space:nowrap;}
+.nav-links{display:flex;align-items:center;gap:22px;}
+.nav-links a{font-size:13.5px;font-weight:600;color:var(--ink-secondary);text-decoration:none;white-space:nowrap;}
+.nav-links a.active{color:var(--petrol-strong);}
+.topnav-right{display:flex;align-items:center;gap:9px;}
+.icon-btn{position:relative;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);background:#fff;display:flex;align-items:center;justify-content:center;flex:none;}
+.icon-btn svg{stroke:var(--ink-secondary);}
+.badge-count{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;color:#fff;line-height:1;}
+.badge-amber{background:var(--amber);color:#241705;}
+.badge-red{background:var(--unread-red);}
+.profile-btn{display:flex;align-items:center;gap:7px;padding:5px 10px 5px 6px;border-radius:999px;border:1px solid var(--border);background:#fff;flex:none;}
+.avatar{width:23px;height:23px;border-radius:50%;background:linear-gradient(135deg,#F0A339,#E08A1B);flex:none;}
+.profile-btn .label{font-size:12.5px;font-weight:700;color:var(--ink-primary);}
+.profile-btn svg.chev{stroke:var(--ink-muted);}
+
+/* ---------- breadcrumb ---------- */
+.breadcrumb-row{padding:12px 40px;border-bottom:1px solid var(--border);background:var(--surface-base);}
+.breadcrumb-row a{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;color:var(--ink-secondary);text-decoration:none;}
+.breadcrumb-row a svg{stroke:var(--ink-secondary);}
+
+/* ============================================================
+   GALLERY (desktop)
+   ============================================================ */
+.gallery-cover-bg{
+  background:
+    radial-gradient(ellipse 60% 45% at 26% 18%, rgba(255,255,255,.60), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(135deg, #EFF1F0 0%, #DBDFDE 26%, #AEB6B4 52%, #CBD1CF 76%, #F2F3F2 100%);
+}
+.gallery-cover-bg.v2{background:
+    radial-gradient(ellipse 55% 40% at 70% 15%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(150deg, #E9EEED 0%, #CBD4D2 30%, #97A5A2 55%, #C4CEC9 78%, #EEF1EE 100%);}
+.gallery-cover-bg.v3{background:
+    radial-gradient(ellipse 50% 40% at 40% 20%, rgba(255,255,255,.5), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(160deg, #1C2321 0%, #2C3634 35%, #4C5A57 62%, #232A28 100%);}
+.gallery-cover-bg.v4{background:
+    radial-gradient(ellipse 55% 40% at 30% 20%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(140deg, #EDEBE3 0%, #D8D2C3 30%, #B7ABA0 58%, #CDBFA9 80%, #F1EBDD 100%);}
+.gallery-cover-bg.v5{background:
+    radial-gradient(ellipse 45% 35% at 60% 25%, rgba(255,255,255,.5), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(155deg, #1F2A29 0%, #33403D 40%, #5C6E69 68%, #212C2A 100%);}
+.gallery-cover-bg.v6{background:
+    radial-gradient(ellipse 55% 40% at 35% 15%, rgba(255,255,255,.55), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(135deg, #F0EDE6 0%, #DCD6C8 28%, #B9AFA0 55%, #D6CBB4 78%, #F3EEE1 100%);}
+.gallery-cover-bg.v7{background:
+    radial-gradient(ellipse 50% 40% at 65% 20%, rgba(255,255,255,.5), rgba(255,255,255,0) 60%),
+    linear-gradient(180deg, rgba(20,30,29,0) 58%, rgba(20,30,29,.14) 100%),
+    linear-gradient(150deg, #E7E9E8 0%, #C7CDCB 30%, #99A6A2 56%, #C0C9C5 80%, #EFF2F0 100%);}
+
+.gallery-col .gallery-cover{position:relative;aspect-ratio:5/3;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04),0 14px 34px -16px rgba(20,45,45,.22);}
+.gallery-counter{position:absolute;left:14px;bottom:14px;background:rgba(10,14,13,.55);backdrop-filter:blur(6px);color:#fff;font-size:12.5px;font-weight:700;padding:6px 13px;border-radius:999px;letter-spacing:.01em;}
+.gallery-arrow{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.85);backdrop-filter:blur(4px);border:none;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(10,20,19,.20);}
+.gallery-arrow svg{stroke:var(--ink-primary);}
+.gallery-arrow.left{left:14px;}
+.gallery-arrow.right{right:14px;}
+
+.thumb-strip{display:flex;gap:9px;margin-top:11px;}
+.thumb{position:relative;flex:1;aspect-ratio:5/3;border-radius:10px;overflow:hidden;border:2px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+.thumb.selected{border-color:var(--petrol);box-shadow:0 0 0 3px rgba(30,110,106,.16);}
+
+/* ============================================================
+   SUMMARY (right col, desktop)
+   ============================================================ */
+.summary-col{display:flex;flex-direction:column;}
+.summary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+.summary-head h1{font-size:20px;font-weight:700;color:var(--ink-primary);letter-spacing:-.01em;line-height:1.4;}
+.heart-btn{flex:none;width:38px;height:38px;border-radius:50%;background:#fff;border:1px solid var(--border);box-shadow:0 3px 8px rgba(20,30,29,.10);display:flex;align-items:center;justify-content:center;}
+.heart-btn svg{width:17px;height:17px;stroke:var(--ink-secondary);fill:none;stroke-width:1.8;}
+
+.trust-pills-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:14px;}
+.trust-badge{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:600;color:var(--trust-ink);background:var(--trust-bg);border-radius:999px;padding:4px 9px 4px 7px;}
+.trust-badge svg{width:10px;height:10px;}
+.trust-disclaimer-sm{display:block;font-size:11px;color:var(--ink-muted);margin-top:7px;}
+
+.price-big{font-size:30px;font-weight:800;color:var(--price);letter-spacing:-.02em;margin-top:16px;font-variant-numeric:tabular-nums;}
+
+.spec-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-top:20px;padding-top:20px;border-top:1px solid var(--border);}
+.spec-mini-item .k{font-size:12px;color:var(--ink-muted);font-weight:600;}
+.spec-mini-item .v{font-size:14.5px;color:var(--ink-primary);font-weight:700;margin-top:2px;letter-spacing:-.01em;}
+
+.cta-primary{width:100%;margin-top:22px;border:none;background:var(--petrol);color:#fff;font-family:inherit;font-weight:800;font-size:16px;padding:15px 0;border-radius:12px;box-shadow:0 14px 28px -12px rgba(30,110,106,.55);letter-spacing:-.01em;}
+.cta-helper{text-align:center;font-size:11.5px;color:var(--ink-muted);margin-top:9px;line-height:1.6;}
+.cta-secondary-row{display:flex;gap:9px;margin-top:12px;}
+.btn-quiet{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:11px 0;font-family:inherit;font-weight:700;font-size:13px;color:var(--ink-secondary);}
+.btn-quiet svg{stroke:var(--ink-secondary);width:15px;height:15px;}
+.btn-quiet.icon-only{flex:none;width:44px;}
+
+/* ============================================================
+   SECTION CARDS (shared)
+   ============================================================ */
+.section-cards-wrap{padding:26px 40px 40px;display:flex;flex-direction:column;gap:20px;}
+.detail-card{background:var(--surface-raised);border:1px solid var(--border);border-radius:16px;padding:26px 28px 28px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 10px 26px -16px rgba(20,45,45,.14);}
+.detail-card .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.detail-card h2.card-title{font-size:17px;font-weight:800;color:var(--ink-primary);position:relative;padding-left:14px;letter-spacing:-.01em;}
+.detail-card h2.card-title::before{content:"";position:absolute;left:0;top:2px;width:5px;height:15px;background:var(--petrol);border-radius:3px;}
+.card-head .caption-sm{font-size:11.5px;color:var(--ink-muted);font-weight:600;}
+
+/* ---- 신뢰 정보 ---- */
+.trust-row-item{display:flex;align-items:flex-start;gap:11px;padding:11px 0;border-bottom:1px solid #F0EEE8;}
+.trust-row-item:last-of-type{border-bottom:none;}
+.trust-check{flex:none;width:22px;height:22px;border-radius:50%;background:var(--trust-bg);display:flex;align-items:center;justify-content:center;margin-top:1px;}
+.trust-check svg{width:12px;height:12px;stroke:var(--trust-ink);stroke-width:3;}
+.trust-row-item .t-label{font-size:14px;font-weight:700;color:var(--ink-primary);}
+.trust-row-item .t-desc{font-size:12.5px;color:var(--ink-secondary);margin-top:2px;line-height:1.55;}
+.trust-disclaimer-full{margin-top:8px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-muted);line-height:1.65;}
+
+/* ---- 옵션 ---- */
+.option-group{margin-bottom:18px;}
+.option-group:last-child{margin-bottom:0;}
+.option-group .g-label{font-size:12px;font-weight:800;color:var(--petrol-strong);letter-spacing:.02em;margin-bottom:9px;}
+.option-chips{display:flex;flex-wrap:wrap;gap:7px;}
+.opt-chip{font-size:12.5px;font-weight:600;color:var(--ink-secondary);background:#F3F1EA;border:1px solid var(--border);border-radius:9px;padding:6px 11px;letter-spacing:-.005em;}
+.opt-chip.rare{color:var(--petrol-strong);background:var(--petrol-tint-bg);border:1px solid rgba(30,110,106,.24);font-weight:700;}
+
+/* ---- 차량 정보 (table) ---- */
+.spec-table{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;}
+.spec-table .row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #F0EEE8;}
+.spec-table .row .k{font-size:13px;color:var(--ink-muted);font-weight:600;}
+.spec-table .row .v{font-size:13.5px;color:var(--ink-primary);font-weight:700;}
+
+/* ---- 판매자 정보 ---- */
+.seller-row{display:flex;align-items:center;gap:14px;}
+.seller-avatar{width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#F0A339,#E08A1B);box-shadow:0 6px 16px -6px rgba(224,138,27,.5);flex:none;}
+.seller-name{font-size:15.5px;font-weight:800;color:var(--ink-primary);}
+.seller-meta{font-size:12px;color:var(--ink-muted);margin-top:3px;}
+.seller-listings-label{font-size:12px;font-weight:700;color:var(--ink-secondary);margin:18px 0 9px;}
+.seller-mini-row{display:flex;gap:10px;}
+.seller-mini-thumb{flex:1;aspect-ratio:5/3;border-radius:9px;overflow:hidden;border:1px solid var(--border);position:relative;}
+.seller-mini-thumb .cap{position:absolute;left:6px;bottom:5px;font-size:10px;font-weight:700;color:#fff;background:rgba(10,14,13,.55);border-radius:6px;padding:2px 6px;}
+.seller-contact-btn{margin-top:18px;width:100%;background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 0;font-family:inherit;font-weight:700;font-size:13.5px;color:var(--petrol-strong);}
+
+/* ============================================================
+   MOBILE (phone frame)
+   ============================================================ */
+.phone-shell{width:390px;background:#111;border-radius:46px;padding:12px;box-shadow:0 34px 68px -26px rgba(15,30,29,.4);}
+.phone-notch{width:120px;height:22px;background:#111;border-radius:0 0 16px 16px;margin:0 auto 6px;position:relative;}
+.phone-screen{width:100%;height:820px;background:var(--surface-base);border-radius:34px;overflow-y:auto;overflow-x:hidden;position:relative;}
+
+.m-topnav{display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid var(--border);padding:14px 18px;position:sticky;top:0;z-index:20;}
+.m-topnav .brand{display:flex;align-items:center;gap:7px;}
+.m-hamburger{width:32px;height:32px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;}
+.m-hamburger svg{stroke:var(--ink-secondary);}
+
+.m-gallery{position:relative;aspect-ratio:5/3;overflow:hidden;}
+.m-gallery-counter{position:absolute;right:12px;top:12px;background:rgba(10,14,13,.55);color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;}
+.m-gallery-dots{position:absolute;left:0;right:0;bottom:11px;display:flex;justify-content:center;gap:5px;}
+.m-gallery-dots span{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.55);}
+.m-gallery-dots span.on{background:#fff;width:16px;border-radius:4px;}
+
+.m-summary{padding:18px 18px 6px;}
+.m-summary .m-head-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.m-summary h1{font-size:18px;font-weight:700;color:var(--ink-primary);line-height:1.4;letter-spacing:-.01em;}
+.m-trust-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;}
+.m-price{font-size:26px;font-weight:800;color:var(--price);margin-top:14px;letter-spacing:-.02em;}
+
+.m-spec-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;padding:16px 18px;margin:14px 18px 0;background:#fff;border:1px solid var(--border);border-radius:14px;}
+.m-spec-grid .k{font-size:11px;color:var(--ink-muted);font-weight:600;}
+.m-spec-grid .v{font-size:13px;color:var(--ink-primary);font-weight:700;margin-top:2px;}
+
+.m-sections{padding:18px 18px 110px;display:flex;flex-direction:column;gap:16px;}
+.m-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px 17px;}
+.m-card h2.card-title{font-size:15.5px;}
+
+.m-sticky-bar{position:sticky;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);box-shadow:0 -10px 24px -14px rgba(20,45,45,.24);padding:12px 16px;display:flex;align-items:center;gap:12px;z-index:30;}
+.m-sticky-bar .m-price-small{flex:none;}
+.m-sticky-bar .m-price-small .k{font-size:10px;color:var(--ink-muted);font-weight:600;}
+.m-sticky-bar .m-price-small .v{font-size:16.5px;font-weight:800;color:var(--price);letter-spacing:-.02em;}
+.m-sticky-bar .cta-primary{margin-top:0;padding:13px 0;font-size:15px;}
+</style>
+</head>
+<body>
+
+<div class="report-head">
+  <span class="eyebrow">차장님 · UX DESIGN · 매물 상세</span>
+  <h1>차장님 — 매물 상세 (데스크톱 · 모바일)</h1>
+  <p>매물 상세 페이지의 최종 레이아웃입니다. 데스크톱은 갤러리(좌)+요약(우) 2단 구성 후 신뢰정보·옵션·차량정보·판매자정보 카드가 전체 폭으로 이어지고, 모바일은 동일 정보를 세로로 쌓은 뒤 하단에 가격+문의하기 스티키 바를 고정합니다. 신뢰 속성(무사고·1인소유·비흡연)은 판매자 자기신고 정보이며 검증된 사실이 아님을 반복 고지합니다.</p>
+</div>
+
+<div class="layout-row">
+
+  <!-- ============================================================
+       DESKTOP (~1080px)
+  ============================================================ -->
+  <div class="frame-col">
+    <div class="frame-label"><span class="tag">DESKTOP</span><span class="w">약 1080px</span></div>
+
+    <div>
+      <div class="browser-chrome">
+        <span class="dot" style="background:#E8A199"></span>
+        <span class="dot" style="background:#EFCB8C"></span>
+        <span class="dot" style="background:#9FCBAA"></span>
+        <span class="url">chajangnim.co.kr/listings/8842</span>
+      </div>
+
+      <div class="desktop-screen">
+        <!-- NAV -->
+        <nav class="topnav">
+          <div class="topnav-left">
+            <div class="brand"><span class="logo-mark">차</span><span class="logo-word">차장님</span></div>
+            <div class="nav-links">
+              <a class="active">중고차</a>
+              <a>AI로 찾기</a>
+              <a>내 차 팔기</a>
+            </div>
+          </div>
+          <div class="topnav-right">
+            <button class="icon-btn" aria-label="찜">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>
+              <span class="badge-count badge-amber">3</span>
+            </button>
+            <button class="icon-btn" aria-label="채팅">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span class="badge-count badge-red">2</span>
+            </button>
+            <button class="profile-btn">
+              <span class="avatar"></span>
+              <span class="label">프로필</span>
+              <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+        </nav>
+
+        <!-- BREADCRUMB -->
+        <div class="breadcrumb-row">
+          <a href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>중고차</a>
+        </div>
+
+        <!-- MAIN 2-COL -->
+        <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:40px;padding:28px 40px 8px;">
+
+          <!-- GALLERY -->
+          <div class="gallery-col">
+            <div class="gallery-cover">
+              <div class="gallery-cover-bg" style="position:absolute;inset:0;"></div>
+              <button class="gallery-arrow left" aria-label="이전 사진"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+              <button class="gallery-arrow right" aria-label="다음 사진"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+              <span class="gallery-counter">1 / 8</span>
+            </div>
+            <div class="thumb-strip">
+              <div class="thumb selected"><div class="gallery-cover-bg" style="position:absolute;inset:0;"></div></div>
+              <div class="thumb"><div class="gallery-cover-bg v2" style="position:absolute;inset:0;"></div></div>
+              <div class="thumb"><div class="gallery-cover-bg v3" style="position:absolute;inset:0;"></div></div>
+              <div class="thumb"><div class="gallery-cover-bg v4" style="position:absolute;inset:0;"></div></div>
+              <div class="thumb"><div class="gallery-cover-bg v5" style="position:absolute;inset:0;"></div></div>
+              <div class="thumb"><div class="gallery-cover-bg v6" style="position:absolute;inset:0;"></div></div>
+              <div class="thumb"><div class="gallery-cover-bg v7" style="position:absolute;inset:0;"></div></div>
+            </div>
+          </div>
+
+          <!-- SUMMARY -->
+          <div class="summary-col">
+            <div class="summary-head">
+              <h1>[제네시스] G80 2.5T · 2022년</h1>
+              <button class="heart-btn" aria-label="찜하기"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button>
+            </div>
+
+            <div class="trust-pills-row">
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+              <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span>
+            </div>
+            <span class="trust-disclaimer-sm">판매자 제공 정보 · 차장님이 검증한 정보가 아닙니다</span>
+
+            <div class="price-big">4,650만원</div>
+
+            <div class="spec-mini-grid">
+              <div class="spec-mini-item"><div class="k">연식</div><div class="v">2022년</div></div>
+              <div class="spec-mini-item"><div class="k">주행거리</div><div class="v">3.1만km</div></div>
+              <div class="spec-mini-item"><div class="k">연료</div><div class="v">가솔린</div></div>
+              <div class="spec-mini-item"><div class="k">배기량</div><div class="v">2,497cc</div></div>
+              <div class="spec-mini-item"><div class="k">지역</div><div class="v">인천</div></div>
+              <div class="spec-mini-item"><div class="k">색상</div><div class="v">흑색</div></div>
+            </div>
+
+            <button class="cta-primary">문의하기</button>
+            <p class="cta-helper">로그인 후 판매자와 바로 채팅할 수 있어요</p>
+
+            <div class="cta-secondary-row">
+              <button class="btn-quiet"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg>찜 추가</button>
+              <button class="btn-quiet icon-only" aria-label="공유"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.1M8.3 13.3l7.4 4.1"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION CARDS -->
+        <div class="section-cards-wrap">
+
+          <!-- 신뢰 정보 -->
+          <div class="detail-card">
+            <div class="card-head"><h2 class="card-title">신뢰 정보</h2></div>
+            <div class="trust-row-item">
+              <span class="trust-check"><svg viewBox="0 0 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></span>
+              <div><div class="t-label">무사고</div><div class="t-desc">성능점검 기준으로 사고 이력이 없다고 판매자가 자기신고했습니다.</div></div>
+            </div>
+            <div class="trust-row-item">
+              <span class="trust-check"><svg viewBox="0 0 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></span>
+              <div><div class="t-label">1인소유</div><div class="t-desc">등록 이후 소유주 변경 없이 한 명이 계속 소유했다고 신고했습니다.</div></div>
+            </div>
+            <div class="trust-row-item">
+              <span class="trust-check"><svg viewBox="0 0 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></span>
+              <div><div class="t-label">비흡연</div><div class="t-desc">차량 내 흡연 이력이 없다고 판매자가 신고했습니다.</div></div>
+            </div>
+            <p class="trust-disclaimer-full">위 신뢰 속성은 모두 <b style="color:var(--ink-secondary);font-weight:700;">판매자 제공 정보</b>로, 차장님이 별도로 검증한 정보가 아닙니다. 거래 전 반드시 직접 확인하세요.</p>
+          </div>
+
+          <!-- 옵션 -->
+          <div class="detail-card">
+            <div class="card-head"><h2 class="card-title">옵션</h2><span class="caption-sm">전체 옵션 표시</span></div>
+
+            <div class="option-group">
+              <div class="g-label">외관 · 내장</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">파노라마선루프</span>
+                <span class="opt-chip">LED 헤드램프</span>
+                <span class="opt-chip">20인치 알로이휠</span>
+                <span class="opt-chip">전동트렁크</span>
+                <span class="opt-chip">열선 사이드미러</span>
+                <span class="opt-chip">프레임리스 도어</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">안전</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">어라운드뷰 모니터</span>
+                <span class="opt-chip">전방충돌방지보조</span>
+                <span class="opt-chip">차선유지보조</span>
+                <span class="opt-chip">스마트크루즈컨트롤</span>
+                <span class="opt-chip">하이빔보조</span>
+                <span class="opt-chip">후측방충돌경고</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">편의</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">헤드업디스플레이</span>
+                <span class="opt-chip">스마트키</span>
+                <span class="opt-chip">열선 스티어링휠</span>
+                <span class="opt-chip">무선충전</span>
+                <span class="opt-chip">하이패스</span>
+                <span class="opt-chip">후방주차보조</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">멀티미디어</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">렉시콘 프리미엄 사운드</span>
+                <span class="opt-chip">12.3인치 내비게이션</span>
+                <span class="opt-chip">스마트폰 미러링</span>
+                <span class="opt-chip">디지털 계기판</span>
+                <span class="opt-chip">블루투스 핸즈프리</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">시트</div>
+              <div class="option-chips">
+                <span class="opt-chip">통풍시트</span>
+                <span class="opt-chip">전동시트(운전석/동승석)</span>
+                <span class="opt-chip">마사지시트</span>
+                <span class="opt-chip">뒷좌석 열선시트</span>
+                <span class="opt-chip">가죽시트</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 차량 정보 -->
+          <div class="detail-card">
+            <div class="card-head"><h2 class="card-title">차량 정보</h2></div>
+            <div class="spec-table">
+              <div class="row"><span class="k">제조사</span><span class="v">제네시스</span></div>
+              <div class="row"><span class="k">모델</span><span class="v">G80 2.5T</span></div>
+              <div class="row"><span class="k">연식</span><span class="v">2022년</span></div>
+              <div class="row"><span class="k">주행거리</span><span class="v">3.1만km</span></div>
+              <div class="row"><span class="k">연료</span><span class="v">가솔린</span></div>
+              <div class="row"><span class="k">변속기</span><span class="v">자동</span></div>
+              <div class="row"><span class="k">배기량</span><span class="v">2,497cc</span></div>
+              <div class="row"><span class="k">색상</span><span class="v">흑색</span></div>
+              <div class="row"><span class="k">지역</span><span class="v">인천</span></div>
+              <div class="row"><span class="k">차량번호</span><span class="v">12가 34**</span></div>
+            </div>
+          </div>
+
+          <!-- 판매자 정보 -->
+          <div class="detail-card">
+            <div class="card-head"><h2 class="card-title">판매자 정보</h2></div>
+            <div class="seller-row">
+              <span class="seller-avatar"></span>
+              <div>
+                <div class="seller-name">제니시스오너</div>
+                <div class="seller-meta">가입 2023년 6월</div>
+              </div>
+            </div>
+            <div class="seller-listings-label">이 판매자의 다른 매물 3건</div>
+            <div class="seller-mini-row">
+              <div class="seller-mini-thumb"><div class="gallery-cover-bg v4" style="position:absolute;inset:0;"></div><span class="cap">아반떼</span></div>
+              <div class="seller-mini-thumb"><div class="gallery-cover-bg v6" style="position:absolute;inset:0;"></div><span class="cap">투싼</span></div>
+              <div class="seller-mini-thumb"><div class="gallery-cover-bg v2" style="position:absolute;inset:0;"></div><span class="cap">쏘나타</span></div>
+            </div>
+            <button class="seller-contact-btn">판매자에게 문의하기</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <p class="frame-caption">2단 구성(갤러리 60% / 요약 40%)이며 요약 카드가 스크롤 시 고정되는 느낌을 주는 상단 배치. 아래 4개 섹션 카드는 전체 폭으로 이어집니다.</p>
+  </div>
+
+  <!-- ============================================================
+       MOBILE (~390px)
+  ============================================================ -->
+  <div class="frame-col">
+    <div class="frame-label"><span class="tag">MOBILE</span><span class="w">약 390px · 폰 프레임</span></div>
+
+    <div class="phone-shell">
+      <div class="phone-notch"></div>
+      <div class="phone-screen">
+
+        <nav class="m-topnav">
+          <div class="brand"><span class="logo-mark">차</span><span class="logo-word">차장님</span></div>
+          <div class="m-hamburger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
+        </nav>
+
+        <div class="m-gallery">
+          <div class="gallery-cover-bg" style="position:absolute;inset:0;"></div>
+          <span class="m-gallery-counter">1 / 8</span>
+          <div class="m-gallery-dots">
+            <span class="on"></span><span></span><span></span><span></span>
+          </div>
+        </div>
+
+        <div class="m-summary">
+          <div class="m-head-row">
+            <h1>[제네시스] G80 2.5T · 2022년</h1>
+            <button class="heart-btn" aria-label="찜하기"><svg viewBox="0 0 24 24"><path d="M12 20.5s-7.5-4.6-10-9.2C.5 8 2 4.5 5.5 4.1c2-.2 3.7.8 4.9 2.5 1.2-1.7 2.9-2.7 4.9-2.5C18.8 4.5 20.3 8 19 11.3c-2.5 4.6-10 9.2-10 9.2z"/></svg></button>
+          </div>
+          <div class="m-trust-row">
+            <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>무사고</span>
+            <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>1인소유</span>
+            <span class="trust-badge"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>비흡연</span>
+          </div>
+          <span class="trust-disclaimer-sm">판매자 제공 정보 · 차장님이 검증한 정보가 아닙니다</span>
+          <div class="m-price">4,650만원</div>
+        </div>
+
+        <div class="m-spec-grid">
+          <div><div class="k">연식</div><div class="v">2022년</div></div>
+          <div><div class="k">주행거리</div><div class="v">3.1만km</div></div>
+          <div><div class="k">연료</div><div class="v">가솔린</div></div>
+          <div><div class="k">배기량</div><div class="v">2,497cc</div></div>
+          <div><div class="k">지역</div><div class="v">인천</div></div>
+          <div><div class="k">색상</div><div class="v">흑색</div></div>
+        </div>
+
+        <div class="m-sections">
+
+          <!-- 신뢰 정보 -->
+          <div class="m-card">
+            <div class="card-head"><h2 class="card-title">신뢰 정보</h2></div>
+            <div class="trust-row-item">
+              <span class="trust-check"><svg viewBox="0 0 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></span>
+              <div><div class="t-label">무사고</div><div class="t-desc">성능점검 기준 사고 이력 없음(자기신고)</div></div>
+            </div>
+            <div class="trust-row-item">
+              <span class="trust-check"><svg viewBox="0 0 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></span>
+              <div><div class="t-label">1인소유</div><div class="t-desc">소유주 변경 없이 한 명이 계속 소유</div></div>
+            </div>
+            <div class="trust-row-item">
+              <span class="trust-check"><svg viewBox="0 0 20 20" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></span>
+              <div><div class="t-label">비흡연</div><div class="t-desc">차량 내 흡연 이력 없음</div></div>
+            </div>
+            <p class="trust-disclaimer-full">판매자 제공 정보로, 차장님이 검증한 정보가 아닙니다.</p>
+          </div>
+
+          <!-- 옵션 -->
+          <div class="m-card">
+            <div class="card-head"><h2 class="card-title">옵션</h2><span class="caption-sm">전체 표시</span></div>
+            <div class="option-group">
+              <div class="g-label">외관 · 내장</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">파노라마선루프</span>
+                <span class="opt-chip">LED 헤드램프</span>
+                <span class="opt-chip">20인치 알로이휠</span>
+                <span class="opt-chip">전동트렁크</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">안전</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">어라운드뷰 모니터</span>
+                <span class="opt-chip">전방충돌방지보조</span>
+                <span class="opt-chip">차선유지보조</span>
+                <span class="opt-chip">스마트크루즈컨트롤</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">편의</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">헤드업디스플레이</span>
+                <span class="opt-chip">스마트키</span>
+                <span class="opt-chip">열선 스티어링휠</span>
+                <span class="opt-chip">무선충전</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">멀티미디어</div>
+              <div class="option-chips">
+                <span class="opt-chip rare">렉시콘 프리미엄 사운드</span>
+                <span class="opt-chip">12.3인치 내비게이션</span>
+                <span class="opt-chip">디지털 계기판</span>
+              </div>
+            </div>
+            <div class="option-group">
+              <div class="g-label">시트</div>
+              <div class="option-chips">
+                <span class="opt-chip">통풍시트</span>
+                <span class="opt-chip">전동시트</span>
+                <span class="opt-chip">마사지시트</span>
+                <span class="opt-chip">가죽시트</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 차량 정보 -->
+          <div class="m-card">
+            <div class="card-head"><h2 class="card-title">차량 정보</h2></div>
+            <div style="display:flex;flex-direction:column;">
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">제조사</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">제네시스</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">모델</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">G80 2.5T</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">연식</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">2022년</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">주행거리</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">3.1만km</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">연료</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">가솔린</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">변속기</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">자동</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">배기량</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">2,497cc</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">색상</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">흑색</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #F0EEE8;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">지역</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">인천</span></div>
+              <div class="spec-table__row" style="display:flex;justify-content:space-between;padding:10px 0;"><span style="font-size:12.5px;color:var(--ink-muted);font-weight:600;">차량번호</span><span style="font-size:13px;color:var(--ink-primary);font-weight:700;">12가 34**</span></div>
+            </div>
+          </div>
+
+          <!-- 판매자 정보 -->
+          <div class="m-card">
+            <div class="card-head"><h2 class="card-title">판매자 정보</h2></div>
+            <div class="seller-row">
+              <span class="seller-avatar" style="width:44px;height:44px;"></span>
+              <div>
+                <div class="seller-name" style="font-size:14.5px;">제니시스오너</div>
+                <div class="seller-meta">가입 2023년 6월</div>
+              </div>
+            </div>
+            <div class="seller-listings-label">이 판매자의 다른 매물 3건</div>
+            <div class="seller-mini-row">
+              <div class="seller-mini-thumb"><div class="gallery-cover-bg v4" style="position:absolute;inset:0;"></div><span class="cap">아반떼</span></div>
+              <div class="seller-mini-thumb"><div class="gallery-cover-bg v6" style="position:absolute;inset:0;"></div><span class="cap">투싼</span></div>
+              <div class="seller-mini-thumb"><div class="gallery-cover-bg v2" style="position:absolute;inset:0;"></div><span class="cap">쏘나타</span></div>
+            </div>
+            <button class="seller-contact-btn">판매자에게 문의하기</button>
+          </div>
+
+        </div>
+
+        <!-- STICKY BOTTOM BAR -->
+        <div class="m-sticky-bar">
+          <div class="m-price-small"><div class="k">판매가</div><div class="v">4,650만원</div></div>
+          <button class="cta-primary" style="flex:1;">문의하기</button>
+        </div>
+
+      </div>
+    </div>
+
+    <p class="frame-caption">스크롤 가능한 폰 프레임(마우스 휠로 스크롤). 하단 <b>가격+문의하기 스티키 바</b>가 항상 화면에 고정되어 스크롤해도 CTA를 놓치지 않습니다.</p>
+  </div>
+
+</div>
+
+</body>
+</html>
