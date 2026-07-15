@@ -192,6 +192,71 @@ select grantee, table_name, privilege_type
   - [x] **A5 "실측 없이 선언하지 않는다"**: 이 스토리가 산출물(마이그·계약·대장)에 박은 주장 중 **실측 없이 적힌 것이 0건**임을 확인. 특히 프렐류드 storage 스텁은 **추측이 아니라 Task 1의 원격 덤프**에 근거해야 한다
   - [x] **A1 "대장은 하나"**: 열린 항목은 `docs/tech-debt.md`에만 적는다. `deferred-work.md`는 **동결**됐다 — 거기에 새로 쓰지 않는다
 
+### Review Findings
+
+_코드리뷰 2026-07-16 (새 세션·opus, 3층 병렬 적대적 리뷰: Blind Hunter / Edge Case Hunter / Acceptance Auditor). Edge Case Hunter는 `pgvector/pgvector:pg17` 도커에 프렐류드+마이그 12개를 올려 **실제로 재현**했다 — 아래 "실측" 표시가 그것이다._
+
+**⚠️ 수정 경로 제약**: `0012`는 **이미 원격에 적용됐다**. 아래 DB 결함의 수정은 전부 **정책 술어·제약 변경**이라 `docs/conventions.md` §9.3의 (a)·(a′) 어디에도 안 들어간다 → **(b) 무조건 사용자 승인**. dev가 임의로 고칠 수 없다.
+
+#### Decision — 해소 결과 (사용자 결정 2026-07-16)
+
+**결정**: 수정 경로 = **`0013` 신규 전진 마이그**(B3 "뒤로 가지 말고 고치는 마이그를 하나 더"). 범위 = **`storage_path` 위조 + `for all` 좁히기 2건만 지금**, 나머지는 `docs/tech-debt.md`로 이월. AC7 = **지금 재실측**.
+
+- [x] ✅ **[해소] ★ `storage_path` 위조 → `0013_listing_images_path_integrity.sql`로 막음.** 트리거가 소유자를 **`storage_path`에서 파싱하지 않고 `listings`에서 직접 구해** `{소유자}/{매물}/{파일명}`을 강제한다(B9). **원격 실측 대조 — 같은 스크립트, 다른 결과**: `0013` 전 = 위조행 insert **통과** → anon **1행**. `0013` 후 = 위조행 insert **거부**(한국어로 기대/실제 경로 표시) → anon **0행**. 정상 경로 등록(G1)·본인 경로 오브젝트 업로드(W1)는 **여전히 통과** — 구멍만 막고 9.3 업로더는 안 죽였다. 게이트 red→green 왕복 완료(일부러 깬 red = `column "nonexistent_column" does not exist` → 되돌려 green).
+- [x] ✅ **[해소] `storage.objects` 쓰기 정책 `for all` → 3동사** — `0013`이 `owner_all` 1개를 `owner_insert`/`owner_update`/`owner_delete` 3개로 분리(CREATE POLICY는 명령을 하나만 받는다). 원격 확인: `owner_all` 사라지고 4정책(`insert`/`update`/`delete`/`read`) 존재. W1로 쓰기 허용분기가 좁힌 뒤에도 사는 것 확인.
+- [x] ✅ **[해소] AC7 검증 구멍 → 재실측 완료.** 지난 AC7이 **한 번도 안 태운** 두 축을 이번에 태웠다: (1) **`storage.objects` 읽기 정책** — anon이 고아 오브젝트를 못 보고(0행), 위조로 등록되면 보이고(1행), `0013` 후 다시 못 보는(0행) 전이를 실제로 관찰. (2) **쓰기 허용 분기 대조군(W1)** — 본인 경로 insert가 **실제로 통과**하므로 `split_part(name,'/',1)=auth.uid()::text`는 옳고 9.3 업로더는 도착해도 죽지 않는다(지난 AC7 ④는 "거부=기대일치"라 이걸 구조적으로 못 잡았다). (3) **`rollback` 명시 이행** — 전 시나리오를 `begin ... rollback` 한 호출로 돌렸고 사후 카운트로 찌꺼기 0행 재확인. 실행 모델도 확정: `execute_sql` 한 호출 안에서 `set local role` + DO 블록 예외처리로 롤 전환·연속 에러 관찰이 가능하다(지난 기록이 판별 불가였던 지점).
+- [x] ⚠️ **[부분해소·과장 금지] `0013`이 D2(10장 UPDATE 우회)를 좁혔지만 닫지 않았다 — 실측함.** `listing_id`만 바꾸는 UPDATE는 이제 **거부된다**(경로 2번째 세그먼트가 새 매물과 불일치). 그러나 **`storage_path`를 함께 고치면 여전히 통과**한다 — 실측: B를 10장으로 채운 뒤 `set listing_id=B, storage_path='{seller}/B/a1.jpg'` → **B가 11장**. "부수적으로 해결됐다"고 적지 않는다(B4 "재보기 전엔 선언하지 않는다"). #18 아래 이월 항목에 이 뉘앙스를 그대로 기록.
+
+#### Decision — 이월 (tech-debt 등재)
+
+- [x] [Review][Defer] **10장 상한 UPDATE 우회** — `0013`으로 **좁혀졌으나 미해소**(위 실측 참조). 트리거를 `before insert or update of listing_id`로 넓히는 것이 최소 수정
+- [x] [Review][Defer] **버킷 선존재 시 비공개·5MB·MIME 3대 상한 동시 무효** — `on conflict do nothing`. 현재 원격 버킷은 값이 맞아 델타 0이라 급하지 않음
+- [x] [Review][Defer] **관리자 sold 사진 바이너리 열람 불가** — Epic 6 관리자 매물상세가 실제로 사진을 렌더하는지 확인 후 판단(9.4·9.5가 카드/갤러리를 만들 때 드러남)
+- [x] [Review][Defer] **고아 Storage 오브젝트** — 매물 삭제 시 파일 영구 잔존. `storage_path` 위조가 막혀 **표적 공급 경로로서의 위험은 사라졌고**, 남은 건 용량 누적
+- [x] [Review][Defer] **설계 공백 4건**(대표교체 단일UPDATE 실패·`sort_order` tie-break·10장 `errcode` 부재·대표 0장 허용) — 소비처가 9.3~9.5라 그때 결정
+- [x] [Review][Defer] **동시 INSERT 경합 10장 초과** — 미측정. 코드상 명백하나 실측 아님
+
+#### Decision 원문 (경위 보존)
+
+- [ ] ~~[Review][Decision] **★ `storage_path` 위조로 타인의 비공개 사진이 anon에게 개방된다 (실측)**~~ — `listing_images_insert_own`(0012:219-226)은 `listing_id` 소유권만 검사하고 `storage_path`는 **무검증 자유 문자열**이다. 읽기 정책(0012:277-288)은 그 값으로 `storage.objects.name`과 조인한다. 판매자 A가 자기 `on_sale` 매물에 `storage_path='{피해자uid}/{피해자매물}/x.jpg'` 행을 넣으면 **anon이 피해자의 sold 매물 오브젝트를 읽는다**(도커 재현: 위조 행 삽입 후 anon 1건 조회 → 행 삭제 후 0건). `storage_path` UNIQUE가 **이미 등록된** 경로는 막지만, 고아 오브젝트(아래 항목)와 업로드 직후 미등록 오브젝트가 표적을 상시 공급한다. 뿌리는 CLAUDE.md B9 — 경로 규칙이 `conventions.md §10` 문서에만 있고 DB에 안 박혔다. **AC1~AC4 어디도 `storage_path`↔`listing_id`/소유자 정합성을 요구하지 않았다 = 스펙 자체의 결함**(dev는 스펙대로 했다). 선택지: (1) `storage_path`에 CHECK로 `{uid}/{listing_id}/` 형태 강제 (2) 읽기 정책에 경로-소유자 일치 조건 추가 (3) 생성 컬럼화 (4) 데모 범위로 수용·이월.
+- [ ] [Review][Decision] **`UPDATE`로 `listing_id`를 옮겨 10장 상한 우회 (실측)** — 트리거가 `before insert` 전용(0012:166-168)이고 `listing_images_update_own`(0012:228-241)은 `listing_id` 변경을 막지 않는다. 사진 1장짜리 매물 C의 행을 이미 10장인 B로 `update ... set listing_id=B` → `UPDATE 1` 성공, **B가 11장**. 판매자 한 명이 정상 UI 권한만으로 넘긴다. 최소 수정 = `before insert or update of listing_id`. **AC2가 "BEFORE INSERT 트리거로 강제"라고 수단을 지정했으므로 스펙 결함**이다.
+- [ ] [Review][Decision] **버킷이 이미 존재하면 비공개·5MB·MIME 3대 상한이 동시에 조용히 무효 (실측)** — `on conflict (id) do nothing`(0012:184). 누군가 `listing-images`를 `public=true`로 먼저 만들어 뒀다면 `INSERT 0 0`으로 통과하고 **ADR-IMG-01의 비공개 전제 + 5MB + 저장형 XSS를 막는 MIME 3종이 전부 무력화된 채 마이그는 초록**이다. `do nothing`은 "재적용 안전"이 아니라 "에러 없음"만 보장 — 이 레포가 #27에서 스스로 경고한 `"에러 없음"으로 갈음 금지`와 같은 함정. 선택지: `do update set public=excluded.public, file_size_limit=..., allowed_mime_types=...`.
+- [ ] [Review][Decision] **관리자가 sold 매물 사진의 바이너리를 못 본다 (실측)** — `listing_images_select_admin`(0012:215-216)으로 **메타행은 1건 보이는데** storage 읽기 정책(0012:277-288)엔 admin 분기가 없어 `storage.objects`는 **0건** → 서명 URL 발급 불가, Epic 6 관리자 매물상세(`/admin/listings/[id]`, sold 포함)에서 깨진 이미지. 0012:276 주석은 "anon이 `is_admin()`에 걸리면 열람 전체가 깨진다"를 이유로 대지만, **`to authenticated` 별도 정책을 하나 더 두면 해소된다** — 같은 파일의 `listing_images`가 정확히 그 분리 패턴을 쓴다. 제약이 아니라 선택이었는데 제약처럼 서술됐다.
+- [ ] [Review][Decision] **`storage.objects` 쓰기 정책이 `for all`이라 SELECT까지 연다 (AC4 위반)** — AC4:76은 "insert/update/delete"를 열거했는데 0012:264는 `for all to authenticated`. 정책은 permissive OR이므로 **`listing_images` 행이 없는 고아 오브젝트도 경로 첫 세그먼트가 본인이면 읽힌다** — AC4가 읽기의 유일한 근거로 규정한 조건을 우회하는 두 번째 읽기 경로. FR11/FR58 누수는 없으나(본인 파일 한정), 9.2 서명 URL의 발급 조건이 둘로 갈린다. 헤더 주석(0012:111)의 "쓰기=본인 경로만"과도 어긋남. 수정 = `for insert, update, delete`.
+- [ ] [Review][Decision] **고아 Storage 오브젝트 — 매물 삭제 시 파일이 영구 잔존, 정리 주체가 없다** — `on delete cascade`(0012:120)로 메타행은 조용히 사라지지만 `storage.objects`를 지우는 트리거·FK가 마이그 어디에도 없다. 결과: (a) 과금되는 저장공간 무한 누적 (b) **위 `storage_path` 위조의 표적을 상시 공급**(등록 행이 사라져 UNIQUE 방어가 풀린 경로가 쌓인다). #27이 cascade의 침묵을 길게 논하면서 **논한 대상은 시드 재실행 시 행 유실뿐**이고 고아 파일은 어느 항목에도 미등재 — 대장이 하나라면 여기 있어야 한다.
+- [ ] [Review][Decision] **AC7 검증에 구멍 — 이 스토리의 핵심이 한 번도 안 태워졌다** — (가) AC7 표 6건 중 `storage.objects` **읽기 정책**(`listing_images_objects_read`)을 태우는 시나리오가 **0건**이다. 그런데 AC4:78-79는 그 정책을 "서명 URL 발급 자체의 전제 · FR11의 스토리지 레이어 강제 · FR58의 성립 조건"이라 규정한다. Debug Log가 `select count(*) from storage.objects where bucket_id='listing-images'` → `0`이라 적은 것이 확증 — **오브젝트가 성공적으로 만들어진 적이 없으니 읽기 정책은 시험될 수 없었다.** 그럼에도 Completion Notes(349행)는 "정책이 실제로 거른다는 증명은 AC7이 한다"로 닫는다. (나) 쓰기 정책의 **허용 분기(대조군)가 미검증** — `split_part(...)=auth.uid()::text`가 틀렸다면 본인 경로 insert도 거부되는데 AC7 ④는 여전히 "거부=기대일치"로 초록이다(**9.3 업로더가 도착 즉시 죽는 시나리오를 못 잡는다**). (다) AC7:120의 `rollback` 요구 미이행(자인) + ④⑤⑥이 각기 다른 에러를 내며 연속 성공했다는 서술은 savepoint 없이는 불가능한데 그 메커니즘이 기록에 없다. (라) **게이트도 이 축을 볼 수 없다** — 프렐류드 storage 스텁에 `grant usage on schema storage`가 없어 게이트에서 anon/authenticated의 `storage.objects` 조회는 `permission denied for schema storage`다(실측). 실제 Supabase는 그 GRANT를 제공하므로 이건 프렐류드 자신의 "정당한 확장" 기준에 해당. **현재 초록불은 storage 정책의 존재조차 증명하지 않는다.**
+- [ ] [Review][Decision] **(묶음) 소비처가 9.3~9.5인 설계 공백 4건** — (1) **대표사진 교체가 단일 UPDATE로 실패(실측)**: 부분 유니크(0012:138-139)는 DEFERRABLE 불가라 자연스러운 `update ... set is_cover=(id=:new) where listing_id=:L`이 `duplicate key`로 죽는다 → 클라가 반드시 2문장으로 짜야 하는데 그 제약이 어디에도 없다. (2) **`sort_order` tie-break 부재**: 전부 기본값 `0`이면 `order by sort_order` 결과가 매 쿼리 달라진다 → `unique(listing_id, sort_order)` 또는 `order by sort_order, id` 규약 필요. (3) **10장 초과 에러에 `errcode` 없음**(0012:159): SQLSTATE가 일반 `P0001`이라 클라가 한국어 메시지 문자열 매칭으로만 구별 → 메시지를 다듬는 순간 조용히 깨진다. (4) **대표 0장 허용**: `is_cover default false`라 대표 없는 매물이 정상 상태 — UX D3 카드가 표시할 썸네일이 없다. 의도인지 불명.
+- [ ] [Review][Decision] **동시 INSERT 경합으로 10장 초과 가능 (미측정)** — 트리거의 `select count(*)`(0012:154-156)에 `for update`·advisory lock·상한 제약이 전무. Read Committed에선 미커밋 행이 안 보이므로 두 트랜잭션이 각각 9장을 보고 둘 다 통과 → 11장. **단일 커넥션 도구 한계로 재현하지 못했다 — 코드상 명백하나 실측 아님.** 실사용(사진 병렬 업로드)에서 현실적으로 닿는 경로.
+
+#### Patch (문서·기록만 — DB 무접촉, 승인 불필요)
+
+- [ ] [Review][Patch] tech-debt #18의 **라이브 모순** 정리 — 124행 "(a′) 승인 대기 없이 진행" vs 130행 "이 항목을 근거로 GRANT를 자율 추가하지 말 것"이 공존 [docs/tech-debt.md:124,130]
+- [ ] [Review][Patch] #18 "남은 범위"에 **storage 축 추가** — 0012는 `storage.objects` 정책을 만들며 GRANT는 한 줄도 안 준다(프렐류드의 `alter default privileges`는 `in schema public`이라 storage에 안 미침) = 플랫폼 GRANT에 대한 **새 암묵 의존**인데 갱신된 남은 범위엔 없다 [docs/tech-debt.md:137]
+- [ ] [Review][Patch] #18의 "anon(FR58 **컬럼 차단**)" 표현 정정 — 테이블 컬럼 6개 전부를 재부여하므로 **차단되는 컬럼은 0개**다. 실효는 "이후 추가되는 컬럼이 자동 노출되지 않는다"뿐(0011 주석이 그 효과를 정확히 서술함). 지금 표현은 다음 사람이 차단이 걸렸다고 믿고 민감 컬럼을 추가하게 만든다 [docs/tech-debt.md:41]
+- [ ] [Review][Patch] `0012` 헤더의 self-contained 의존 열거에 **0006(`ai_readonly`) 추가** — 헤더(0012:102-103)는 "0002·0001뿐"이라 적었으나 0012:253,304가 `ai_readonly`에 의존한다. AC1:53이 명시적으로 0006을 짚었는데 빠졌다. 불변식 위반은 아니나(0006<0012) 선언이 사실보다 좁다 [supabase/migrations/0012_listing_images.sql:102]
+- [ ] [Review][Patch] "`on conflict do nothing`: **재적용 안전**" 주석 정정 — 0012는 `create table`(0012:118)에 `if not exists`가 없어 두 번 돌리면 **첫 문장에서 죽는다**. 따라서 아래의 `drop policy if exists`·`on conflict do nothing`은 도달 불가능한 방어다. 파일 내부에서 재적용 정책이 엇갈린다(0011은 일관됨) [supabase/migrations/0012_listing_images.sql:175]
+- [ ] [Review][Patch] conventions §10 "3개 상한은 **전부 DB에 박는다**" 과장 정정 — 10장은 UPDATE로 우회 가능하고, 5MB·MIME를 강제하는 건 Postgres가 아니라 Storage **API 서버**다(스텁은 값을 저장만 하는 평범한 테이블이라 게이트가 이 둘을 전혀 증명하지 못한다) [docs/conventions.md §10]
+- [ ] [Review][Patch] AC5 "초록이 증명 못 하는 것"에 **false-green 축 추가** — 기록엔 false-red만 적혔다(`owner` 등 미포함 컬럼). 그러나 실측한 `storage.buckets.type (USER-DEFINED, NOT NULL)`을 스텁에서 뺐고, 스텁의 `objects.id default gen_random_uuid()`는 실측 항목에 없는 **추측**인데 AC7 ④가 실제로 그 기본값에 의존한다. 기술부채 #24가 이미 이 실패 모드를 false green이라 명명해 뒀다 — 더 위험한 쪽이 안 적혔다 [scripts/migration-check-prelude.sql:74-89]
+- [ ] [Review][Patch] **`SIGNED_URL_TTL=3600s` 잔존 창 기록** — 서명 URL은 발급 시점에만 RLS를 검사하고 TTL 동안 재검사하지 않는다 → `on_sale`→`sold` 전환 후에도 **직전 발급 URL이 최대 1시간 생존**한다. §6의 "모든 경로" 주장이 이 축에선 성립하지 않는다. §6 추가 문구의 "발급 가능"이라는 단어는 정확하나, **정확함이 한계를 기록한 것은 아니다** — 어디에도 없다(B8: 미루는 판단은 틀린 게 아니고 안 적는 게 틀린 거다) [docs/conventions.md §6·§10]
+- [ ] [Review][Patch] CI 미트리거 원인 "**웹훅 지연/유실**"은 추정임을 명시 — `56c47af`는 `supabase/migrations/**`와 `scripts/**`를 **둘 다** 건드려 `paths` 필터에 정확히 걸린다(리뷰에서 실측 확인). 즉 "왜 안 돌았는가"는 **미해결**이고 웹훅 유실은 관측과 양립할 뿐 입증된 원인이 아니다. 대장 미등록 — 재발 시 같은 자리에서 또 태운다 [스토리 Debug Log 5:341]
+- [ ] [Review][Patch] §6 괄호 범위 모호 정정 — storage 문구를 넣은 뒤 원래 있던 "(구현은 Epic 2~4, anon 경로는 Epic 8.5)"가 그대로 남아 Epic 9 항목까지 포괄하는 것처럼 읽힌다 [docs/conventions.md §6]
+- [ ] [Review][Patch] `ai_readonly using(true)`의 FR11 강제를 **대장에 등록** — 0012:253-254는 sold 사진 메타를 전부 연다(CR2가 확정한 의도). 유일한 방어가 "api가 on_sale id로 좁힌다 + sql_guard가 JOIN 안 한다"인데 **둘 다 미래 스토리(9.6)에 대한 약속**이고, 지금 sql_guard가 `listing_images`를 JOIN하지 못하게 막는 **실행되는 검사는 없다**(B9: 주석은 계약이 아니다). 9.6 AC로 심을 것 [docs/tech-debt.md]
+- [ ] [Review][Patch] AC6이 요구한 **GRANT 덤프 원본 재첨부** — AC6:101과 §9.3(a′)-1은 "그 출력을 Debug Log에 **붙인다**"인데 Debug Log 1(309행)은 dev의 **산문 요약**이다. (a′)의 존재 이유가 정확히 이것 — §9.3:174 "진짜 안전장치는 '델타 0'을 논증이 아니라 실측으로 증명하는 것". 요약은 논증이고, `grantee×table×privilege_type` 원본 행이 없으면 제3자가 델타 0을 재판정할 수 없다. (읽기 전용이라 DB 무접촉) [스토리 Debug Log 1:309]
+
+#### Defer (기존 문제 — 이 변경이 만든 게 아님)
+
+- [x] [Review][Defer] 프렐류드의 `alter default privileges ... grant all to anon, authenticated`가 **anon에게 INSERT/UPDATE/DELETE/TRUNCATE GRANT까지** 준다 — 0012는 `revoke **select**`만 하므로 anon은 `listing_images`에 쓰기 GRANT를 보유한다. 지금은 anon용 쓰기 RLS 정책이 없어 기본 deny로 막히지만 **방어선 하나에만 의존**하는 상태다. #18이 이미 다루는 기존 축이고 이 스토리가 만든 게 아니다 — `docs/tech-debt.md` #18에 기록 [scripts/migration-check-prelude.sql:66-67]
+
+#### Dismissed (5건 — 거짓 양성)
+
+| 주장 | 왜 기각인가 |
+|---|---|
+| 다중행 INSERT가 10장 트리거를 뚫는다 (blind) | **도커 실측으로 반박** — `insert...select` 11행 일괄 삽입이 정상 차단됨. BEFORE ROW 트리거는 같은 문장의 형제 행을 본다 |
+| anon에 `listings.seller_id` GRANT가 없어 이미지 열람이 전부 깨진다 (blind) | **`0011:44` 실측** — `seller_id`·`status` 모두 anon에 GRANT돼 있다. 도커에서 anon 조회도 성공 |
+| `storage.objects` CREATE POLICY가 소유권으로 원격에서 실패한다 (blind) | 원격 `apply_migration`이 **실제로 성공**해 경험적으로 반증됨 |
+| `drop policy if exists`가 남의 정책을 파괴한다 (blind) | 정책명이 `listing_images_objects_*`로 이 스토리 고유 — 개연성 없음 |
+| #27이 "판단 완료"를 가장한 연기다 (blind) | **AC8:140이 "(c) 근거 있는 이월"을 명시적 선택지로 허용**했고 dev는 근거·재방문 시점(Epic 10.5)까지 적었다 |
+
 ---
 
 ## Dev Notes
@@ -342,6 +407,77 @@ claude-sonnet-5
 - 경로 필터에 걸리는 최소 변경(프렐류드 주석 1줄 추가) + 재커밋(`80978b8`) + 재푸시로 진단 → 이번엔 정상 트리거됨.
 - **run id `29443011386`**, workflow=`Migration Gate`, branch=`develop`, head_sha=`80978b8ee48d4356d7acca0bb941cca7563e111a`, **conclusion=`success`**, job `check` 17s. URL: https://github.com/wonho1111/bmad-encar-demo/actions/runs/29443011386
 
+**5-1. [코드리뷰 보정] AC6 GRANT 덤프 — 원본 행 (2026-07-16)**
+
+Debug Log 1이 AC6:101·§9.3(a′)-1이 요구한 *"그 출력을 붙인다"* 대신 **산문 요약**을 실었다. §9.3:174가 *"진짜 안전장치는 델타 0을 논증이 아니라 실측으로 증명하는 것"*이라 한 바로 그 대가라, 코드리뷰에서 원본을 다시 떠 붙인다. 쿼리는 AC6:102-106 원문 그대로.
+
+```
+ grantee     | table_name     | privilege_type
+-------------+----------------+----------------
+ ai_readonly | chat_messages  | SELECT
+ anon        | chat_messages  | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ authenticated| chat_messages | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ ai_readonly | chat_rooms     | SELECT
+ anon        | chat_rooms     | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ authenticated| chat_rooms    | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ ai_readonly | guide_documents| SELECT
+ anon        | guide_documents| DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ authenticated| guide_documents| DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ ai_readonly | listing_images | SELECT
+ anon        | listing_images | DELETE, INSERT, REFERENCES, TRIGGER, TRUNCATE, UPDATE      ← SELECT 없음(0012가 회수)
+ authenticated| listing_images| DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ ai_readonly | listings       | SELECT
+ anon        | listings       | DELETE, INSERT, REFERENCES, TRIGGER, TRUNCATE, UPDATE      ← SELECT 없음(0011이 회수)
+ authenticated| listings      | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ ai_readonly | profiles       | SELECT
+ anon        | profiles       | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+ authenticated| profiles      | DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+```
+(가독성을 위해 privilege_type만 행 병합했다. 원본은 grantee×table×privilege 1행씩.)
+
+**이 덤프가 실제로 말해주는 것 — 요약본이 못 하던 일:**
+- **델타 0 재판정 가능**: 기존 5개 테이블의 GRANT를 이 마이그가 안 건드렸음을 제3자가 직접 확인할 수 있다(AC6 (a′) 조건 충족).
+- **컬럼 스코프 GRANT는 이 뷰에 안 나온다** — `anon`의 `listing_images` SELECT가 "없음"으로 보이는 건 `revoke` 때문이고, 컬럼 단위 재부여는 `information_schema.column_privileges`에 있다. **즉 이 덤프만으로 "anon이 못 읽는다"고 읽으면 틀린다.**
+- **★ 요약본이 가렸던 사실**: `anon`이 모든 테이블에 **DELETE·INSERT·UPDATE·TRUNCATE**를 갖고 있다(프렐류드·플랫폼의 `alter default privileges ... grant all`). `0012`가 회수한 건 **SELECT 하나뿐**이다. 지금 anon 쓰기를 막는 건 "anon용 쓰기 RLS 정책이 없어서 기본 deny" **단 하나**다 — 방어선 하나에 의존. `#18`에 이월 등재함. **산문 요약("anon 7종")은 이걸 숫자 뒤에 숨겼다.**
+
+**6. 코드리뷰 재실측 (2026-07-16, 새 세션·opus) — AC7이 안 태운 축 + `0013` red→green**
+
+전부 **원격 Supabase**에서 `begin ... rollback` **한 호출**로 실행(도커 아님 — AC7의 존재 이유가 "게이트 스텁 말고 진짜 storage에서 듣는가"다). 실행 모델 확정: `execute_sql` 한 호출 안에서 `set local role` + DO 블록 예외처리로 롤 전환·연속 에러 관찰이 가능하다(지난 기록이 판별 불가였던 지점).
+
+- **사전 확인**: `auth.uid()` 원격 정의 = `coalesce(nullif(current_setting('request.jwt.claim.sub',true),''), (nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub'))::uuid` → 빈 클레임에서 안전하게 NULL. anon 시뮬레이션이 정확함을 확인하고 시작.
+- **데이터**: 피해자 seller `12dfba00-…`(sold 매물 `661b38a9-…`) · 공격자 seller `0f937a74-…`(on_sale 매물 `ac5d633e-…`). **서로 다른 판매자 둘**이 필요해 지난 실측과 데이터가 다르다.
+
+**(가) `0013` 적용 _전_ — 구멍 재현 (통제된 대조 실험)**
+
+| # | 시나리오 | 실제 출력 |
+|---|---|---|
+| W1 | 피해자가 **본인 경로**로 `storage.objects` insert (**쓰기 허용분기 대조군 — 지난 AC7에 없던 것**) | `통과 — INSERT 1` |
+| R0 | 위조 **전** anon 조회(고아 오브젝트) | `0행` |
+| F1 | Mallory가 자기 on_sale 매물에 **피해자 경로**를 적은 행 insert | `★ 통과 — INSERT 1 (아무것도 안 막음)` |
+| R1 | 위조 **후** anon 조회 | `★ 1행` |
+
+→ `R0=0행 → R1=1행`이고 그 사이 투입은 **위조 행 하나뿐** = 위조 행이 단독 원인. **피해자의 sold 매물 사진이 비로그인에게 열렸다.** 찌꺼기 확인: `listing_images=0 / storage.objects=0`.
+
+**(나) 게이트 red→green 왕복 (`0013`)**
+- green: 프렐류드 + `0001~0013` **15개 전량 적용 성공** + 프로브 3건 통과 → `=== 마이그레이션 게이트 통과 ===`
+- **일부러 깨기**: `0013` 끝에 `alter table public.listing_images add constraint tmp_break check (nonexistent_column is not null);` 추가 → `ERROR: column "nonexistent_column" does not exist` → **`동적 검사 실패`** = red 재현(**게이트가 `0013`을 실제로 보고 있음**을 증명 — 초록이 그냥 지나친 게 아니다)
+- 되돌려 green 재확인.
+
+**(다) `0013` 적용 _후_ — 같은 스크립트, 다른 결과** (`apply_migration(name="0013_listing_images_path_integrity")` → `{"success":true}`)
+
+| # | 시나리오 | 실제 출력 |
+|---|---|---|
+| W1 | 본인 경로 `storage.objects` insert (`for all`→`for insert` 좁힌 뒤) | `통과 — INSERT 1` |
+| F1 | Mallory 위조행 insert — **적용 전엔 통과했던 바로 그 문장** | `거부됨: 사진 경로가 계약과 다릅니다 — 기대 "0f937a74-…/ac5d633e-…/{파일명}", 실제 "12dfba00-…/661b38a9-…/secret.jpg" (docs/conventions.md §10)` |
+| R1 | 위조 후 anon 조회 | `0행` (전: 1행) |
+| G1 | **정상** 경로 등록 (허용 대조군 — 죽으면 9.3이 죽는다) | `통과 — INSERT 1` |
+| U1 | `listing_id`**만** UPDATE 이동 | `거부됨: … 기대 "0f937a74-…/c4421102-…/{파일명}", 실제 "0f937a74-…/ac5d633e-…/car.jpg"` |
+
+**(라) ⚠️ 과장 금지 — D2는 좁혀졌을 뿐 안 닫혔다 (실측)**
+U1이 막히길래 "10장 UPDATE 우회가 부수적으로 해결됐다"고 적을 뻔했으나 **재봤다**: B를 10장으로 채운 뒤 `update ... set listing_id=B, storage_path='{seller}/B/a1.jpg'`(경로를 **함께** 고침) → `통과 — B가 11장이 됨 (상한 우회 여전히 가능)`. **트리거를 만족시키면서 우회된다.** D2는 열린 채 이월.
+
+- **사후 상태 확인**: `listing_images=0행` · `storage.objects(listing-images)=0행` · `listing_images` 트리거 **2개**(max_10 + storage_path) · storage 정책 = `owner_delete, owner_insert, owner_update, read`(`owner_all` 소멸 확인).
+
 ### Completion Notes List
 
 - **기술부채 #27 (시드 멱등 delete)**: **(c) 근거 있는 이월**을 택함(닫지 않음). 이유: 이 스토리는 `seed.sql`을 고치지 않고 `listing_images`에도 행을 넣지 않아(사진 시딩은 9.7) 오늘 시점엔 지워질 이미지 행이 0건 — 그래서 지금은 진짜 무해하다(실측: `seed.sql:196`이 여전히 delete+새 uuid 재삽입임을 확인). 9.7이 사진을 시드에 추가할 때 **같은 실행 안에서** listings 재삽입 직후 새 `listing_id`로 이미지를 다시 넣으면 (b)를 자연히 만족한다 — 9.7의 AC(2회 연속 실행 후 이미지 행 수 카운트)가 이를 실측 검증한다. 진짜 위험은 seed.sql이 모르는 데이터(실사용자가 시드 매물에 올린 사진, **Epic 10.5 `wishlists`의 실제 찜 기록**)이며, 이건 (a)/(b) 어느 쪽도 못 구제한다 — **Epic 10.5 착수 시 (a) 고정 id를 재고할 것**을 tech-debt.md에 명시했다(찜은 사용자 행동의 산물이라 사진보다 유실 체감이 큼).
@@ -358,9 +494,16 @@ claude-sonnet-5
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (수정) — 9.1 상태 갱신
 - `_bmad-output/implementation-artifacts/9-1-listing-images-스키마-비공개-버킷-storage-rls.md` (수정) — 이 스토리 파일 자체(frontmatter·태스크 체크·Dev Agent Record)
 
+**코드리뷰 추가분 (2026-07-16, 새 세션·opus):**
+- `supabase/migrations/0013_listing_images_path_integrity.sql` (**신규**) — `storage_path` 위조 차단 트리거(소유자를 `listings`에서 직접 구함) + `storage.objects` 쓰기 정책 `for all`→3동사 분리
+- `docs/conventions.md` (수정) — §10 경로 규칙에 "DB가 강제한다" 반영 · §10 상한 3종의 **강제 주체가 셋 다 다르다**는 표로 교체("전부 DB에 박는다"는 사실보다 강했음)
+- `docs/tech-debt.md` (수정) — #18 라이브 모순 정리 + storage GRANT 축 추가 + "anon 컬럼 차단" 표현 정정 + anon 쓰기 GRANT 이월 · **#43~#50 신설**(9.1 리뷰 이월 8건)
+- `_bmad-output/implementation-artifacts/9-1-*.md` (수정) — Review Findings 절 · Debug Log 5-1(GRANT 덤프 원본) · Debug Log 6(재실측)
+
 ### Change Log
 
 | 날짜 | 변경 |
 |---|---|
 | 2026-07-16 | Story 9.1 구현 — `0012_listing_images.sql` 신설(테이블·10장 트리거·비공개 버킷·RLS 5+2정책·GRANT), 게이트 프렐류드 storage 스텁 확장, `docs/conventions.md` §10·§6 갱신, `docs/tech-debt.md` #27((c) 이월)·#18(범위 갱신) 반영, 원격 적용 + AC7 6개 시나리오 실측 통과 (커밋 `56c47af`) |
-| 2026-07-16 | 1차 push가 Migration Gate를 트리거하지 않는 현상 발견(웹훅 지연/유실 추정, GitHub Status 정상) → 프렐류드 주석 1줄 추가 후 재푸시로 CI 재트리거 및 초록 확인(커밋 `80978b8`, run `29443011386`) |
+| 2026-07-16 | 1차 push가 Migration Gate를 트리거하지 않는 현상 발견(웹훅 지연/유실 **추정** — 코드리뷰 실측 결과 `paths` 필터로는 설명 안 되므로 **원인 미해결**, `tech-debt.md` #50-3) → 프렐류드 주석 1줄 추가 후 재푸시로 CI 재트리거 및 초록 확인(커밋 `80978b8`, run `29443011386`) |
+| 2026-07-16 | **코드리뷰(새 세션·opus, 3층 병렬 적대적 리뷰)** — 9 decision / 12 patch / 1 defer / 5 기각. **★ `storage_path` 위조 권한상승을 원격에서 재현**(anon 0행→1행) → **`0013_listing_images_path_integrity.sql` 신설로 차단**(재실측: 위조 거부·anon 0행·정상경로 통과, 게이트 red→green 왕복). `storage.objects` 쓰기 정책 `for all`→3동사 분리. AC7이 안 태운 축(읽기 정책·쓰기 허용분기·`rollback`) 재실측 완료. 문서 patch 6건 적용(#18 라이브 모순·storage GRANT 축·"컬럼 차단" 표현·§10 상한 주체·GRANT 덤프 원본·ai_readonly 대장 등재), 2건 기각(P4·P5 — 무해), 4건 이월(#50). 코드 결함 6건 이월(#43~#49) |

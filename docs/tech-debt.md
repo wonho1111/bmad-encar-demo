@@ -127,14 +127,20 @@
   - *(경위: 원래 "(a) dev 자율"이라 적혀 있던 걸 2026-07-15 코드리뷰가 "(b) 승인 필요"로 정정했다 — §9.3 (a)의 조건①③을 동시에 어기므로 옳은 정정이었다. 2026-07-16에 사용자가 **승인이라는 병목 대신 실측 증거**를 택해 (a′)를 신설했다. 승인은 사람이 "예"라고 하는 것이라 GRANT를 정확하게 만들지 못하지만, 실측은 만든다.)*
 - **참고:** "원격 델타 0"은 사실이다(원격엔 플랫폼이 이미 같은 GRANT를 발급했으므로 재적용해도 상태가 안 변한다). 그러나 §9.3의 (a)/(b)는 **델타만이 아니라 변경의 성격**으로 가른다 — 델타 0이어도 GRANT 대상을 건드리면 (b)다.
 - ⛔ **되살리지 말 것 — 실측으로 반증된 주장**: *"게이트가 초록이어도 fresh DB는 `authenticated`가 매물을 못 읽는다"* → **2026-07-14 도커 실측 결과 거짓.** 프렐류드가 플랫폼 기본 GRANT를 선언하므로 잘 읽는다(`has_table_privilege(authenticated, listings, select)` = **t**). 이 주장은 party-mode에서 "가장 무서운 발견"으로 채택돼 AC·런북·메모리까지 박혔다가 실측 한 번에 뒤집혔다. **진짜 남은 비용은 따로 있다** — 게이트의 초록은 *"마이그 + 선언된 Supabase 계약면 = 도는 DB"* 를 뜻하지 *"마이그만으로 = 도는 DB"* 를 뜻하지 않는다.
-- **⚠️ 2026-07-15 대장 일원화 시 정정**: `deferred-work.md`가 이 항목을 **"판정규칙 (a) 해당(원격 델타 0 → 안전)"** 으로 들고 있었다 — 위 (b) 판정과 **정반대**다. 코드리뷰가 (a)→(b)로 정정했는데 한쪽만 고쳐서 생긴 라이브 모순이었고, 통합하며 (b)로 통일했다. **Epic 9의 첫 마이그레이션이 이 축을 건드린다** — 착수 시 이 항목을 근거로 GRANT를 자율 추가하지 말 것.
+- **⚠️ 2026-07-15 대장 일원화 시 정정 (경위 — 아래 2026-07-16 정정이 이 줄을 대체한다)**: `deferred-work.md`가 이 항목을 **"판정규칙 (a) 해당(원격 델타 0 → 안전)"** 으로 들고 있었다 — 당시 (b) 판정과 **정반대**다. 코드리뷰가 (a)→(b)로 정정했는데 한쪽만 고쳐서 생긴 라이브 모순이었고, 통합하며 (b)로 통일했다.
+  - ~~"착수 시 이 항목을 근거로 GRANT를 자율 추가하지 말 것"~~ → **낡음. 지금 판정은 위의 (a′)다**(2026-07-16 사용자 결정으로 신설 — 승인 대신 **실측 증거**). Story 9.1이 이 절차대로 진행했다.
+  - 🔁 **이 항목은 같은 방식으로 두 번째 모순을 낳았다 (9.1 코드리뷰 적발, 2026-07-16).** 위 줄이 *"한쪽만 고쳐서 생긴 라이브 모순"*을 경고하는 바로 그 문장인데, 9.1이 (a′)를 신설하고 아래에 5줄을 **덧붙이기만** 하고 이 줄을 안 고쳐 **같은 항목 안에 정반대 지시 두 개**가 공존했다. **경고문은 자기 자신을 지키지 못한다**(CLAUDE.md B9 — 문서는 계약이 아니다). 항목에 줄을 더할 땐 **위쪽에 그걸 부정하는 줄이 있는지부터** 본다.
 - 🔗 **인수조건으로 심어짐 (2026-07-16)** — `epics-increment-2026-07-12.md` **Story 9.1**에 (a′) 절차를 AC로 박았다(이 에픽의 첫 마이그가 그 축을 건드리므로). 규칙 정본인 `docs/conventions.md`는 dev 에이전트에 자동 주입되지만, **주입은 "알게" 하고 AC는 "하게" 한다** — 둘 다 둔다.
 - **근거:** `docs/deployment-runbook.md` §8-① · `_bmad-output/implementation-artifacts/8-6-ac-deploy-1-배포-순서-마이그레이션-게이트.md`
 - ✅ **Story 9.1이 이번에 명시한 범위 (2026-07-16, `0012_listing_images.sql`) — 닫지 않음.**
   - **적용 전 실측**(델타 확인): `information_schema.role_table_grants`를 원격에서 떠본 결과 `listing_images`는 신규 테이블이라 비교 대상 자체가 없었다(기존 5개 테이블 — `chat_messages`·`chat_rooms`·`guide_documents`·`listings`·`profiles`만 GRANT 존재, 이번 마이그가 건드리지 않아 그 축의 델타는 0).
   - **신규 테이블에 대해 명시한 것**: `anon`은 0011과 같은 모양(`revoke select` 후 컬럼 스코프 `grant select(id, listing_id, storage_path, sort_order, is_cover, credit)`). `ai_readonly`는 0004 선례대로 `grant select on public.listing_images to ai_readonly` 명시.
-  - **명시하지 않고 남긴 것**: `authenticated`에 대한 `listing_images` 명시 GRANT는 **이번에 추가하지 않았다** — 플랫폼 기본(`alter default privileges`)에 그대로 위임. 이유: AC6이 "새로 만드는 테이블만 명시"라 했고, 그 범위는 anon(FR58 컬럼 차단)·ai_readonly(명시 GRANT 관례)로 한정했다 — authenticated까지 명시하는 건 #18의 "나머지 테이블(authenticated 전 경로)" 축을 건드리는 것이라 범위 밖.
+  - **명시하지 않고 남긴 것**: `authenticated`에 대한 `listing_images` 명시 GRANT는 **이번에 추가하지 않았다** — 플랫폼 기본(`alter default privileges`)에 그대로 위임. 이유: AC6이 "새로 만드는 테이블만 명시"라 했고, 그 범위는 anon·ai_readonly(명시 GRANT 관례)로 한정했다 — authenticated까지 명시하는 건 #18의 "나머지 테이블(authenticated 전 경로)" 축을 건드리는 것이라 범위 밖.
+  - ⚠️ **"anon 컬럼 차단"이라 부르지 마라 (9.1 코드리뷰 정정, 2026-07-16).** `listing_images`는 컬럼이 6개이고 `grant select (...)`도 **6개 전부**를 재부여한다 → **차단되는 컬럼은 0개다.** `revoke`+전체컬럼 `grant`는 테이블 GRANT와 동치다. **이 조치의 실효는 딱 하나** — *"앞으로 이 테이블에 컬럼을 추가해도 anon엔 자동으로 안 보인다"*(`0011:38-39` 주석이 그 효과를 정확히 서술한다). 그건 진짜 가치가 있지만 **차단이 아니라 예방이다.** "차단"이라 적으면 다음 사람이 **차단이 이미 걸려 있다고 믿고 민감 컬럼을 추가한다** — 있지도 않은 보안 성질을 선언하는 건 부채보다 비싸다. (`listings`는 다르다 — `0011`은 `embedding`·`updated_at`을 **실제로 제외**해 진짜 차단이 걸려 있다.)
   - **남은 범위(변화 없음)**: `profiles`·`chat_rooms`·`chat_messages`·`guide_documents`·`listings`의 `authenticated` GRANT 명시 및 프렐류드의 `alter default privileges` 제거는 여전히 열려 있다.
+  - ➕ **9.1이 새로 늘린 범위 (코드리뷰 적발, 2026-07-16) — 위 "남은 범위"가 실제보다 좁았다.** `0012`는 `storage.objects`에 정책 2종을 만들면서 **GRANT는 한 줄도 주지 않는다.** 프렐류드의 `alter default privileges`는 `in schema public`이라 **storage에 미치지 않는다** → anon·authenticated가 `storage.objects`를 읽고 쓰는 근거는 **전적으로 Supabase 플랫폼이 미리 발급한 GRANT**다 = 이 항목의 정의 그 자체. 즉 **이 스토리가 부채를 한 칸 늘려놓고 대장에는 늘어난 사실을 안 적었다** — 이 항목 자신이 `:122`에서 경고한 실패 모드(*"나머지가 얼마나 되는지 아무도 세어본 적 없다"*)의 반복이다. **해소 범위에 `storage.objects`·`storage.buckets` 축을 포함할 것.**
+  - 🧾 **원본 덤프는 `9-1-*.md` Debug Log 5-1에 있다** (코드리뷰가 보정 첨부). 요약본이 가렸던 사실: **`anon`이 전 테이블에 DELETE·INSERT·UPDATE·TRUNCATE를 갖는다** — `0012`/`0011`이 회수한 건 SELECT 하나뿐이고, anon 쓰기를 막는 건 "anon용 쓰기 RLS 정책이 없어서 기본 deny" **단 하나**다. 위 "해소"가 `grant select`만 말하는 것은 이 축을 덜 세는 것이다.
+- 📌 **코드리뷰 이월 (2026-07-16, Story 9.1 리뷰 — 이 변경이 만든 게 아닌 기존 축)**: 프렐류드의 `alter default privileges ... **grant all** on tables to anon, authenticated`(`scripts/migration-check-prelude.sql:66-67`)는 SELECT뿐 아니라 **INSERT/UPDATE/DELETE/TRUNCATE까지** 준다. 0012는 `revoke **select** ... from anon`만 하므로 **anon은 `listing_images`에 쓰기 GRANT를 보유**한다(다른 테이블도 동일). 지금 막고 있는 것은 "anon용 쓰기 RLS 정책이 없어서 기본 deny" **단 하나** — 누군가 anon 정책을 잘못 넓히거나 RLS가 스치면 즉시 뚫린다. 위 "해소"가 `grant select`만 말하는 것은 이 축을 덜 세는 것이다. **이 항목이 위임이라 부르는 것의 실제 내용은 TRUNCATE 포함 전권이다.**
 
 ---
 
@@ -325,6 +331,75 @@
 - **해소:** §8에 두 항목 추가. **#22·#29와 함께 처리.**
 
 > ℹ️ **구 #42(개발 가이드라인 문서가 레포 밖)는 닫혔다 (2026-07-16).** 그 문서의 교훈이 상위 `workspace/CLAUDE.md`(표준 작업 지침 B8·B9 등)에 녹여져 정본이 됐다. 레포 밖에 있는 건 결함이 아니라 **의도** — 이 프로젝트가 아니라 다음 프로젝트용 범용 교훈이기 때문이다.
+
+### 43. `listing_images` 10장 상한이 UPDATE로 우회된다 (9.1 리뷰 이월 — `0013`이 좁혔으나 **미해소**)
+- **위치:** `supabase/migrations/0012_listing_images.sql:166-168`(트리거가 `before insert` 전용) + `:228-241`(`listing_images_update_own`이 `listing_id` 변경 허용)
+- **내용:** 판매자가 자기 매물끼리 `listing_id`를 옮겨 상한을 넘긴다. **`0013`이 절반만 막았다 — 실측으로 확인:**
+  - `listing_id`**만** 바꾸는 UPDATE → **거부됨**(`0013`의 경로 트리거가 경로 2번째 세그먼트 불일치를 잡는다).
+  - `storage_path`를 **함께** 고치면 → **통과.** 실측: B를 10장으로 채운 뒤 `update ... set listing_id=B, storage_path='{seller}/B/a1.jpg'` → **B가 11장**. 트리거를 만족시키며 우회된다.
+  - ⚠️ **"0013이 부수적으로 해결했다"고 적지 마라** — 재보고 확인한 사실이다(B4).
+- **오늘 무해한 이유:** 업로더 UI(9.3)가 아직 없어 `listing_images`에 행을 넣는 경로 자체가 없다(원격 실측: 0행).
+- **트리거:** 9.3 업로더가 UPDATE 경로를 여는 순간.
+- **해소:** 트리거를 `before insert or update of listing_id`로 넓힌다(한 줄). **AC2가 "BEFORE INSERT 트리거로 강제"라 수단을 지정한 게 원인** — 스펙을 함께 고칠 것.
+
+### 44. 버킷이 이미 존재하면 비공개·5MB·MIME 3대 상한이 조용히 무효 (9.1 리뷰 이월)
+- **위치:** `supabase/migrations/0012_listing_images.sql:176-184` (`on conflict (id) do nothing`)
+- **내용:** 누군가 `listing-images` 버킷을 `public=true`·상한 없이 먼저 만들어 뒀다면 `INSERT 0 0`으로 통과하고 **ADR-IMG-01의 비공개 전제 + 5MB + 저장형 XSS를 막는 MIME 3종이 전부 무력화된 채 마이그는 초록**이다. 도커 실측 확인. `do nothing`은 "재적용 안전"이 아니라 **"에러 없음"만** 보장한다 — 이 대장이 #27에서 스스로 경고한 `"에러 없음"으로 갈음 금지`와 같은 함정.
+- **오늘 무해한 이유:** 현재 원격 버킷은 `0012`가 만든 것이라 값이 정확하다(델타 0).
+- **트리거:** 새 Supabase 프로젝트·재해 복구·누군가 대시보드에서 버킷을 먼저 만드는 경우.
+- **해소:** `do update set public=excluded.public, file_size_limit=excluded.file_size_limit, allowed_mime_types=excluded.allowed_mime_types`.
+- **⚠️ 함께 볼 것:** 5MB·MIME를 실제로 강제하는 건 Postgres가 아니라 **Storage API 서버**다. 게이트 스텁은 값을 저장만 하는 평범한 테이블이라 **이 둘을 전혀 증명하지 못한다** — `conventions.md §10`의 "3개 상한은 전부 DB에 박는다"는 이 축에서 사실보다 강하다.
+
+### 45. 관리자가 sold 매물 사진의 **바이너리**를 못 본다 (9.1 리뷰 이월)
+- **위치:** `supabase/migrations/0012_listing_images.sql:277-288` (읽기 정책에 `is_admin()` 분기 없음)
+- **내용:** `listing_images_select_admin`(`0012:215`)으로 **메타행은 보이는데** `storage.objects`는 **0건** → 서명 URL 발급 불가 → Epic 6 관리자 매물상세(`/admin/listings/[id]`, sold 포함)에서 깨진 이미지. 도커 실측 확인. **메타는 보이고 파일은 안 보이는 비대칭.**
+- **`0012:276` 주석이 댄 이유("anon이 `is_admin()`에 걸리면 열람 전체가 깨진다")는 옳지만 결손을 정당화하지 못한다** — `to authenticated` 별도 정책을 하나 더 두면 해소되고, 같은 파일의 `listing_images`가 정확히 그 분리 패턴을 쓴다. 제약이 아니라 선택이었다.
+- **트리거:** 9.4·9.5가 카드/갤러리를 만들어 관리자 화면이 실제로 사진을 렌더할 때. **선행 확인: Epic 6 관리자 매물상세가 사진을 렌더하는가?**
+- **해소:** `storage.objects` 읽기 정책을 anon용/authenticated용으로 나누고 authenticated 쪽에 `or public.is_admin()` 추가.
+
+### 46. 고아 Storage 오브젝트 — 매물 삭제 시 파일이 영구 잔존 (9.1 리뷰 이월)
+- **위치:** `supabase/migrations/0012_listing_images.sql:120` (`on delete cascade`) — `storage.objects`를 정리하는 트리거·FK 부재
+- **내용:** 매물이 지워지면 `listing_images` 행은 cascade로 **조용히** 사라지고 버킷의 바이너리는 남는다. 아무도 열 수 없지만 용량은 계속 먹는다(과금).
+- **위험도 하향(2026-07-16):** 원래 이 항목의 진짜 위험은 **고아가 `storage_path` 위조의 표적을 상시 공급**하는 것이었으나, `0013`이 위조를 막아 **그 축은 사라졌다.** 남은 건 용량 누적뿐.
+- **#27이 cascade의 침묵을 길게 논하면서 논한 대상은 "시드 재실행 시 행 유실"뿐이고 고아 파일은 어디에도 없었다** — 대장이 하나라면 여기 있어야 한다(B8).
+- **트리거:** 사진이 실제로 쌓이기 시작할 때(9.3·9.7). 데모 규모(매물 100건×10장)에선 무해.
+- **해소:** `listing_images` AFTER DELETE 트리거에서 오브젝트 삭제, 또는 주기적 정리. **DB에서 파일을 지우려면 storage 확장 의존이 생기므로 범위를 보고 판단할 것.**
+
+### 47. `listing_images` 설계 공백 4건 — 소비처가 9.3~9.5 (9.1 리뷰 이월)
+- **위치:** `supabase/migrations/0012_listing_images.sql`
+- **내용:** 전부 **소비처가 아직 없어** 지금 결정하면 재작업 위험. 그 화면을 만들 때 함께 정한다.
+  1. **대표사진 교체가 단일 UPDATE로 실패**(`:138-139`) — 부분 유니크 인덱스는 DEFERRABLE 불가라 자연스러운 `update ... set is_cover=(id=:new) where listing_id=:L`이 `duplicate key`로 죽는다(도커 실측). **클라가 반드시 2문장(먼저 전부 false, 그 다음 true)으로 짜야 하는데 그 제약이 어디에도 없다.** → 9.3·9.5 착수 시 `conventions.md §10`에 명시.
+  2. **`sort_order` tie-break 부재**(`:122`) — 전부 기본값 `0`이면 `order by sort_order` 결과가 매 쿼리 달라진다. → `unique(listing_id, sort_order)` 또는 `order by sort_order, id` 규약.
+  3. **10장 초과 에러에 `errcode` 없음**(`:159`) — SQLSTATE가 일반 `P0001`이라 클라가 **한국어 메시지 문자열 매칭**으로만 구별한다. 메시지를 다듬는 순간 조용히 깨진다. → `raise ... using errcode='...'`.
+  4. **대표 0장 허용**(`:123`) — `is_cover default false`라 대표 없는 매물이 정상 상태. UX D3 카드가 표시할 썸네일이 없다. 의도인지 불명 → 9.4가 카드를 만들 때 결정(0장 허용이면 §10에 명시).
+- **트리거:** 9.3(업로더) · 9.4(카드) · 9.5(갤러리).
+
+### 48. `listing_images`의 FR11 강제가 **실행되는 검사 없이 약속으로만** 존재 (9.1 리뷰 이월)
+- **위치:** `supabase/migrations/0012_listing_images.sql:253-254` (`listing_images_ai_readonly_select ... using (true)`)
+- **내용:** 이 정책은 **sold 매물의 사진 메타도 전부 연다. 이건 의도된 것이다** — 아키텍처 CR2가 확정했고 재논의 대상이 아니다. FR11 강제는 **api가 on_sale id로 스코프를 좁히는 데서** 일어난다.
+- **그런데 그 강제가 지금 어디에도 실행되는 형태로 없다:**
+  - 방어 ①"api가 on_sale id로 좁힌다" · 방어 ②"`sql_guard`가 `listing_images`와 JOIN하지 않는다" — **둘 다 Story 9.6에 대한 약속**이다.
+  - 지금 `sql_guard`가 `listing_images`를 JOIN하지 못하게 막는 **검사는 0개**다. `0012:252` 주석이 *"sql_guard는 listings 단일 테이블을 유지하고 JOIN하지 않는다(9.6의 일)"*라 적혀 있을 뿐 — **주석은 계약이 아니다**(CLAUDE.md B9).
+  - `conventions.md §6`은 sold가 *"AI SQL 포함 모든 경로"*에서 비노출이라 선언하고, 9.1이 그 §6에 storage RLS를 강제 지점으로 **추가**했다. 정작 ai 경로는 `using(true)`다.
+- **오늘 무해한 이유:** `sql_guard`의 `ALLOWED_COLUMNS`가 `listings` 단일 테이블이라 현재 `listing_images`를 JOIN할 수 없다. `ai_readonly`는 **`nologin` 롤**이라 사용자가 직접 붙을 수 없고 api의 SELECT 전용 경로에서만 쓰인다 — **사용자 대면 노출이 아니다.**
+- **트리거:** **Story 9.6**(api가 `listing_images`에서 대표 사진 `storage_path`를 읽는 곳). 누군가 `sql_guard`에 테이블을 하나 더 허용하는 순간.
+- **해소 (9.6 AC로 심을 것 — B5 "약속은 문서 말고 인수조건으로"):** `sql_guard`가 `listing_images`를 JOIN하면 **실패하는 테스트 하나**. 주석 네 줄보다 그 검사 하나가 낫다.
+
+### 49. 10장 트리거 동시성 경합 — **미측정** (9.1 리뷰 이월)
+- **위치:** `supabase/migrations/0012_listing_images.sql:154-156` (`select count(*)`에 `for update`·advisory lock 부재)
+- **내용:** Read Committed에선 미커밋 행이 안 보이므로 두 트랜잭션이 각각 9장을 보고 **둘 다 통과 → 11장**. 카운트-후-삽입에 직렬화 장치가 전무한 건 코드상 명백하다.
+- **⚠️ 실측 아님:** 리뷰의 도커 세션이 단일 커넥션이라 **재현하지 못했다.** 이 항목은 **가설**이다 — 해소 전에 먼저 재라(B4 "선언 전에 실측하라").
+- **트리거:** 9.3 업로더가 사진을 병렬 업로드할 때(현실적으로 닿는 경로 — 10장을 한꺼번에 올린다).
+- **해소:** `listing_id`에 advisory lock, 또는 상한을 인덱스/제약으로 표현. **#43과 같은 자리에서 함께 볼 것.**
+
+### 50. 9.1 기록 누락 4건 (9.1 리뷰 이월 — 문서 부채, 지금 아무도 안 다침)
+- **판단 기준(사용자, 2026-07-16):** *"내일 누군가 이걸 읽고 틀린 행동을 하는가?"* — 아래 4건은 **아니오**라서 이월했다. 같은 리뷰의 다른 6건(모순·거짓 안전감)은 **예**라서 즉시 고쳤다.
+1. **게이트 프렐류드의 false-**green** 축이 기록에 없다** [`scripts/migration-check-prelude.sql:69-94`] — 스토리 기록(Debug Log 3)은 false-**red**만 적었다(`owner` 등 미포함 컬럼). 그러나 원격 실측한 `storage.buckets.type (USER-DEFINED, **NOT NULL**)`을 스텁에서 뺐고, 스텁의 `objects.id default gen_random_uuid()`는 **실측 항목에 없는 추측**인데 AC7 시나리오가 실제로 그 기본값에 의존한다. **#24가 이미 이 실패 모드를 false green이라 명명해 뒀다 — 더 위험한 쪽이 안 적혔다.** (원격 apply가 성공했으므로 이 축의 구체 위험은 아직 실현되지 않았다.)
+2. **`SIGNED_URL_TTL = 3600s`의 잔존 창이 어디에도 없다** [`docs/conventions.md` §6·§10] — 서명 URL은 **발급 시점에만** RLS를 검사하고 TTL 동안 재검사하지 않는다 → `on_sale`→`sold` 전환 후에도 **직전 발급 URL이 최대 1시간 산다.** §6의 "모든 경로" 주장이 이 축에선 성립하지 않는다. (§6에 쓴 "발급 **가능**"이란 단어는 정확하다 — dev가 발급 시점 강제임을 알고 썼다. 그러나 **정확함이 한계를 기록한 것은 아니다.**) → **9.2(서명 URL 헬퍼)가 TTL을 실제로 구현할 때 함께 기록할 것.**
+3. **CI 미트리거의 원인이 미해결인데 "웹훅 유실"로 종결됐다** [`9-1-*.md` Debug Log 5] — 코드리뷰 실측: `56c47af`는 `supabase/migrations/**`와 `scripts/**`를 **둘 다** 건드려 `paths` 필터에 정확히 걸린다. 즉 경로 필터로는 설명되지 않으며, "웹훅 지연/유실"은 관측(run 부재 + Status Page 정상)과 **양립할 뿐 입증된 원인이 아니다.** 재발 시 같은 자리에서 또 6분을 태운다. **#41(런북 §8에 `paths:` 필터 누락)과 같은 자리에서 볼 것.**
+4. **§6 괄호의 범위가 모호하다** [`docs/conventions.md` §6] — storage 문구를 추가한 뒤 원래 있던 *"(구현은 Epic 2~4, anon 경로는 Epic 8.5)"* 가 그대로 남아 **Epic 9 항목까지 포괄하는 것처럼** 읽힌다.
+- **트리거:** 2번 → Story 9.2. 3번 → CI가 또 안 돌 때. 1·4번 → 프렐류드/§6을 다음에 건드릴 때.
+
 
 ---
 
