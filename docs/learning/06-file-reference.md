@@ -88,7 +88,7 @@
 |------|------|
 | `scripts/apply_listings_expansion.py` | 샘플 매물 58건을 DB에 일괄 INSERT(임베딩은 NULL, 다음 스크립트가 채움). |
 | `scripts/backfill_embeddings.py` | 매물 설명·옵션과 가이드 문서를 Gemini 임베딩 벡터로 변환해 DB에 채우는 스크립트(멱등). |
-| `scripts/run_ab_eval.py` | Gemini 두 모델 A/B 비교 실행. 질의셋을 모델별로 여러 번 돌려 raw 결과(JSON) 저장. |
+| ~~`scripts/run_ab_eval.py`~~ | **2026-07-16 제거.** Gemini 모델 A/B 라이브 러너였다. 결론은 2026-06-23에 났다(`gemini-3.1-flash-lite` 채택). 재비교가 필요하면 새로 만든다. |
 | `scripts/score_ab.py` | A/B raw 결과를 채점(라우팅·결과 정확도·오염·비용)해 우승 모델 결정. |
 
 ### 테스트 (`api/tests/`)
@@ -117,7 +117,7 @@
 | `docs/ai-demo-queries.md` | 라우터·세 경로(A/B/C) 기대 동작 명세 **권위 문서**. 프롬프트·테스트가 참조. |
 | `docs/ai-ab-test-queryset.md` | 모델 A/B 비교 질의셋 개요(사람용 설명). |
 | `docs/ai-ab-test-queryset.json` | A/B 테스트 입력 질의셋 44개(기대경로·골든조건·기대건수). 평가 스크립트 입력. |
-| `docs/ai-e2e-hard-queryset.json` | 스트레스 테스트 질의셋(한글숫자·억단위·범위 등 비표준 표현으로 견고성 측정). |
+| ~~`docs/ai-e2e-hard-queryset.json`~~ | **2026-07-16 제거.** E2E 스트레스 질의셋이었다. 증분(Epic 9~16)이 AI 4분기 라우팅·되묻기·하이브리드 검색을 새로 넣으므로 질의셋도 그 뒤 새로 짠다. |
 | `docs/ab-eval-raw-gemini-3.1-flash-lite.json` | 3.1 모델 A/B 평가 raw 결과(경로·매물ID·답변·토큰·지연). |
 | `docs/ab-eval-raw-gemini-2.5-flash-lite.json` | 2.5 모델 A/B 평가 raw 결과(같은 구조). |
 | `docs/ab-eval-report.json` | A/B 채점 최종 리포트(우승 모델·이유·지표 요약). |
@@ -316,8 +316,8 @@
 |------|------|
 | `docs/idea.md` | 프로젝트 기획서(기능 범위·AI 검색 설계·기술 스택). |
 | `docs/conventions.md` | 코딩 규칙·단위·허용값 단일 출처(코드 상수가 이걸 따름). |
-| `docs/e2e-test-cases.md` | E2E 테스트 케이스 모음(웹·모바일). |
-| `docs/e2e-checklist.md` | E2E 점검 체크리스트. |
+| ~~`docs/e2e-test-cases.md`~~ | **2026-07-16 제거** (실행 대본 304줄). 아래 참조. |
+| ~~`docs/e2e-checklist.md`~~ | **2026-07-16 제거** (체크리스트 148줄). 증분 Epic 9~16이 화면·계약을 대폭 바꾸므로(이미지·신뢰속성·랜딩 개편·실시간 채팅·역할 통합) 그 뒤 **새로 작성**한다. 낡은 대본은 정상 동작을 실패로 판정해 멀쩡한 코드를 고치게 만든다 — 실제로 Story 8.5 이후 `/search` 항목이 그랬다(구 기술부채 #28). 자동 검사는 `.github/workflows/tests.yml`. |
 | `docs/learning/**` | (바로 이 학습 문서 묶음.) |
 
 > 그 외 `_bmad-output/` 의 PRD·아키텍처·스토리 문서는 "왜 이렇게 만들었나"의 기획 근거입니다. 코드 이해엔 위 01~06으로 충분하고, 설계 배경이 궁금할 때 참고하세요.
