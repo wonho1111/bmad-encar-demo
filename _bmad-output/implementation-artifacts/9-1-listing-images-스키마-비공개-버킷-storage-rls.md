@@ -4,7 +4,7 @@ baseline_commit: cb6cba50a1f3ea4c1fd91753da562ba4a9c96fa3
 
 # Story 9.1: listing_images 스키마 + 비공개 버킷 + Storage RLS
 
-Status: in-progress
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -184,12 +184,12 @@ select grantee, table_name, privilege_type
 - [x] **Task 7 — 원격 적용 + 작동 실측 (AC7)** ※ **여기가 진짜 문이다**(런북 §7-1: 적용 전 게이트 로컬 통과 필수)
   - [x] `apply_migration`, name = `0012_listing_images` (**번호 포함**)
   - [x] AC7의 6개 시나리오를 트랜잭션+`rollback`으로 실행 → **출력 전문**을 Debug Log에
-- [ ] **Task 8 — 커밋·푸시·CI 확인 (AC5)**
-  - [ ] `develop`에 의미 단위 커밋(한국어 메시지)
-  - [ ] `git push origin develop` → GitHub Actions **Migration Gate 초록 실측 확인**(run id 기록)
-  - [ ] `main` 병합은 **하지 않는다**(사용자 승인 사항)
-- [ ] **Task 9 — Epic 8 회고 액션 이행 확인 (회고 A3·A5)**
-  - [ ] **A5 "실측 없이 선언하지 않는다"**: 이 스토리가 산출물(마이그·계약·대장)에 박은 주장 중 **실측 없이 적힌 것이 0건**임을 확인. 특히 프렐류드 storage 스텁은 **추측이 아니라 Task 1의 원격 덤프**에 근거해야 한다
+- [x] **Task 8 — 커밋·푸시·CI 확인 (AC5)**
+  - [x] `develop`에 의미 단위 커밋(한국어 메시지)
+  - [x] `git push origin develop` → GitHub Actions **Migration Gate 초록 실측 확인**(run id 기록)
+  - [x] `main` 병합은 **하지 않는다**(사용자 승인 사항)
+- [x] **Task 9 — Epic 8 회고 액션 이행 확인 (회고 A3·A5)**
+  - [x] **A5 "실측 없이 선언하지 않는다"**: 이 스토리가 산출물(마이그·계약·대장)에 박은 주장 중 **실측 없이 적힌 것이 0건**임을 확인. 특히 프렐류드 storage 스텁은 **추측이 아니라 Task 1의 원격 덤프**에 근거해야 한다
   - [x] **A1 "대장은 하나"**: 열린 항목은 `docs/tech-debt.md`에만 적는다. `deferred-work.md`는 **동결**됐다 — 거기에 새로 쓰지 않는다
 
 ---
@@ -337,7 +337,10 @@ claude-sonnet-5
 - **찌꺼기 확인(rollback 대체 검증)**: 위 트랜잭션이 `rollback`으로 명시 종료되지 않아, 별도 쿼리로 원격 잔존 여부를 직접 실측함 — `select count(*) from listing_images where listing_id in (...)` → **`0`**, `select count(*) from storage.objects where bucket_id='listing-images'` → **`0`**. 세션 종료 시 미완결 트랜잭션이 자동 롤백됨을 확인(추측이 아니라 실측).
 - `get_advisors(type=security)` 사후 점검: 경고 3건 전부 이 스토리 이전부터 있던 기존 이슈(`vector` 확장 public 스키마 위치·`is_admin()` SECURITY DEFINER 노출·유출 비밀번호 보호 미설정) — `listing_images`/storage RLS 관련 신규 경고 없음.
 
-**5. Task 8 — GitHub Actions Migration Gate run id + conclusion**: 아래 File List 커밋 후 채움.
+**5. Task 8 — GitHub Actions Migration Gate run id + conclusion**:
+- 1차 push(`56c47af`)가 웹훅 지연/유실로 워크플로를 전혀 트리거하지 않음 — GitHub Actions API(`actions/runs`)에 해당 커밋의 run이 6분 넘게 생성되지 않음을 실측 확인, GitHub Status Page는 "All Systems Operational"(장애 아님). 사용자가 GitHub Actions 탭에서 직접 확인해 동일 현상 재확인.
+- 경로 필터에 걸리는 최소 변경(프렐류드 주석 1줄 추가) + 재커밋(`80978b8`) + 재푸시로 진단 → 이번엔 정상 트리거됨.
+- **run id `29443011386`**, workflow=`Migration Gate`, branch=`develop`, head_sha=`80978b8ee48d4356d7acca0bb941cca7563e111a`, **conclusion=`success`**, job `check` 17s. URL: https://github.com/wonho1111/bmad-encar-demo/actions/runs/29443011386
 
 ### Completion Notes List
 
@@ -359,4 +362,5 @@ claude-sonnet-5
 
 | 날짜 | 변경 |
 |---|---|
-| 2026-07-16 | Story 9.1 구현 — `0012_listing_images.sql` 신설(테이블·10장 트리거·비공개 버킷·RLS 5+2정책·GRANT), 게이트 프렐류드 storage 스텁 확장, `docs/conventions.md` §10·§6 갱신, `docs/tech-debt.md` #27((c) 이월)·#18(범위 갱신) 반영, 원격 적용 + AC7 6개 시나리오 실측 통과 |
+| 2026-07-16 | Story 9.1 구현 — `0012_listing_images.sql` 신설(테이블·10장 트리거·비공개 버킷·RLS 5+2정책·GRANT), 게이트 프렐류드 storage 스텁 확장, `docs/conventions.md` §10·§6 갱신, `docs/tech-debt.md` #27((c) 이월)·#18(범위 갱신) 반영, 원격 적용 + AC7 6개 시나리오 실측 통과 (커밋 `56c47af`) |
+| 2026-07-16 | 1차 push가 Migration Gate를 트리거하지 않는 현상 발견(웹훅 지연/유실 추정, GitHub Status 정상) → 프렐류드 주석 1줄 추가 후 재푸시로 CI 재트리거 및 초록 확인(커밋 `80978b8`, run `29443011386`) |
