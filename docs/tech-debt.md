@@ -289,7 +289,7 @@
 - **위치:** `web/src/app/(user)/sell/ListingActions.tsx`
 - **내용:** cosmetic. 각 핸들러 시작 시 `setError(null)`로 초기화하지만 성공 경로엔 명시 초기화가 없다. 한 행에 버튼이 모여 있어 실사용 혼선은 작음. 핸들러가 더 늘면 분리 검토.
 
-### 40. Pretendard 폰트가 CDN `<link>` — 렌더 블로킹 + FOUT/CLS (8.1 리뷰 이월, **결정됨·스토리 미배정**)
+### 40. Pretendard 폰트가 CDN `<link>` — 렌더 블로킹 + FOUT/CLS (8.1 리뷰 이월, 📅 `11-0`으로 배정됨)
 - **위치:** `web/src/app/layout.tsx`
 - **내용:** 뿌리가 같은 2건 — ① jsDelivr CDN stylesheet를 `<head>`에서 로드해 **느린(실패 아님) CDN이 first paint를 지연**시킬 수 있음(폴백 스택은 명확한 실패만 구제, latency는 못 구제). ② 수동 `<link>`가 next/font의 자동 `size-adjust`/`ascent-override` fallback을 잃어 **스왑 시 텍스트 리플로우(CLS)**.
 - **✅ 방향 확정(사용자 결정 2026-07-13):** `next/font/local`로 **self-host 전환** → 한 번에 종결. Pretendard는 Google Fonts에 없어 `next/font/google`은 불가하나 `local`은 가능.
