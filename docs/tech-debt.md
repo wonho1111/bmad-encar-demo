@@ -17,14 +17,14 @@
 | 우선순위 | 건수 | 한 줄 |
 |---|---|---|
 | 🔴 필수 | 1 | 안드로이드 서명 (#2) — **단 앱 배포 계획이 없어 트리거 부재** |
-| 🟡 조건부 | **14** | 재오픈 차단(#9) · 타입(#12) · **GRANT(#18 — Epic 9)** · 관리자 운영 실사용 미확인(#19) · 거래일 `sold_at`(#20) · **게이트 구조적 대가 3종(#22~24 — Epic 13)** · psycopg 버전핀(#25) · 폐기토큰 401(#26) · **시드 멱등 delete(#27 — Epic 9·10)** · *(📅 예약: #6 멱등키→12-1 · #7 폴링배너→12-4 · #11 옵션쉼표→10-3)* |
+| 🟡 조건부 | **15** | 재오픈 차단(#9) · 타입(#12) · **GRANT(#18 — Epic 9)** · 관리자 운영 실사용 미확인(#19) · 거래일 `sold_at`(#20) · **게이트 구조적 대가 3종(#22~24 — Epic 13)** · psycopg 버전핀(#25) · 폐기토큰 401(#26) · **시드 멱등 delete(#27 — Epic 9·10)** · **storage.objects 인증 DELETE/LIST 403(#51 — Epic 9.3, 원인 미상)** · *(📅 예약: #6 멱등키→12-1 · #7 폴링배너→12-4 · #11 옵션쉼표→10-3)* |
 | 🟢 품질/테스트 | **15** | AI 정규화 회귀테스트(#13) · FR17 경로(#14) · Riverpod 컨트롤러(#17) · 누수테스트 의존(#32) · DSN 포트(#33) · anon 테스트 중복(#34) · 시드 self-heal(#35) · FocusTrap 2종(#36·#37) · ErrorState tone(#38) · error useState(#39) · 런북 §8 누락(#41) · *(📅 예약: #15 LIMIT→13-1 · #16 거리컷오프→13-6 · #40 Pretendard→11-0)* |
 | 🔒 구조적 보류 | 1 | 완전 계정 삭제 (#21 — `service_role` 키 금지가 프로젝트 규칙) |
 | 📅 스토리로 예약됨 | 3 (+6) | `RowSkeleton`(Epic 12·15) · FocusTrap `role="dialog"`(Epic 11) · `db-schema-guide` 표 갱신(증분 후) *(+ 위 섹션 내 📅 표기 6건: #6·#7·#11·#15·#16·#40)* |
 | ⚪ 의도적 보류 | 3 | 관리자 대시보드(Cut) · 찜 인기신호 · 문서기반 차량상태 |
 | ✅ 해소 | **6** (+3) | DB 커넥션 풀(#5, 8.4) · 채팅 본문 길이(#8, 0010) · open-redirect(#10, 8.5) · **E2E 대본 계약 오기재(#28 — 대본 폐기로 종결)** · **CI 구멍(#29 — tests.yml)** · **architecture baseline 배너(#31)** *(+ 부록: 4-1 이월 3건이 4.2·4.6·4.7에서 해소된 것으로 실측 확인)* |
 
-**합계 37건** = 🔴1 + 🟡14 + 🟢15 + 🔒1 + ✅6.
+**합계 38건** = 🔴1 + 🟡15 + 🟢15 + 🔒1 + ✅6.
 
 > **왜 건수가 21 → 37로 늘었나 — 부채가 늘어서가 아니다.** `deferred-work.md`에 흩어져 있던 열린 항목을 여기로 흡수했고(대장 일원화 2026-07-15), 검토에서 문서부채를 새로 등록했다. **미룬 것도 적는 게 대장의 일이다** — 안 적으면 "안 한 것"과 "했는지 모르는 것"이 구별되지 않고, 후자가 더 비싸다.
 >
@@ -395,13 +395,21 @@
 ### 50. 9.1 기록 누락 4건 (9.1 리뷰 이월 — 문서 부채, 지금 아무도 안 다침)
 - **판단 기준(사용자, 2026-07-16):** *"내일 누군가 이걸 읽고 틀린 행동을 하는가?"* — 아래 4건은 **아니오**라서 이월했다. 같은 리뷰의 다른 6건(모순·거짓 안전감)은 **예**라서 즉시 고쳤다.
 1. **게이트 프렐류드의 false-**green** 축이 기록에 없다** [`scripts/migration-check-prelude.sql:69-94`] — 스토리 기록(Debug Log 3)은 false-**red**만 적었다(`owner` 등 미포함 컬럼). 그러나 원격 실측한 `storage.buckets.type (USER-DEFINED, **NOT NULL**)`을 스텁에서 뺐고, 스텁의 `objects.id default gen_random_uuid()`는 **실측 항목에 없는 추측**인데 AC7 시나리오가 실제로 그 기본값에 의존한다. **#24가 이미 이 실패 모드를 false green이라 명명해 뒀다 — 더 위험한 쪽이 안 적혔다.** (원격 apply가 성공했으므로 이 축의 구체 위험은 아직 실현되지 않았다.)
-2. **`SIGNED_URL_TTL = 3600s`의 잔존 창이 어디에도 없다** [`docs/conventions.md` §6·§10] — 서명 URL은 **발급 시점에만** RLS를 검사하고 TTL 동안 재검사하지 않는다 → `on_sale`→`sold` 전환 후에도 **직전 발급 URL이 최대 1시간 산다.** §6의 "모든 경로" 주장이 이 축에선 성립하지 않는다. (§6에 쓴 "발급 **가능**"이란 단어는 정확하다 — dev가 발급 시점 강제임을 알고 썼다. 그러나 **정확함이 한계를 기록한 것은 아니다.**) → **9.2(서명 URL 헬퍼)가 TTL을 실제로 구현할 때 함께 기록할 것.**
+2. **✅ 9.2에서 정합화됨(2026-07-18) — `SIGNED_URL_TTL = 3600s`가 이제 실제로 구현됐다**[`web/src/lib/storage/index.ts`·`app/lib/core/supabase/storage_helper.dart`] **그런데도 잔존 창은 그대로 남아 있다:** 서명 URL은 **발급 시점에만** RLS를 검사하고 TTL(3600s) 동안 재검사하지 않아, `on_sale`→`sold` 전환 **직전** 발급된 대표 URL이 최대 1시간 생존한다. `docs/conventions.md` §6의 "모든 경로에서 비노출" 주장은 **이 축에선 성립하지 않는다**(데모 수용 한계 — §6에 교차참조 각주 추가함). 해소 방안(TTL 단축·서명 URL 무효화)은 이번 스토리에서 구현하지 않는다(A2, 별도 액션으로만 남김).
 3. **CI 미트리거의 원인이 미해결인데 "웹훅 유실"로 종결됐다** [`9-1-*.md` Debug Log 5] — 코드리뷰 실측: `56c47af`는 `supabase/migrations/**`와 `scripts/**`를 **둘 다** 건드려 `paths` 필터에 정확히 걸린다. 즉 경로 필터로는 설명되지 않으며, "웹훅 지연/유실"은 관측(run 부재 + Status Page 정상)과 **양립할 뿐 입증된 원인이 아니다.** 재발 시 같은 자리에서 또 6분을 태운다. **#41(런북 §8에 `paths:` 필터 누락)과 같은 자리에서 볼 것.**
 4. **§6 괄호의 범위가 모호하다** [`docs/conventions.md` §6] — storage 문구를 추가한 뒤 원래 있던 *"(구현은 Epic 2~4, anon 경로는 Epic 8.5)"* 가 그대로 남아 **Epic 9 항목까지 포괄하는 것처럼** 읽힌다.
 - **트리거:** 2번 → Story 9.2. 3번 → CI가 또 안 돌 때. 1·4번 → 프렐류드/§6을 다음에 건드릴 때.
 
-
----
+### 51. `storage.objects` 인증 DELETE/LIST가 RLS 정책과 GRANT가 둘 다 맞는데도 403/빈 결과 (9.2 실측, 원인 미상)
+- **위치:** `storage.objects` — `listing_images_objects_owner_delete` 정책(`0013_listing_images_path_integrity.sql`)
+- **내용:** 9.2 원격 검증(Task 6) 중 실측: 본인 소유 오브젝트를 **authenticated JWT로 Storage API `DELETE /object/{bucket}/{path}`(단건)·`DELETE /object/{bucket}`(배치 prefixes)** 호출 시 둘 다 실패했다 — 단건은 `403 Access denied`, 배치는 `200`이지만 매치 0건(조용히 안 지워짐). 같은 경로에 대한 `POST /object/list/{bucket}`(목록 조회)도 authenticated로 **빈 배열**을 반환했다. 반면:
+  - **RLS qual은 정확하다** — `bucket_id='listing-images' AND split_part(name,'/',1)=auth.uid()::text`이고 소유자 uuid가 실제로 일치함을 SQL로 직접 확인(`storage.objects.owner_id` = 요청자 uid).
+  - **GRANT도 정상** — `information_schema.role_table_grants`에서 `authenticated`에게 `storage.objects`의 DELETE·SELECT·INSERT·UPDATE가 전부 부여돼 있음을 확인.
+  - **INSERT(업로드)·서명(SELECT 경유)은 같은 세션·같은 토큰으로 정상 작동**했다 — 문제는 DELETE·LIST 두 동사에 국한된다.
+  - `service_role` 키로는 즉시 성공(`200 Successfully deleted`) — RLS 우회 경로는 멀쩡하므로 **RLS 정책 자체의 논리 오류는 아니다.** Storage API 서버(Postgres RLS와 별개인 애플리케이션 레이어)가 DELETE/LIST 두 동사에서 추가 권한 검사를 하거나 다른 세션/역할 컨텍스트로 쿼리를 실행하는 것으로 추정되나 **근본 원인은 미상**(9.2는 이 원인규명을 하지 않았다 — 범위 밖).
+- **오늘 무해한 이유:** 9.2는 삭제 기능을 구현하지 않는다(getSignedUrl/getSignedUrls만). 9.1~9.2 어디에도 사용자가 자기 사진을 지우는 화면·API 호출이 없다.
+- **트리거:** **Story 9.3**(업로더 — 사진 교체·삭제 UI를 만드는 순간 정면으로 부딪힌다). 착수 전 먼저 이 현상이 재현되는지 원격에서 재확인할 것(B4).
+- **해소:** 원인 규명 우선(Supabase Storage 서버 버전·설정 확인, 또는 Supabase 지원 문의) → 필요시 `service_role`을 쓰는 서버측 삭제 API 경유(단, `docs/conventions.md §5`의 "service_role 키는 어디에도 두지 않는다"와 충돌하므로 **party-mode로 대안 먼저 검토**: RPC 함수로 감싸 `security definer`화하는 방안이 유력).
 
 ## 📅 스토리로 예약됨 (부채 아님 — 계획된 작업)
 
