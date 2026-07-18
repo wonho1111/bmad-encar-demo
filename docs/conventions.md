@@ -205,4 +205,21 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 - **`SIGNED_URL_TTL = 3600`초**(1시간, 사용자 확정 2026-07-13). 구현: `web/src/lib/storage/index.ts`·`app/lib/core/supabase/storage_helper.dart`, Story 9.2.
 - **api는 서명 URL을 절대 발급하지 않는다** — `storage_path`만 반환한다. 서명은 web(서버측)·app(Flutter 클라측)이 한다.
 - **서명 헬퍼(범용, Story 9.2)**: `getSignedUrl(bucket, path)`(단건)·`getSignedUrls(bucket, paths[])`(배치 1회, NFR7) — web `@/lib/storage`(서버 컴포넌트·route handler·server actions 전용 — 서버 클라이언트를 쓰므로 브라우저 번들 금지)·app `core/supabase/storage_helper.dart`(클라측) 두 곳에 미러. **RLS 미통과·객체 미존재 등 실패는 `null` 반환**(throw 아님) — §4의 `image_url` null → "사진 준비중" 플레이스홀더와 정합. TTL(3600s) 동안 발급 시점 RLS만 검사하고 재검사하지 않는 한계는 §6·`docs/tech-debt.md` #50-2 참고.
-- 근거: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md` ADR-IMG-01·CR2·"확정된 값"(2026-07-13) · 마이그레이션 `supabase/migrations/0012_listing_images.sql`.
+
+### 10.1 업로더가 지켜야 하는 규칙 (Story 9.3 — 전부 원격 실측으로 확정)
+
+- **저장본 규격**: 업로드 전 클라이언트가 **긴 변 ≤1600px · WebP · quality 0.82**로 다시 인코딩해 올린다. 원본 5MB 상한과는 **별개 장치**다.
+  - 왜: app은 서명 **원본**을 그대로 받으므로(ADR-IMG-01) 원본을 저장하면 목록 다중 다운로드에서 NFR7이 깨진다.
+  - 구현은 브라우저 네이티브 canvas(`web/src/lib/images/resize.ts`) — 새 의존성 없음. WebP를 못 만드는 환경은 `image/jpeg` 0.85 폴백.
+  - 실측(2026-07-18): 원본 PNG 1.71~1.87MB(2400×1600) → 저장본 WebP **196~205KB · 1600×1067**(약 89% 감소).
+- **대표(cover) = `sort_order` 0번**이다. 대표는 **별도 상태가 아니다** — 순서와 대표를 각각 두면 진실이 두 군데 생겨 어긋난다. `is_cover`는 이 규칙의 **파생 결과**로만 기록한다.
+- **대표 교체는 반드시 2문장** — ① 해당 매물 전체 `is_cover=false` → ② 대상 1장만 `true`.
+  - 왜: 부분 유니크 인덱스 `listing_images_one_cover_per_listing`은 DEFERRABLE이 아니라, 자연스러운 단일 UPDATE(`set is_cover=(id=:new) where listing_id=:L`)는 문장 중간에 대표가 2장이 되는 순간 **`duplicate key`로 죽는다**(도커 실측, `docs/tech-debt.md` #47-1).
+- **⚠️ 삭제 순서: ① Storage 오브젝트 → ② `listing_images` 행.** 이 순서를 어기면 되돌릴 수 없다.
+  - 왜: `storage.objects`의 **유일한 SELECT 정책은 `listing_images` 행과 조인**해야 참이 되고, Storage API의 DELETE·LIST는 대상을 **먼저 SELECT로 찾는다.** 행을 먼저 지우면 그 객체는 소유자에게도 보이지 않게 되어 **정상 권한으로는 영영 못 지운다**(= #46 영구 고아).
+  - 원격 실측(2026-07-18, Story 9.3 Task 0)으로 확인: 행 없는 객체 → DELETE `403 Access denied`·LIST `200` 0건. 같은 객체에 행을 넣고 재시도 → DELETE `200 Successfully deleted`. **이것이 tech-debt #51의 원인이자 해소책이다**(`service_role`·RPC 불필요).
+- **업로드에 `x-upsert`를 쓰지 않는다** — 업서트는 존재확인 SELECT를 거쳐 같은 이유로 `403`이 된다(실측). 파일명이 uuid라 충돌 자체가 없다.
+- **`listing_images` 행 INSERT는 순차(직렬)로** 보낸다. 10장 트리거가 count-후-insert라 병렬 삽입은 경합으로 상한이 샌다(#49). ⚠️ 클라의 10장 차단은 **UX 층의 1차 방어일 뿐** — 서버 검증(트리거·버킷 설정)을 이것으로 대체하지 않는다.
+- **`sort_order`는 항상 연속 정수 0..n-1로 다시 매긴다**(구멍 금지) — tie-break가 정의돼 있지 않아(#47-2) 값이 겹치면 조회 순서가 매 쿼리 달라진다. 읽는 쪽은 `order by sort_order, id`로 2차 정렬을 건다.
+
+- 근거: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md` ADR-IMG-01·CR2·"확정된 값"(2026-07-13) · 마이그레이션 `supabase/migrations/0012_listing_images.sql` · Story 9.3 Debug Log 1.

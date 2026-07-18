@@ -15,12 +15,15 @@
 //   · seller_id는 등록 시 현재 로그인 user.id로 명시(INSERT RLS with check가 위조 차단 — 2-1).
 //   · 단위(원·km·cc·년·명)는 입력란 라벨에 표기, 저장은 정수.
 //   · DB CHECK/RLS 위반은 한국어로 변환해 노출(원본·코드는 콘솔에만).
-import { useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
-import Button, { buttonClasses } from '@/components/ui/Button';
+import Button from '@/components/ui/Button';
+import FocusTrap from '@/components/ui/FocusTrap';
+import PhotoUploader from './PhotoUploader';
+import { type PhotoItem } from './photo-item';
+import { syncListingPhotos } from './photo-sync';
 
 // 폼 상태 — 통신선/DB와 일치하도록 snake_case 키. 수치는 문자열로 받고 제출 시 정수 변환(빈칸 구분 위함).
 type FormState = {
@@ -103,6 +106,9 @@ type SellFormProps = {
   mode?: 'create' | 'edit';
   listingId?: string; // edit 모드 필수 — UPDATE 대상 행 id
   initialValues?: ListingInitialValues; // edit 모드 필수 — 기존 값 미리 채움
+  // 수정 모드에서 서버가 발급한 서명 URL과 함께 내려주는 기존 사진(sort_order 순).
+  // 서명은 반드시 서버에서 한다 — lib/storage/index.ts는 서버 전용이다(9.2).
+  initialPhotos?: PhotoItem[];
 };
 
 // Postgres/Supabase 에러를 사용자용 한국어 메시지로 변환(원본 메시지·코드는 화면에 직접 노출하지 않음).
@@ -123,16 +129,46 @@ function toKoreanError(err: { message: string; code?: string }, mode: 'create' |
     : '매물 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
 }
 
-export default function SellForm({ mode = 'create', listingId, initialValues }: SellFormProps) {
+export default function SellForm({ mode = 'create', listingId, initialValues, initialPhotos = [] }: SellFormProps) {
   const router = useRouter();
   const isEdit = mode === 'edit';
   // 수정 모드면 기존 값으로 초기화, 등록 모드면 빈 폼.
-  const [form, setForm] = useState<FormState>(
-    isEdit && initialValues ? toFormState(initialValues) : INITIAL,
-  );
+  const initialForm = isEdit && initialValues ? toFormState(initialValues) : INITIAL;
+  const [form, setForm] = useState<FormState>(initialForm);
+  const [photos, setPhotos] = useState<PhotoItem[]>(initialPhotos);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // 이탈 확인 다이얼로그(AC7). null이면 닫힘, 값이 있으면 "확인 후 갈 곳".
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
+
+  // dirty = 초기값 대비 폼 필드가 바뀌었거나, 사진을 추가/삭제/순서변경했는가(AC7).
+  // 사진은 key 나열을 비교한다 — 추가·삭제뿐 아니라 **순서 변경도 잡아야** 하기 때문
+  // (순서가 곧 대표라서, 순서만 바꾸고 나가면 사용자가 한 일이 통째로 사라진다).
+  const formDirty = (Object.keys(initialForm) as (keyof FormState)[]).some((k) => form[k] !== initialForm[k]);
+  const photosDirty =
+    photos.length !== initialPhotos.length || photos.some((p, i) => p.key !== initialPhotos[i]?.key);
+  const dirty = formDirty || photosDirty;
+
+  // 새로고침·탭 닫기·주소 직접 입력만 여기서 막힌다.
+  // ⚠️ Next.js App Router에는 <Link> 내부 이동을 가로채는 공식 API가 없다 —
+  //    그래서 이 폼의 [취소]는 Link가 아니라 버튼으로 바꿔 직접 확인을 띄운다(아래).
+  //    그 외 내비게이션 링크(헤더 등)로 나가는 경로는 **막히지 않는다**(docs/tech-debt.md 등재).
+  useEffect(() => {
+    if (!dirty) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      // 브라우저는 보안상 커스텀 문구를 무시하고 자체 확인창을 띄운다(문구 지정 불가).
+      e.preventDefault();
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  /** 이탈 시도 — 변경이 없으면 경고 없이 바로 보낸다(AC7). */
+  function attemptLeave(href: string) {
+    if (dirty) setLeaveTo(href);
+    else router.push(href);
+  }
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -260,6 +296,14 @@ export default function SellForm({ mode = 'create', listingId, initialValues }: 
           return;
         }
 
+        // 사진 반영(추가·삭제·순서=대표). 실패해도 매물 수정 자체는 이미 성공이다(AC3).
+        const photoResult = await syncListingPhotos(user.id, listingId, photos, initialPhotos);
+        setPhotos(photoResult.photos);
+        if (photoResult.failedCount > 0) {
+          setError(`매물 정보는 저장했지만 사진 ${photoResult.failedCount}장은 실패했어요. 아래에서 다시 시도할 수 있어요.`);
+          return; // 화면에 남겨 재시도할 수 있게 한다(이동하면 실패한 사진이 사라진다).
+        }
+
         // 성공 → 관리 목록(/sell)으로 이동 + 갱신해 반영 확인.
         router.push('/sell');
         router.refresh();
@@ -267,20 +311,41 @@ export default function SellForm({ mode = 'create', listingId, initialValues }: 
       }
 
       // ── 등록(INSERT) — 2-2 동작 그대로(회귀 금지) ────────────────────
-      const { error: insertError } = await supabase
+      // .select('id').single() 추가: 사진 저장 경로가 {user_id}/{listing_id}/…라
+      // 방금 만든 매물의 id를 받아야 사진을 올릴 수 있다(AC5 — 스테이징 경로 없음).
+      const { data: created, error: insertError } = await supabase
         .from('listings')
-        .insert({ ...built.payload, seller_id: user.id });
+        .insert({ ...built.payload, seller_id: user.id })
+        .select('id')
+        .single();
 
-      if (insertError) {
+      if (insertError || !created) {
         // 원본 에러·코드는 콘솔에만(디버깅), 사용자에겐 한국어.
         console.error('[sell] listings insert 실패:', insertError);
-        setError(toKoreanError(insertError, 'create'));
+        setError(toKoreanError(insertError ?? { message: 'insert 결과 없음' }, 'create'));
+        return;
+      }
+
+      // 매물은 이미 등록됐다 — 여기서부터 실패해도 등록을 되돌리지 않는다(AC3).
+      const photoResult = await syncListingPhotos(user.id, created.id, photos, []);
+
+      if (photoResult.failedCount > 0) {
+        // 매물은 살리고 사진만 남겨 재시도하게 한다 — "무엇이 됐고 무엇이 안 됐는지"가 분명해야 한다.
+        setPhotos(photoResult.photos);
+        setSuccess(`매물이 등록되었습니다. (사진 ${photoResult.savedCount}장 저장, ${photoResult.failedCount}장 실패)`);
+        setError('사진 일부를 올리지 못했어요. 매물 수정 화면에서 다시 시도할 수 있어요.');
+        router.refresh();
         return;
       }
 
       // 성공 → 폼 초기화 + 본인 매물 섹션(서버 컴포넌트) 갱신으로 "즉시 노출" 반영(FR7).
       setForm(INITIAL);
-      setSuccess('매물이 등록되었습니다. 아래 목록에 바로 노출됩니다.');
+      setPhotos([]);
+      setSuccess(
+        photoResult.savedCount > 0
+          ? `매물이 등록되었습니다. (사진 ${photoResult.savedCount}장) 아래 목록에 바로 노출됩니다.`
+          : '매물이 등록되었습니다. 아래 목록에 바로 노출됩니다.',
+      );
       router.refresh();
     } catch (err) {
       // 원본 에러는 콘솔에만(디버깅), 사용자에겐 한국어 일반 안내(원본 메시지 노출 금지 — 스토리 §AC4 규칙).
@@ -501,6 +566,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues }: 
         />
       </label>
 
+      {/* 사진 (선택) — 대표는 순서 0번이다(AC1). */}
+      <PhotoUploader items={photos} onChange={setPhotos} disabled={loading} />
+
       {error && (
         <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           {error}
@@ -521,13 +589,48 @@ export default function SellForm({ mode = 'create', listingId, initialValues }: 
         >
           {isEdit ? '수정 저장' : '매물 등록'}
         </Button>
-        {/* 수정 모드에서만 취소(목록으로 돌아가기) 제공. 등록 모드는 단독 버튼. */}
+        {/* 수정 모드에서만 취소(목록으로 돌아가기) 제공. 등록 모드는 단독 버튼.
+            Link가 아니라 button인 이유: App Router에는 Link 이동을 가로채는 API가 없어서
+            Link로 두면 작성 중인 내용이 경고 없이 사라진다(AC7). 여기서만이라도 직접 막는다. */}
         {isEdit && (
-          <Link href="/sell" className={buttonClasses({ variant: 'secondary' })}>
+          <Button variant="secondary" onClick={() => attemptLeave('/sell')} disabled={loading}>
             취소
-          </Link>
+          </Button>
         )}
       </div>
+
+      {/* 이탈 확인 (AC7) — 새 모달 프리미티브를 만들지 않고 기존 FocusTrap을 재사용한다. */}
+      {leaveTo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <FocusTrap
+            open
+            onClose={() => setLeaveTo(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-guard-title"
+            className="w-full max-w-sm rounded bg-white p-5 shadow-lg dark:bg-zinc-900"
+          >
+            <p id="leave-guard-title" className="text-sm">
+              저장하지 않고 나가시겠어요? 작성한 내용이 사라져요.
+            </p>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button variant="secondary" onClick={() => setLeaveTo(null)}>
+                계속 작성
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const href = leaveTo;
+                  setLeaveTo(null);
+                  router.push(href);
+                }}
+              >
+                나가기
+              </Button>
+            </div>
+          </FocusTrap>
+        </div>
+      )}
     </form>
   );
 }

@@ -12,8 +12,11 @@
 // Next.js 16 주의: 동적 라우트 params는 Promise이므로 await 한다. [web/AGENTS.md, node_modules/next/dist/docs]
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { getSignedUrls } from '@/lib/storage';
+import { LISTING_IMAGES_BUCKET } from '@/lib/storage/bucket';
 import { LISTING_STATUS } from '@/lib/constants';
 import SellForm, { type ListingInitialValues } from '../../SellForm';
+import { toPhotoItems } from '../../photo-item';
 
 // 수정 폼에 필요한 필드 + 소유권 판정용 id + 판매완료 여부 판정용 status. (status는 폼에서 변경하지 않음)
 type EditableListing = ListingInitialValues & { id: string; status: string };
@@ -83,6 +86,25 @@ export default async function EditListingPage({
     );
   }
 
+  // 기존 사진 — 화면 순서대로(sort_order). tie-break가 정의돼 있지 않아(#47-2) id를 2차 정렬로
+  // 붙인다. 그래야 값이 겹치는 과거 데이터가 있어도 조회 순서가 매번 같다.
+  const { data: imageRows, error: imageError } = await supabase
+    .from('listing_images')
+    .select('id, storage_path')
+    .eq('listing_id', listing.id)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true });
+
+  if (imageError) console.error('[sell/edit] 사진 조회 실패:', imageError);
+
+  // 서명은 **서버에서** 한다 — lib/storage는 서버 전용이고, 브라우저에서 서명하지 않는다(9.2).
+  // 배치 1회 호출로 N장을 받는다(NFR7). 개별 실패는 null이 되어 "미리보기 없음"으로 그려진다.
+  const rows = imageRows ?? [];
+  const signedUrls = await getSignedUrls(LISTING_IMAGES_BUCKET, rows.map((r) => r.storage_path));
+  const initialPhotos = toPhotoItems(
+    rows.map((r, i) => ({ id: r.id, storage_path: r.storage_path, url: signedUrls[i] })),
+  );
+
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
       <section className="flex flex-col gap-2">
@@ -92,7 +114,7 @@ export default async function EditListingPage({
         </p>
       </section>
 
-      <SellForm mode="edit" listingId={listing.id} initialValues={listing} />
+      <SellForm mode="edit" listingId={listing.id} initialValues={listing} initialPhotos={initialPhotos} />
     </main>
   );
 }
