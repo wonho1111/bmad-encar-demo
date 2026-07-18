@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_STATUS } from '@/lib/constants';
 import Button, { buttonClasses } from '@/components/ui/Button';
+import { deleteListingPhotoObjects } from './photo-sync';
 
 type Props = {
   listingId: string;
@@ -97,6 +98,16 @@ export default function ListingActions({
     setError(null);
     setDeleting(true);
     try {
+      // ⚠️ 매물보다 **사진 파일을 먼저** 지운다(tech-debt #60, docs/conventions.md §10.1).
+      //    매물을 먼저 지우면 cascade로 사진 행이 사라지고, 행이 사라진 파일은 소유자에게도
+      //    안 보여 영영 못 지우는 고아가 된다. 실패하면 여기서 멈춘다 — 되돌릴 수 없는 쓰레기를
+      //    만드느니 "지금은 못 지웠다"고 말하는 편이 낫다.
+      const cleanup = await deleteListingPhotoObjects(listingId);
+      if (!cleanup.ok) {
+        setError('사진 파일을 정리하지 못해 매물을 삭제하지 않았습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+
       const supabase = createClient();
       // .select()로 삭제된 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
       const { data: deleted, error: deleteError } = await supabase

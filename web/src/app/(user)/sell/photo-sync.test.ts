@@ -58,6 +58,8 @@ type Op = { op: string; payload?: Record<string, unknown>; filters: [string, unk
 /** 테스트가 특정 호출을 실패시키고 싶을 때 쓰는 훅. null을 주면 성공. */
 let failWhen: (o: Op) => { message: string } | null = () => null;
 let insertSeq = 0;
+/** `select('storage_path')`가 돌려줄 행들(deleteListingPhotoObjects 테스트용). */
+let existingRows: { storage_path: string }[] = [];
 
 function fakeSupabase() {
   function build(op: string, payload?: Record<string, unknown>) {
@@ -88,6 +90,8 @@ function fakeSupabase() {
         h.log.push(`${label}${error ? ':fail' : ''}`);
 
         if (error) return Promise.resolve({ data: null, error }).then(res);
+        // 매물 삭제 전 사진 목록 조회(deleteListingPhotoObjects) — 테스트가 심어둔 행을 돌려준다.
+        if (o.op === 'select') return Promise.resolve({ data: existingRows, error: null }).then(res);
         if (o.op === 'insert') return Promise.resolve({ data: { id: `row-${++insertSeq}` }, error: null }).then(res);
         if (o.op === 'update') return Promise.resolve({ data: [{ id: 'row-x' }], error: null }).then(res);
         return Promise.resolve({ data: null, error: null }).then(res);
@@ -98,6 +102,7 @@ function fakeSupabase() {
 
   return {
     from: () => ({
+      select: () => build('select'),
       delete: () => build('delete'),
       update: (payload: Record<string, unknown>) => build('update', payload),
       insert: (payload: Record<string, unknown>) => build('insert', payload),
@@ -108,7 +113,7 @@ function fakeSupabase() {
 vi.mock('@/lib/supabase/client', () => ({ createClient: () => fakeSupabase() }));
 
 // import는 mock 선언 뒤에 와야 한다(vitest가 hoist하지만 타입·가독성 때문에 명시적으로 아래 둔다).
-const { syncListingPhotos } = await import('./photo-sync');
+const { syncListingPhotos, deleteListingPhotoObjects } = await import('./photo-sync');
 
 // ── 픽스처 ────────────────────────────────────────────────────────────────
 const USER = 'u1';
@@ -136,6 +141,7 @@ beforeEach(() => {
   h.uploadOk.clear();
   failWhen = () => null;
   insertSeq = 0;
+  existingRows = [];
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -308,6 +314,47 @@ describe('재제출 안전성', () => {
     expect(h.log.filter((l) => l.startsWith('row:insert'))).toEqual([]); // 재INSERT 0건
     expect(h.log).toContain('sort:0');
     expect(h.log.some((l) => l.startsWith('object:delete'))).toBe(false); // 저장된 파일을 지우지 않는다
+  });
+});
+
+// ── 매물 삭제 전 사진 정리 (#60) ──────────────────────────────────────────
+describe('deleteListingPhotoObjects — 매물 삭제 전 사진 파일 정리 (#60)', () => {
+  it('그 매물의 오브젝트를 전부 지운다', async () => {
+    existingRows = [{ storage_path: 'p/1.webp' }, { storage_path: 'p/2.webp' }];
+
+    const r = await deleteListingPhotoObjects(LISTING);
+
+    expect(r).toEqual({ ok: true, deleted: 2 });
+    expect(h.log.filter((l) => l.startsWith('object:'))).toEqual([
+      'object:delete:p/1.webp:ok',
+      'object:delete:p/2.webp:ok',
+    ]);
+  });
+
+  it('행은 지우지 않는다 — 그건 매물 삭제의 cascade 몫이고, 그 순서가 계약이다', async () => {
+    existingRows = [{ storage_path: 'p/1.webp' }];
+    await deleteListingPhotoObjects(LISTING);
+    expect(h.log.some((l) => l.startsWith('row:delete'))).toBe(false);
+  });
+
+  it('오브젝트 삭제가 하나라도 실패하면 ok:false — 호출부가 매물 삭제를 멈춰야 한다', async () => {
+    existingRows = [{ storage_path: 'p/1.webp' }, { storage_path: 'p/2.webp' }];
+    h.deleteObjectOk.set('p/2.webp', false);
+
+    const r = await deleteListingPhotoObjects(LISTING);
+    expect(r.ok).toBe(false);
+  });
+
+  it('목록 조회 자체가 실패하면 "사진 없음"으로 갈음하지 않는다', async () => {
+    failWhen = (o) => (o.op === 'select' ? { message: 'boom' } : null);
+
+    const r = await deleteListingPhotoObjects(LISTING);
+    expect(r.ok).toBe(false); // 모르는 상태를 성공으로 넘기면 조용히 고아가 된다
+  });
+
+  it('사진이 0장이면 그대로 성공 — 삭제를 막지 않는다', async () => {
+    existingRows = [];
+    expect(await deleteListingPhotoObjects(LISTING)).toEqual({ ok: true, deleted: 0 });
   });
 });
 

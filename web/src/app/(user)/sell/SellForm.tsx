@@ -15,7 +15,7 @@
 //   · seller_id는 등록 시 현재 로그인 user.id로 명시(INSERT RLS with check가 위조 차단 — 2-1).
 //   · 단위(원·km·cc·년·명)는 입력란 라벨에 표기, 저장은 정수.
 //   · DB CHECK/RLS 위반은 한국어로 변환해 노출(원본·코드는 콘솔에만).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
@@ -145,6 +145,8 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   const [isEditMode, setIsEditMode] = useState(startedInEditMode);
   const [activeListingId, setActiveListingId] = useState<string | undefined>(listingId);
   const [loading, setLoading] = useState(false);
+  // 제출 중인가 — 렌더를 기다리지 않는 빗장(#61). 화면 표시는 위 `loading`이 담당한다.
+  const submittingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   // 이탈 확인 다이얼로그(AC7). null이면 닫힘, 값이 있으면 "확인 후 갈 곳".
@@ -255,13 +257,19 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (loading) return; // 중복 제출 차단
+    // ⚠️ 중복 제출 차단은 **ref로** 한다(tech-debt #61). `loading` 상태는 다음 렌더에야 반영되므로,
+    //    같은 틱에 들어온 두 번째 클릭은 아직 false를 보고 통과한다 — 실측(2026-07-19)에서 동기
+    //    연속 클릭 시 PATCH가 각각 두 번씩 나갔다. ref는 렌더를 기다리지 않아 즉시 닫힌다.
+    //    `loading` 상태는 그대로 둔다 — 그건 버튼 문구·스피너용이지 빗장이 아니다.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
     setSuccess(null);
 
     const built = validateAndBuild();
     if (!built.ok) {
       setError(built.message);
+      submittingRef.current = false; // 빗장을 반드시 되돌린다 — 안 그러면 폼이 영영 제출 불가가 된다.
       return;
     }
 
@@ -389,6 +397,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   }
 

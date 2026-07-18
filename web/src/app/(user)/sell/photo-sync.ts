@@ -38,6 +38,41 @@ function newFilename(ext: string): string {
   return `${crypto.randomUUID()}.${ext}`;
 }
 
+/**
+ * 매물 삭제 **직전에** 그 매물의 사진 오브젝트를 전부 지운다 (tech-debt #60).
+ *
+ * ⚠️ 왜 필요한가: `listing_images.listing_id`는 `on delete cascade`라 매물을 지우면 사진 행이
+ * 함께 사라진다(실측 2026-07-19: 행 1 → 0). 그런데 `storage.objects`의 읽기 정책은 그 행과
+ * 조인해야 참이 되므로, 행이 먼저 사라진 오브젝트는 **소유자에게도 안 보이고 정상 권한으로는
+ * 영영 못 지운다**(#46·#51). 즉 매물 삭제 경로가 §10.1의 삭제 순서 계약을 통째로 우회하고 있었다.
+ *
+ * 그래서 여기서 **오브젝트를 먼저** 지운다. 행은 지우지 않는다 — 뒤이은 매물 삭제의 cascade가
+ * 그 역할을 하고, 그 순서가 곧 계약("오브젝트 먼저 → 행 나중")이다.
+ *
+ * 하나라도 실패하면 `ok:false`를 돌려준다. 호출부는 **매물 삭제를 중단해야 한다** — 그대로
+ * 진행하면 되돌릴 수 없는 고아가 남는다(CLAUDE.md B3 "DB는 되돌리기가 없다").
+ */
+export async function deleteListingPhotoObjects(listingId: string): Promise<{ ok: boolean; deleted: number }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.from('listing_images').select('storage_path').eq('listing_id', listingId);
+
+  if (error) {
+    // 무엇이 있는지 모르는 상태다 — "사진이 없다"로 갈음하지 않는다(그러면 조용히 고아가 된다).
+    console.error('[sell] 매물 사진 목록 조회 실패:', listingId, error);
+    return { ok: false, deleted: 0 };
+  }
+
+  let deleted = 0;
+  for (const row of data ?? []) {
+    if (!(await deleteListingImageObject(row.storage_path))) {
+      console.error('[sell] 매물 삭제 전 사진 오브젝트 정리 실패 — 매물 삭제를 중단해야 한다:', row.storage_path);
+      return { ok: false, deleted };
+    }
+    deleted += 1;
+  }
+  return { ok: true, deleted };
+}
+
 export async function syncListingPhotos(
   userId: string,
   listingId: string,
