@@ -19,7 +19,7 @@ export type ListingCardData = {
   region: string;
   seller_name?: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007 비정규화). 없으면(AI결과 등) 미표시.
   // 증분 신규 — 전부 optional·nullable(DB 컬럼 아직 없음, 값 채움은 후속 에픽)
-  image_url?: string | null; // 대표 서명 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
+  image_url?: string | null; // 대표 사진의 공개 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
   view_count?: number | null; // Epic 11
   image_count?: number | null; // Epic 9
   accident_status?: '무사고' | '단순교환' | '사고' | null; // Epic 10

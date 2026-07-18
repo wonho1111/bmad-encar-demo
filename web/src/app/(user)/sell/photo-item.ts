@@ -20,7 +20,7 @@ export type PhotoStatus = 'idle' | 'uploaded' | 'error';
 export type PhotoItem = {
   /** React key 겸 항목 식별자(순서를 바꿔도 미리보기가 튀지 않도록 안정적이어야 한다). */
   key: string;
-  /** 화면에 그릴 URL. 기존 사진은 서버가 발급한 서명 URL, 새 사진은 objectURL. */
+  /** 화면에 그릴 URL. 기존 사진은 공개 버킷 URL(고정), 새 사진은 objectURL. */
   previewUrl: string | null;
   status: PhotoStatus;
   /** 인라인 오류 사유(한국어). status==='error'일 때만 채운다. */

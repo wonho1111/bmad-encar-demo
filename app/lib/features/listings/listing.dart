@@ -44,7 +44,7 @@ class ListingCardData {
   final String region;
   final String? sellerName; // 판매자 표시 이름(0007 비정규화). AI 결과 등 없으면 미표시.
   // 증분 신규 — 전부 nullable(DB 컬럼 아직 없음, 값 채움은 후속 에픽)
-  final String? imageUrl; // 대표 서명 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
+  final String? imageUrl; // 대표 사진의 공개 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
   final int? viewCount; // Epic 11
   final int? imageCount; // Epic 9
   final String? accidentStatus; // '무사고'|'단순교환'|'사고'|null — Dart는 별도 enum 없이 nullable String으로 단순 통과(A2). Epic 10

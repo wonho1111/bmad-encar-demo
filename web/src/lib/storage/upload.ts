@@ -1,6 +1,6 @@
 // 매물 사진 업로드·삭제 — **브라우저 전용** (AC5·AC10).
 //
-// ⚠️ 같은 폴더의 index.ts(서명 URL)와 파일을 나눈 이유: index.ts는 서버 클라이언트를 import하므로
+// ⚠️ 같은 폴더의 index.ts(공개 URL 조립)와 파일을 나눈 이유: 업로드는 브라우저 전용 경로라
 // 한 파일에 합치면 서버 전용 코드가 브라우저 번들에 딸려간다. 여기는 anon key + Storage RLS로
 // 브라우저에서 돈다(SellForm이 이미 브라우저 클라이언트로 insert하는 것과 같은 층).
 // service_role은 쓰지 않는다(docs/conventions.md §5).

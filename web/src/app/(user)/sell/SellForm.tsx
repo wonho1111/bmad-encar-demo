@@ -106,8 +106,8 @@ type SellFormProps = {
   mode?: 'create' | 'edit';
   listingId?: string; // edit 모드 필수 — UPDATE 대상 행 id
   initialValues?: ListingInitialValues; // edit 모드 필수 — 기존 값 미리 채움
-  // 수정 모드에서 서버가 발급한 서명 URL과 함께 내려주는 기존 사진(sort_order 순).
-  // 서명은 반드시 서버에서 한다 — lib/storage/index.ts는 서버 전용이다(9.2).
+  // 수정 모드에서 공개 URL과 함께 내려주는 기존 사진(sort_order 순).
+  // 공개 버킷이라 URL은 경로에서 바로 조립된다 — 발급 주체·만료가 없다(9.0).
   initialPhotos?: PhotoItem[];
 };
 

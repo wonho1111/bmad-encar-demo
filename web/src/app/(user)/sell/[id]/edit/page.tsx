@@ -12,7 +12,7 @@
 // Next.js 16 주의: 동적 라우트 params는 Promise이므로 await 한다. [web/AGENTS.md, node_modules/next/dist/docs]
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getSignedUrls } from '@/lib/storage';
+import { getPublicUrl } from '@/lib/storage';
 import { LISTING_IMAGES_BUCKET } from '@/lib/storage/bucket';
 import { LISTING_STATUS } from '@/lib/constants';
 import SellForm, { type ListingInitialValues } from '../../SellForm';
@@ -97,12 +97,15 @@ export default async function EditListingPage({
 
   if (imageError) console.error('[sell/edit] 사진 조회 실패:', imageError);
 
-  // 서명은 **서버에서** 한다 — lib/storage는 서버 전용이고, 브라우저에서 서명하지 않는다(9.2).
-  // 배치 1회 호출로 N장을 받는다(NFR7). 개별 실패는 null이 되어 "미리보기 없음"으로 그려진다.
+  // 공개 버킷이라 URL은 경로에서 바로 조립된다 — 네트워크 왕복도, 만료도 없다(9.0).
+  // 파일이 없으면 문자열은 나오되 이미지 로드가 실패하므로 화면이 플레이스홀더로 떨어진다.
   const rows = imageRows ?? [];
-  const signedUrls = await getSignedUrls(LISTING_IMAGES_BUCKET, rows.map((r) => r.storage_path));
   const initialPhotos = toPhotoItems(
-    rows.map((r, i) => ({ id: r.id, storage_path: r.storage_path, url: signedUrls[i] })),
+    rows.map((r) => ({
+      id: r.id,
+      storage_path: r.storage_path,
+      url: getPublicUrl(LISTING_IMAGES_BUCKET, r.storage_path),
+    })),
   );
 
   return (

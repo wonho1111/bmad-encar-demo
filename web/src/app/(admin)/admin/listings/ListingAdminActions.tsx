@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { deleteListingPhotoObjects } from '@/app/(user)/sell/photo-sync';
 import Button from '@/components/ui/Button';
 
 type Props = {
@@ -39,6 +40,17 @@ export default function ListingAdminActions({ listingId, label, redirectTo }: Pr
     setError(null);
     setDeleting(true);
     try {
+      // ⚠️ 매물보다 사진 파일을 먼저 지운다 — 판매자 삭제 경로((user)/sell/ListingActions.tsx)와 같은 계약.
+      //   매물을 먼저 지우면 listing_images 행이 cascade로 사라지고, 남은 Storage 오브젝트는
+      //   아무도 참조하지 않는 고아가 된다(docs/tech-debt.md #46).
+      //   정리에 실패하면 매물 삭제를 하지 않는다 — "앞 단계가 성공했을 때만 다음 단계"(conventions §10.1).
+      // 판매자 경로의 함수를 그대로 쓴다(로직 이원화 금지) — 정리 규칙이 두 벌이 되면 한쪽만 늙는다.
+      const cleanup = await deleteListingPhotoObjects(listingId);
+      if (!cleanup.ok) {
+        setError('사진 파일을 정리하지 못해 매물을 삭제하지 않았습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+
       const supabase = createClient();
       // .select()로 삭제된 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
       const { data: deleted, error: deleteError } = await supabase

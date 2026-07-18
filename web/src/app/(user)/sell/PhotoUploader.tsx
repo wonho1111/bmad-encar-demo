@@ -34,7 +34,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
   const [pickError, setPickError] = useState<string | null>(null);
 
   // objectURL은 명시적으로 놓아주지 않으면 탭이 닫힐 때까지 메모리에 남는다.
-  // 언마운트 시 이 컴포넌트가 만든 것(file이 있는 항목)만 회수한다 — 서명 URL은 revoke 대상이 아니다.
+  // 언마운트 시 이 컴포넌트가 만든 것(file이 있는 항목)만 회수한다 — 공개 URL은 revoke 대상이 아니다.
   const itemsRef = useRef(items);
   useEffect(() => {
     itemsRef.current = items;
@@ -91,7 +91,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
 
   function handleRemove(index: number) {
     const target = items[index];
-    // 새로 고른 파일의 미리보기만 회수한다(기존 사진의 서명 URL은 objectURL이 아니다).
+    // 새로 고른 파일의 미리보기만 회수한다(기존 사진의 공개 URL은 objectURL이 아니다).
     if (target?.file && target.previewUrl) URL.revokeObjectURL(target.previewUrl);
     // 0번을 지우면 다음 장이 0번이 되어 자동으로 대표가 승격된다 — 별도 처리가 없는 게 정상이다(AC3).
     onChange(remove(items, index));
@@ -188,7 +188,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
             >
               <div className="relative aspect-square overflow-hidden rounded border border-zinc-200 dark:border-zinc-800">
                 {p.previewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- objectURL·서명 URL은 next/image의 최적화 대상이 아니다(외부 서명 URL은 도메인 화이트리스트가 필요하고 TTL이 있다).
+                  // eslint-disable-next-line @next/next/no-img-element -- objectURL은 next/image의 최적화 대상이 아니고, 업로더 미리보기는 최적화할 이유도 없다.
                   <img src={p.previewUrl} alt={`${i + 1}번째 사진`} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-zinc-100 text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">

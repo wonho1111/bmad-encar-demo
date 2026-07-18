@@ -1,35 +1,29 @@
-// 비공개 스토리지 아티팩트용 서명 URL 헬퍼 (아티팩트 범용 — 특정 버킷·이미지 로직을 하드코딩하지 않는다).
-// ⚠️ server components·route handlers·server actions에서만 호출한다(서버 클라이언트를 사용하므로
-// 브라우저 번들에 포함되면 안 된다). app(Flutter)의 클라측 미러는 core/supabase/storage_helper.dart.
-import { createClient } from '@/lib/supabase/server';
-
-/** 서명 URL 유효기간(초). 정본: docs/conventions.md §10. 호출부에서 3600을 다시 쓰지 않는다. */
-export const SIGNED_URL_TTL = 3600 as const;
+// 공개 스토리지 아티팩트용 URL 헬퍼 (아티팩트 범용 — 특정 버킷·이미지 로직을 하드코딩하지 않는다).
+//
+// 서버/브라우저 어디서든 호출된다 — Supabase 클라이언트도, 네트워크 왕복도 필요 없다.
+// (Story 9.0 전까지는 비공개 버킷 + 서명 URL이라 "서버에서만 발급 가능"했다. 그 제약은 사라졌다.)
+// app(Flutter)의 미러는 core/supabase/storage_helper.dart.
+import { getSupabaseEnv } from '@/lib/supabase/env';
 
 /**
- * 단건 서명 URL 발급. RLS 미통과·객체 미존재 등 실패 시 throw하지 않고 `null`을 반환한다
- * (소비처는 image_url null → "사진 준비중" 플레이스홀더를 그린다, docs/conventions.md §4).
+ * 공개 버킷 오브젝트의 고정 URL을 만든다.
+ *
+ * ⚠️ 이 함수는 **파일이 실제로 있는지 확인하지 않는다** — 경로만 있으면 문자열이 나온다.
+ * 없는 파일은 브라우저가 로드에 실패하므로, 소비처가 `onError`로 "사진 준비중" 플레이스홀더를
+ * 그려야 한다(docs/conventions.md §4).
  */
-export async function getSignedUrl(bucket: string, path: string): Promise<string | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, SIGNED_URL_TTL);
-  if (error || !data) return null;
-  return data.signedUrl;
+export function getPublicUrl(bucket: string, path: string): string {
+  const { url } = getSupabaseEnv();
+  return `${url}/storage/v1/object/public/${encodeSegments(bucket)}/${encodeSegments(path)}`;
 }
 
 /**
- * 배치 서명 URL 발급(NFR7 — 카드 N장을 N번 왕복하지 않고 1회 호출한다).
- * 반환 배열은 입력 `paths` 순서를 보존하며, 항목별 실패는 `null`로 매핑한다.
+ * 경로를 `/` 구분자는 살린 채 세그먼트별로 URL 인코딩한다.
+ *
+ * 왜 세그먼트별인가: `encodeURIComponent`를 경로 전체에 걸면 `/`까지 `%2F`가 되어 경로가 깨진다.
+ * 지금 파일명은 uuid라 인코딩할 것이 없지만, 이 헬퍼는 아티팩트 범용이라 공백·한글 파일명이
+ * 들어와도 안전해야 한다.
  */
-export async function getSignedUrls(bucket: string, paths: string[]): Promise<(string | null)[]> {
-  if (paths.length === 0) return [];
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrls(paths, SIGNED_URL_TTL);
-  if (error || !data) return paths.map(() => null);
-
-  // Supabase는 요청 path를 그대로(byte-identical)·입력 순서대로 반향하므로 path 매칭이 안전하다
-  // (storage-api signObjectUrls + storage-js 2.108.2 소스 실측, 9.2 리뷰 2026-07-18).
-  const byPath = new Map(data.map((item) => [item.path, item.signedUrl ?? null]));
-  return paths.map((path) => byPath.get(path) ?? null);
+function encodeSegments(pathLike: string): string {
+  return pathLike.split('/').map(encodeURIComponent).join('/');
 }
