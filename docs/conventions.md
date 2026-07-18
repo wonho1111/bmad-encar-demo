@@ -89,6 +89,7 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 - `status='sold'` 매물은 구매자의 **모든 경로**(목록·필터·상세·AI SQL·문서 RAG)에서 노출되지 않는다.
 - 강제 지점: RLS(authenticated = `0002_listings`에 동거, anon = `0011_listings_anon_select`) + `api/db/sql_guard.py` + 문서 RAG 결과 필터 + **`storage.objects` 읽기 RLS**(`0012_listing_images.sql` — 매물 사진 서명 URL은 그 이미지가 가리키는 매물이 `status='on_sale'`이거나 본인 소유일 때만 발급 가능. Epic 9). (구현은 Epic 2~4, anon 경로는 Epic 8.5)
+  - ⚠️ **단, storage RLS 축은 "모든 경로에서 비노출"이 완전하지 않다** — 서명 URL은 발급 **시점에만** RLS를 검사하고 TTL(3600s) 동안 재검사하지 않는다. `on_sale`→`sold` 전환 **직전** 발급된 URL은 최대 1시간 생존한다(데모 수용 한계). 상세: `docs/tech-debt.md` #50-2.
 - **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). anon 열람은 §8이 상술한다.
 
 ## 7. 채팅 메시지 길이 (Chat Message Length)
@@ -201,6 +202,7 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
   - MIME 제한의 이유: 비공개 버킷이라도 서명 URL은 브라우저가 그대로 연다 — 타입 제한이 없으면 `.html`/`.svg` 업로드가 우리 도메인에서 실행되는 저장형 XSS가 된다.
   - 버킷 설정(비공개·5MB·MIME)은 `on conflict do nothing`이라 **버킷이 이미 존재하면 셋 다 조용히 무효**다(#44).
 - **`listing_images.storage_path`** = 버킷 내 key **전체**(`{user_id}/{listing_id}/{filename}`, 버킷명 미포함) — `storage.objects.name`과 **글자 그대로 같아야** Storage RLS의 조인이 성립한다.
-- **`SIGNED_URL_TTL = 3600`초**(1시간, 사용자 확정 2026-07-13). 서명 URL 발급 구현은 Story 9.2.
+- **`SIGNED_URL_TTL = 3600`초**(1시간, 사용자 확정 2026-07-13). 구현: `web/src/lib/storage/index.ts`·`app/lib/core/supabase/storage_helper.dart`, Story 9.2.
 - **api는 서명 URL을 절대 발급하지 않는다** — `storage_path`만 반환한다. 서명은 web(서버측)·app(Flutter 클라측)이 한다.
+- **서명 헬퍼(범용, Story 9.2)**: `getSignedUrl(bucket, path)`(단건)·`getSignedUrls(bucket, paths[])`(배치 1회, NFR7) — web `@/lib/storage`(서버 컴포넌트·route handler·server actions 전용 — 서버 클라이언트를 쓰므로 브라우저 번들 금지)·app `core/supabase/storage_helper.dart`(클라측) 두 곳에 미러. **RLS 미통과·객체 미존재 등 실패는 `null` 반환**(throw 아님) — §4의 `image_url` null → "사진 준비중" 플레이스홀더와 정합. TTL(3600s) 동안 발급 시점 RLS만 검사하고 재검사하지 않는 한계는 §6·`docs/tech-debt.md` #50-2 참고.
 - 근거: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md` ADR-IMG-01·CR2·"확정된 값"(2026-07-13) · 마이그레이션 `supabase/migrations/0012_listing_images.sql`.
