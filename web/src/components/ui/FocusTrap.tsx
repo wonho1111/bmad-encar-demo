@@ -31,8 +31,12 @@ export default function FocusTrap({ open, onClose, children, ...rest }: FocusTra
   const triggerRef = useRef<HTMLElement | null>(null);
   // onClose를 ref로 감싸 effect 의존성에서 뺀다 — 부모가 인라인 함수(매 렌더 새 identity)를
   // 넘겨도 effect가 재실행되지 않아, 트랩이 열려 있는 동안 포커스가 반복 튕기지 않는다.
+  // 갱신은 렌더가 아니라 effect에서 한다 — 렌더 중 ref 쓰기는 React가 렌더를 버리거나
+  // 재실행할 때 어긋난 값이 남을 수 있어 금지돼 있다(react-hooks/refs).
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
 
   useEffect(() => {
     if (!open) return;
