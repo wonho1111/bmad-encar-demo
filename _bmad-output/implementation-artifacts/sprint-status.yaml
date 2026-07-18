@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-18 (dev-story: 9.3 review)
+last_updated: 2026-07-19 (code-review 2차: 9.3 patch 12건 적용 → done)
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -121,7 +121,7 @@ development_status:
   epic-9: in-progress
   9-1-listing-images-스키마-비공개-버킷-storage-rls: done
   9-2-서명-url-헬퍼-아티팩트-범용: done
-  9-3-사진-업로더-등록-수정: review
+  9-3-사진-업로더-등록-수정: done
   9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: backlog
   9-5-상세-페이지-골격-사진-갤러리: backlog
   9-6-ai-응답-카드-사진: backlog
