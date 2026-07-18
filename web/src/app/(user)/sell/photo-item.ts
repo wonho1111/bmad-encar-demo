@@ -33,8 +33,11 @@ export type PhotoItem = {
   rowId?: string;
 };
 
-let seq = 0;
-const nextKey = () => `photo-${++seq}`;
+// ⚠️ 예전엔 `let seq = 0`(모듈 레벨 카운터)였다 — 서버(toPhotoItems)와 브라우저(toLocalPhotoItem)가
+// 각자 다른 모듈 인스턴스를 가져서 둘 다 1부터 세고, 그 결과 같은 화면에 기존 사진과 새 사진이
+// 같은 key(`photo-1`)를 갖는 충돌이 났다(코드리뷰 2026-07-19). crypto.randomUUID()는 두 런타임
+// 모두에서 쓸 수 있어(새 의존성 없음) 충돌이 구조적으로 없다.
+const nextKey = () => `photo-${crypto.randomUUID()}`;
 
 /** 서버가 내려준 기존 사진을 업로더 항목으로 바꾼다(수정 화면 진입 시 서버에서 호출). */
 export function toPhotoItems(

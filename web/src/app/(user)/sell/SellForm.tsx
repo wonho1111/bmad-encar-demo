@@ -131,11 +131,19 @@ function toKoreanError(err: { message: string; code?: string }, mode: 'create' |
 
 export default function SellForm({ mode = 'create', listingId, initialValues, initialPhotos = [] }: SellFormProps) {
   const router = useRouter();
-  const isEdit = mode === 'edit';
-  // 수정 모드면 기존 값으로 초기화, 등록 모드면 빈 폼.
-  const initialForm = isEdit && initialValues ? toFormState(initialValues) : INITIAL;
+  const startedInEditMode = mode === 'edit';
+  // 수정 모드면 기존 값으로 초기화, 등록 모드면 빈 폼. (dirty 비교 기준선이라 최초 진입 시점 값으로
+  // 고정한다 — 아래 isEditMode가 등록 성공 후 바뀌어도 이 기준선은 그대로여야 한다.)
+  const initialForm = startedInEditMode && initialValues ? toFormState(initialValues) : INITIAL;
   const [form, setForm] = useState<FormState>(initialForm);
   const [photos, setPhotos] = useState<PhotoItem[]>(initialPhotos);
+  // 등록 성공 직후 이 매물의 재제출을 "수정"으로 돌리기 위한 상태(F13, 코드리뷰 2026-07-19).
+  // 왜 필요한가: 사진 일부가 실패해 폼이 화면에 남았을 때, 유일한 제출 버튼([매물 등록])을
+  // 다시 누르면 이미 성공한 listings INSERT가 또 돌아 같은 차가 2건 등록됐다. 매물은 이미
+  // 존재하므로 그 시점부터는 "수정"이 사실에 맞다 — mode prop 대신 상태로 관리해 세션 도중
+  // create → edit로 전환할 수 있게 한다.
+  const [isEditMode, setIsEditMode] = useState(startedInEditMode);
+  const [activeListingId, setActiveListingId] = useState<string | undefined>(listingId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -159,6 +167,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     function onBeforeUnload(e: BeforeUnloadEvent) {
       // 브라우저는 보안상 커스텀 문구를 무시하고 자체 확인창을 띄운다(문구 지정 불가).
       e.preventDefault();
+      // preventDefault()만으로는 Safari 등 일부 브라우저가 확인창을 띄우지 않는다 — 그 환경에선
+      // 경고 없이 작성 내용이 사라진다(코드리뷰 2026-07-19). 표준은 returnValue 설정도 요구한다.
+      e.returnValue = '';
     }
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
@@ -267,9 +278,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         return;
       }
 
-      if (isEdit) {
+      if (isEditMode) {
         // ── 수정(UPDATE) ──────────────────────────────────────────────
-        if (!listingId) {
+        if (!activeListingId) {
           setError('수정할 매물 정보가 올바르지 않습니다. 목록에서 다시 시도해주세요.');
           return;
         }
@@ -282,7 +293,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         const { data: updated, error: updateError } = await supabase
           .from('listings')
           .update(updatePayload)
-          .eq('id', listingId)
+          .eq('id', activeListingId)
           .select('id');
 
         if (updateError) {
@@ -297,10 +308,16 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         }
 
         // 사진 반영(추가·삭제·순서=대표). 실패해도 매물 수정 자체는 이미 성공이다(AC3).
-        const photoResult = await syncListingPhotos(user.id, listingId, photos, initialPhotos);
+        const photoResult = await syncListingPhotos(user.id, activeListingId, photos, initialPhotos);
         setPhotos(photoResult.photos);
-        if (photoResult.failedCount > 0) {
-          setError(`매물 정보는 저장했지만 사진 ${photoResult.failedCount}장은 실패했어요. 아래에서 다시 시도할 수 있어요.`);
+        if (photoResult.failedCount > 0 || photoResult.warnings.length > 0) {
+          // failedCount(저장 자체가 안 된 사진) + warnings(저장은 됐지만 순서·대표 등 뒷정리가
+          // 어긋난 것) — 둘 다 "성공"이라고만 말하면 화면과 DB가 갈린 걸 사용자가 모르게 된다.
+          const reasons = [
+            ...(photoResult.failedCount > 0 ? [`사진 ${photoResult.failedCount}장은 실패했어요`] : []),
+            ...photoResult.warnings,
+          ];
+          setError(`매물 정보는 저장했지만 ${reasons.join(' · ')}. 아래에서 다시 시도할 수 있어요.`);
           return; // 화면에 남겨 재시도할 수 있게 한다(이동하면 실패한 사진이 사라진다).
         }
 
@@ -329,16 +346,35 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       // 매물은 이미 등록됐다 — 여기서부터 실패해도 등록을 되돌리지 않는다(AC3).
       const photoResult = await syncListingPhotos(user.id, created.id, photos, []);
 
-      if (photoResult.failedCount > 0) {
+      if (photoResult.failedCount > 0 || photoResult.warnings.length > 0) {
+        // 매물 INSERT는 이미 성공했다 — 이 시점부터 재제출은 "수정"이 사실에 맞다. edit 모드로
+        // 전환해 재제출이 listings를 다시 INSERT(=매물 중복 등록)하지 않고, 기존 UPDATE 경로
+        // (사진 재시도 포함)를 그대로 타게 한다(F13, 코드리뷰 2026-07-19).
+        setActiveListingId(created.id);
+        setIsEditMode(true);
         // 매물은 살리고 사진만 남겨 재시도하게 한다 — "무엇이 됐고 무엇이 안 됐는지"가 분명해야 한다.
         setPhotos(photoResult.photos);
-        setSuccess(`매물이 등록되었습니다. (사진 ${photoResult.savedCount}장 저장, ${photoResult.failedCount}장 실패)`);
-        setError('사진 일부를 올리지 못했어요. 매물 수정 화면에서 다시 시도할 수 있어요.');
+        const reasons = [
+          ...(photoResult.failedCount > 0 ? [`사진 ${photoResult.failedCount}장 실패`] : []),
+          ...photoResult.warnings,
+        ];
+        setSuccess(
+          `매물이 등록되었습니다. (사진 ${photoResult.savedCount}장 저장${reasons.length > 0 ? `, ${reasons.join(' · ')}` : ''})`,
+        );
+        // 화면에 실제로 있는 건 [재시도] 버튼과 이 폼 자체다 — 안내 문구가 없는 화면(수정 화면)을
+        // 가리키면 안 된다(코드리뷰 2026-07-19, 전엔 "매물 수정 화면에서 다시 시도"라 적혀 있었다).
+        setError('사진 처리 중 일부가 실패했어요. 아래에서 다시 시도한 뒤 다시 저장해주세요.');
         router.refresh();
         return;
       }
 
       // 성공 → 폼 초기화 + 본인 매물 섹션(서버 컴포넌트) 갱신으로 "즉시 노출" 반영(FR7).
+      // objectURL은 언마운트 시에만 자동 회수된다(PhotoUploader) — setPhotos([])는 언마운트가
+      // 아니라 목록만 비우므로, 여기서 먼저 회수하지 않으면 새 파일 blob이 탭을 닫을 때까지
+      // 메모리에 남는다(코드리뷰 2026-07-19).
+      for (const p of photoResult.photos) {
+        if (p.file && p.previewUrl) URL.revokeObjectURL(p.previewUrl);
+      }
       setForm(INITIAL);
       setPhotos([]);
       setSuccess(
@@ -349,7 +385,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       router.refresh();
     } catch (err) {
       // 원본 에러는 콘솔에만(디버깅), 사용자에겐 한국어 일반 안내(원본 메시지 노출 금지 — 스토리 §AC4 규칙).
-      console.error(`[sell] listings ${isEdit ? 'update' : 'insert'} 예외:`, err);
+      console.error(`[sell] listings ${isEditMode ? 'update' : 'insert'} 예외:`, err);
       setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setLoading(false);
@@ -585,14 +621,14 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
           type="submit"
           variant="primary"
           loading={loading}
-          loadingText={isEdit ? '저장 중…' : '등록 중…'}
+          loadingText={isEditMode ? '저장 중…' : '등록 중…'}
         >
-          {isEdit ? '수정 저장' : '매물 등록'}
+          {isEditMode ? '수정 저장' : '매물 등록'}
         </Button>
         {/* 수정 모드에서만 취소(목록으로 돌아가기) 제공. 등록 모드는 단독 버튼.
             Link가 아니라 button인 이유: App Router에는 Link 이동을 가로채는 API가 없어서
             Link로 두면 작성 중인 내용이 경고 없이 사라진다(AC7). 여기서만이라도 직접 막는다. */}
-        {isEdit && (
+        {isEditMode && (
           <Button variant="secondary" onClick={() => attemptLeave('/sell')} disabled={loading}>
             취소
           </Button>

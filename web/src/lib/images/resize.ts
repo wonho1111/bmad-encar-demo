@@ -40,7 +40,10 @@ export function computeTargetSize(width: number, height: number): { width: numbe
  * 인라인 오류로 표시하고 폼 제출은 막지 않는다(AC3).
  */
 export async function resizeImage(file: File): Promise<Blob> {
-  const bitmap = await createImageBitmap(file);
+  // imageOrientation:'from-image' — EXIF Orientation(폰 세로사진에 흔한 6/8)을 반영해 디코딩한다.
+  // 없으면 90° 돌아간 채로 재인코딩되고(가로/세로가 뒤바뀌어 리사이즈 비율까지 어긋난다), 재인코딩이라
+  // 원본 EXIF가 사라져 되돌릴 수 없다(코드리뷰 2026-07-19).
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   try {
     const { width, height } = computeTargetSize(bitmap.width, bitmap.height);
 

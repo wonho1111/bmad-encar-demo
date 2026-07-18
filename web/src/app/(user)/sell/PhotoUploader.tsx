@@ -47,14 +47,25 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
     };
   }, []);
 
-  const count = items.length;
+  // 검증 실패(용량초과·포맷거부)로 애초에 업로드된 적 없는 항목 — 목록엔 남기지만(AC3) 저장될
+  // 사진이 아니므로 정원(count/room/full)에서는 뺀다. storagePath가 있으면(=한 번이라도 저장된
+  // 적 있는 사진) 상태가 error여도 여기서 빼지 않는다 — 실제로 자리를 차지하는 사진이라서다
+  // (코드리뷰 2026-07-19).
+  function isRejected(p: PhotoItem): boolean {
+    return p.status === 'error' && p.retryable === false && !p.storagePath;
+  }
+
+  const count = items.filter((p) => !isRejected(p)).length;
   const full = count >= MAX_PHOTOS;
+  // 대표 배지·[대표로]가 가리켜야 할 실제 위치 — photo-sync.ts가 저장하는 대표(survivors[0])와
+  // 같은 기준(첫 error 아닌 항목)이어야 화면과 DB가 갈리지 않는다.
+  const firstSavableIndex = items.findIndex((p) => p.status !== 'error');
 
   function addFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
     setPickError(null);
 
-    const room = MAX_PHOTOS - items.length;
+    const room = MAX_PHOTOS - count;
     const picked = Array.from(fileList);
 
     // (a) UI가 10장 초과 선택을 애초에 막는다(AC9). ⚠️ 이건 UX 층의 1차 차단이고,
@@ -179,8 +190,11 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
                   </div>
                 )}
 
-                {/* 대표 배지는 **첫 칸에만**. 0번이라는 사실을 그대로 비추는 표시일 뿐 별도 상태가 아니다. */}
-                {i === 0 && p.status !== 'error' && (
+                {/* 대표 배지는 **저장될 첫 칸에만**(firstSavableIndex). 검증 실패 항목이 0번 자리를
+                    차지해도 그 항목은 저장되지 않으므로, 배지는 실제로 저장될 첫 항목을 따라간다
+                    (코드리뷰 2026-07-19 — 전엔 i===0만 봐서 0번이 거부 항목이면 배지가 어디에도
+                    없는데 DB 대표는 다른 행에 붙는 불일치가 있었다). */}
+                {i === firstSavableIndex && (
                   <span className="absolute left-1 top-1 rounded bg-zinc-900/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
                     대표
                   </span>
@@ -204,7 +218,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
 
               {/* 실패한 사진에는 [대표로]를 주지 않는다 — 저장되지 않을 사진을 대표로 지정하는 건
                   아무 의미가 없고, 배지 없는 첫 칸이 생겨 "대표가 없어 보이는" 화면이 된다. */}
-              {i > 0 && p.status !== 'error' && (
+              {i !== firstSavableIndex && p.status !== 'error' && (
                 <Button size="sm" variant="secondary" onClick={() => onChange(moveToFront(items, i))} disabled={disabled}>
                   대표로
                 </Button>
