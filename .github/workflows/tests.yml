@@ -59,7 +59,7 @@ jobs:
       - run: python -m pytest -q
 
   web:
-    name: web (vitest)
+    name: web (lint + vitest)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -73,6 +73,10 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # Next 16의 next build는 ESLint를 자동 실행하지 않는다. 그래서 lint를 여기서
+      # 명시적으로 돌린다 — 실증(2026-07-18): react-hooks/refs 위반(FocusTrap 렌더 중
+      # ref 쓰기)이 CI·빌드 어디에도 안 걸려 develop에 그대로 들어와 있었다.
+      - run: npm run lint
       - run: npm test
 
   app:
