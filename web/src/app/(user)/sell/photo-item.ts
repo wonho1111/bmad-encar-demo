@@ -12,7 +12,10 @@
 export const MAX_PHOTOS = 10;
 
 // 업로드 진행·실패는 **이 세션의 화면 상태일 뿐**이고 wire(DB·JSON)로 나가지 않는다(AC6).
-export type PhotoStatus = 'idle' | 'uploading' | 'uploaded' | 'error';
+// ⚠️ 'uploading'은 없다. 업로드는 제출 시점에 한 번에 일어나고 그동안 업로더 전체가 disabled로
+// 잠기므로, 사진 한 장씩의 진행 표시가 나올 자리가 없다. 전엔 이 값과 스피너 분기가 있었지만
+// **대입하는 코드가 한 곳도 없어** 절대 그려지지 않는 죽은 코드였다(코드리뷰 2차 grep 실측).
+export type PhotoStatus = 'idle' | 'uploaded' | 'error';
 
 export type PhotoItem = {
   /** React key 겸 항목 식별자(순서를 바꿔도 미리보기가 튀지 않도록 안정적이어야 한다). */

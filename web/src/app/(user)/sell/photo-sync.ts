@@ -62,15 +62,20 @@ export async function deleteListingPhotoObjects(listingId: string): Promise<{ ok
     return { ok: false, deleted: 0 };
   }
 
+  // 하나가 실패해도 **나머지는 계속 시도한다.** 첫 실패에서 return하면 이미 지운 앞부분은
+  // 되돌릴 수 없는데 뒤는 손도 못 댄 어중간한 상태가 남고, 재시도해도 같은 자리에서 또 멈춘다
+  // (코드리뷰 2차). 되돌릴 수 없는 일이 벌어진 뒤엔 최소한 정리 범위라도 넓히는 편이 낫다.
   let deleted = 0;
+  let ok = true;
   for (const row of data ?? []) {
-    if (!(await deleteListingImageObject(row.storage_path))) {
-      console.error('[sell] 매물 삭제 전 사진 오브젝트 정리 실패 — 매물 삭제를 중단해야 한다:', row.storage_path);
-      return { ok: false, deleted };
+    if (await deleteListingImageObject(row.storage_path)) {
+      deleted += 1;
+      continue;
     }
-    deleted += 1;
+    console.error('[sell] 매물 삭제 전 사진 오브젝트 정리 실패 — 매물 삭제를 중단해야 한다:', row.storage_path);
+    ok = false;
   }
-  return { ok: true, deleted };
+  return { ok, deleted };
 }
 
 export async function syncListingPhotos(
@@ -86,21 +91,32 @@ export async function syncListingPhotos(
   const warnings: string[] = [];
 
   // ── 1) 삭제 — 화면에서 사라진 기존 사진 ────────────────────────────────
+  // 지우려 했지만 못 지운 사진들. 아직 DB에 살아 있으니 목록에 되돌려주는 게 사실이지만,
+  // **맨 뒤에** 붙인다 — 앞에 붙이면 사용자가 **지우려던** 사진이 0번이 되어 대표 도장을 받는다
+  // (코드리뷰 2차, 3개 레이어 전원 지목).
+  const undeletable: PhotoItem[] = [];
   const keptRowIds = new Set(photos.map((p) => p.rowId).filter(Boolean));
   for (const gone of initialPhotos.filter((p) => p.rowId && !keptRowIds.has(p.rowId))) {
     // ⚠️ 순서 ① — 오브젝트 먼저. 반대로 하면 영구 고아가 된다(위 주석).
-    const objectDeleted = gone.storagePath ? await deleteListingImageObject(gone.storagePath) : true;
-    if (!objectDeleted) {
+    // 반환값은 "지웠다"가 아니라 "이제 없다"는 뜻이다 — 이미 없던 파일도 true다(upload.ts 실측 주석).
+    const objectGone = gone.storagePath ? await deleteListingImageObject(gone.storagePath) : true;
+    if (!objectGone) {
       // 오브젝트가 안 지워졌는데 행을 지우면, 그 오브젝트는 읽기 정책(행 조인 의존) 때문에
       // 소유자에게도 영영 안 보이는 고아가 된다(#46) — 그래서 행 삭제를 건너뛰고 실패로 남긴다.
       console.error('[sell] 사진 오브젝트 삭제 실패 — 고아 방지를 위해 행은 지우지 않음:', gone.storagePath);
       warnings.push('사진을 삭제하지 못했어요. 다시 시도해주세요.');
       failedCount += 1;
-      next.push({ ...gone, status: 'error', error: '사진을 삭제하지 못했어요. 다시 시도해주세요.', retryable: false });
+      undeletable.push({ ...gone, status: 'error', error: '사진을 삭제하지 못했어요. 다시 시도해주세요.', retryable: false });
       continue;
     }
-    const { error } = await supabase.from('listing_images').delete().eq('id', gone.rowId!);
-    if (error) {
+    // .select('id')로 실제 삭제된 행 수를 본다 — RLS로 막히면 error가 아니라 0행이다.
+    // 여기서 0행을 성공으로 흘리면 **파일만 사라지고 행은 남은** 상태를 "성공"이라 보고하게 된다.
+    const { data: removed, error } = await supabase
+      .from('listing_images')
+      .delete()
+      .eq('id', gone.rowId!)
+      .select('id');
+    if (error || !removed || removed.length === 0) {
       console.error('[sell] listing_images 행 삭제 실패:', gone.rowId, error);
       warnings.push('사진 삭제 정보를 정리하지 못했어요.');
     }
@@ -145,6 +161,9 @@ export async function syncListingPhotos(
     }
   }
 
+  // 못 지운 사진은 여기서 합류한다 — 목록 맨 뒤(위 주석).
+  next.push(...undeletable);
+
   // ── 3) 행 기록 — **업로드가 실제 성공한 사진만** 행을 만든다(AC6) ───────
   // sort_order는 화면 인덱스가 아니라 **실제로 저장(갱신)에 성공한 개수**로 매긴다 — 화면
   // 인덱스를 그대로 쓰면 중간 항목의 실패가 뒤 항목의 번호를 당겨주지 않아 구멍이 남고,
@@ -153,6 +172,11 @@ export async function syncListingPhotos(
   const saved = next.filter((p) => p.storagePath);
   let savedCount = 0;
   let order = 0;
+  // **실제로 sort_order=0을 받은 사진의 경로.** 4단계가 대표를 여기에 건다.
+  // ⚠️ 4단계에서 다시 계산하지 않는 이유: 예전엔 `survivors[0]`으로 재계산했는데, 어느 항목이
+  // 탈락하는지에 대한 두 계산의 판단이 갈려 **대표가 sort_order≠0인 행에 붙었다**(코드리뷰 2차).
+  // 같은 값을 두 군데서 따로 구하면 어긋난다 — 이 스토리가 대표와 순서를 하나로 합친 이유와 같다.
+  let coverPath: string | undefined;
 
   for (const p of saved) {
     if (p.rowId) {
@@ -169,6 +193,7 @@ export async function syncListingPhotos(
         warnings.push('사진 순서를 저장하지 못한 항목이 있어요.');
         continue; // 카운터를 올리지 않는다 — 구멍 방지.
       }
+      if (order === 0) coverPath = p.storagePath;
       order += 1;
       continue;
     }
@@ -193,6 +218,7 @@ export async function syncListingPhotos(
       continue; // 카운터를 올리지 않는다 — 구멍 방지.
     }
     savedCount += 1;
+    if (order === 0) coverPath = p.storagePath;
     order += 1;
     // INSERT 성공 시 rowId를 화면 상태에 되돌려준다 — 안 하면 재제출 때 이 항목이 "기존 행"으로
     // 인식되지 않아 같은 storage_path로 재INSERT를 시도하고, unique 위반 → 실패 분기가 방금
@@ -202,25 +228,33 @@ export async function syncListingPhotos(
   }
 
   // ── 4) 대표 기록 — **반드시 2문장**(AC8) ────────────────────────────────
-  // 이 매물 전체를 false로 내린 뒤 0번 1장만 true로 올린다. 한 문장으로 뒤집으면
-  // 부분 유니크 인덱스에 걸려 duplicate key로 죽는다(실측, #47-1).
-  // survivors[0]은 3단계에서 sort_order=0을 실제로 받은 행과 항상 일치한다 — 실패한 항목은
-  // storagePath가 비워져(위) 이 필터에서 이미 빠지기 때문이다.
-  const survivors = next.filter((p) => p.storagePath);
-  const { error: resetError } = await supabase.from('listing_images').update({ is_cover: false }).eq('listing_id', listingId);
-  if (resetError) {
+  // 이 매물 전체를 false로 내린 뒤 **3단계에서 실제로 sort_order=0을 받은** 1장만 true로 올린다.
+  // 한 문장으로 뒤집으면 부분 유니크 인덱스에 걸려 duplicate key로 죽는다(실측, #47-1).
+  // ⚠️ 두 UPDATE 모두 `.select('id')`로 행 수를 본다 — RLS로 막히거나 대상이 사라졌으면
+  // error가 아니라 0행으로 돌아온다. 특히 두 번째가 0행이면 **바로 앞에서 전부 내린 직후**라
+  // 그 매물은 대표 0장이 되는데, 전엔 그게 조용히 "성공"으로 흘렀다(코드리뷰 2차).
+  const { data: reset, error: resetError } = await supabase
+    .from('listing_images')
+    .update({ is_cover: false })
+    .eq('listing_id', listingId)
+    .select('id');
+  // 0행 자체는 실패가 아니다 — 사진이 0장인 매물엔 내릴 행이 없다. 그러나 **대표로 지정할
+  // 사진이 있는데(coverPath) 내려진 행이 0개**면 앞뒤가 안 맞는다(RLS 차단 등) → 실패로 본다.
+  const resetFailed = resetError || !reset || (!!coverPath && reset.length === 0);
+  if (resetFailed) {
     console.error('[sell] is_cover 초기화 실패:', resetError);
     warnings.push('대표 사진 정보를 정리하지 못했어요.');
     // ⚠️ 리셋이 실패하면 다음 문장(true 지정)을 아예 쏘지 않는다 — 부분 유니크 인덱스에 걸려
     // 어차피 실패하고, 조용히 "대표 0장" 상태만 남기 때문이다(코드리뷰 2026-07-19).
-  } else if (survivors.length > 0) {
-    const { error: setError } = await supabase
+  } else if (coverPath) {
+    const { data: set, error: setError } = await supabase
       .from('listing_images')
       .update({ is_cover: true })
       .eq('listing_id', listingId)
-      .eq('storage_path', survivors[0].storagePath!);
-    if (setError) {
-      console.error('[sell] 대표 지정 실패:', setError);
+      .eq('storage_path', coverPath)
+      .select('id');
+    if (setError || !set || set.length === 0) {
+      console.error('[sell] 대표 지정 실패:', coverPath, setError);
       warnings.push('대표 사진을 지정하지 못했어요.');
     }
   }

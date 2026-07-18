@@ -57,9 +57,12 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
 
   const count = items.filter((p) => !isRejected(p)).length;
   const full = count >= MAX_PHOTOS;
-  // 대표 배지·[대표로]가 가리켜야 할 실제 위치 — photo-sync.ts가 저장하는 대표(survivors[0])와
-  // 같은 기준(첫 error 아닌 항목)이어야 화면과 DB가 갈리지 않는다.
-  const firstSavableIndex = items.findIndex((p) => p.status !== 'error');
+  // 대표 배지·[대표로]가 가리켜야 할 실제 위치. photo-sync.ts가 대표를 거는 대상과 **같은 술어**로
+  // 골라야 화면과 DB가 갈리지 않는다 — 저장 대상은 "거부되지 않은 항목"이다.
+  // ⚠️ 전엔 `status !== 'error'`로 골랐는데, 바로 위 isRejected가 인정하듯 **error인데
+  // storagePath가 있는 항목**(=이미 저장됐고 이번에 못 지운 사진)이 존재한다. 그 항목에서 두
+  // 기준이 갈려 배지는 B에, DB의 is_cover는 A에 붙었다(코드리뷰 2차).
+  const firstSavableIndex = items.findIndex((p) => !isRejected(p));
 
   function addFiles(fileList: FileList | null) {
     if (!fileList || fileList.length === 0) return;
@@ -159,7 +162,10 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
         </p>
       )}
 
-      {count > 0 && (
+      {/* ⚠️ 게이트는 items.length다 — count는 거부된 항목을 뺀 "정원" 계산용이라, 고른 파일이
+          전부 거부되면 count가 0이 되어 **목록이 통째로 안 그려졌다.** 하필 "어느 파일이 왜
+          안 됐는지 보여준다"(AC3)가 가장 필요한 순간이다(코드리뷰 2차). */}
+      {items.length > 0 && (
         // 반응형은 **열 수로만** 흡수한다(D5) — 썸네일 내부 배치는 어느 폭에서도 접지 않는다.
         <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4">
           {items.map((p, i) => (
@@ -197,11 +203,6 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
                 {i === firstSavableIndex && (
                   <span className="absolute left-1 top-1 rounded bg-zinc-900/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
                     대표
-                  </span>
-                )}
-                {p.status === 'uploading' && (
-                  <span className="absolute inset-0 flex items-center justify-center bg-white/70 text-xs dark:bg-zinc-950/70">
-                    올리는 중…
                   </span>
                 )}
 

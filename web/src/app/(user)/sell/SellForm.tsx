@@ -152,12 +152,25 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   // 이탈 확인 다이얼로그(AC7). null이면 닫힘, 값이 있으면 "확인 후 갈 곳".
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
+  // 사진의 **저장 기준선** — "지금 DB에 저장돼 있는 사진이 무엇인가". 두 가지에 함께 쓴다:
+  //   ① 무엇을 지웠는지 판단(syncListingPhotos의 네 번째 인자)
+  //   ② 변경 여부(dirty) 비교 대상
+  // ⚠️ prop(initialPhotos)을 직접 쓰면 안 되는 이유 두 가지 (코드리뷰 2차):
+  //   · prop은 저장 후에도 갱신되지 않아, 이미 지운 사진을 재제출 때마다 **또** 지우려 든다
+  //     → 실패가 영구 고정돼 목록으로 나갈 수 없고, 등록→수정 전환 경로에선 반대로 기준선이
+  //       비어 있어 **지운 사진이 DB에 그대로 남는다**(AC10 위반).
+  //   · key가 crypto.randomUUID()라 서버가 다시 렌더하면 prop의 key만 전부 바뀌어,
+  //     아무것도 안 건드렸는데 dirty가 참이 된다(이탈 경고 오탐).
+  // 그래서 저장이 끝날 때마다 "그 시점에 실제로 저장된 것"으로 갱신한다 — 그게 사실이다.
+  // ref가 아니라 state인 이유: 아래 dirty 계산이 **렌더 중에** 이 값을 읽는데, ref를 렌더에서
+  // 읽으면 갱신이 화면에 반영되지 않는다(lint `react-hooks/refs`가 실제로 이걸 잡았다).
+  const [baseline, setBaseline] = useState<PhotoItem[]>(initialPhotos);
+
   // dirty = 초기값 대비 폼 필드가 바뀌었거나, 사진을 추가/삭제/순서변경했는가(AC7).
   // 사진은 key 나열을 비교한다 — 추가·삭제뿐 아니라 **순서 변경도 잡아야** 하기 때문
   // (순서가 곧 대표라서, 순서만 바꾸고 나가면 사용자가 한 일이 통째로 사라진다).
   const formDirty = (Object.keys(initialForm) as (keyof FormState)[]).some((k) => form[k] !== initialForm[k]);
-  const photosDirty =
-    photos.length !== initialPhotos.length || photos.some((p, i) => p.key !== initialPhotos[i]?.key);
+  const photosDirty = photos.length !== baseline.length || photos.some((p, i) => p.key !== baseline[i]?.key);
   const dirty = formDirty || photosDirty;
 
   // 새로고침·탭 닫기·주소 직접 입력만 여기서 막힌다.
@@ -316,8 +329,10 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         }
 
         // 사진 반영(추가·삭제·순서=대표). 실패해도 매물 수정 자체는 이미 성공이다(AC3).
-        const photoResult = await syncListingPhotos(user.id, activeListingId, photos, initialPhotos);
+        const photoResult = await syncListingPhotos(user.id, activeListingId, photos, baseline);
         setPhotos(photoResult.photos);
+        // 기준선을 "지금 실제로 저장돼 있는 것"으로 옮긴다(위 baseline 주석).
+        setBaseline(photoResult.photos.filter((p) => p.rowId));
         if (photoResult.failedCount > 0 || photoResult.warnings.length > 0) {
           // failedCount(저장 자체가 안 된 사진) + warnings(저장은 됐지만 순서·대표 등 뒷정리가
           // 어긋난 것) — 둘 다 "성공"이라고만 말하면 화면과 DB가 갈린 걸 사용자가 모르게 된다.
@@ -352,7 +367,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       }
 
       // 매물은 이미 등록됐다 — 여기서부터 실패해도 등록을 되돌리지 않는다(AC3).
-      const photoResult = await syncListingPhotos(user.id, created.id, photos, []);
+      // 등록은 "기존 사진이 0장인 수정"이라 기준선은 비어 있다(등록 모드의 baseline 초기값).
+      const photoResult = await syncListingPhotos(user.id, created.id, photos, baseline);
+      setBaseline(photoResult.photos.filter((p) => p.rowId));
 
       if (photoResult.failedCount > 0 || photoResult.warnings.length > 0) {
         // 매물 INSERT는 이미 성공했다 — 이 시점부터 재제출은 "수정"이 사실에 맞다. edit 모드로
@@ -385,6 +402,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       }
       setForm(INITIAL);
       setPhotos([]);
+      setBaseline([]); // 폼을 비웠으니 기준선도 비운다 — 안 비우면 곧바로 dirty가 된다.
       setSuccess(
         photoResult.savedCount > 0
           ? `매물이 등록되었습니다. (사진 ${photoResult.savedCount}장) 아래 목록에 바로 노출됩니다.`
