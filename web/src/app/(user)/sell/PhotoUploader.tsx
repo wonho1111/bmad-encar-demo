@@ -141,6 +141,12 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
         </span>
         {/* 문구 정본: docs/conventions.md §10 (목업의 "20MB" 표기는 낡았다 — 베끼지 말 것). */}
         <span className="text-xs text-zinc-500 dark:text-zinc-400">JPG · PNG · WebP, 장당 최대 5MB</span>
+        {/* #58 — 재인코딩(resize.ts)이 되돌릴 수 없이 바꾸는 두 가지를 **올리기 전에** 알린다.
+            움직이는 WebP는 단일 프레임으로 디코딩되고, 투명 영역은 JPEG 폴백을 타면 알파가 사라진다.
+            저장 후엔 원본을 복구할 수 없어서, 사후 오류가 아니라 사전 고지가 맞는 자리다. */}
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          움직이는 사진은 첫 장면만, 투명한 배경은 채워져 저장될 수 있어요
+        </span>
       </button>
 
       <input
@@ -177,6 +183,11 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
+                // 제출 중에는 순서를 바꾸지 않는다(#63). draggable={!disabled}는 **이미 시작된** 드래그를
+                // 멈추지 못하므로, 제출 직전에 시작한 드래그가 sync 도중 떨어지면 순서가 바뀌고
+                // 제출이 끝나며 setPhotos(photoResult.photos)가 그 변경을 덮어쓴다 —
+                // 사용자는 자기가 한 조작이 눈앞에서 사라지는 것을 본다(2026-07-19 실브라우저 재현).
+                if (disabled) return;
                 // 파일 드롭이 썸네일 위에 떨어진 경우는 순서 변경이 아니다.
                 if (e.dataTransfer.files?.length) return;
                 if (dragFrom === null || dragFrom === i) return;

@@ -12,8 +12,49 @@ export const MAX_IMAGE_EDGE = 1600;
 /** WebP 인코딩 품질. 같은 화질에서 JPEG보다 작다(버킷 MIME 화이트리스트에 이미 포함). */
 export const IMAGE_QUALITY = 0.82;
 
-/** 저장본 확장자·MIME. toBlob이 WebP를 못 만드는 환경에서는 JPEG로 폴백한다(아래 resizeImage 참조). */
+/** 저장본 확장자·MIME. toBlob이 WebP를 못 만드는 환경에서는 JPEG로 폴백한다(아래 encodeWithFallback 참조). */
 export const IMAGE_MIME = 'image/webp';
+
+/** WebP를 못 만드는 브라우저에서 쓰는 대체 포맷(구형 Safari 등도 JPEG는 전부 인코딩할 수 있다). */
+export const FALLBACK_MIME = 'image/jpeg';
+
+/** 폴백 JPEG 품질. WebP q0.82와 비슷한 체감 화질이 나오는 값. */
+export const FALLBACK_QUALITY = 0.85;
+
+/** `canvas.toBlob`과 같은 모양의 함수 — 테스트에서 가짜를 넣을 수 있게 타입으로 뽑았다(#57). */
+export type ToBlob = (
+  callback: (blob: Blob | null) => void,
+  type?: string,
+  quality?: number,
+) => void;
+
+/**
+ * WebP로 인코딩하고, 안 되면 JPEG로 폴백한다. **canvas 없이 단위테스트할 수 있게** `toBlob`을 주입받는다.
+ *
+ * ⚠️ **왜 `blob !== null`이 아니라 `blob.type`을 보는가 (#57, 2026-07-19 실측):**
+ *   원래 코드는 "미지원 MIME이면 toBlob이 null을 준다"는 전제로 폴백을 짰다. **그 전제가 틀렸다.**
+ *   HeadlessChrome 151에서 직접 재본 결과, 미지원 MIME(`image/tiff`·`image/avif`·엉터리 문자열)에
+ *   toBlob은 null이 아니라 **PNG**를 돌려준다(매직넘버 `89 50 4e 47` 확인, blob.type='image/png').
+ *   그래서 WebP 미지원 브라우저에서는 **폴백 분기가 아예 실행되지 않고** PNG가 그대로 저장됐다:
+ *     · `extensionFor`가 `.jpg` 이름을 붙여 **확장자와 내용이 어긋난다**
+ *     · 1600×1067 실측에서 WebP 553KB / JPEG 503KB인데 **PNG는 4,827KB(약 9배)** — 버킷 5MB 상한에 닿고
+ *       AC4의 저장본 규격 보장이 깨진다
+ *   요청한 타입이 그대로 나왔는지를 확인하면 null을 주는 브라우저와 PNG를 주는 브라우저를 **둘 다** 잡는다.
+ */
+export async function encodeWithFallback(toBlob: ToBlob): Promise<Blob> {
+  const encode = (mime: string, quality: number) =>
+    new Promise<Blob | null>((resolve) => toBlob(resolve, mime, quality));
+
+  const webp = await encode(IMAGE_MIME, IMAGE_QUALITY);
+  if (webp && webp.type === IMAGE_MIME) return webp;
+
+  const jpeg = await encode(FALLBACK_MIME, FALLBACK_QUALITY);
+  if (jpeg && jpeg.type === FALLBACK_MIME) return jpeg;
+
+  // WebP도 JPEG도 못 만드는 브라우저 — 여기서 규격 밖 파일을 조용히 저장하느니 실패를 알린다.
+  // 호출부(PhotoUploader)가 그 사진 항목만 인라인 오류로 표시하고 폼 제출은 막지 않는다(AC3).
+  throw new Error('이미지를 변환하지 못했습니다');
+}
 
 /**
  * 원본 크기 → 저장본 크기. **순수 함수라 단위테스트 대상이다**(resize.test.ts).
@@ -55,18 +96,8 @@ export async function resizeImage(file: File): Promise<Blob> {
     if (!ctx) throw new Error('canvas 2d 컨텍스트를 만들 수 없습니다');
     ctx.drawImage(bitmap, 0, 0, width, height);
 
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, IMAGE_MIME, IMAGE_QUALITY),
-    );
-    if (blob) return blob;
-
-    // toBlob은 지원하지 않는 MIME에 대해 **에러 대신 null**을 준다(사양). WebP를 못 만드는
-    // 환경이면 JPEG로 한 번 더 시도한다 — 여기서 포기하면 그 브라우저는 업로드 자체가 막힌다.
-    const fallback = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', 0.85),
-    );
-    if (!fallback) throw new Error('이미지를 변환하지 못했습니다');
-    return fallback;
+    // 인코딩·폴백 판정은 encodeWithFallback이 전담한다(canvas 없이 단위테스트되는 유일한 지점, #57).
+    return await encodeWithFallback(canvas.toBlob.bind(canvas));
   } finally {
     // ImageBitmap은 GC 대상이 아니라 명시적으로 놓아줘야 메모리가 회수된다.
     // 10장을 연속 처리하므로 누락하면 모바일에서 눈에 띈다.
