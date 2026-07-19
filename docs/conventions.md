@@ -46,11 +46,16 @@
     | 필드 | 타입 | 값 채움 |
     |---|---|---|
     | `image_url` | string\|null (대표 사진의 공개 URL) | Epic 9 |
+    | `image_path` | string\|null (대표 사진의 **버킷 상대 경로** — AI 응답 wire 전용, 아래 주석) | Epic 9 (9.6) |
     | `image_count` | int\|null | Epic 9 |
     | `view_count` | int\|null | Epic 11 |
     | `accident_status` | `'무사고'\|'단순교환'\|'사고'`\|null | Epic 10 |
     | `is_single_owner` | bool\|null | Epic 10 |
     | `is_non_smoker` | bool\|null | Epic 10 |
+  - **`image_path` vs `image_url` — 누가 무엇을 채우나 (Story 9.6):** 둘은 같은 사진을 가리키지만 **채우는 주체가 다르다.**
+    - **`/ai/search` 응답(api)**: `image_path`만 채운다. `image_url`은 **항상 `null`**이다 — api는 사진 URL을 만들지 않기 때문이다(§10, `ai_readonly` 최소권한 CR2). 강제 장치: `api/tests/test_storage_signed_url_contract.py`.
+    - **Supabase 직접 조회(web·app의 목록·상세)**: `image_path`가 없다. 소비처가 `listing_images`를 직접 읽어 `getPublicUrl`로 `image_url`을 만든다.
+    - 따라서 **AI 응답을 받는 클라이언트는 `image_path`를 `getPublicUrl`로 바꿔 `image_url` 자리에 넣은 뒤 `image_path`를 버린다**(web `aiSearch.ts`가 그 자리). 카드 컴포넌트는 `image_url` 하나만 알면 되고, 두 경로의 차이를 몰라도 된다.
   - `image_url`이 null이면 클라가 "사진 준비중" 5:3 플레이스홀더를 렌더하는 것이 **계약의 일부**다. 변형 세트(`thumb`/`card`/`full`)는 클라이언트 렌더 파생이며 wire 계약이 아니다.
   - **찜(wishlist) 여부는 ListingCard wire 필드가 아니다.** "내가 찜했는지"는 사용자별 오버레이라 별도 조회/조인으로 처리한다(계약 오염 방지, Epic 10.5가 구현).
   - **계약-외 값 정규화(소비처 공통 — 값 채우는 Epic 9/10/11이 준수):** 소비처(web·app)의 파싱 관례가 서로 달라(예: Dart는 `is bool` strict, api Pydantic은 lax 강제변환) 같은 행을 다르게 볼 수 있으므로, 렌더 소비처는 아래를 **동일하게** 방어적으로 처리한다 —
@@ -222,6 +227,8 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 - **`listing_images.storage_path`** = 버킷 내 key **전체**(`{user_id}/{listing_id}/{filename}`, 버킷명 미포함) — `storage.objects.name`과 **글자 그대로 같아야** Storage RLS의 조인이 성립한다.
 - **URL 만료가 없다.** ~~`SIGNED_URL_TTL = 3600`~~ 상수는 Story 9.0에서 **삭제됐다** — 공개 URL은 만료되지 않으므로 TTL·재발급·갱신 개념 자체가 없다.
 - **api는 사진 URL을 만들지 않는다** — `storage_path`만 반환한다(`ai_readonly` 최소권한, CR2). URL 조립은 web·app이 각자 한다. 이 불변식은 `api/tests/test_storage_signed_url_contract.py`가 지킨다.
+  - **그 `storage_path`가 실리는 wire 필드가 `ListingCard.image_path`다**(§4, Story 9.6). `image_url`이 아닌 이유가 바로 이 줄이다 — api가 URL을 못 만들므로 원본 경로를 담을 자리가 따로 필요했다.
+  - 위 contract test는 **쌍**을 지킨다: ① 응답에 Storage URL 문자열이 없다 **그리고** ② `image_path`에 원본 경로가 실제로 실린다. ①만 지키면 api가 사진을 아예 안 보내도 초록이라 계약의 절반이 빈다(9.6에서 ② 활성화).
 - **URL 헬퍼(범용, Story 9.0)**: `getPublicUrl(bucket, path)` — web `@/lib/storage`·app `core/supabase/storage_helper.dart` 두 곳에 미러.
   - **동기 함수이고 실패하지 않는다** — 네트워크 왕복 없이 경로에서 문자열을 조립할 뿐이다. 서버·브라우저 어디서든 호출된다(9.0 이전의 "서버에서만 발급 가능" 제약은 사라졌다).
   - ⚠️ **파일 존재를 확인하지 않는다.** 경로만 있으면 URL이 나온다 — 없는 파일은 이미지 로드가 실패하므로 **소비처가 `onError`로 "사진 준비중" 플레이스홀더를 그려야 한다**(§4). 서명 시절엔 실패가 `null`로 와서 자동으로 플레이스홀더가 됐지만, 이제는 소비처 책임이다.

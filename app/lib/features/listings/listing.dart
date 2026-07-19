@@ -28,6 +28,7 @@ class ListingCardData {
     required this.region,
     this.sellerName,
     this.imageUrl,
+    this.imagePath,
     this.viewCount,
     this.imageCount,
     this.accidentStatus,
@@ -45,6 +46,15 @@ class ListingCardData {
   final String? sellerName; // 판매자 표시 이름(0007 비정규화). AI 결과 등 없으면 미표시.
   // 증분 신규 — 전부 nullable(DB 컬럼 아직 없음, 값 채움은 후속 에픽)
   final String? imageUrl; // 대표 사진의 공개 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
+  // 대표 사진의 **버킷 상대 경로**(`{user_id}/{listing_id}/{filename}`) — AI 응답(/ai/search) 전용.
+  // api는 URL을 만들지 않으므로(conventions.md §10) `image_url` 대신 이 필드가 채워져 온다.
+  //
+  // ⚠️ **이 스토리(9.6) 전후로 앱 동작은 같다.** Supabase 직접 조회 경로는 이 필드를 주지 않고,
+  //    `listing_card.dart`는 애초에 사진을 그리지 않는다(web의 9.4에 해당하는 작업이 app에 없다).
+  //    앱 카드에 사진을 붙이는 것은 **Epic 16(16.2 이미지 카드 재설계)**의 몫이다 —
+  //    여기서는 계약 락스텝(conventions.md §4.1)을 맞추기 위해 **파싱만** 해 둔다.
+  //    렌더할 때는 `storage_helper.dart`의 getPublicUrl로 URL을 만들어 써야 한다.
+  final String? imagePath;
   final int? viewCount; // Epic 11
   final int? imageCount; // Epic 9
   final String? accidentStatus; // '무사고'|'단순교환'|'사고'|null — Dart는 별도 enum 없이 nullable String으로 단순 통과(A2). Epic 10
@@ -84,6 +94,7 @@ class ListingCardData {
       region: region,
       sellerName: sellerName is String ? sellerName : null,
       imageUrl: raw['image_url'] is String ? raw['image_url'] as String : null,
+      imagePath: raw['image_path'] is String ? raw['image_path'] as String : null,
       viewCount: _asInt(raw['view_count']),
       imageCount: _asInt(raw['image_count']),
       accidentStatus: raw['accident_status'] is String ? raw['accident_status'] as String : null,

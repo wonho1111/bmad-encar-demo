@@ -552,7 +552,7 @@ So that 검색 결과를 사진으로 바로 판단한다.
 
 **Given** AI 검색 응답(FR17 개정)
 **When** 매물 카드를 반환하면
-**Then** api는 sql_guard 결과의 **on_sale id로 `listing_images` 대표 1장 `storage_path`만** 별도 고정쿼리로 반환하고(sql_guard는 listings 단일테이블 유지, JOIN 안 함)(CR2), web이 서명 URL로 렌더한다
+**Then** api는 sql_guard 결과의 **on_sale id로 `listing_images` 대표 1장 `storage_path`만** 별도 고정쿼리로 반환하고(sql_guard는 listings 단일테이블 유지, JOIN 안 함)(CR2), web이 **공개 URL(고정, 만료 없음)** 로 렌더한다 *(✎ 2026-07-20 Story 9.6 정정: 원문은 "서명 URL"이었으나 **Story 9.0이 공개 버킷 + 고정 URL로 전환**했다(`0014`). 서명하지 않고 `getPublicUrl()`로 조립한다 — `docs/conventions.md` §10)*
 **And** 사진이 없으면 동일한 "사진 준비중" 플레이스홀더를 보인다(ListingCard 계약 공유)
 **And** `image_count`도 반환되어 "N장" 배지가 AI 카드에도 적용된다(I7)
 **And** sold 매물은 storage_path가 반환되지 않아 노출되지 않는다(FR11 4번째 강제지점 정합, CM-B)
