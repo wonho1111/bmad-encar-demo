@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<style>
+:root{
+  --surface-base:#FAFAF8; --surface-raised:#FFFFFF;
+  --ink-primary:#1A1E1D; --ink-secondary:#565F5D; --ink-muted:#676D69;
+  --border-hairline:#E6E3DD; --brand-petrol:#1E6E6A; --price-emphasis:#C0730F;
+  --placeholder-bg:#F1EFE9;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--surface-base);color:var(--ink-primary);
+  font-family:"Pretendard",system-ui,-apple-system,"Segoe UI",sans-serif;padding:28px}
+h1{font-size:22px;font-weight:800;margin-bottom:6px}
+.sub{font-size:13px;color:var(--ink-muted);margin-bottom:24px;line-height:1.6}
+.row{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.col{flex:1 1 330px;max-width:380px}
+.tag{display:inline-block;font-size:12px;font-weight:700;color:#fff;background:var(--brand-petrol);
+  border-radius:11px;padding:3px 10px;margin-bottom:8px}
+.tagline{font-size:12.5px;color:var(--ink-secondary);margin-bottom:10px;line-height:1.5;min-height:38px}
+.card{background:var(--surface-raised);border:1px solid var(--border-hairline);
+  border-radius:16px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 6px 16px rgba(0,0,0,.05)}
+.hero{position:relative;aspect-ratio:5/3;border-radius:12px;overflow:hidden;background:var(--placeholder-bg)}
+.hero img{width:100%;height:100%;object-fit:cover;display:block}
+.counter{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.8);color:#fff;
+  font-size:12px;font-weight:600;border-radius:11px;padding:3px 9px}
+.arrow{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;
+  background:rgba(0,0,0,.55);color:#fff;border:0;font-size:15px;line-height:32px;text-align:center;cursor:pointer}
+.arrow.l{left:8px} .arrow.r{right:8px}
+.strip{display:flex;gap:6px;margin-top:8px;overflow-x:auto}
+.strip img{width:62px;height:38px;object-fit:cover;border-radius:7px;flex:0 0 auto;
+  border:2px solid transparent;opacity:.65}
+.strip img.on{border-color:var(--brand-petrol);opacity:1}
+.credit{font-size:12px;line-height:1.45;color:var(--ink-muted);margin-top:8px}
+.credit a{color:var(--ink-muted);text-decoration:underline;text-underline-offset:2px}
+.info-btn{position:absolute;right:8px;bottom:8px;display:flex;align-items:center;gap:6px}
+.ibtn{width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,.8);color:#fff;border:0;
+  font-size:12px;font-weight:700;cursor:pointer;line-height:24px;text-align:center}
+.pop{position:absolute;right:8px;bottom:40px;width:230px;background:#fff;border:1px solid var(--border-hairline);
+  border-radius:11px;padding:9px 11px;font-size:12px;line-height:1.5;color:var(--ink-secondary);
+  box-shadow:0 8px 24px rgba(0,0,0,.16)}
+.pop a{color:var(--brand-petrol)}
+.title{font-size:16px;font-weight:600;margin-top:12px}
+.price{font-size:26px;font-weight:800;color:var(--price-emphasis);margin-top:4px}
+.meta{font-size:13px;color:var(--ink-muted);margin-top:2px}
+.sect{margin-top:16px;border-top:1px solid var(--border-hairline);padding-top:10px}
+.sect h3{font-size:13px;font-weight:700;color:var(--ink-secondary);margin-bottom:5px}
+.srclist{font-size:11.5px;line-height:1.6;color:var(--ink-muted)}
+.note{margin-top:22px;font-size:12.5px;color:var(--ink-secondary);line-height:1.7;
+  background:#FFF8E9;border:1px solid #F0D9A8;border-radius:11px;padding:12px 14px;max-width:1180px}
+b{color:var(--ink-primary)}
+</style></head><body>
+
+<h1>사진 저작자 표시(credit) — 표시 방식 3안</h1>
+<p class="sub">실제 DB 데이터로 그렸습니다. 매물 <b>기아 카니발</b>, 사진 3장, 전부 <b>Benespit / CC BY-SA 4.0</b> (Wikimedia Commons).<br>
+현재 시드 사진 10장 = CC BY-SA 4.0 8장 · CC BY 2.0 1장 · <b>CC0 1장(표시 의무 없음 → 아무것도 안 그림)</b></p>
+
+<div class="row">
+
+  <!-- A -->
+  <div class="col">
+    <span class="tag">A안 — 갤러리 아래 한 줄</span>
+    <p class="tagline">사진 바로 밑에 작은 회색 한 줄. 늘 보이지만 12px 흐린 글씨라 눈에 안 띔.</p>
+    <div class="card">
+      <div class="hero">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/330a9042-2542-4136-b298-5bf105d897ae.webp">
+        <button class="arrow l">‹</button><button class="arrow r">›</button>
+        <span class="counter">1/3</span>
+      </div>
+      <div class="strip">
+        <img class="on" src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/330a9042-2542-4136-b298-5bf105d897ae.webp">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/7c52a319-6ffa-4e66-80cc-e8952d566d3f.webp">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/35bd24c5-f516-47a0-93d9-5c487bfc21ac.webp">
+      </div>
+      <p class="credit">사진 © <a href="#">Benespit</a> · <a href="#">CC BY-SA 4.0</a> · <a href="#">Wikimedia Commons</a></p>
+      <p class="title">기아 카니발 · 2022년</p>
+      <p class="price">3,450만원</p>
+      <p class="meta">4.2만km · 가솔린 · 경기</p>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="col">
+    <span class="tag">B안 — ⓘ 아이콘 팝오버</span>
+    <p class="tagline">사진 위 작은 ⓘ 버튼만 상시 노출. 누르면 출처가 뜸. 평소 화면이 가장 깔끔.</p>
+    <div class="card">
+      <div class="hero">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/7c52a319-6ffa-4e66-80cc-e8952d566d3f.webp">
+        <button class="arrow l">‹</button><button class="arrow r">›</button>
+        <div class="pop">사진 출처<br>© Benespit<br>라이선스 <a href="#">CC BY-SA 4.0</a><br><a href="#">Wikimedia Commons 원본 ↗</a></div>
+        <div class="info-btn"><button class="ibtn">ⓘ</button><span class="counter" style="position:static">2/3</span></div>
+      </div>
+      <div class="strip">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/330a9042-2542-4136-b298-5bf105d897ae.webp">
+        <img class="on" src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/7c52a319-6ffa-4e66-80cc-e8952d566d3f.webp">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/35bd24c5-f516-47a0-93d9-5c487bfc21ac.webp">
+      </div>
+      <p class="title">기아 카니발 · 2022년</p>
+      <p class="price">3,450만원</p>
+      <p class="meta">4.2만km · 가솔린 · 경기</p>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="col">
+    <span class="tag">C안 — 페이지 맨 아래 모아서</span>
+    <p class="tagline">갤러리는 손 안 대고, 상세 페이지 최하단에 "사진 출처" 섹션으로 3장을 한 번에.</p>
+    <div class="card">
+      <div class="hero">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/35bd24c5-f516-47a0-93d9-5c487bfc21ac.webp">
+        <button class="arrow l">‹</button><button class="arrow r">›</button>
+        <span class="counter">3/3</span>
+      </div>
+      <div class="strip">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/330a9042-2542-4136-b298-5bf105d897ae.webp">
+        <img src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/7c52a319-6ffa-4e66-80cc-e8952d566d3f.webp">
+        <img class="on" src="https://psrnsasxpkpwqdukjdmt.supabase.co/storage/v1/object/public/listing-images/12dfba00-2544-45f4-8ffe-bdeb32229b97/ff73b989-03db-4b23-b2df-a22658428aa6/35bd24c5-f516-47a0-93d9-5c487bfc21ac.webp">
+      </div>
+      <p class="title">기아 카니발 · 2022년</p>
+      <p class="price">3,450만원</p>
+      <p class="meta">4.2만km · 가솔린 · 경기</p>
+      <div class="sect" style="margin-top:26px">
+        <h3>⋯ (신뢰 · 차량정보 · 옵션 · 판매자 섹션) ⋯</h3>
+      </div>
+      <div class="sect">
+        <h3>사진 출처</h3>
+        <p class="srclist">
+          1. © Benespit · CC BY-SA 4.0 · <a href="#">Commons ↗</a><br>
+          2. © Benespit · CC BY-SA 4.0 · <a href="#">Commons ↗</a><br>
+          3. © Benespit · CC BY-SA 4.0 · <a href="#">Commons ↗</a>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="note"><b>공통 규칙(어느 안이든 동일)</b> — ① 판매자가 직접 올린 사진은 <b>credit이 비어 있어 아무것도 안 그린다</b>(시드 사진에만 붙음). ② CC0 사진은 표시 의무가 없지만 데이터엔 있음 — 그릴지 말지 정해야 함. ③ 코드 부담은 세 안 모두 비슷함(조회 <code>select</code>에 <code>credit</code> 한 컬럼 추가 + 렌더 몇 줄). <b>차이는 오직 "시연 화면이 얼마나 깔끔한가"</b>.</p>
+
+</body></html>
