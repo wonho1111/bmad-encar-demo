@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { deleteListingPhotoObjects } from '@/app/(user)/sell/photo-sync';
+import { listListingPhotoPaths, deletePhotoObjectsByPaths } from '@/app/(user)/sell/photo-sync';
 import Button from '@/components/ui/Button';
 
 type Props = {
@@ -40,6 +40,11 @@ export default function ListingAdminActions({ listingId, label, redirectTo }: Pr
     setError(null);
     setDeleting(true);
     try {
+      // ⚠️ **경로는 매물을 지우기 전에 확보한다.** listing_images는 listings에 cascade로 매달려
+      //    있어서, 매물을 먼저 지운 뒤 조회하면 0건이 나와 아무것도 못 지운다(코드리뷰 2026-07-19
+      //    브라우저 실측 — 조용히 성공을 반환하며 고아가 100% 발생했다).
+      const photos = await listListingPhotoPaths(listingId);
+
       const supabase = createClient();
       // .select()로 삭제된 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
       const { data: deleted, error: deleteError } = await supabase
@@ -67,12 +72,17 @@ export default function ListingAdminActions({ listingId, label, redirectTo }: Pr
       //   하다(docs/conventions.md §10.1). 반대로 매물 행은 한 번 지우면 되돌릴 수 없고, 예전 순서처럼
       //   사진부터 지우다 실패하면 매물 자체를 영영 못 지우는 상태가 남았다. 그래서 되돌릴 수 없는
       //   단계(행 삭제)를 먼저 확정하고, 되돌릴 수 있는 뒷정리(파일 삭제)를 나중으로 미룬다.
-      const cleanup = await deleteListingPhotoObjects(listingId);
-      if (!cleanup.ok) {
-        // 매물은 이미 삭제됐다 — 이 실패로 되돌리지 않는다. 남은 파일은 회수 가능한 고아이므로
-        // 치명적 오류로 취급하지 않고, 콘솔 기록 + 안내 메시지로만 남긴다(별도 알림 UI는 없음).
-        console.error('[admin/listings] 매물 삭제 후 사진 오브젝트 정리 실패:', listingId);
+      // 매물은 이미 삭제됐다 — 아래 실패로 되돌리지 않는다. 남은 파일은 회수 가능한 고아이므로
+      // 치명적 오류로 취급하지 않고, 콘솔 기록 + 안내 메시지로만 남긴다(별도 알림 UI는 없음).
+      if (!photos.ok) {
+        console.error('[admin/listings] 사진 목록을 못 읽어 정리를 건너뜀(고아 가능):', listingId);
         setError('매물은 삭제됐지만 일부 사진 파일이 남아있을 수 있습니다.');
+      } else {
+        const cleanup = await deletePhotoObjectsByPaths(photos.paths);
+        if (!cleanup.ok) {
+          console.error('[admin/listings] 매물 삭제 후 사진 오브젝트 정리 실패:', listingId);
+          setError('매물은 삭제됐지만 일부 사진 파일이 남아있을 수 있습니다.');
+        }
       }
       // 상세에서 삭제했으면(목록으로 이동) 그 매물 페이지는 더 이상 유효하지 않다 → push.
       //   목록에서 삭제했으면 redirectTo 없음 → refresh로 그 행만 제거.

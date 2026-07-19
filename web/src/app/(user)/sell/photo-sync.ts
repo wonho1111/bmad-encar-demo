@@ -52,30 +52,56 @@ function newFilename(ext: string): string {
  * 하나라도 실패하면 `ok:false`를 돌려준다. 호출부는 **매물 삭제를 중단해야 한다** — 그대로
  * 진행하면 되돌릴 수 없는 고아가 남는다(CLAUDE.md B3 "DB는 되돌리기가 없다").
  */
-export async function deleteListingPhotoObjects(listingId: string): Promise<{ ok: boolean; deleted: number }> {
+/**
+ * 매물의 사진 파일 경로를 **미리** 읽어 둔다.
+ *
+ * ⚠️ **매물 행을 지우기 전에 불러야 한다.** `listing_images`는 `listings`에 `on delete cascade`로
+ * 매달려 있어서, 매물을 먼저 지우면 이 행들이 **함께 사라진다** — 그러면 "어떤 파일을 지워야
+ * 하는지"를 알 방법이 영영 없어진다. (코드리뷰 2026-07-19 실측: 순서를 뒤집었더니 정리 함수가
+ * 0건을 조회하고 **아무것도 안 지운 채 성공을 반환**해 고아가 100% 발생했다. 브라우저로 실제
+ * 삭제해 보고서야 드러났다 — 단위테스트는 cascade를 모사하지 않으므로 초록이었다.)
+ */
+export async function listListingPhotoPaths(
+  listingId: string,
+): Promise<{ ok: boolean; paths: string[] }> {
   const supabase = createClient();
   const { data, error } = await supabase.from('listing_images').select('storage_path').eq('listing_id', listingId);
 
   if (error) {
     // 무엇이 있는지 모르는 상태다 — "사진이 없다"로 갈음하지 않는다(그러면 조용히 고아가 된다).
     console.error('[sell] 매물 사진 목록 조회 실패:', listingId, error);
-    return { ok: false, deleted: 0 };
+    return { ok: false, paths: [] };
   }
+  return { ok: true, paths: (data ?? []).map((r) => r.storage_path) };
+}
 
+/** 미리 확보한 경로들로 오브젝트를 지운다. 행이 이미 사라진 뒤에도 동작한다. */
+export async function deletePhotoObjectsByPaths(paths: string[]): Promise<{ ok: boolean; deleted: number }> {
   // 하나가 실패해도 **나머지는 계속 시도한다.** 첫 실패에서 return하면 이미 지운 앞부분은
   // 되돌릴 수 없는데 뒤는 손도 못 댄 어중간한 상태가 남고, 재시도해도 같은 자리에서 또 멈춘다
   // (코드리뷰 2차). 되돌릴 수 없는 일이 벌어진 뒤엔 최소한 정리 범위라도 넓히는 편이 낫다.
   let deleted = 0;
   let ok = true;
-  for (const row of data ?? []) {
-    if (await deleteListingImageObject(row.storage_path)) {
+  for (const path of paths) {
+    if (await deleteListingImageObject(path)) {
       deleted += 1;
       continue;
     }
-    console.error('[sell] 매물 삭제 전 사진 오브젝트 정리 실패 — 매물 삭제를 중단해야 한다:', row.storage_path);
+    console.error('[sell] 매물 사진 오브젝트 정리 실패 — 회수 가능한 고아로 남는다:', path);
     ok = false;
   }
   return { ok, deleted };
+}
+
+/**
+ * 매물의 사진 파일을 정리한다(조회 + 삭제).
+ * **매물 행이 아직 살아 있을 때만** 의미가 있다 — 행이 사라진 뒤엔 조회가 0건이라 아무것도 못 지운다.
+ * 매물 삭제 흐름에서는 이 함수 대신 `listListingPhotoPaths` → (매물 삭제) → `deletePhotoObjectsByPaths`를 쓴다.
+ */
+export async function deleteListingPhotoObjects(listingId: string): Promise<{ ok: boolean; deleted: number }> {
+  const { ok, paths } = await listListingPhotoPaths(listingId);
+  if (!ok) return { ok: false, deleted: 0 };
+  return deletePhotoObjectsByPaths(paths);
 }
 
 export async function syncListingPhotos(
