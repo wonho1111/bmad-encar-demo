@@ -1,34 +1,40 @@
-// 구매자 매물 상세 조회 (FR10) — 서버 컴포넌트.
+// 구매자 매물 상세 (FR10·FR28) — 서버 컴포넌트.
 //
 // 동작:
 //   1) 동적 라우트 params에서 id를 읽는다(Next.js 16: params는 Promise → await).
 //   2) 그 id의 매물을 조회하되 판매중(on_sale)만 — FR11 단일 규칙은 buyerListingsQuery(@/lib/listings)에서 비롯된다.
-//   3) 찾으면 FR5 15필드 + 설명·옵션·상태를 표시(사진 없음). 못 찾으면 "찾을 수 없음" 안내,
-//      조회 자체가 실패하면 별도 한국어 에러 안내(둘을 구분 — 2-3 edit·3-1 패턴).
+//   3) 찾으면 사진 갤러리 + FR5 15필드를 **신뢰정보 → 차량정보 → 옵션 → 판매자정보** 순으로 그린다(Story 9.5 AC1).
+//      못 찾으면 중립 톤 404 안내, 조회 자체가 실패하면 danger 톤 에러 안내(둘을 구분).
+//
+// 섹션 순서(AC1)의 ①신뢰정보·④판매자정보는 **Epic 10이 채울 빈 슬롯**이다. 값이 없는 지금은
+//   **아무것도 렌더하지 않는다** — 빈 제목·빈 테두리·"준비중" 문구를 두면 화면에 의미 없는 잉크가 남는다.
+//   슬롯의 자리는 아래 주석 위치로만 존재한다(목업 detail-1.html은 옛 순서라 이 주석이 정답이다).
 //
 // 열람: FR58(8.5)부터 /listings는 비로그인(anon)도 열람 가능 — on_sale은 RLS상 누구에게나 공개.
-//   로그인 게이트는 "문의하기" 같은 행동에만 적용된다(아래 InquiryButton/로그인 유도 링크 분기 참조).
-//
-// FR11 비노출 규칙(판매완료는 구매자에게 안 보임)과 이중 방어 근거는 @/lib/listings 한 곳에 모았다(단일 출처).
+//   로그인 게이트는 "문의하기" 같은 행동에만 적용된다(아래 InquiryCta 3분기 참조).
 //
 // CM3(즉시 비노출): cookies() 기반 인증으로 매 요청 DB를 다시 읽는 동적 렌더다.
-//   매물이 sold로 바뀌면 재조회 시 즉시 "찾을 수 없음"이 된다. 정적 캐시 잔존 방지로 force-dynamic 명시.
+//   매물이 sold로 바뀌면 재조회 시 즉시 404 화면이 된다. 정적 캐시 잔존 방지로 force-dynamic 명시.
 import Link from 'next/link';
+import type { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
-import { buyerListingsQuery } from '@/lib/listings';
+import { buyerListingsQuery, fetchListingGalleryUrls } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
-import ListingDetailFields from '@/components/listings/ListingDetailFields';
+import ListingGallery from '@/components/listings/ListingGallery';
+import EmptyState from '@/components/ui/EmptyState';
+import ErrorState from '@/components/ui/ErrorState';
 import { buttonClasses } from '@/components/ui/Button';
 import InquiryButton from './InquiryButton';
+import { VehicleInfoSection, OptionsSection } from './ListingDetailSections';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
 export const dynamic = 'force-dynamic';
 
-// 상세 화면에 표시할 FR5 15필드 + 상태(라벨용) + seller_id(문의 버튼 노출 판단용). 사진 없음.
+// 상세 화면에 표시할 FR5 15필드 + 상태(라벨용) + seller_id(문의 CTA 분기용).
 type ListingDetail = {
   id: string;
-  seller_id: string; // 이 매물의 판매자(매물주). 본인이면 "문의하기"를 숨긴다(자기 자신과 채팅 불가).
+  seller_id: string; // 이 매물의 판매자(매물주). 본인이면 "문의하기" 대신 "내 매물 관리"를 보여준다.
   manufacturer: string;
   model: string;
   body_type: string;
@@ -42,11 +48,46 @@ type ListingDetail = {
   seats: number;
   region: string;
   accident_free: boolean;
-  seller_name: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007). 상세에 표시.
+  seller_name: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007). FR5 15필드 밖.
   options: string[] | null; // text[]; 빈 배열·null 가능
   description: string | null; // nullable
   status: string;
 };
+
+/**
+ * 문의 CTA 3분기 (AC7) — **문의 개시 로직은 Epic 5의 InquiryButton을 그대로 재사용**하고,
+ * 여기서 정하는 건 "누구에게 무엇을 보여줄지"뿐이다.
+ *
+ * 데스크톱 sticky 요약 컬럼과 모바일 하단 고정 바가 **같은 분기**를 써야 하므로 한 자리에 모았다
+ * (두 군데에 복붙하면 한쪽만 고쳐져 갈린다).
+ */
+function InquiryCta({ listing, user }: { listing: ListingDetail; user: User | null }) {
+  // ① 비로그인 — 버튼을 숨기지 않는다. 어포던스는 보이고 게이트는 클릭에만 걸린다(FR58, conventions §8).
+  if (!user) {
+    return (
+      <Link
+        href={`/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`}
+        className={buttonClasses({ className: 'w-full' })}
+      >
+        로그인하고 문의하기
+      </Link>
+    );
+  }
+
+  // ② 본인 매물 — 자기 자신에게는 문의할 수 없다(DB의 CHECK(buyer_id<>seller_id)와 정합).
+  //    ✎ 9.5에서 바뀐 지점: 전엔 버튼을 **아예 숨겼다**. 판매자가 자기 매물 상세를 열면 아무 행동도
+  //      제안받지 못해 막다른 길이었다 — 대신 판매자 관리 화면으로 보낸다(EXPERIENCE.md 상세 상태 표).
+  if (user.id === listing.seller_id) {
+    return (
+      <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-full' })}>
+        내 매물 관리
+      </Link>
+    );
+  }
+
+  // ③ 로그인 + 타인 매물 — 기존 문의 개시 흐름 그대로(방이 있으면 재사용, 없으면 생성).
+  return <InquiryButton listingId={listing.id} />;
+}
 
 export default async function ListingDetailPage({
   params,
@@ -82,7 +123,7 @@ export default async function ListingDetailPage({
     .maybeSingle<ListingDetail>();
 
   if (error) {
-    // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC4).
+    // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분.
     console.error('[listings/detail] 매물 상세 조회 실패:', error);
   }
 
@@ -90,94 +131,124 @@ export default async function ListingDetailPage({
     <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath={`/listings/${id}`} />
   );
 
-  // 조회 실패(네트워크·RLS·DB) — "못 찾음"과 구분해 빨강 에러 안내(AC4).
+  const backLink = (
+    <Link href="/search" className={buttonClasses({ variant: 'secondary' })}>
+      매물 목록으로
+    </Link>
+  );
+
+  // 조회 실패(네트워크·RLS·DB) — "못 찾음"과 **구분**해 danger 톤(AC6).
+  //   이건 우리 쪽 고장이고, 사용자가 다시 시도하면 될 수도 있는 상태다.
   if (error) {
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">매물 상세</h1>
-          <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-            매물 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
-          </p>
-          <Link
-            href="/search"
-            className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-          >
-            매물 탐색으로
-          </Link>
+        <main className="mx-auto flex max-w-2xl flex-col items-center gap-4 p-6">
+          <ErrorState
+            tone="danger"
+            message="매물 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+          />
+          {backLink}
         </main>
       </>
     );
   }
 
-  // 못 찾음(존재하지 않는 id·sold·접근 권한 없음) → 구매자에게 비노출(FR11, AC2).
+  // 못 찾음(존재하지 않는 id·삭제됨·sold) → 구매자에게 비노출(FR11).
+  //   ⚠️ **중립 톤이다 — danger(빨강)가 아니다**(UX-DR20). 판매완료는 오류가 아니라 정상적인 결과다.
+  //   sold 필터를 여기서 손으로 다시 짜지 않는다: buyerListingsQuery가 FR11 단일 출처이고,
+  //   sold는 `!listing`으로 합류해 자동으로 이 화면이 된다.
+  //   이 리포는 notFound()/not-found.tsx를 한 번도 쓰지 않는다 — "조건부 렌더 + 커스텀 안내 UI"가
+  //   일관된 패턴이라 관례를 바꾸지 않고 프리미티브만 교체했다.
   if (!listing) {
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">매물 상세</h1>
-          <p role="alert" className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-            매물을 찾을 수 없습니다. 판매가 완료되었거나 삭제된 매물일 수 있습니다.
-          </p>
-          <Link
-            href="/search"
-            className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-          >
-            매물 탐색으로
-          </Link>
+        <main className="mx-auto flex max-w-2xl flex-col items-center gap-2 p-6">
+          <EmptyState
+            title="매물을 찾을 수 없어요."
+            description="삭제됐거나 판매완료된 매물일 수 있어요."
+            action={backLink}
+          />
         </main>
       </>
     );
   }
 
-  // 부제목(연식·가격)에 쓸 가격 문자열만 여기서 만든다. 나머지 필드 표시는 ListingDetailFields가 담당.
+  // 사진 갤러리 — 매물이 확인된 **뒤에** 조회한다. 그래야 sold·미존재 매물의 사진을 애초에 안 읽는다
+  //   (FR11 이미지 축: DB RLS + 호출부 id 좁히기 2층, conventions §6).
+  const galleryUrls = await fetchListingGalleryUrls(supabase, listing.id);
+
+  const title = `[${listing.manufacturer}] ${listing.model}`;
   const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
 
   return (
     <>
       {header}
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
-        {/* 제목 = 제조사·모델·연식 요약 + 상태 배지(on_sale만 보이므로 "판매중") */}
-        <section className="flex flex-col gap-2">
+      {/* pb-28: 모바일 하단 고정 바(아래)가 페이지 끝 콘텐츠를 가리지 않게 비워 두는 자리.
+          데스크톱(lg)엔 고정 바가 없으므로 되돌린다. */}
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6 pb-28 lg:pb-6">
+        {/* 제목 — 2열 어느 쪽에도 속하지 않는 페이지 머리. 폭이 좁아도 …로 자른다(D5). */}
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold">
-              [{listing.manufacturer}] {listing.model}
+            <h1 className="min-w-0 truncate text-section font-bold text-ink-primary sm:text-display">
+              {title}
             </h1>
-            <span className="rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-300">
+            <span className="shrink-0 whitespace-nowrap rounded-badge border border-brand-petrol px-2 py-0.5 text-caption font-semibold text-brand-petrol">
               판매중
             </span>
           </div>
-          <p className="text-sm text-zinc-500">
-            {listing.year}년 · {priceText}
+          <p className="truncate whitespace-nowrap text-meta font-medium text-ink-muted">
+            {listing.year}년 · {listing.mileage.toLocaleString('ko-KR')}
+            {UNITS.mileage} · {listing.region}
           </p>
-          {/* 문의하기 (FR19) — 이 매물의 판매자와 채팅방을 연다(없으면 생성, 있으면 재사용).
-              FR58(8.5): 게이트는 "행동"에만 — 비로그인에게도 어포던스는 보이되, 클릭하면
-              로그인으로 보내고 원래 이 상세로 복귀한다(redirectedFrom).
-              본인이 이 매물의 판매자면 숨긴다(자기 자신과 채팅 불가 — DB의 CHECK(buyer<>seller)로도 막힘, 앱측 1차 비노출). */}
-          {!user ? (
-            <Link
-              href={`/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`}
-              className={buttonClasses({ className: 'w-fit' })}
-            >
-              로그인하고 문의하기
-            </Link>
-          ) : (
-            user.id !== listing.seller_id && <InquiryButton listingId={listing.id} />
-          )}
-        </section>
+        </div>
 
-        {/* 기본 정보·옵션·설명 = 관리자 상세와 공유하는 표시부(단일 출처). */}
-        <ListingDetailFields listing={listing} />
+        {/* 2열(좌 갤러리·정보 / 우 요약 sticky) → 좁아지면 스택 1열. 폭 축소는 **열 수로만** 흡수한다(D5).
+            minmax(0,1fr): 좌 컬럼이 긴 텍스트에 밀려 넘치지 않게 최소 폭을 0으로 풀어 준다. */}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="flex min-w-0 flex-col gap-6">
+            <ListingGallery urls={galleryUrls} title={title} />
 
-        <Link
-          href="/search"
-          className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
-        >
-          매물 탐색으로
-        </Link>
+            {/* ① 신뢰정보 — Epic 10.2가 채울 빈 슬롯. 값이 없으므로 아무것도 렌더하지 않는다(AC1). */}
+
+            {/* ② 차량정보 */}
+            <VehicleInfoSection listing={listing} />
+
+            {/* ③ 옵션 — 카테고리 분류·희소옵션 강조는 Epic 10.3/10.4의 몫이다. */}
+            <OptionsSection listing={listing} />
+
+            {/* ④ 판매자정보 — Epic 10.6이 채울 빈 슬롯(①과 동일 규칙). */}
+          </div>
+
+          {/* 우 요약 컬럼 — **sticky**라 긴 섹션을 스크롤해도 문의 CTA가 상시 보인다(D9 "구현 필수").
+              top-6: 이 앱의 상단바는 sticky가 아니라 함께 스크롤되므로, 헤더 높이가 아니라 본문
+              여백(p-6)과 같은 값을 띄운다. ≥1024px에서만 — 그 아래는 하단 고정 바가 대신한다. */}
+          <aside className="hidden lg:block">
+            <div className="sticky top-6 flex flex-col gap-3 rounded-card border border-border-hairline bg-surface-raised p-5 shadow-card dark:shadow-none">
+              {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(최대 30/800, DESIGN.md:42). */}
+              <p className="whitespace-nowrap text-[30px] font-extrabold leading-[1.2] text-price-emphasis">
+                {priceText}
+              </p>
+              <InquiryCta listing={listing} user={user} />
+            </div>
+          </aside>
+        </div>
+
+        {backLink}
       </main>
+
+      {/* 모바일·태블릿(<1024px) 하단 고정 바 — 가격 + CTA 상시(AC7).
+          shadow-float = 떠 있는 요소용 겹 그림자(DESIGN.md:115). 가로 한 줄을 유지하고, 공간이
+          부족하면 가격을 …로 자른다(D5 — 세로로 접거나 2줄로 밀지 않는다). */}
+      <div className="fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border-hairline bg-surface-raised px-4 py-3 shadow-float lg:hidden">
+        <p className="truncate whitespace-nowrap text-price font-extrabold text-price-emphasis">
+          {priceText}
+        </p>
+        <div className="shrink-0">
+          <InquiryCta listing={listing} user={user} />
+        </div>
+      </div>
     </>
   );
 }

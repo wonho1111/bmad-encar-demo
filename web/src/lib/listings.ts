@@ -11,6 +11,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { LISTING_STATUS } from './constants';
 import { coverImages, type ListingImageRow } from './images/coverImages';
+import { galleryImages } from './images/galleryImages';
 import { getPublicUrl } from './storage';
 import { LISTING_IMAGES_BUCKET } from './storage/bucket';
 
@@ -115,4 +116,49 @@ export async function attachCoverImages<T extends { id: string }>(
       image_count: cover?.count ?? 0,
     };
   });
+}
+
+/**
+ * 매물 **1건**의 사진 전 장을 화면 순서대로 공개 URL 배열로 돌려준다 (Story 9.5 AC2·AC3).
+ *
+ * `attachCoverImages`와 왜 따로인가: 저건 목록용이라 매물마다 **대표 1장 + 장수**만 준다.
+ * 상세 갤러리는 전 장이 필요하므로 형태 자체가 다르다 — 목록 함수를 억지로 재사용하면
+ * 대표만 나오거나, 목록 전부의 사진을 다 끌어오게 된다.
+ *
+ * ⚠️ **FR11(판매완료 비노출)은 2층으로 지켜진다** — 어느 한 층에 기대지 않는다(`conventions.md` §6 이미지 축):
+ *   ① **DB**: `listing_images` RLS(`listing_images_select_on_sale[_anon]`)가 `listings`에 조인해
+ *      `status='on_sale'`을 건다 — sold 매물의 사진 행은 애초에 안 나온다.
+ *   ② **호출부**: 상세 페이지가 `buyerListingsQuery`로 매물을 먼저 좁힌 뒤, 그 결과가 있을 때만
+ *      이 함수를 부른다(`attachCoverImages`와 같은 방식). 매물이 sold면 여기까지 오지 않는다.
+ *
+ * ⚠️ **정렬은 쿼리와 순수 함수 양쪽에 다 건다**(`sort_order` → `id`). `sort_order`에 tie-break가
+ *    없어서(#47-2) 2차 키가 빠지면 **새로고침마다 사진 순서가 바뀐다**(#59). 계약을 두 층에 박아
+ *    한쪽이 빠져도 화면이 흔들리지 않게 한다(B9).
+ *
+ * ⚠️ **조회 실패는 상세 페이지 전체를 막지 않는다** — 사진 없이 정보만 보이는 편이 빈 화면보다 낫다.
+ *    실패하면 서버 로그에만 남기고 갤러리 자리는 "사진 준비중" 플레이스홀더가 된다.
+ *    ⚠️ 그 대가로 **"조회 실패"와 "정말 사진 0장"이 화면상 구별되지 않는다**(대장 #73의 3중 무음
+ *    폴백 — 상세도 목록과 같은 구조를 그대로 상속한다). 해소는 관측 수단이 필요한 별건이다.
+ *
+ * ⚠️ `select`에 **`credit`을 넣지 않는다** — 저작자 표시는 하지 않기로 결정됐다(대장 #70 ⚪).
+ *    필요한 컬럼만 명시하는 이유이기도 하다(`select *`면 안 쓰는 값이 딸려온다).
+ */
+export async function fetchListingGalleryUrls(
+  supabase: SupabaseClient,
+  listingId: string,
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('listing_images')
+    .select('listing_id, storage_path, sort_order, id')
+    .eq('listing_id', listingId)
+    .order('sort_order', { ascending: true })
+    .order('id', { ascending: true })
+    .returns<ListingImageRow[]>();
+
+  if (error || !data) {
+    console.error('[listings] 상세 갤러리 사진 조회 실패:', error);
+    return [];
+  }
+
+  return galleryImages(data).map((path) => getPublicUrl(LISTING_IMAGES_BUCKET, path));
 }
