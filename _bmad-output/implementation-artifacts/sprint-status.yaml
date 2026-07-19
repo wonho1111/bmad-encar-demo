@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-19 (코드리뷰 9.0+9.4 완료 — 9.0·9.4 done. AC9 브라우저 검증 실측 완료(#74 닫음), 그 과정에서 삭제 회귀 발견·수정·재검증(#76))
+last_updated: 2026-07-20 (Story 9.5 컨텍스트 생성 — ready-for-dev. 대장 이월 #59(정렬)·#70(credit 저작자 표시)을 9.5 인수조건으로 심음)
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -124,7 +124,7 @@ development_status:
   9-2-서명-url-헬퍼-아티팩트-범용: done
   9-3-사진-업로더-등록-수정: done
   9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: done
-  9-5-상세-페이지-골격-사진-갤러리: backlog
+  9-5-상세-페이지-골격-사진-갤러리: ready-for-dev
   9-6-ai-응답-카드-사진: backlog
   9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: backlog
   epic-9-retrospective: optional
