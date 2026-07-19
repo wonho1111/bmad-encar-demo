@@ -22,7 +22,7 @@ from app.db.sql_guard import (
     SqlGuardError,
     validate_select_sql,
 )
-from app.graph.listing_cards import SELECT_COLUMNS, rows_to_cards
+from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,8 @@ def sql_rag_node(query: str) -> dict:
         try:
             safe_sql = validate_select_sql(sql)  # 가드 통과 못하면 SqlGuardError
             rows = run_select(safe_sql)           # ai_readonly 롤로 실행
-            listings = rows_to_cards(rows)
+            # 사진 부착은 경로 A·B 공용 헬퍼가 한다(Story 9.6) — 여기에 쿼리를 복사하지 않는다.
+            listings = attach_cover_images(rows_to_cards(rows))
             answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
             return {"answer": answer, "listings": listings}
         except SqlGuardError as exc:
