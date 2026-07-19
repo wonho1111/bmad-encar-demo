@@ -193,3 +193,49 @@ def test_negative_offset_rejected():
 # ── 빈 입력 ────────────────────────────────────────────────────────
 def test_empty_rejected():
     assert _code("   ") == "empty"
+
+
+# ── listing_images 차단 (Story 9.6 AC3 — docs/tech-debt.md #48 닫음) ──────────────
+# 왜 이 블록이 있나: `ALLOWED_TABLES = {"listings"}`가 사실상 listing_images를 막고 있었지만
+#   **그걸 지키는 검사가 0개**였다. `0012_listing_images.sql:252`에 "sql_guard는 listings 단일
+#   테이블을 유지하고 JOIN하지 않는다(9.6의 일)"는 주석 네 줄이 전부였다 — **주석은 계약이
+#   아니다**(CLAUDE.md B9). 누군가 화이트리스트에 테이블을 하나 더 넣는 순간 조용히 뚫린다.
+#
+# 왜 중요한가: `ai_readonly`의 listing_images 정책은 `using(true)`라 **sold 매물의 사진 메타까지
+#   전부 열려 있다**(0012:153, 의도된 설계 CR2). LLM이 만든 SQL이 그 테이블에 닿을 수 있게 되면
+#   FR11(판매완료 비노출)이 그 경로에서 무너진다. 사진은 SELECT를 늘려서가 아니라 **손으로 쓴
+#   고정 쿼리**(`listing_cards.attach_cover_images`)로만 붙인다 — 그쪽은 가드 대상이 아니고,
+#   자기 WHERE절로 on_sale을 직접 건다(tests/test_listing_cards.py).
+
+
+def test_join_listing_images_rejected():
+    """LLM이 listing_images를 JOIN하면 거부된다 — 사진 경로로 가는 우회로를 막는다."""
+    sql = (
+        "SELECT l.id, l.manufacturer FROM listings l "
+        "JOIN listing_images i ON i.listing_id = l.id "
+        "WHERE l.status = 'on_sale'"
+    )
+    assert _code(sql) == "forbidden_table"
+
+
+def test_select_from_listing_images_rejected():
+    """JOIN 없이 listing_images를 직접 조회해도 거부된다."""
+    sql = "SELECT storage_path FROM listing_images WHERE status = 'on_sale'"
+    assert _code(sql) in ("forbidden_table", "forbidden_column")
+
+
+def test_storage_path_column_rejected():
+    """listings에 있는 척 storage_path를 요구해도 컬럼 화이트리스트가 거부한다."""
+    sql = "SELECT id, storage_path FROM listings WHERE status = 'on_sale'"
+    assert _code(sql) == "forbidden_column"
+
+
+def test_allowed_tables_is_exactly_listings():
+    """화이트리스트 자체를 못박는다 — 테이블이 늘면 여기가 red가 되어 리뷰를 강제한다.
+
+    위 세 테스트는 "지금 listing_images가 막힌다"를 보이지만, 누군가 ALLOWED_TABLES에
+    테이블을 추가하면 그 테이블은 아무 검사 없이 열린다. 이 단언이 그 변경을 눈에 띄게 만든다.
+    """
+    from app.db.sql_guard import ALLOWED_TABLES
+
+    assert ALLOWED_TABLES == {"listings"}
