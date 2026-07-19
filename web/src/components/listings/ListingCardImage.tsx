@@ -22,6 +22,25 @@ export default function ListingCardImage({
 }) {
   const [failed, setFailed] = useState(false);
 
+  // ⚠️ `onError`만으로는 부족하다 — 실브라우저 실측(2026-07-19 코드리뷰)에서 확인했다.
+  // 서버가 그린 <img>는 HTML이 도착하는 즉시 로드를 시작하는데, **하이드레이션이 끝나기 전에**
+  // 에러가 나면 React가 그 이벤트를 재생하지 않아 onError가 영영 발화하지 않는다. 그러면 AC3이
+  // 금지한 "깨진 이미지"가 그대로 남는다. 그리고 파일 없음(404)은 정확히 그렇게 빨리 실패한다 —
+  // 즉 가장 흔한 실패가 유일한 방어를 그냥 지나쳤다.
+  // 재현: 이미지 호스트를 블랙홀로 보내고 /search 렌더 → 플레이스홀더 대신 alt 텍스트+깨진 아이콘.
+  // 그래서 ref 콜백으로 **이미 끝난 로드의 결과를 직접 본다**: complete인데 naturalWidth가 0이면
+  // 그 이미지는 실패한 것이다(이벤트를 놓쳤어도 이 상태는 남는다).
+  const detectAlreadyFailed = (img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth === 0) setFailed(true);
+  };
+  // url이 바뀌면(목록 재필터링 등으로 컴포넌트 인스턴스가 재사용될 때) failed를 리셋한다.
+  // useEffect 대신 "렌더 중 상태 조정" 패턴(React 19 권장) — 커밋 전에 바로잡아 추가 페인트가 없다.
+  const [prevUrl, setPrevUrl] = useState(url);
+  if (url !== prevUrl) {
+    setPrevUrl(url);
+    setFailed(false);
+  }
+
   // 계약-외 값 방어(conventions.md §4): 빈 문자열도 "사진 없음"으로 본다 — `!url`이 이미 ''를 거른다.
   const showPhoto = Boolean(url) && !failed;
   // 음수 count는 0으로 깎는다(§4). 배지는 1장 이상일 때만 뜬다.
@@ -30,37 +49,24 @@ export default function ListingCardImage({
   return (
     <div className="relative aspect-[5/3] w-full overflow-hidden rounded-t-card bg-placeholder-bg">
       {showPhoto ? (
-        <>
-          {/*
-            평범한 <img>를 쓴다(next/image 아님) — 이유:
-              · 저장본이 이미 작다(9.3이 업로드 전 긴 변 ≤1600px·WebP·q0.82로 줄인다, 실측 196~205KB)
-              · next.config.ts에 images.remotePatterns가 없어 next/image는 설정 추가가 선행이다
-              · 공개 URL이 고정이라 브라우저·CDN 캐시가 그대로 먹는다
-            크롭은 저장본을 다시 만들지 않고 클라 렌더 크롭으로만 한다(object-cover 중앙, I14).
-            aspect-[5/3]가 자리를 미리 잡아 지연 로드에도 레이아웃이 밀리지 않는다(NFR7).
-          */}
-          {/* eslint-disable-next-line @next/next/no-img-element -- 위 주석의 결정(저장본이 이미 최적화됨) */}
-          <img
-            src={url as string}
-            alt={alt}
-            loading="lazy"
-            decoding="async"
-            onError={() => setFailed(true)}
-            className="h-full w-full object-cover"
-          />
-          {photoCount >= 1 && (
-            /*
-              "N장" 배지 — 사진 위 우하단.
-              backdrop-filter가 없어도 읽혀야 한다(구형 WebView에서 no-op, UX-DR6). 그래서
-              **반투명 다크 pill이 기본**이고 blur는 지원될 때만 얹는다.
-              대비 실측(2026-07-19): 최악 조건(완전 흰 사진 위, blur 미지원)에서도
-              흰 글자 on black/80 합성 = #333333 → **12.63:1** (AA 4.5:1 여유 통과).
-            */
-            <span className="pointer-events-none absolute bottom-2 right-2 rounded-badge bg-black/80 px-2 py-0.5 text-xs font-semibold text-white supports-[backdrop-filter]:backdrop-blur-sm">
-              {photoCount}장
-            </span>
-          )}
-        </>
+        /*
+          평범한 <img>를 쓴다(next/image 아님) — 이유:
+            · 저장본이 이미 작다(9.3이 업로드 전 긴 변 ≤1600px·WebP·q0.82로 줄인다, 실측 196~205KB)
+            · next.config.ts에 images.remotePatterns가 없어 next/image는 설정 추가가 선행이다
+            · 공개 URL이 고정이라 브라우저·CDN 캐시가 그대로 먹는다
+          크롭은 저장본을 다시 만들지 않고 클라 렌더 크롭으로만 한다(object-cover 중앙, I14).
+          aspect-[5/3]가 자리를 미리 잡아 지연 로드에도 레이아웃이 밀리지 않는다(NFR7).
+        */
+        /* eslint-disable-next-line @next/next/no-img-element -- 위 주석의 결정(저장본이 이미 최적화됨) */
+        <img
+          ref={detectAlreadyFailed}
+          src={url as string}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+          className="h-full w-full object-cover"
+        />
       ) : (
         /*
           "사진 준비중" 플레이스홀더 — 빈 영역·깨진 이미지 아이콘 대신 **의도적으로 보이게** 한다(UX-DR7).
@@ -83,6 +89,22 @@ export default function ListingCardImage({
           </svg>
           <span className="text-meta font-medium">사진 준비중</span>
         </div>
+      )}
+      {photoCount >= 1 && (
+        /*
+          "N장" 배지 — 사진/플레이스홀더 위 우하단. showPhoto 분기 밖에 둔다 — 로드 실패로 사진이
+          사라져도(onError) 장수 정보까지 함께 사라지면 안 되기 때문(리뷰에서 지적된 버그).
+          backdrop-filter가 없어도 읽혀야 한다(구형 WebView에서 no-op, UX-DR6). 그래서
+          **불투명 다크 pill이 기본**이고 blur는 지원될 때만 얹는다(스토리 9.4 AC2).
+          ✎ 2026-07-19 코드리뷰: 처음엔 `bg-black/80`(반투명)으로 나갔다. 대비는 통과했지만
+            (흰 사진 위 합성 #333 → 12.63:1) AC2가 요구한 것은 **불투명**이고, 그런데도 Task
+            체크박스는 AC 문구 그대로 닫혀 있었다 — 구현과 문서가 갈린 채 초록이던 자리다.
+            불투명으로 맞춘다: 배경이 무엇이든 흰 글자 on #000 = **21:1**로 고정되고,
+            "사진이 밝으면 어떻게 되나"라는 질문 자체가 사라진다.
+        */
+        <span className="pointer-events-none absolute bottom-2 right-2 rounded-badge bg-black px-2 py-0.5 text-xs font-semibold text-white supports-[backdrop-filter]:backdrop-blur-sm">
+          {photoCount}장
+        </span>
       )}
     </div>
   );

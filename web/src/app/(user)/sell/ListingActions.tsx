@@ -98,16 +98,12 @@ export default function ListingActions({
     setError(null);
     setDeleting(true);
     try {
-      // ⚠️ 매물보다 **사진 파일을 먼저** 지운다(tech-debt #60, docs/conventions.md §10.1).
-      //    매물을 먼저 지우면 cascade로 사진 행이 사라지고, 행이 사라진 파일은 소유자에게도
-      //    안 보여 영영 못 지우는 고아가 된다. 실패하면 여기서 멈춘다 — 되돌릴 수 없는 쓰레기를
-      //    만드느니 "지금은 못 지웠다"고 말하는 편이 낫다.
-      const cleanup = await deleteListingPhotoObjects(listingId);
-      if (!cleanup.ok) {
-        setError('사진 파일을 정리하지 못해 매물을 삭제하지 않았습니다. 잠시 후 다시 시도해주세요.');
-        return;
-      }
-
+      // ⚠️ **매물 행을 먼저** 지우고, 사진 정리는 그 다음이다(docs/conventions.md §10.1).
+      //    이유: 0014가 storage.objects SELECT 정책을 경로 기반으로 바꿔, 행이 없어도 소유자·관리자가
+      //    파일을 보고 지울 수 있다 — 남은 파일은 **회수 가능한** 고아다. 반대로 사진을 먼저 지우면
+      //    매물 삭제가 실패했을 때 사진만 **되돌릴 수 없이** 사라지고 매물은 "사진 준비중"으로 박제된다.
+      //    회수 가능한 쓰레기가 복구 불가능한 손실보다 낫다. (코드리뷰 2026-07-19 — 옛 순서는 비공개
+      //    버킷 시절의 규칙이었고 9.0이 그 전제를 없앴는데 코드만 남아 있었다.)
       const supabase = createClient();
       // .select()로 삭제된 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
       const { data: deleted, error: deleteError } = await supabase
@@ -125,6 +121,13 @@ export default function ListingActions({
         // 본인 매물이 아니거나 이미 삭제됨(RLS 0행).
         setError('본인 매물만 삭제할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)');
         return;
+      }
+
+      // 매물이 사라진 뒤 사진 파일을 정리한다. 실패해도 삭제를 되돌리지 않는다 — 위 주석대로
+      // 남은 파일은 소유자·관리자가 나중에 지울 수 있고, 매물은 이미 없어 화면에 영향이 없다.
+      const cleanup = await deleteListingPhotoObjects(listingId);
+      if (!cleanup.ok) {
+        console.error('[sell] 매물 삭제 후 사진 파일 정리 실패:', listingId);
       }
 
       // 성공 → 목록 갱신으로 즉시 제거 반영.

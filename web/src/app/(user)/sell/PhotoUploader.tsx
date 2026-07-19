@@ -32,6 +32,11 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   // 파일 선택 자체가 거부된 경우(10장 초과)는 특정 항목에 붙일 수 없어 목록 위에 한 줄로 알린다.
   const [pickError, setPickError] = useState<string | null>(null);
+  // 기존 사진은 9.0부터 getPublicUrl을 쓰는데, 이 함수는 오브젝트 존재를 확인하지 않고 항상
+  // 문자열을 돌려준다(서명 URL 시절엔 발급 실패가 null이라 자동으로 플레이스홀더가 됐다).
+  // 그래서 깨진 이미지 아이콘을 막는 장치는 이제 onError뿐이다 — ListingCardImage.tsx와 같은 이유.
+  // p.key로 추적해야 순서를 바꿔도(reorder) 실패 표시가 그 사진을 계속 따라간다.
+  const [failedPreviewKeys, setFailedPreviewKeys] = useState<ReadonlySet<string>>(new Set());
 
   // objectURL은 명시적으로 놓아주지 않으면 탭이 닫힐 때까지 메모리에 남는다.
   // 언마운트 시 이 컴포넌트가 만든 것(file이 있는 항목)만 회수한다 — 공개 URL은 revoke 대상이 아니다.
@@ -198,9 +203,16 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
               className="flex flex-col gap-1"
             >
               <div className="relative aspect-square overflow-hidden rounded border border-zinc-200 dark:border-zinc-800">
-                {p.previewUrl ? (
+                {p.previewUrl && !failedPreviewKeys.has(p.key) ? (
                   // eslint-disable-next-line @next/next/no-img-element -- objectURL은 next/image의 최적화 대상이 아니고, 업로더 미리보기는 최적화할 이유도 없다.
-                  <img src={p.previewUrl} alt={`${i + 1}번째 사진`} className="h-full w-full object-cover" />
+                  <img
+                    src={p.previewUrl}
+                    alt={`${i + 1}번째 사진`}
+                    className="h-full w-full object-cover"
+                    onError={() =>
+                      setFailedPreviewKeys((prev) => new Set(prev).add(p.key))
+                    }
+                  />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-zinc-100 text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
                     미리보기 없음

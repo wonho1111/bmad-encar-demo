@@ -10,7 +10,7 @@
 //  · **폴백 경로는 이제 본다**(#57): toBlob을 주입받는 encodeWithFallback을 아래에서 직접 태운다.
 //    단 "구형 Safari가 정말 이렇게 동작하는가"는 여기서 증명되지 않는다 — 이 검사가 고정하는 것은
 //    "요청한 타입이 안 나오면 JPEG로 간다"는 우리 쪽 규칙이다.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   computeTargetSize,
   encodeWithFallback,
@@ -92,5 +92,23 @@ describe('encodeWithFallback', () => {
   it('폴백으로 나온 JPEG는 확장자도 jpg다 (확장자↔내용 불일치 방지)', async () => {
     const blob = await encodeWithFallback(fakeToBlob([FALLBACK_MIME], 'png'));
     expect(extensionFor(blob)).toBe('jpg');
+  });
+
+  // toBlob이 콜백을 영영 안 부르는 경우(대용량 canvas OOM·오염된 canvas 등) 대비 — 진짜로 30초를
+  // 기다리지 않고 가짜 타이머로 시간을 앞당긴다.
+  it('toBlob이 콜백을 부르지 않으면 30초 뒤 타임아웃 오류로 거절한다(무한 대기 방지)', async () => {
+    vi.useFakeTimers();
+    try {
+      const neverCallsBack: ToBlob = () => {
+        // 의도적으로 콜백을 호출하지 않는다 — 실제 브라우저에서 toBlob이 응답하지 않는 상황을 흉내낸다.
+      };
+      const pending = expect(encodeWithFallback(neverCallsBack)).rejects.toThrow(
+        '이미지 변환이 너무 오래 걸려요. 다시 시도해주세요.',
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

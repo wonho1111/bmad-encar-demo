@@ -43,12 +43,14 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
           {/* ② 신뢰속성 행 슬롯 — 값(accident_status·is_single_owner·is_non_smoker)은 Epic 10이 채운다.
               지금은 항상 비어 있으므로 **아무것도 렌더하지 않는다**(빈 높이·빈 테두리 금지, AC1). */}
 
-          {/* ③ 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5). */}
-          <h3 className="truncate text-card-title font-semibold text-ink-primary">{title}</h3>
+          {/* ③ 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5).
+              pr-14(56px)는 우상단 찜 버튼(44px+오프셋 8px)과 겹치지 않게 이 줄에만 둔 여백이다. */}
+          <h3 className="truncate pr-14 text-card-title font-semibold text-ink-primary">{title}</h3>
 
           {/* ④ meta — **한 줄 가로 유지**. 공간이 부족하면 truncate만(D5, 세로로 접지 않는다).
-              ⚠️ 연료는 ListingCard 계약(conventions §4)에 없는 필드라 뺐다 — 계약 변경은 이 스토리 밖이다. */}
-          <p className="truncate whitespace-nowrap text-meta font-medium text-ink-muted">
+              ⚠️ 연료는 ListingCard 계약(conventions §4)에 없는 필드라 뺐다 — 계약 변경은 이 스토리 밖이다.
+              pr-14: 찜 버튼이 이 줄까지 내려오므로 차량명과 같은 여백을 둔다. */}
+          <p className="truncate whitespace-nowrap pr-14 text-meta font-medium text-ink-muted">
             {listing.mileage.toLocaleString('ko-KR')}
             {UNITS.mileage} · {listing.region}
             {listing.seller_name ? ` · ${listing.seller_name}` : ''}

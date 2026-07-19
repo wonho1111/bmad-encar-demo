@@ -23,13 +23,28 @@
 
 -- ── 1) 버킷 공개 전환 + 상한 재확정 ───────────────────────────────────
 -- 0012는 insert ... on conflict (id) do nothing이라, 버킷이 이미 존재하면 public·5MB·MIME이
--- 조용히 무효였다(#44). UPDATE는 그 구멍이 없다 — 값이 무엇이었든 여기서 확정된다.
-update storage.buckets
+-- 조용히 무효였다(#44).
+--
+-- ✎ 2026-07-19 코드리뷰 정정: 처음엔 위를 bare UPDATE로 고쳤는데, 그건 구멍을 옮긴 것뿐이었다 —
+--   UPDATE는 대상 행이 **없으면** 0행에 적중하고도 성공한다. 즉 "이미 있으면 무효"가
+--   "없으면 무효"로 바뀌었을 뿐인데 #44는 해소로 선언됐다. fresh DB·복구 시나리오(0012가 만들지
+--   못했거나 대시보드에서 버킷이 지워진 경우)에서 마이그는 초록인데 상한이 전부 미설정으로 남는다.
+--   insert ... on conflict do update는 두 구멍을 다 막는다: 없으면 만들고, 있으면 값을 덮어쓴다.
+--   §9.3 (a) 자율 처리 — 멱등 가드 추가만이고, 원격 실측 결과 델타 0이다
+--   (2026-07-19 조회: public=true · file_size_limit=5242880 · {image/jpeg,image/png,image/webp}).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'listing-images',
+  'listing-images',
+  true,
+  5242880,                                                           -- 5MB (docs/conventions.md §10)
+  array['image/jpeg', 'image/png', 'image/webp']                     -- 저장형 XSS 방지
+)
+on conflict (id) do update
 set
-  public             = true,
-  file_size_limit    = 5242880,                                      -- 5MB (docs/conventions.md §10)
-  allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp'] -- 저장형 XSS 방지
-where id = 'listing-images';
+  public             = excluded.public,
+  file_size_limit    = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- ── 2) 읽기 정책 교체: listing_images 조인 → 경로 기반 ────────────────
 -- 기존(0012 listing_images_objects_read)은 "그 파일을 가리키는 listing_images 행이 살아 있고

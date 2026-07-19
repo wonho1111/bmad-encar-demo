@@ -41,9 +41,34 @@ export type ToBlob = (
  *       AC4의 저장본 규격 보장이 깨진다
  *   요청한 타입이 그대로 나왔는지를 확인하면 null을 주는 브라우저와 PNG를 주는 브라우저를 **둘 다** 잡는다.
  */
+/** `toBlob`이 콜백을 영영 안 부르는 경우(저사양 모바일에서 대용량 canvas OOM·오염된 canvas 등)에
+ *  대비한 상한. 없으면 Promise가 영원히 pending이라 아무것도 throw하지 않고, 순차 업로드 루프
+ *  전체가 멈추는데도 기존 try/catch가 반응하지 않는다(코드리뷰 2026-07-19). */
+const ENCODE_TIMEOUT_MS = 30_000;
+
+/** 인코딩 Promise를 타임아웃과 경주시킨다. 성공하면 타이머를 반드시 지운다(안 지우면 다음 페이지
+ *  이동 후에도 타이머가 남는다 — dangling timer). */
+function withTimeout(promise: Promise<Blob | null>): Promise<Blob | null> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('이미지 변환이 너무 오래 걸려요. 다시 시도해주세요.'));
+    }, ENCODE_TIMEOUT_MS);
+    promise.then(
+      (blob) => {
+        clearTimeout(timer);
+        resolve(blob);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export async function encodeWithFallback(toBlob: ToBlob): Promise<Blob> {
   const encode = (mime: string, quality: number) =>
-    new Promise<Blob | null>((resolve) => toBlob(resolve, mime, quality));
+    withTimeout(new Promise<Blob | null>((resolve) => toBlob(resolve, mime, quality)));
 
   const webp = await encode(IMAGE_MIME, IMAGE_QUALITY);
   if (webp && webp.type === IMAGE_MIME) return webp;

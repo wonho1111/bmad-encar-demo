@@ -18,7 +18,9 @@
   python3 -m venv .venv && .venv/bin/pip install requests Pillow     # 루트 .venv/ 는 .gitignore 처리됨
   .venv/bin/python scripts/seed_listing_photos.py --limit 5 [--dry-run]
 
-재실행하면 **사진이 이미 있는 매물은 건너뛰고 다음 매물로** 넘어간다(중복 삽입 없음, 실측 확인).
+재실행하면 **사진이 이미 있는 매물은 건너뛰고 다음 매물로** 넘어간다 — listing_images 사전조회가
+페이지네이션으로 전체 행을 순회하므로(fetch_already_seeded_ids), 테이블 크기가 PostgREST의
+페이지 상한을 넘어도 already 판단에 구멍이 생기지 않는다(불변식; 재실행 자체를 실측하지는 않음).
 
 환경: web/.env.local(NEXT_PUBLIC_SUPABASE_URL·ANON_KEY) · supabase/.env.seed(SEED_PASSWORD)에서 읽는다.
 """
@@ -62,8 +64,37 @@ SEARCH_TERMS = {
     ("르노코리아", "SM6"): "Renault Samsung SM6",
 }
 
-# 허용 라이선스(접두어 매칭). CC BY-SA 포함이라 크레딧 저장이 필수(㉠).
-ALLOWED_LICENSE_PREFIXES = ("cc by", "cc0", "public domain", "cc-by", "pd")
+def is_license_allowed(license_name: str) -> bool:
+    """CC-BY/CC-BY-SA/CC0/PD만 통과시킨다. CC BY-SA 포함이라 크레딧 저장이 필수(㉠).
+
+    NC(비영리)·ND(변경금지) 성분은 반려한다 — 특히 ND가 중요한 이유: 이 스크립트가
+    to_storage_webp()로 리사이즈·재인코딩을 하는데, 그 자체가 2차적 저작물이라 ND와
+    정면으로 충돌한다(코드리뷰 지적).
+
+    느슨한 문자열 접두어 매칭(예: "cc by".startswith 검사)은 "CC BY-NC-SA 4.0"도
+    통과시켜 버린다 — 그래서 라이선스 성분을 공백/하이픈 기준 토큰으로 쪼개 "nc"/"nd"
+    토큰이 있는지로 판정한다(부분 문자열이 아니라 토큰 경계 매칭).
+    """
+    name = (license_name or "").strip().lower()
+    if not name:
+        return False
+    if name.startswith("cc0") or name.startswith("public domain"):
+        return True
+    if re.match(r"^pd\b", name):
+        return True
+    if not re.match(r"^cc[\s-]*by\b", name):
+        return False
+    tokens = re.split(r"[\s-]+", name)
+    return "nc" not in tokens and "nd" not in tokens
+
+
+# 위 함수의 애매한 사례를 import 시점에 확인한다(네트워크·DB 접근 없음, 순수 함수 자체 점검).
+assert is_license_allowed("CC BY-SA 4.0") is True
+assert is_license_allowed("CC0") is True
+assert is_license_allowed("CC BY 2.0") is True
+assert is_license_allowed("CC BY-NC-SA 4.0") is False
+assert is_license_allowed("CC BY-ND 4.0") is False
+assert is_license_allowed("CC BY-NC-ND 3.0") is False
 
 
 def read_env(path: Path, key: str) -> str | None:
@@ -103,7 +134,7 @@ def commons_search(term: str, limit: int) -> list[dict]:
 
         if not mime.startswith("image/") or mime == "image/svg+xml":
             continue
-        if not license_name.lower().startswith(ALLOWED_LICENSE_PREFIXES):
+        if not is_license_allowed(license_name):
             continue
 
         out.append({
@@ -136,6 +167,35 @@ def to_storage_webp(raw: bytes) -> bytes:
     return buf.getvalue()
 
 
+def fetch_already_seeded_ids(supa_url: str, rest: dict) -> set[str]:
+    """listing_images에 이미 행이 있는 listing_id 전체를 모은다(재실행 시 건너뛸 대상).
+
+    PostgREST는 한 번에 돌려주는 행 수에 상한이 있다(보통 1000행) — 넘으면 나머지를 잘라
+    HTTP 206(Partial Content)으로 응답하는데, raise_for_status()는 206도 성공으로 본다.
+    그걸 그대로 쓰면 already가 상한을 넘는 순간부터 조용히 일부만 채워지고, 그 매물들은
+    재실행 때마다 다시 시드돼 sort_order 중복과 is_cover 중복(부분 유니크 인덱스 위반)을
+    만든다. 그래서 Range 헤더로 페이지를 명시적으로 넘겨가며, 요청한 페이지 크기보다 적게
+    돌아올 때까지(=마지막 페이지) 반복한다.
+    """
+    page_size = 1000
+    ids: set[str] = set()
+    start = 0
+    while True:
+        r = requests.get(
+            f"{supa_url}/rest/v1/listing_images",
+            headers={**rest, "Range-Unit": "items", "Range": f"{start}-{start + page_size - 1}"},
+            params={"select": "listing_id"}, timeout=30,
+        )
+        if r.status_code not in (200, 206):
+            r.raise_for_status()
+        rows = r.json()
+        ids.update(row["listing_id"] for row in rows)
+        if len(rows) < page_size:
+            break
+        start += page_size
+    return ids
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=5, help="사진을 채울 매물 수")
@@ -165,12 +225,7 @@ def main() -> int:
     print(f"로그인 성공 — {args.email} ({uid})")
 
     # ── 2) 사진이 아직 없는 on_sale 매물 고르기 (재실행해도 중복으로 안 넣게) ──
-    have = requests.get(
-        f"{supa_url}/rest/v1/listing_images",
-        headers=rest, params={"select": "listing_id"}, timeout=30,
-    )
-    have.raise_for_status()
-    already = {r["listing_id"] for r in have.json()}
+    already = fetch_already_seeded_ids(supa_url, rest)
 
     got = requests.get(
         f"{supa_url}/rest/v1/listings", headers=rest,
@@ -213,17 +268,18 @@ def main() -> int:
             print("   허용 라이선스 결과 없음 — 건너뜀")
             continue
 
-        for order, item in enumerate(found):
+        saved_count = 0   # 후보 인덱스(cand_idx)가 아니라 **실제로 저장에 성공한 개수** — 아래 참조.
+        for cand_idx, item in enumerate(found):
             try:
                 raw = requests.get(item["url"], headers={"User-Agent": UA}, timeout=60).content
                 blob = to_storage_webp(raw)
             except Exception as exc:                   # noqa: BLE001
-                print(f"   {order}: 다운로드/변환 실패 — {exc}")
+                print(f"   {cand_idx}: 다운로드/변환 실패 — {exc}")
                 continue
 
             path = f"{uid}/{row['id']}/{uuid.uuid4()}.webp"
             if args.dry_run:
-                print(f"   {order}: (dry-run) {len(blob)//1024}KB · {item['license']} · {item['title']}")
+                print(f"   {cand_idx}: (dry-run) {len(blob)//1024}KB · {item['license']} · {item['title']}")
                 continue
 
             up = requests.post(
@@ -231,10 +287,13 @@ def main() -> int:
                 headers={**rest, "Content-Type": "image/webp"}, data=blob, timeout=120,
             )
             if up.status_code not in (200, 201):
-                print(f"   {order}: 업로드 실패 {up.status_code} {up.text[:160]}")
+                print(f"   {cand_idx}: 업로드 실패 {up.status_code} {up.text[:160]}")
                 continue
 
-            # 행은 순차로(#49). 대표 = sort_order 0번, is_cover는 그 파생(§10.1).
+            # 행은 순차로(#49). sort_order/is_cover는 idx(후보 인덱스)가 아니라 saved_count로
+            # 매긴다 — 다운로드·변환·업로드 실패로 건너뛴 후보가 있어도 구멍이 남지 않는다.
+            # 대표 = sort_order 0번, is_cover는 그 파생(§10.1). web/.../photo-sync.ts:174와 같은 이유.
+            order = saved_count
             ins = requests.post(
                 f"{supa_url}/rest/v1/listing_images",
                 headers={**rest, "Content-Type": "application/json", "Prefer": "return=representation"},
@@ -247,11 +306,23 @@ def main() -> int:
                 timeout=30,
             )
             if ins.status_code not in (200, 201):
-                print(f"   {order}: 행 INSERT 실패 {ins.status_code} {ins.text[:160]}")
+                print(f"   {cand_idx}: 행 INSERT 실패 {ins.status_code} {ins.text[:160]}")
+                # 오브젝트는 이미 올라갔는데 그걸 가리키는 행이 없다 — 아무도 못 읽는 고아가
+                # 남는다. 그대로 두지 말고 방금 올린 오브젝트를 지워 정리한다(photo-sync.ts의
+                # deleteListingImageObject와 같은 이유). 정리 자체의 성패도 삼키지 않고 남긴다.
+                cleanup = requests.delete(
+                    f"{supa_url}/storage/v1/object/{BUCKET}/{path}", headers=rest, timeout=30,
+                )
+                if cleanup.status_code in (200, 204):
+                    print(f"   {cand_idx}: 고아 오브젝트 정리 성공")
+                else:
+                    print(f"   {cand_idx}: 고아 오브젝트 정리 실패 {cleanup.status_code} "
+                          f"{cleanup.text[:160]} — 수동 확인 필요")
                 continue
 
+            saved_count += 1
             total_rows += 1
-            print(f"   {order}{' (대표)' if order == 0 else ''}: {len(blob)//1024}KB · {item['license']}")
+            print(f"   {cand_idx}{' (대표)' if order == 0 else ''}: {len(blob)//1024}KB · {item['license']}")
 
     print(f"\n완료 — listing_images {total_rows}행 생성")
     return 0

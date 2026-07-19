@@ -51,6 +51,17 @@ export function buyerListingsQuery(supabase: SupabaseClient, columns: string) {
  * ⚠️ **조회 실패는 목록 전체를 막지 않는다** — 사진 없이 텍스트만 보이는 편이 빈 화면보다 낫다.
  *    실패하면 서버 로그에만 남기고 사진 자리는 플레이스홀더가 된다.
  */
+// PostgREST GET 요청은 쿼리 문자열에 `.in()` 목록을 그대로 실어 보낸다. uuid 1개≈40바이트라
+// 매물이 많아지면(대형 카탈로그) 게이트웨이의 요청 줄 길이 상한을 넘겨 414로 죽는다 — `/search`엔
+// `.limit()`이 없어 실제로 벌어질 수 있는 크기다. 그래서 id 목록을 이 크기로 잘라 여러 번 나눠 쏜다.
+const COVER_IMAGES_CHUNK_SIZE = 50;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
 export async function attachCoverImages<T extends { id: string }>(
   supabase: SupabaseClient,
   listings: T[],
@@ -59,23 +70,43 @@ export async function attachCoverImages<T extends { id: string }>(
 
   if (listings.length === 0) return [];
 
-  const { data, error } = await supabase
-    .from('listing_images')
-    .select('listing_id, storage_path, sort_order, id')
-    .in(
-      'listing_id',
-      listings.map((l) => l.id),
-    )
-    .order('sort_order', { ascending: true })
-    .order('id', { ascending: true })
-    .returns<ListingImageRow[]>();
+  const idChunks = chunk(
+    listings.map((l) => l.id),
+    COVER_IMAGES_CHUNK_SIZE,
+  );
 
-  if (error || !data) {
-    console.error('[listings] 대표사진 조회 실패:', error);
-    return withoutImages();
+  const results = await Promise.all(
+    idChunks.map((ids) =>
+      supabase
+        .from('listing_images')
+        .select('listing_id, storage_path, sort_order, id')
+        .in('listing_id', ids)
+        .order('sort_order', { ascending: true })
+        .order('id', { ascending: true })
+        .returns<ListingImageRow[]>(),
+    ),
+  );
+
+  // 청크 하나가 실패해도 나머지 청크의 사진은 살린다 — 한 청크의 실패로 전체를 withoutImages()로
+  // 떨어뜨리면, 대형 카탈로그에서 청크 하나만 어긋나도 페이지의 모든 카드가 사진을 잃는다(코드리뷰).
+  // 실패한 청크에 속한 매물은 rows에 아무 행도 안 들어가므로 자연히 image_url:null로 떨어진다 —
+  // 그 매물만 플레이스홀더가 되고 다른 청크는 영향받지 않는다.
+  const rows: ListingImageRow[] = [];
+  let successCount = 0;
+  for (const { data, error } of results) {
+    if (error || !data) {
+      console.error('[listings] 대표사진 조회 실패(청크):', error);
+      continue;
+    }
+    successCount += 1;
+    rows.push(...data);
   }
 
-  const covers = coverImages(data);
+  // 청크가 전부 실패한 경우에만 기존 폴백(전체 플레이스홀더)을 쓴다 — 부분 실패와 전체 실패를
+  // 구분해야 "청크 하나 실패로 전부 잃는" 원래 버그를 다시 만들지 않는다.
+  if (successCount === 0) return withoutImages();
+
+  const covers = coverImages(rows);
   return listings.map((l) => {
     const cover = covers.get(l.id);
     return {
