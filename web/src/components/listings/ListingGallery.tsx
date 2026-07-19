@@ -9,10 +9,17 @@
 // **구성(DESIGN.md:141):** 대표 사진 5:3 + 하단 썸네일 스트립 + 우하단 "1/N" 카운터 + 좌우 화살표.
 // 라이트박스(확대보기)는 Epic 9 Non-goal이라 만들지 않는다.
 //
-// **어떤 사진을 몇 장 받나(NFR7):** 큰 사진은 **지금 보는 1장만** DOM에 있다(대표 자리의 <img> 하나).
-// 썸네일은 같은 URL을 lazy로 받아 두므로, 사진을 넘길 때 대표 자리는 **브라우저 캐시에서 즉시** 뜬다
-// (저장본이 이미 작다 — 9.3이 긴 변 ≤1600px·WebP·q0.82로 줄여 실측 196~205KB).
-// 별도 썸네일 규격을 만들지 않는 이유도 같다 — 저장본을 다시 만들지 않는다(I14).
+// **⚠️ 어떤 사진을 몇 장 받나 — AC2를 완전히는 지키지 못한다(9.5 코드리뷰 실측, 사용자 수용).**
+// 큰 `<img>`가 DOM에 하나뿐인 것은 맞지만, **썸네일이 대표와 같은 원본 URL을 쓴다.** 그래서 첫 화면에서
+// 원본이 사진 장수만큼 내려온다 — AC2의 *"큰 사진을 N장 미리 받지 않는다"*를 지키지 못한 상태다.
+//   · 실측(2026-07-20, 사진 3장 매물): 고유 원본 3개 = **1,063 KB** (217 / 421 / 423 KB, 전부 1600px)
+//   · 참고로 리포의 "실측 196~205KB"라는 기록은 **틀렸다**(대장 #80). resize.ts:40의 "1600×1067 WebP
+//     553KB"가 실제에 가깝다. 이 숫자가 next/image 미채택 근거로도 쓰였으니 그대로 인용하지 말 것.
+// **왜 이대로 두는가:** 줄이려면 크기가 두 종류 이상 필요한데 — Supabase 이미지 변환은 이 프로젝트에서
+//   막혀 있고(실측 403 FeatureNotEnabled = 유료 기능), 업로드 시 썸네일 생성은 I14(저장본을 다시 만들지
+//   않는다)와 부딪히며 9.5 범위를 넘는다. 데모 규모(1MB)에선 감내 가능하다는 사용자 판단(2026-07-20).
+// **되살아나는 조건:** 대장 #83 — 매물당 사진이 5~10장이 되는 #68 전량 시딩 시점, 또는 실사용 전환.
+// 부수 효과는 유지된다: 썸네일이 원본이라 사진을 넘길 때 대표 자리가 **브라우저 캐시에서 즉시** 뜬다.
 import { useState } from 'react';
 
 /** 로드 실패한 사진의 자리에 그리는 "사진 준비중" 판(카드의 플레이스홀더와 같은 언어). */
@@ -60,7 +67,7 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
   // 사진 0장 = 정상 상태다(conventions §10.2). 빈 영역이 아니라 5:3 플레이스홀더를 그린다.
   if (count === 0) {
     return (
-      <div className="aspect-[5/3] w-full overflow-hidden rounded-card border border-border-hairline">
+      <div className="aspect-[5/3] max-h-[60vh] w-full overflow-hidden rounded-card border border-border-hairline lg:max-h-none">
         <PhotoPlaceholder />
       </div>
     );
@@ -87,8 +94,12 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
         }
       }}
     >
-      {/* ① 대표 사진 5:3 — aspect-ratio가 자리를 미리 잡아 레이아웃 시프트가 0이다(NFR7). */}
-      <div className="relative aspect-[5/3] w-full overflow-hidden rounded-card border border-border-hairline bg-placeholder-bg">
+      {/* ① 대표 사진 5:3 — aspect-ratio가 자리를 미리 잡아 레이아웃 시프트가 0이다(NFR7).
+          max-h-[60vh]는 **태블릿 구간(640~1023px)** 때문에 있다: 2열 전환이 lg(1024px)부터라
+          1023px에서는 5:3이 약 975×585px가 되어 차량정보가 통째로 첫 화면 밖으로 밀렸다.
+          높이만 조이고 폭은 그대로 두면 object-cover가 위아래를 더 잘라 흡수한다(D5 — 열 수로만
+          접고 컴포넌트를 세로로 접지 않는다). lg:max-h-none = 검증이 끝난 데스크톱 2열은 그대로. */}
+      <div className="relative aspect-[5/3] max-h-[60vh] w-full overflow-hidden rounded-card border border-border-hairline bg-placeholder-bg lg:max-h-none">
         {failed.has(index) ? (
           <PhotoPlaceholder />
         ) : (

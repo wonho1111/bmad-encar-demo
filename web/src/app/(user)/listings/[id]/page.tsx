@@ -144,6 +144,10 @@ export default async function ListingDetailPage({
       <>
         {header}
         <main className="mx-auto flex max-w-2xl flex-col items-center gap-4 p-6">
+          {/* 상태 화면에도 h1을 남긴다 — 프리미티브(ErrorState·EmptyState)는 제목을 <p>로만 그리므로
+              이게 없으면 이 화면엔 heading이 0개가 되어 문서 개요·heading 탐색이 끊긴다.
+              관리자 매물 상세의 같은 분기도 <h1>매물 상세</h1>를 유지한다(리포 일관 패턴). */}
+          <h1 className="text-section font-bold text-ink-primary">매물 상세</h1>
           <ErrorState
             tone="danger"
             message="매물 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
@@ -165,6 +169,8 @@ export default async function ListingDetailPage({
       <>
         {header}
         <main className="mx-auto flex max-w-2xl flex-col items-center gap-2 p-6">
+          {/* 위 에러 분기와 같은 이유로 h1을 남긴다(heading 0개 방지). */}
+          <h1 className="text-section font-bold text-ink-primary">매물 상세</h1>
           <EmptyState
             title="매물을 찾을 수 없어요."
             description="삭제됐거나 판매완료된 매물일 수 있어요."
@@ -208,7 +214,11 @@ export default async function ListingDetailPage({
             minmax(0,1fr): 좌 컬럼이 긴 텍스트에 밀려 넘치지 않게 최소 폭을 0으로 풀어 준다. */}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="flex min-w-0 flex-col gap-6">
-            <ListingGallery urls={galleryUrls} title={title} />
+            {/* key=매물 id — 갤러리의 현재 인덱스·실패기록은 이 매물에만 유효한 상태다.
+                지금은 상세→상세 직접 이동 링크가 없어 실제로 밟히지 않지만(진입로는 /search 카드와
+                채팅방뿐), 그런 링크가 생기면 React가 같은 자리의 컴포넌트를 재사용해 이전 매물의
+                index가 남는다(사진 10장에서 2장짜리로 가면 "8/2"). 한 줄로 그 부류를 닫아 둔다. */}
+            <ListingGallery key={listing.id} urls={galleryUrls} title={title} />
 
             {/* ① 신뢰정보 — Epic 10.2가 채울 빈 슬롯. 값이 없으므로 아무것도 렌더하지 않는다(AC1). */}
 
@@ -226,8 +236,9 @@ export default async function ListingDetailPage({
               여백(p-6)과 같은 값을 띄운다. ≥1024px에서만 — 그 아래는 하단 고정 바가 대신한다. */}
           <aside className="hidden lg:block">
             <div className="sticky top-6 flex flex-col gap-3 rounded-card border border-border-hairline bg-surface-raised p-5 shadow-card dark:shadow-none">
-              {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(최대 30/800, DESIGN.md:42). */}
-              <p className="whitespace-nowrap text-[30px] font-extrabold leading-[1.2] text-price-emphasis">
+              {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(30/800, DESIGN.md:42).
+                  9.5 코드리뷰에서 --text-price-lg 토큰을 추가해 임의값 text-[30px]를 걷어냈다. */}
+              <p className="whitespace-nowrap text-price-lg font-extrabold text-price-emphasis">
                 {priceText}
               </p>
               <InquiryCta listing={listing} user={user} />

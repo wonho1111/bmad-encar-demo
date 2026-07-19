@@ -62,7 +62,11 @@ export default function InquiryButton({ listingId }: { listingId: string }) {
         onClick={handleInquiry}
         loading={busy}
         loadingText="문의 채팅방 여는 중…"
-        className="w-fit"
+        // w-full: 상세의 CTA 3분기(비로그인·본인매물·타인매물)가 같은 폭이어야 한다.
+        //   나머지 두 분기는 buttonClasses({ className: 'w-full' })를 쓰는데 여기만 w-fit이라
+        //   타인 매물일 때만 버튼이 작게 왼쪽에 붙었다(9.5 코드리뷰). 이 컴포넌트의 유일한
+        //   사용처가 그 상세 페이지라 여기서 맞춘다.
+        className="w-full"
       >
         문의하기
       </Button>
