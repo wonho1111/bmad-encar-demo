@@ -14,9 +14,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { USER_ROLE, ROLE_LABEL, LISTING_STATUS, type UserRole } from '@/lib/constants';
-import { buyerListingsQuery } from '@/lib/listings';
+import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
+import ResponsiveGrid from '@/components/ui/ResponsiveGrid';
 import { buttonClasses } from '@/components/ui/Button';
 
 // 홈도 매 요청 최신 DB를 반영해야 한다(미리보기에 sold가 잔존하지 않게). 정적화 방지(search·상세와 동일).
@@ -53,7 +54,7 @@ export default async function Home() {
   if (user) {
     // ② 미리보기 데이터 — 구매자 관점(판매중만, FR11 단일 출처) 최근 N건. 필터 없음(미리보기).
     //   search 페이지와 같은 요약 컬럼·정렬을 쓰되 limit만 건다(상태·표시 규칙은 공유).
-    const { data: previewListings, error: previewError } = await buyerListingsQuery(
+    const { data: previewRows, error: previewError } = await buyerListingsQuery(
       supabase,
       'id, manufacturer, model, year, price, mileage, region, seller_name',
     )
@@ -66,6 +67,9 @@ export default async function Home() {
       // 미리보기 실패는 홈 전체를 막지 않는다 — 로그만 남기고 아래에서 안내 문구로 대체(비차단).
       console.error('[home] 매물 미리보기 조회 실패:', previewError);
     }
+
+    // 대표사진 URL·장수를 채운다(Story 9.4). /search와 **같은 함수** — 두 화면이 갈리지 않게.
+    const previewListings = previewRows ? await attachCoverImages(supabase, previewRows) : previewRows;
 
     const isSeller = roleLabel === ROLE_LABEL[USER_ROLE.SELLER];
 
@@ -93,7 +97,9 @@ export default async function Home() {
     return (
       <>
         <AppHeader roleLabel={roleLabel} email={user.email} currentPath="/" />
-        <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+        {/* 폭을 max-w-2xl(672px)에서 넓힌다 — 그래야 미리보기 4장이 넓은 화면에서 실제로 4열이 된다
+            (D5 브레이크포인트는 뷰포트 기준이라 본문이 좁으면 열만 늘고 칸이 찌그러진다, AC6). */}
+        <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
           {/* ① 본인 정보 영역 — 역할 배지 + 표시 이름(이메일 @앞부분; 이메일 전체는 상단바에 있음).
               그 아래에 자주 쓰는 동선을 엔카 마이페이지 스타일의 "텍스트 메뉴"로 둔다(버튼처럼 보이지 않게, hover 시 강조).
               · 문의 채팅: 구매자·판매자 공통.  · 판매중 n건: 판매자만(매물 등록·관리 /sell로 진입, 건수는 가변). */}
@@ -138,13 +144,12 @@ export default async function Home() {
             ) : !previewListings || previewListings.length === 0 ? (
               <p className="text-sm text-zinc-500">아직 등록된 매물이 없습니다.</p>
             ) : (
-              <ul className="flex flex-col gap-2">
+              /* D5: 열 수로만 흡수(≥1100px 4열 · 640~1099px 2열 · <640px 1열) — /search와 같은 그리드. */
+              <ResponsiveGrid>
                 {previewListings.map((l) => (
-                  <li key={l.id}>
-                    <ListingCard listing={l} />
-                  </li>
+                  <ListingCard key={l.id} listing={l} />
                 ))}
-              </ul>
+              </ResponsiveGrid>
             )}
           </section>
         </main>
