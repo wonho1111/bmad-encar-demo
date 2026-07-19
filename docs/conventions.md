@@ -96,7 +96,9 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 - 강제 지점:
   - **매물 축** — RLS(authenticated = `0002_listings`에 동거, anon = `0011_listings_anon_select`) + `api/db/sql_guard.py` + 문서 RAG 결과 필터. (구현은 Epic 2~4, anon 경로는 Epic 8.5)
   - **이미지 축** — `listing_images` RLS(`0012_listing_images`의 `listing_images_select_on_sale_anon` / `listing_images_select_on_sale` — 둘 다 `listings`에 조인해 `l.status = 'on_sale'`을 건다) + 소비처의 id 좁히기.
-    - 소비처 목록(**새 조회 경로를 열면 여기에 추가한다**): `attachCoverImages`(목록 카드 — `buyerListingsQuery` 결과의 id만 조회) · `fetchListingGalleryUrls`(상세 갤러리, Story 9.5 — `buyerListingsQuery`로 매물을 먼저 찾은 뒤 **그 매물이 있을 때만** 호출한다. sold면 404 화면에서 끝나 이 함수까지 오지 않는다).
+    - 소비처 목록(**새 조회 경로를 열면 여기에 추가한다**): `attachCoverImages`(목록 카드 — `buyerListingsQuery` 결과의 id만 조회) · `fetchListingGalleryUrls`(상세 갤러리, Story 9.5 — `buyerListingsQuery`로 매물을 먼저 찾은 뒤 **그 매물이 있을 때만** 호출한다. sold면 404 화면에서 끝나 이 함수까지 오지 않는다) · **`attach_cover_images`(api, AI 응답 카드 — Story 9.6)**.
+      - ⚠️ **`attach_cover_images`만 성격이 다르다 — 여기서는 DB가 안 막는다.** 위 web 두 경로는 `authenticated`/`anon` 롤로 붙으므로 `listing_images`의 on_sale RLS가 **DB에서** 걸러 준다. 그런데 api는 `ai_readonly` 롤이고 그 롤의 정책은 `using(true)`라(`0012:153`, 의도된 설계 CR2) **sold 사진까지 전부 열려 있다.** 그래서 이 경로는 고정쿼리의 `l.status = 'on_sale'`이 **유일한 강제 지점**이다 — 까먹으면 그대로 뚫린다.
+      - 강제 장치: `api/tests/test_listing_cards.py`(sold 사진이 응답에 실리지 않음 — 조건을 지우면 red) + `api/tests/test_sql_guard.py`(LLM 생성 SQL이 `listing_images`에 닿지 못함). 둘 다 `docs/tech-debt.md` #48을 닫은 근거다.
     - ✎ **2026-07-19 코드리뷰에 의해 등재.** 이 축은 0012부터 실재했는데 **이 목록에 한 번도 오른 적이 없었고**, 9.0이 `storage.objects` 항목을 지우면서 이미지 관련 강제 지점이 목록에서 완전히 사라졌다. 그 상태에서 9.4가 `listing_images` 조회 경로를 화면 2곳(`/search`·홈)에 새로 열었다. **차단은 실제로 동작한다**(실측) — 문제는 목록이 사실을 반영하지 않아, §6만 읽는 다음 사람은 이미지 축에 FR11 강제가 있다는 것 자체를 모른다는 점이다. 9.5(상세 갤러리)·9.6(AI 카드)이 같은 테이블을 열 때가 정확히 규칙7이 경고한 자리다.
     - ⚠️ **§6.1이 면제하는 것은 "사진 파일 URL"이지 `listing_images` 테이블 조회가 아니다.** 둘을 섞지 말 것.
 - **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). anon 열람은 §8이 상술한다.
