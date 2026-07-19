@@ -67,7 +67,7 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
   // 사진 0장 = 정상 상태다(conventions §10.2). 빈 영역이 아니라 5:3 플레이스홀더를 그린다.
   if (count === 0) {
     return (
-      <div className="aspect-[5/3] max-h-[60vh] w-full overflow-hidden rounded-card border border-border-hairline lg:max-h-none">
+      <div className="aspect-[5/3] max-h-[50vh] w-full overflow-hidden rounded-card border border-border-hairline lg:max-h-none">
         <PhotoPlaceholder />
       </div>
     );
@@ -95,11 +95,17 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
       }}
     >
       {/* ① 대표 사진 5:3 — aspect-ratio가 자리를 미리 잡아 레이아웃 시프트가 0이다(NFR7).
-          max-h-[60vh]는 **태블릿 구간(640~1023px)** 때문에 있다: 2열 전환이 lg(1024px)부터라
-          1023px에서는 5:3이 약 975×585px가 되어 차량정보가 통째로 첫 화면 밖으로 밀렸다.
+          max-h-[50vh]는 **태블릿 구간(640~1023px)** 때문에 있다: 2열 전환이 lg(1024px)부터라
+          1023px에서는 5:3이 975×585px가 되어 차량정보가 통째로 첫 화면 밖으로 밀렸다.
           높이만 조이고 폭은 그대로 두면 object-cover가 위아래를 더 잘라 흡수한다(D5 — 열 수로만
-          접고 컴포넌트를 세로로 접지 않는다). lg:max-h-none = 검증이 끝난 데스크톱 2열은 그대로. */}
-      <div className="relative aspect-[5/3] max-h-[60vh] w-full overflow-hidden rounded-card border border-border-hairline bg-placeholder-bg lg:max-h-none">
+          접고 컴포넌트를 세로로 접지 않는다). lg:max-h-none = 검증이 끝난 데스크톱 2열은 그대로.
+
+          ⚠️ **50이라는 숫자는 실측으로 정했다(1023×768 = 가로 태블릿).** 처음 60vh로 넣었더니
+          대표 사진은 585→461px로 줄었는데 **차량정보 섹션이 하단 고정 바에 정확히 가려져
+          여전히 0px만 보였다** — 숫자만 보면 "화면 안"이었지만 눈으로 보니 아니었다.
+          바 위로 실제 보이는 높이: 60vh→0px · 55vh→39px · **50vh→77px** · 45vh→116px.
+          더 줄이면 대표 사진이 초라해져 50에서 멈췄다. **이 값을 바꾸려면 다시 재고 눈으로 볼 것.** */}
+      <div className="relative aspect-[5/3] max-h-[50vh] w-full overflow-hidden rounded-card border border-border-hairline bg-placeholder-bg lg:max-h-none">
         {failed.has(index) ? (
           <PhotoPlaceholder />
         ) : (
