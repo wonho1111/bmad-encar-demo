@@ -31,7 +31,9 @@ import io
 import json
 import re
 import sys
+import unicodedata
 import uuid
+from collections import Counter
 from pathlib import Path
 
 import requests
@@ -307,16 +309,37 @@ def main() -> int:
     )
     got.raise_for_status()
 
+    # 대응표 조회 전에 표기를 다듬는다(코드리뷰 2026-07-21). `model`은 자유 입력 컬럼이라
+    # 앞뒤 공백·유니코드 조합형(맥에서 복사한 한글은 NFD로 들어온다)이 실제로 섞일 수 있는데,
+    # 정확 일치 딕셔너리는 그걸 **아무 로그 없이** 미스로 처리한다. 변형을 키로 늘리는 방식으로는
+    # 이 축을 못 잡는다 — 표기 변형(`아반떼MD`)과 공백/조합형은 다른 문제다.
+    def _norm(s: str) -> str:
+        return unicodedata.normalize("NFC", (s or "").strip())
+
     targets = []
+    unmatched: Counter[tuple[str, str]] = Counter()   # 대응표에 없는 (제조사, 모델) 집계
     for row in got.json():
         if row["id"] in already:
             continue
-        term = SEARCH_TERMS.get((row["manufacturer"], row["model"]))
+        key = (_norm(row["manufacturer"]), _norm(row["model"]))
+        term = SEARCH_TERMS.get(key)
         if not term:
+            # ⚠️ 세지 않으면 사유표를 만들 수 없다(스토리 9.7 AC1). 예전엔 그냥 continue라,
+            #    몇 건이 대응표 미스로 빠졌는지 **실행 결과만 봐서는 알 수 없었다** —
+            #    이번엔 별도 SQL로 외부 측정해 "0건"이라 적었지만 다음 실행자에겐 그 수단이 없다.
+            unmatched[key] += 1
             continue
-        targets.append((row, term))
+        # ⚠️ 상한 검사는 append **앞**에 둔다 — 뒤에 두면 `--limit 0`이 `len==1 >= 0`이 되어
+        #    "아무것도 안 하고 확인만" 의도로 0을 줬는데 1건이 실제로 시딩된다(코드리뷰 2026-07-21).
         if len(targets) >= args.limit:
             break
+        targets.append((row, term))
+
+    if unmatched:
+        print(f"\n대응표에 없어 건너뛴 매물 {sum(unmatched.values())}건 "
+              f"({len(unmatched)}종) — SEARCH_TERMS에 추가하면 다음 실행에서 채워진다:")
+        for (mfr, model), n in unmatched.most_common():
+            print(f"   · ({mfr}, {model}) — {n}건")
 
     if not targets:
         print("대상 매물이 없습니다(이미 사진이 있거나 검색어 매핑이 없음).")
@@ -343,8 +366,13 @@ def main() -> int:
         saved_count = 0   # 후보 인덱스(cand_idx)가 아니라 **실제로 저장에 성공한 개수** — 아래 참조.
         for cand_idx, item in enumerate(found):
             try:
-                raw = requests.get(item["url"], headers={"User-Agent": UA}, timeout=60).content
-                blob = to_storage_webp(raw)
+                # raise_for_status()가 없으면 429(레이트리밋)·503의 에러 HTML이 그대로 PIL로
+                # 넘어가 "cannot identify image file"이 된다 — **레이트리밋과 진짜 손상 파일이
+                # 구분되지 않는다.** 90매물 × 최대 3장을 도는 실행에서 이건 원인 모를 대량 스킵이
+                # 된다(코드리뷰 2026-07-21).
+                resp = requests.get(item["url"], headers={"User-Agent": UA}, timeout=60)
+                resp.raise_for_status()
+                blob = to_storage_webp(resp.content)
             except Exception as exc:                   # noqa: BLE001
                 print(f"   {cand_idx}: 다운로드/변환 실패 — {exc}")
                 continue

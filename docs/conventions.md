@@ -111,7 +111,9 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 - `status='sold'` 매물은 구매자의 **모든 조회 경로**(목록·필터·상세·AI SQL·문서 RAG)에서 노출되지 않는다.
 - 강제 지점:
-  - **매물 축** — RLS(authenticated = `0002_listings`에 동거, anon = `0011_listings_anon_select`) + `api/db/sql_guard.py` + 문서 RAG 결과 필터. (구현은 Epic 2~4, anon 경로는 Epic 8.5)
+  - **매물 축** — RLS(authenticated SELECT/INSERT/DELETE = `0002_listings`에 동거, anon = `0011_listings_anon_select`, **authenticated UPDATE = `0015_listings_update_not_sold`**) + `api/db/sql_guard.py` + 문서 RAG 결과 필터. (구현은 Epic 2~4, anon 경로는 Epic 8.5)
+    - ⚠️ **UPDATE만 0002 밖에 산다.** `0015`가 `listings_update_own`을 drop-recreate하며 `using`에 `status <> 'sold'`를 넣었다(sold 매물 수정 차단, `docs/tech-debt.md` #54). *"authenticated RLS는 전부 0002에 있다"고 읽으면 틀린다* — 코드리뷰 2026-07-21이 락스텝 갱신 누락으로 잡은 자리.
+    - ⚠️ **사진 축(`listing_images`)에는 이 조건이 없다** — sold 매물의 사진은 DB가 막지 않는다(`docs/tech-debt.md` #90, 원격 실측 확인).
   - **이미지 축** — `listing_images` RLS(`0012_listing_images`의 `listing_images_select_on_sale_anon` / `listing_images_select_on_sale` — 둘 다 `listings`에 조인해 `l.status = 'on_sale'`을 건다) + 소비처의 id 좁히기.
     - 소비처 목록(**새 조회 경로를 열면 여기에 추가한다**): `attachCoverImages`(목록 카드 — `buyerListingsQuery` 결과의 id만 조회) · `fetchListingGalleryUrls`(상세 갤러리, Story 9.5 — `buyerListingsQuery`로 매물을 먼저 찾은 뒤 **그 매물이 있을 때만** 호출한다. sold면 404 화면에서 끝나 이 함수까지 오지 않는다) · **`attach_cover_images`(api, AI 응답 카드 — Story 9.6)**.
       - ⚠️ **`attach_cover_images`만 성격이 다르다 — 여기서는 DB가 안 막는다.** 위 web 두 경로는 `authenticated`/`anon` 롤로 붙으므로 `listing_images`의 on_sale RLS가 **DB에서** 걸러 준다. 그런데 api는 `ai_readonly` 롤이고 그 롤의 정책은 `using(true)`라(`0012:153`, 의도된 설계 CR2) **sold 사진까지 전부 열려 있다.** 그래서 이 경로는 고정쿼리의 `l.status = 'on_sale'`이 **유일한 강제 지점**이다 — 까먹으면 그대로 뚫린다.
@@ -179,6 +181,14 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 > **각 마이그는 자기가 필요로 하는 선행 상태를 스스로 만들거나(멱등 가드), 번호가 더 작은 마이그에만 의존한다. 원격 적용 이력의 순서는 상관없다.**
 
 번호 갭은 무죄(자리를 비워둬도 무해), **역방향 의존만 유죄**. 이는 `.github/workflows/migration-gate.yml`(마이그레이션 게이트 CI)이 매 push마다 실제로 검증한다 — 자세한 것은 `docs/deployment-runbook.md` §7·§8.
+
+**"전진(forward-only)"과 RLS 정책 교체의 관계** (✎ 2026-07-21 코드리뷰가 판단을 명시화):
+
+CLAUDE.md B3는 *"DB 변경은 더하기만 — 기존 걸 지우거나 바꾸지 않는다"* 인데, **RLS 정책을 고치려면 형식상 `drop policy`를 거쳐야 한다**(Postgres에 `alter policy ... using` 이 있지만 조건 전체를 갈아끼우는 경우 drop-recreate가 더 읽힌다). `0015`가 그렇게 했고, 그것이 허용 예외인지 **판단한 기록이 없어** 다음 사람이 근거 없이 이 선례를 복사할 자리였다. 그래서 규칙으로 못박는다:
+
+- ✅ **허용:** `drop policy if exists` → `create policy` **같은 이름으로**, 같은 파일 안에서 즉시 재생성. 정책은 **접근 규칙**이지 데이터가 아니라 소실되는 것이 없고, 이 패턴이라야 재적용이 멱등이 된다(`0005`·`0006`이 이미 쓰는 패턴).
+- ❌ **금지:** 테이블·컬럼·인덱스·GRANT의 drop. 이것들은 **데이터나 권한이 실제로 사라진다** — 되돌리려면 앞에 고치는 마이그를 하나 더 붙인다(B3).
+- 📌 정책을 교체하는 마이그는 **무엇을 왜 바꾸는지와 함께 `using`/`with check` 중 어느 쪽에 조건을 거는지의 근거**를 파일 주석에 남긴다. 둘은 보는 대상이 다르다(`using`=변경 전 행, `with check`=변경 후 행) — `0015`가 그 판단을 적어둔 좋은 예다.
 
 ### 9.2 파일명 규약
 
@@ -260,7 +270,10 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 - **저장본 규격**: 업로드 전 클라이언트가 **긴 변 ≤1600px · WebP · quality 0.82**로 다시 인코딩해 올린다. 원본 5MB 상한과는 **별개 장치**다.
   - 왜: app은 저장된 **원본**을 그대로 받으므로(ADR-IMG-02) 원본을 저장하면 목록 다중 다운로드에서 NFR7이 깨진다.
   - 구현은 브라우저 네이티브 canvas(`web/src/lib/images/resize.ts`) — 새 의존성 없음. WebP를 못 만드는 환경은 `image/jpeg` 0.85 폴백.
-  - 실측(2026-07-18): 원본 PNG 1.71~1.87MB(2400×1600) → 저장본 WebP **196~205KB · 1600×1067**(약 89% 감소).
+  - **저장본 크기는 "범위"로 단언하지 않는다 — 실측 분포로만 말한다.** 2026-07-21 시딩 후 **대표사진 90장 전량** 실측: **최소 50KB · 중앙값 197KB · 평균 229KB · 최대 615KB**(편차 12배). 목록 한 화면(4열×3행=12장) 환산 **약 2.7MB**.
+    - ⚠️ 여기 적혀 있던 *"실측 196~205KB"*(2026-07-18, 표본 3장)는 **값이 아니라 형태로 틀렸다** — 90장 중 그 범위에 드는 건 **1장뿐**이다. 그 좁은 숫자가 *"저장본이 이미 작으니 `next/image`가 필요 없다"* 는 결정의 근거로 쓰였다(`docs/tech-debt.md` #80).
+    - **왜 정본에 남아 있었나:** Story 9.7이 #80을 닫으면서 `ListingCardImage.tsx` 주석만 고치고 *"정본은 코드 주석 쪽"* 이라 판단했는데, **실제 정본은 이 문서다**(계약값은 여기 하나). 코드리뷰 2026-07-21이 정정. #80의 등재 사유가 *"검산 안 한 숫자가 결정을 오염시켰다"* 인데 같은 오염원이 계약 문서에 남아 있던 자리다.
+    - 총량이 유의미해진 쪽은 상세가 아니라 **목록**이다 — 후속 판단은 `docs/tech-debt.md` #83.
 - **대표(cover) = `sort_order` 0번**이다. 대표는 **별도 상태가 아니다** — 순서와 대표를 각각 두면 진실이 두 군데 생겨 어긋난다. `is_cover`는 이 규칙의 **파생 결과**로만 기록한다.
   - **⚠️ 대표 대상을 두 번 계산하지 않는다.** 순서를 매기는 단계에서 **실제로 `sort_order=0`을 받은 행**을 기억해 두고 대표 단계가 그 값을 쓴다. "저장된 것 중 첫 번째"를 나중에 다시 구하면, 어느 항목이 탈락하는지에 대한 두 계산의 판단이 갈려 **대표가 `sort_order≠0`인 행에 붙는다**(코드리뷰 2026-07-19 2차 — 재현 실행으로 확인). 화면의 대표 배지도 저장 대상과 **같은 술어**로 골라야 화면과 DB가 갈리지 않는다.
 - **대표 교체는 반드시 2문장** — ① 해당 매물 전체 `is_cover=false` → ② 대상 1장만 `true`.
@@ -298,8 +311,9 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
   - ⚠️ **`onError` 하나로는 부족하다 — 두 겹이어야 한다** (코드리뷰 2026-07-19, 실브라우저 실측으로 발견).
     서버 컴포넌트가 그린 `<img>`는 HTML이 도착하는 즉시 로드를 시작하는데, **하이드레이션이 끝나기 전에** 에러가 나면 React가 그 이벤트를 재생하지 않아 `onError`가 **영영 발화하지 않는다.** 그러면 위 규칙이 금지한 깨진 이미지가 그대로 남는다. 그리고 **파일 없음(404)은 정확히 그렇게 빨리 실패한다** — 가장 흔한 실패가 유일한 방어를 그냥 지나갔다.
     - **필수 2겹**: ① `onError`(하이드레이션 이후 실패) + ② **ref 콜백에서 `img.complete && img.naturalWidth === 0` 확인**(이미 끝난 실패 — 이벤트를 놓쳐도 이 상태는 남는다).
-    - 재현법(회귀 확인용): 이미지 호스트를 블랙홀로 돌리고 목록을 렌더한다.
-      `chrome-headless-shell --host-resolver-rules="MAP <supabase-host> 127.0.0.1" --screenshot=... http://localhost:3000/search`
+    - 재현법(회귀 확인용): **이미지 요청만 끊고 데이터 조회는 살린다** — Playwright에서 `**/storage/v1/object/public/**` 를 `route.abort()` 한 뒤 목록을 새로 로드한다. *"매물은 뜨는데 사진만 전면 실패"* 라는 정확한 상황이 만들어진다.
+      - ⚠️ **`loading="lazy"` 때문에 화면 밖 카드는 요청 자체를 안 보낸다** — 스크롤로 전량을 뷰포트에 넣지 않으면 "전량 검증"이 아니다(Story 9.7에서 90장 중 38장만 폴백한 이유가 이것이다).
+      - ~~`chrome-headless-shell --host-resolver-rules="MAP <supabase-host> 127.0.0.1"`~~ — 호스트 전체를 죽여 **데이터 조회까지 함께 끊기므로** 이 질문에 답하지 못한다. 이 환경에서 `chrome-headless-shell` 가용 여부도 확인된 적 없다. (✎ 2026-07-21 코드리뷰: Story 9.7이 실제로는 abort 방식을 썼는데 정본은 안 고쳐져 있었다 — 다음 사람이 안 쓰는 방법을 따라갈 자리.)
       → **"사진 준비중" 플레이스홀더가 떠야 한다.** alt 텍스트·깨진 아이콘이 보이면 폴백이 죽은 것이다.
     - 구현 참고: `web/src/components/listings/ListingCardImage.tsx`. **9.5(상세 갤러리)·9.6(AI 카드)도 같은 2겹을 둔다** — `onError`만 복사하면 같은 자리를 다시 밟는다.
       - ✅ **9.5 이행(2026-07-20)**: `web/src/components/listings/ListingGallery.tsx`가 대표·썸네일 **양쪽**에 2겹을 둔다. 실브라우저 red/green 확인 — `storage_path`를 없는 파일로 바꾸자 대표+해당 썸네일이 플레이스홀더로 떨어졌고(깨진 아이콘 0), 되돌리자 4장 전부 `naturalWidth=1600`으로 복귀했다.

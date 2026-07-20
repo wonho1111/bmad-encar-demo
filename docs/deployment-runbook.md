@@ -86,6 +86,17 @@
 > ⭐ **각 에픽의 첫 마이그레이션 스토리는 마이그레이션 게이트(CI) 통과가 DoD(Definition of Done)다** (`docs/conventions.md` §9.4). 게이트는 배포를 막지 않으므로(§8-⑤) **이 절차가 실질적인 문**이다 — 아래 1번을 건너뛰면 아무것도 막아주지 않는다.
 
 1. **적용 전 필수**: `python scripts/check_migrations.py` 로컬 통과 확인(`scripts/migration-check-prelude.sql` + 전체 마이그를 fresh 컨테이너에 적용해 self-containment 검증).
+   - ⚠️ **도커가 없는 환경에서는 이 스크립트가 종료코드 1로 끝난다** — 그때는 **CI의 `Migration Gate` 실행 결과(run id·headSha·conclusion)를 근거로 남긴다.** 로컬 실패를 "확인함"으로 적지 않는다(`docs/tech-debt.md` #99).
+1-b. **기존 객체를 교체하는 마이그(정책·함수·트리거)라면, 적용 전에 원격의 현재 원문을 떠서 스토리에 붙인다.** (✎ 2026-07-21 코드리뷰가 규칙으로 승격 — Story 9.7의 AC4가 이걸 요구했는데 **원문이 어디에도 남지 않았고**, 남은 건 *"원문대로 들어갔다"* 는 사후 서술뿐이었다. 이미 적용된 뒤라 되돌려 확인할 수 없다. `#18`이 반복해 증명한 것이 *"요약본이 가린 사실"* 이다.)
+   ```sql
+   -- 예: RLS 정책을 바꾸기 전
+   select polname,
+          pg_get_expr(polqual, polrelid)      as using_expr,
+          pg_get_expr(polwithcheck, polrelid) as with_check_expr
+     from pg_policy
+    where polrelid = 'public.<테이블>'::regclass;
+   ```
+   - 적용 **후에도** 같은 쿼리를 돌려 두 벌을 나란히 남긴다. "의도대로 들어갔다"는 **before/after 두 벌이 있어야** 확인이지, 한 벌만으로는 주장이다.
 2. 적용은 **Supabase MCP `apply_migration`**로 한다. `supabase db push` 등 **CLI가 아니다** — 이 프로젝트엔 Supabase CLI도 `config.toml`도 없다.
 3. `apply_migration`의 `name` 파라미터는 **파일명 stem 그대로** 쓴다(예: `0012_listing_images`). 번호를 빠뜨리면 원장과 어긋난다 — `listings_anon_select`(0011의 번호 없는 재적용)가 실제 발생 사례다(§8-③ 참조).
 4. **정본 파일 in-place 수정 + 따라잡기 패치 규약** (`docs/conventions.md` §9에 상술):
@@ -119,14 +130,22 @@
 
 ---
 
-## 9. 🚨 `seed.sql` 재실행은 파괴적이다 — 실측으로 확정
+## 9. 🚨 `seed.sql` 재실행은 파괴적이다
 
-**이 DB에서 `supabase/seed.sql`을 다시 돌리면 사진과 채팅 이력이 전부 사라진다. 에러는 한 건도 안 난다.**
+**`supabase/seed.sql`을 다시 돌리면 사진과 채팅 이력이 전부 사라진다. 에러는 한 건도 안 난다.**
+
+> **어디까지 실측이고 어디부터 추론인가** (✎ 2026-07-21 코드리뷰). 원래 제목이 *"실측으로 확정"*이었는데
+> 아래에는 **잰 것과 안 잰 것이 섞여 있었다.** 이 프로젝트가 `#80`에서 데인 것이 정확히 그 형태라 갈라 적는다.
+> - ✅ **잰 것**: 아래 표의 행 수(`listing_images` 10→0 · `chat_rooms` 1→0 · 매물 id 보존 0/97).
+> - ⚠️ **안 잰 것(스키마 추론)**: "Storage 고아 파일이 남는다". AC3이 Storage를 측정 범위에서 **뺐다**
+>   (`listing_images` 행만으로 답할 수 있다고 판단). 그럴듯하지만 **관측된 적 없다.**
+> - ⚠️ **측정 환경이 CI·운영과 다르다**: pg16 PGlite + `pgcrypto` 스텁(CI는 pg17, 운영은 Supabase).
+>   원격에서 재현하지 않았다 — 재현 자체가 파괴적이라서다. 자세한 한계는 `docs/tech-debt.md` #99.
 
 `seed.sql`은 멱등성을 위해 시드 판매자 매물을 `delete` 후 **새 uuid로 재삽입**한다(`:196`·`:413`). `listings`에는
 `ON DELETE CASCADE` 자식이 **둘**(`listing_images` 0012 · `chat_rooms` 0003) 있어 함께 지워진다.
 
-**빈 Postgres 실측 (Story 9.7, 2026-07-21 — 원격에서 재현하지 않았다. 재현 자체가 파괴적이라서다):**
+**빈 Postgres 실측 (Story 9.7, 2026-07-21):**
 
 | | 재실행 전 | 재실행 후 |
 |---|---|---|
@@ -134,14 +153,49 @@
 | `chat_rooms` | 1행 | **0행** |
 | `listings` | 97행 | 97행 (수만 같고 **id는 0/97건 보존**) |
 
-- ⚠️ **Storage 오브젝트는 CASCADE 대상이 아니다** → 파일은 남고 그걸 가리키는 행만 사라져 **고아 파일**이 된다.
-- ⚠️ **"에러 0건"을 정상으로 읽지 마라.** 확인은 반드시 **행 수**로 한다(`docs/tech-debt.md` #27).
+- ⚠️ **Storage 오브젝트는 CASCADE 대상이 아니다**(추론) → 파일은 남고 그걸 가리키는 행만 사라져 **고아 파일**이 될 것으로 본다.
+- ⚠️ **"에러 0건"을 정상으로 읽지 마라.** 확인은 반드시 **행 수**로 한다(`docs/tech-debt.md` #89).
 
 **그래도 해야 한다면 순서:**
 1. `listing_images`·`chat_rooms`·`chat_messages`를 먼저 백업(또는 유실을 수용한다고 명시적으로 결정).
-2. `seed.sql` 실행.
-3. `scripts/seed_listing_photos.py`를 `--email` 바꿔가며 시드 판매자 수만큼 다시 실행해 사진을 복구.
-4. 채팅 이력은 **복구 수단이 없다.**
+2. **재실행 전에 현재 Storage 오브젝트 목록을 떠 둔다** — 3번으로 사진을 다시 채우면 **옛 파일은 아무 행도
+   가리키지 않는 고아로 남는다.** 이 단계가 없으면 재실행할 때마다 버킷에 미참조 WebP가 누적되고,
+   어느 문서도 그 청소를 지시하지 않는다(✎ 2026-07-21 코드리뷰가 빠진 단계로 지적).
+3. `seed.sql` 실행.
+4. `scripts/seed_listing_photos.py`를 `--email` 바꿔가며 시드 판매자 수만큼 다시 실행해 사진을 복구.
+   - ⚠️ **이 복구 절차는 한 번도 실행해 본 적이 없다.** 사진 시딩은 재실행 **전** 상태에서만 돌았다.
+5. 2번에서 뜬 목록과 대조해 **고아 오브젝트를 지운다**(선례: `docs/tech-debt.md` #77 — 사용자 승인 후 정리).
+6. 채팅 이력은 **복구 수단이 없다.**
+
+---
+
+## 10. sold 매물을 실수로 만들었을 때 — 되돌리는 유일한 방법
+
+`0015` 적용 이후 **`status='sold'`가 된 매물은 판매자도 관리자도 되돌릴 수 없다.** RLS가 sold 행을
+UPDATE 대상에서 아예 빼기 때문에 어느 화면에서 눌러도 **"0행 변경"**으로 끝난다(에러가 아니라 무반응처럼 보인다).
+관리자에게는 `listings` UPDATE 정책이 없고(`0005`), `service_role` 키는 프로젝트 금지다(`conventions.md` §5).
+
+**이건 가정이 아니라 이미 한 번 밟았다** — Story 9.7이 `0015` 원격 검증 중 테스트 매물 하나를 sold로 바꿨다가
+되돌리지 못해 아래 방법으로 복구했다. 그때 대장·런북에 안 남겨서 코드리뷰가 다시 잡았다(`docs/tech-debt.md` #91).
+
+**복구 방법: DB에 직접 붙어 실행한다**(Supabase SQL Editor 또는 MCP `execute_sql`). RLS는 이 경로에 안 걸린다.
+
+```sql
+-- 1) 먼저 대상을 눈으로 확인한다 (id를 모르면 조건으로 좁힌다)
+select id, manufacturer, model, price, status, updated_at
+  from public.listings
+ where status = 'sold'
+ order by updated_at desc
+ limit 10;
+
+-- 2) 확인한 id 하나만 되돌린다 (where 절 없이 실행하지 말 것)
+update public.listings set status = 'on_sale'
+ where id = '<확인한 uuid>'::uuid;
+```
+
+- ⚠️ **`where` 절을 반드시 id로 좁힌다.** 이 경로는 RLS가 안 막으므로 실수하면 전량이 바뀐다.
+- 📌 이건 **운영자 수동 개입**이지 기능이 아니다. 사용자가 스스로 되돌려야 하는 요구가 생기면
+  `#91`의 선택지(관리자 UPDATE 정책 / 복구 전용 좁은 정책)를 그때 판단한다.
 
 ---
 
