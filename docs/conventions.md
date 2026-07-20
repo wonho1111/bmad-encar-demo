@@ -42,7 +42,10 @@
 - **ListingCard 필드(snake_case):**
   - 기존(필수): `id, manufacturer, model, year, price, mileage, region`
   - 기존(nullable): `seller_name`(판매자 표시 이름, 0007 비정규화 — web/app은 Supabase에서 직접 읽어 노출, api 응답엔 포함되지 않음)
-  - 증분 신규(전부 nullable — 컬럼 자체가 아직 DB에 없어 항상 `null`, 값 채움은 후속 에픽):
+  - 증분 신규(전부 nullable). ✎ 2026-07-20 코드리뷰 정정: 이 머리글은 원래 *"컬럼 자체가 아직 DB에
+    없어 **항상 `null`**"*이었으나 더는 사실이 아니다 — **일부는 값이 실제로 채워진다**(아래 "값 채움"
+    열이 그 시점이다). 예: `image_path`·`image_count`는 Story 9.6부터 api가 채워 보낸다.
+    아직 안 채워진 필드는 그 열에 적힌 에픽이 오기 전까지 `null`이다:
     | 필드 | 타입 | 값 채움 |
     |---|---|---|
     | `image_url` | string\|null (대표 사진의 공개 URL) | Epic 9 |
@@ -77,7 +80,21 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 3. api `schemas/ai.py`의 `ListingCard`
 4. app `listing.dart`의 `ListingCardData`
 
+> **예외 — AI 응답 wire 전용 필드는 2번 자리가 다르다** (✎ 2026-07-20 코드리뷰 추가).
+> 화면 카드까지 가지 않고 **매핑 계층에서 소멸하는** 필드(현재 `image_path`)는 web 쪽 자리가
+> `ListingCard.tsx`가 아니라 **`web/src/lib/api/aiSearch.ts`의 wire 타입**이다. web이 이 값을
+> 공개 URL로 바꿔 `image_url`에 넣고 경로는 버리므로 `ListingCardData`에는 들어가지 않는다(§10).
+> 이 예외가 없으면 다음 사람이 `ListingCard.tsx`를 뒤지다 아무것도 못 찾는다.
+
 필드 자리(nullable 계약)뿐 아니라 **실제 값까지 채울 때**는 위 4곳에 더해 `api/app/graph/listing_cards.py`의 `SELECT_COLUMNS`·`api/app/db/sql_guard.py`의 `ALLOWED_COLUMNS`도 락스텝으로 갱신해야 한다(DB 컬럼이 실제로 생긴 시점).
+
+> ⚠️ **단, `listings` 테이블 밖에서 오는 값은 이 규칙에서 제외한다** (✎ 2026-07-20 코드리뷰 추가).
+> `image_path`·`image_count`는 `listing_images`에서 **별도 고정쿼리**로 붙는다(§10.2). 이 값들
+> 때문에 `SELECT_COLUMNS`를 늘리면 안 되고(7튜플 매핑이 깨진다), **`ALLOWED_COLUMNS`에
+> `storage_path`를 넣는 것은 더더욱 안 된다** — 그러면 LLM이 만든 SQL이 사진 테이블에 닿을 수
+> 있게 되고, `ai_readonly`의 그 테이블 정책은 `using(true)`라 **sold 사진까지 열려 있어**
+> FR11이 그 경로에서 무너진다. `tests/test_sql_guard.py`의 4건이 이 확장을 red로 막는다.
+> (이 단서가 없던 동안, 위 규칙을 그대로 따르면 가드를 여는 것이 "규칙 준수"로 읽혔다.)
 
 또한 값을 채우는 에픽은 위 **"계약-외 값 정규화(소비처 공통)"** 규칙을 렌더 코드에 반영한다(빈 문자열 image_url·도메인 밖 accident_status·음수 count·bool 3상태). web `isValidListing`은 신규 필드를 검증하지 않으므로 소비처가 방어적으로 읽어야 한다.
 
@@ -230,7 +247,9 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 - **URL 만료가 없다.** ~~`SIGNED_URL_TTL = 3600`~~ 상수는 Story 9.0에서 **삭제됐다** — 공개 URL은 만료되지 않으므로 TTL·재발급·갱신 개념 자체가 없다.
 - **api는 사진 URL을 만들지 않는다** — `storage_path`만 반환한다(`ai_readonly` 최소권한, CR2). URL 조립은 web·app이 각자 한다. 이 불변식은 `api/tests/test_storage_signed_url_contract.py`가 지킨다.
   - **그 `storage_path`가 실리는 wire 필드가 `ListingCard.image_path`다**(§4, Story 9.6). `image_url`이 아닌 이유가 바로 이 줄이다 — api가 URL을 못 만들므로 원본 경로를 담을 자리가 따로 필요했다.
-  - 위 contract test는 **쌍**을 지킨다: ① 응답에 Storage URL 문자열이 없다 **그리고** ② `image_path`에 원본 경로가 실제로 실린다. ①만 지키면 api가 사진을 아예 안 보내도 초록이라 계약의 절반이 빈다(9.6에서 ② 활성화).
+  - **강제 장치가 무엇을 지키는지 정확히** (✎ 2026-07-20 코드리뷰 정정 — 원래 *"위 contract test가 ①②의 쌍을 지킨다"*고 적혀 있었으나 **사실이 아니었다**):
+    - ① *"응답에 Storage URL 문자열이 없다"* → `api/tests/test_storage_signed_url_contract.py`가 지킨다. 마커(`/storage/v1/`·`token=`)가 고장나면 red가 되는 positive fixture 4건까지 갖췄다.
+    - ② *"`image_path`에 원본 경로가 **실제로** 실린다"* → **contract test는 이걸 못 지킨다.** 그 파일은 `run_search`를 통째로 스텁으로 바꾸고 손으로 만든 dict를 넣으므로, 사진 부착 코드를 전부 지워도 초록이다(증명되는 것은 "응답모델이 `image_path`를 직렬화한다"뿐). ②를 실제로 못박는 것은 **노드 배선 테스트 2건**이다 — `tests/test_doc_rag_node.py`·`tests/test_sql_rag_node.py`의 `test_cards_carry_cover_image_from_shared_helper`(둘 다 `attach_cover_images` 호출을 벗기면 red).
 - **URL 헬퍼(범용, Story 9.0)**: `getPublicUrl(bucket, path)` — web `@/lib/storage`·app `core/supabase/storage_helper.dart` 두 곳에 미러.
   - **동기 함수이고 실패하지 않는다** — 네트워크 왕복 없이 경로에서 문자열을 조립할 뿐이다. 서버·브라우저 어디서든 호출된다(9.0 이전의 "서버에서만 발급 가능" 제약은 사라졌다).
   - ⚠️ **파일 존재를 확인하지 않는다.** 경로만 있으면 URL이 나온다 — 없는 파일은 이미지 로드가 실패하므로 **소비처가 `onError`로 "사진 준비중" 플레이스홀더를 그려야 한다**(§4). 서명 시절엔 실패가 `null`로 와서 자동으로 플레이스홀더가 됐지만, 이제는 소비처 책임이다.

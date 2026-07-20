@@ -29,6 +29,14 @@ from app.graph.listing_cards import attach_cover_images
 from app.schemas.ai import ListingCard
 
 
+# 실제 UUID 모양 id — 고정 SQL이 `::uuid[]`로 캐스팅하므로 "l-1" 같은 값은 진짜 Postgres에서
+# 무조건 실패한다. 불가능한 입력으로 "정상 동작"을 검증하지 않기 위해 실 UUID를 쓴다
+# (코드리뷰 2026-07-20).
+_L1 = "11111111-1111-4111-8111-111111111111"
+_L2 = "22222222-2222-4222-8222-222222222222"
+_SOLD = "33333333-3333-4333-8333-333333333333"
+
+
 def _card(listing_id: str) -> ListingCard:
     """사진 필드가 아직 비어 있는(rows_to_cards 직후) 카드 한 장."""
     return ListingCard(
@@ -59,11 +67,11 @@ def test_attaches_cover_path_and_count(monkeypatch):
     # DB가 매물당 1행(대표 + 총 장수)을 돌려준다 — DISTINCT ON이 SQL에서 이미 골랐다.
     _install_fake_run_select(
         monkeypatch,
-        [("l-1", "u/l-1/a.webp", 3), ("l-2", "u/l-2/b.webp", 1)],
+        [(_L1, "u/l-1/a.webp", 3), (_L2, "u/l-2/b.webp", 1)],
         captured,
     )
 
-    cards = attach_cover_images([_card("l-1"), _card("l-2")])
+    cards = attach_cover_images([_card(_L1), _card(_L2)])
 
     assert cards[0].image_path == "u/l-1/a.webp"
     assert cards[0].image_count == 3
@@ -74,9 +82,9 @@ def test_attaches_cover_path_and_count(monkeypatch):
 def test_listing_without_photos_gets_none_and_zero(monkeypatch):
     """사진 0장 매물은 쿼리 결과에 아예 없다 → (None, 0). 카드를 버리지 않는다."""
     captured = {}
-    _install_fake_run_select(monkeypatch, [("l-1", "u/l-1/a.webp", 2)], captured)
+    _install_fake_run_select(monkeypatch, [(_L1, "u/l-1/a.webp", 2)], captured)
 
-    cards = attach_cover_images([_card("l-1"), _card("l-2")])
+    cards = attach_cover_images([_card(_L1), _card(_L2)])
 
     assert cards[1].image_path is None
     assert cards[1].image_count == 0
@@ -97,10 +105,10 @@ def test_query_binds_card_ids_as_parameters(monkeypatch):
     captured = {}
     _install_fake_run_select(monkeypatch, [], captured)
 
-    attach_cover_images([_card("l-1"), _card("l-2")])
+    attach_cover_images([_card(_L1), _card(_L2)])
 
-    assert captured["params"] == (["l-1", "l-2"],)
-    assert "l-1" not in captured["query"], "id가 SQL 문자열에 직접 박혔다"
+    assert captured["params"] == ([_L1, _L2],)
+    assert _L1 not in captured["query"], "id가 SQL 문자열에 직접 박혔다"
 
 
 # --- AC2: FR11 — 이미지 쿼리 자체가 on_sale을 강제한다 ------------------------------
@@ -115,7 +123,7 @@ def test_query_joins_listings_and_filters_on_sale(monkeypatch):
     captured = {}
     _install_fake_run_select(monkeypatch, [], captured)
 
-    attach_cover_images([_card("l-1")])
+    attach_cover_images([_card(_L1)])
 
     q = " ".join(captured["query"].lower().split())
     assert "join listings" in q, "listings와 조인하지 않는다 — sold를 거를 수단이 없다"
@@ -131,8 +139,8 @@ def test_sold_listing_photo_never_reaches_card(monkeypatch):
     """
     captured = {}
     # 가짜 DB: l-sold는 sold 매물이고 사진이 있다. l-1은 on_sale.
-    listings_status = {"l-1": "on_sale", "l-sold": "sold"}
-    images = {"l-1": "u/l-1/a.webp", "l-sold": "u/l-sold/secret.webp"}
+    listings_status = {_L1: "on_sale", _SOLD: "sold"}
+    images = {_L1: "u/l-1/a.webp", _SOLD: "u/l-sold/secret.webp"}
 
     def fake_run_select(query, params=None):
         captured["query"] = query
@@ -150,12 +158,12 @@ def test_sold_listing_photo_never_reaches_card(monkeypatch):
 
     monkeypatch.setattr(module, "run_select", fake_run_select)
 
-    cards = attach_cover_images([_card("l-1"), _card("l-sold")])
+    cards = attach_cover_images([_card(_L1), _card(_SOLD)])
 
     by_id = {c.id: c for c in cards}
-    assert by_id["l-1"].image_path == "u/l-1/a.webp"
-    assert by_id["l-sold"].image_path is None, "sold 매물의 사진 경로가 응답에 실렸다 (FR11 위반)"
-    assert by_id["l-sold"].image_count == 0
+    assert by_id[_L1].image_path == "u/l-1/a.webp"
+    assert by_id[_SOLD].image_path is None, "sold 매물의 사진 경로가 응답에 실렸다 (FR11 위반)"
+    assert by_id[_SOLD].image_count == 0
     assert "secret" not in str([c.model_dump() for c in cards])
 
 
@@ -170,11 +178,14 @@ def test_query_orders_by_sort_order_then_id(monkeypatch):
     captured = {}
     _install_fake_run_select(monkeypatch, [], captured)
 
-    attach_cover_images([_card("l-1")])
+    attach_cover_images([_card(_L1)])
 
     q = " ".join(captured["query"].lower().split())
     assert "order by" in q
-    assert "sort_order" in q and "id" in q
+    # ✎ 2026-07-20 코드리뷰: 원래 `"sort_order" in q and "id" in q`였는데, "id"가
+    #   "listing_id"의 부분문자열이라 2차 키 i.id를 **지워도 통과**했다(실측: 8/8 green).
+    #   2차 키 유실이 이 AC의 유일한 회귀인데 그걸 못 잡던 자리다. 통째로 단언한다.
+    assert "order by i.listing_id, i.sort_order, i.id" in q
     # is_cover는 파생값이라 읽지 않는다(conventions.md §10.2).
     assert "is_cover" not in q, "is_cover를 읽고 있다 — 대표 판별 규칙이 목록 카드와 갈린다"
 
@@ -190,8 +201,60 @@ def test_query_failure_returns_cards_without_photos(monkeypatch):
 
     monkeypatch.setattr(module, "run_select", boom)
 
-    cards = attach_cover_images([_card("l-1")])
+    cards = attach_cover_images([_card(_L1)])
 
     assert len(cards) == 1
+    assert cards[0].image_path is None
+    assert cards[0].image_count == 0
+
+
+# --- 코드리뷰 2026-07-20 반영분 ------------------------------------------------------
+
+
+def test_non_uuid_card_id_does_not_kill_other_cards_photos(monkeypatch):
+    """UUID가 아닌 id 한 건이 섞여도 **나머지 카드는 사진을 지킨다.**
+
+    왜 이 테스트가 있나: 고정 SQL은 id 목록을 `::uuid[]`로 한 번에 캐스팅하므로, 진짜
+    Postgres에서는 값 하나만 깨져도 **문장 전체가** 실패한다 → except가 삼켜 그 응답의
+    모든 카드가 사진을 잃는다(전량 실패). 그래서 바인딩 전에 UUID 모양만 거른다.
+    도달 경로: sql_guard가 SELECT 컬럼 **순서**를 고정하지 않아 id 자리에 region 등이 올 수 있다.
+    """
+    captured = {}
+    _install_fake_run_select(monkeypatch, [(_L1, "u/l-1/a.webp", 2)], captured)
+
+    cards = attach_cover_images([_card(_L1), _card("강원")])
+
+    # 깨진 id는 조회 대상에서 빠진다 — 배열 전체를 죽이지 않는다.
+    assert captured["params"] == ([_L1],)
+    by_id = {c.id: c for c in cards}
+    assert by_id[_L1].image_path == "u/l-1/a.webp", "정상 카드가 깨진 id 때문에 사진을 잃었다"
+    assert by_id["강원"].image_path is None
+    assert len(cards) == 2  # 카드 자체는 버리지 않는다
+
+
+def test_all_ids_invalid_skips_query(monkeypatch):
+    """쓸 수 있는 id가 하나도 없으면 쿼리를 쏘지 않는다(빈 배열 왕복 회피)."""
+    captured = {}
+    _install_fake_run_select(monkeypatch, [], captured)
+
+    cards = attach_cover_images([_card("강원"), _card("서울")])
+
+    assert "query" not in captured, "유효한 id가 0건인데 DB 쿼리가 나갔다"
+    assert all(c.image_path is None and c.image_count == 0 for c in cards)
+
+
+def test_malformed_row_does_not_kill_the_answer(monkeypatch):
+    """돌아온 **행 모양이 이상해도** 답변 전체를 실패시키지 않는다.
+
+    조회는 성공했는데 count가 None이면 `int(None)`에서 터진다. 이 해석부가 try 밖에 있으면
+    예외가 노드를 관통해 `/ai/search`가 500이 되고, docstring의 "답변을 죽이지 않는다"가
+    깨진다(코드리뷰 2026-07-20). 일부러 깨진 행을 돌려주고 카드가 살아 오는지 본다.
+    """
+    captured = {}
+    _install_fake_run_select(monkeypatch, [(_L1, "u/l-1/a.webp", None)], captured)
+
+    cards = attach_cover_images([_card(_L1)])
+
+    assert len(cards) == 1, "행 해석 실패가 답변 전체를 죽였다"
     assert cards[0].image_path is None
     assert cards[0].image_count == 0

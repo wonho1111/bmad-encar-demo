@@ -139,10 +139,18 @@ export function resolveCardImage(wire: AiListingWire): ListingCardData {
   const { image_path: rawPath, image_count: rawCount, ...card } = wire;
   const path = typeof rawPath === 'string' ? rawPath.trim() : '';
   const count = typeof rawCount === 'number' && Number.isFinite(rawCount) ? rawCount : 0;
+  const url = path === '' ? null : getPublicUrl(LISTING_IMAGES_BUCKET, path);
   return {
     ...card,
-    image_url: path === '' ? null : getPublicUrl(LISTING_IMAGES_BUCKET, path),
-    image_count: Math.max(0, count),
+    image_url: url,
+    // ✎ 2026-07-20 코드리뷰 2건:
+    //   · Math.trunc — Number.isFinite(2.7)은 true라 소수가 그대로 통과해 "2.7장" 배지가
+    //     렌더됐다. 계약(§4)의 타입은 int이므로 여기서 정수로 자른다(반올림 아님).
+    //   · url이 null이면 count도 0 — 둘을 따로 정규화하면 "사진 준비중" 플레이스홀더 위에
+    //     "5장" 배지가 얹히는 자기모순 화면이 나온다. ListingCardImage가 배지를 사진 분기
+    //     **밖**에 두는 것은 의도된 설계지만(로드 실패해도 장수는 남긴다 — 9.4), 그건
+    //     "경로는 있는데 로드 실패"용이고 "경로가 아예 없음"과는 구분돼야 한다.
+    image_count: url === null ? 0 : Math.max(0, Math.trunc(count)),
   };
 }
 

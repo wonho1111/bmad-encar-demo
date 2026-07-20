@@ -142,10 +142,21 @@ def test_guard_fires_on_percent_encoded_public_url():
         _assert_no_storage_url(encoded)
 
 
-# --- 계약의 나머지 절반: api는 **원본 경로를 실제로 보낸다** (Story 9.6에서 활성화) ---------
-# 위 테스트들은 "URL이 없다"만 본다. 그것만으로는 api가 사진 정보를 **아예 안 실어도** 초록이라,
-# §10의 "storage_path만 반환한다"는 계약 중 절반("만 반환")만 지키고 나머지 절반("storage_path를
-# 반환")은 아무도 안 지켰다. 9.6이 값을 채웠으므로 여기서 쌍을 닫는다.
+# --- 응답 **직렬화** 확인: image_path가 라우터를 통과해 JSON에 실린다 --------------------
+# ⚠️ 이 테스트의 범위를 정확히 적는다(✎ 2026-07-20 코드리뷰 정정).
+#
+# 원래 여기에 "계약의 나머지 절반(= api가 storage_path를 **실제로** 보낸다)을 닫는다"고 적혀
+# 있었고 `docs/conventions.md` §10에도 그렇게 등재됐다. **사실이 아니었다.** 아래 테스트는
+# `run_search`를 통째로 스텁으로 바꾸고 **손으로 만든 dict**를 넣는다 — 그래서
+# `attach_cover_images`도 고정 SQL도 한 번도 실행되지 않고, 사진 부착 코드를 통째로 지워도
+# 초록으로 남는다. 실제로 증명되는 것은 **"Pydantic 응답모델이 image_path를 필터링하지 않고
+# JSON으로 내보낸다"** 하나뿐이다(그것도 지킬 값어치는 있다 — 응답모델에서 필드가 빠지면 여기가
+# red가 된다).
+#
+# "api가 사진 경로를 실제로 채워 보낸다"를 못박는 것은 **노드 배선 테스트 2건**이다:
+#   · tests/test_doc_rag_node.py::test_cards_carry_cover_image_from_shared_helper  (경로 B)
+#   · tests/test_sql_rag_node.py::test_cards_carry_cover_image_from_shared_helper  (경로 A)
+# 둘 다 attach_cover_images 호출을 벗기면 red가 된다(실측 확인).
 _STORAGE_PATH = "0a1b2c3d-user/9f8e7d6c-listing/cover.webp"
 
 

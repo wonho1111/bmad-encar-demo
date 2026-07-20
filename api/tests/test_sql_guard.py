@@ -219,9 +219,15 @@ def test_join_listing_images_rejected():
 
 
 def test_select_from_listing_images_rejected():
-    """JOIN 없이 listing_images를 직접 조회해도 거부된다."""
-    sql = "SELECT storage_path FROM listing_images WHERE status = 'on_sale'"
-    assert _code(sql) in ("forbidden_table", "forbidden_column")
+    """JOIN 없이 listing_images를 직접 조회해도 **테이블 화이트리스트**가 거부한다.
+
+    ✎ 2026-07-20 코드리뷰: 원래 `in ("forbidden_table", "forbidden_column")` OR 단언이었다.
+      그러면 테이블 차단이 뚫려도 컬럼 차단이 우연히 잡아주면 초록이라, 이 테스트의 제목이
+      주장하는 것(테이블 차단)을 특정하지 못했다. 컬럼(`id`)은 화이트리스트에 있는 것으로
+      바꿔 **테이블 차단만** 겨눈다 — 나머지 3건은 이미 정확한 코드로 단언하고 있었다.
+    """
+    sql = "SELECT id FROM listing_images WHERE status = 'on_sale'"
+    assert _code(sql) == "forbidden_table"
 
 
 def test_storage_path_column_rejected():

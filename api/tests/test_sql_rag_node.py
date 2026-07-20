@@ -52,3 +52,51 @@ def test_to_cards_maps_tuple_positions_and_casts_int():
 
 def test_to_cards_empty():
     assert _to_cards([]) == []
+
+
+# --- 경로 A 배선 검사 (코드리뷰 2026-07-20) -------------------------------------------
+# 위 테스트들은 순수 헬퍼만 부르고 **노드 자체를 한 번도 호출하지 않는다.** 그래서
+# `attach_cover_images(...)` 호출을 통째로 벗겨내도 전부 초록이었다(실측: 184 passed).
+# 아래가 그 배선을 못박는다 — 경로 B(test_doc_rag_node)에도 짝이 되는 검사가 있다.
+
+import app.graph.listing_cards as listing_cards  # noqa: E402
+import app.graph.sql_rag_node as node  # noqa: E402
+
+_LISTING_ID = "55555555-5555-4555-8555-555555555555"
+_SAFE_SQL = (
+    "SELECT id, manufacturer, model, year, price, mileage, region "
+    "FROM listings WHERE status = 'on_sale' LIMIT 5"
+)
+
+
+class _FakeLLM:
+    """항상 가드를 통과하는 SQL을 돌려주는 가짜 LLM(네트워크·과금 없음)."""
+
+    def invoke(self, messages):
+        return type("Msg", (), {"content": _SAFE_SQL})()
+
+
+def test_cards_carry_cover_image_from_shared_helper(monkeypatch):
+    """경로 A가 **실제로** attach_cover_images를 통과한다 — AC1 배선을 못박는 검사."""
+    monkeypatch.setattr(node, "_llm", lambda: _FakeLLM())
+    monkeypatch.setattr(
+        node,
+        "run_select",
+        lambda sql, params=None: [
+            (_LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원")
+        ],
+    )
+    # 사진 조회는 listing_cards 모듈의 run_select를 탄다 — 노드 모듈만 패치하면
+    # 진짜 DB에 붙으려다 실패하고 except가 삼켜, 기능이 없어도 초록이 된다.
+    monkeypatch.setattr(
+        listing_cards,
+        "run_select",
+        lambda sql, params=None: [(_LISTING_ID, "u/l/cover.webp", 4)],
+    )
+
+    result = node.sql_rag_node("3천만원 이하 SUV")
+
+    card = result["listings"][0]
+    assert card.image_path == "u/l/cover.webp", "사진 부착 헬퍼를 통과하지 않았다(AC1 배선 유실)"
+    assert card.image_count == 4
+    assert card.image_url is None  # api는 URL을 만들지 않는다(conventions.md §10)

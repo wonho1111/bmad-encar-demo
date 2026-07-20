@@ -53,7 +53,15 @@ class ListingCardData {
   //    `listing_card.dart`는 애초에 사진을 그리지 않는다(web의 9.4에 해당하는 작업이 app에 없다).
   //    앱 카드에 사진을 붙이는 것은 **Epic 16(16.2 이미지 카드 재설계)**의 몫이다 —
   //    여기서는 계약 락스텝(conventions.md §4.1)을 맞추기 위해 **파싱만** 해 둔다.
-  //    렌더할 때는 `storage_helper.dart`의 getPublicUrl로 URL을 만들어 써야 한다.
+  //
+  // ⚠️ **Epic 16이 이 필드를 쓸 때 지킬 방향** (✎ 2026-07-20 코드리뷰 정정):
+  //    원래 여기 *"렌더할 때 getPublicUrl로 URL을 만들어 써라"*라고 적혀 있었는데, 이는
+  //    정본(conventions.md §10)과 **반대 방향**이다. 정본은 *"AI 응답을 받는 쪽은 `image_path`를
+  //    URL로 바꿔 `image_url` 자리에 넣고 **경로는 버린다**. 카드는 `image_url` 하나만 안다"*이다
+  //    (web `aiSearch.ts`의 `resolveCardImage`가 그 구현이다).
+  //    → 즉 변환은 **응답 매핑 계층에서 한 번**, 렌더 시점이 아니다. 이 주석을 그대로 믿고
+  //      카드가 경로를 들고 있다가 그릴 때 변환하면 web과 다른 구조가 되고, 그게 §4.1
+  //      락스텝이 애초에 막으려던 드리프트다.
   final String? imagePath;
   final int? viewCount; // Epic 11
   final int? imageCount; // Epic 9

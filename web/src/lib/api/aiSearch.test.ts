@@ -67,4 +67,23 @@ describe('resolveCardImage', () => {
     expect(resolveCardImage({ ...BASE_CARD, image_path: { a: 1 } }).image_url).toBeNull();
     expect(resolveCardImage({ ...BASE_CARD }).image_url).toBeNull(); // 필드 자체가 없음
   });
+
+  // --- 코드리뷰 2026-07-20 반영분 ---------------------------------------------------
+
+  it('소수 count: 정수로 자른다 ("2.7장" 배지 금지 — 계약 타입은 int)', () => {
+    // Number.isFinite(2.7)은 true라 기존 방어(숫자인가?)를 그대로 통과했다.
+    // 반올림이 아니라 버림이다 — 3.9장을 "4장"이라 부르면 없는 사진을 약속하는 셈이다.
+    expect(resolveCardImage({ ...BASE_CARD, image_path: 'u/l/a.webp', image_count: 2.7 }).image_count).toBe(2);
+    expect(resolveCardImage({ ...BASE_CARD, image_path: 'u/l/a.webp', image_count: 3.9 }).image_count).toBe(3);
+  });
+
+  it('사진이 없으면 장수도 0이다 ("사진 준비중" 위에 "5장" 배지가 얹히지 않는다)', () => {
+    // 두 값을 따로 정규화하면 화면이 자기모순이 된다 — 플레이스홀더인데 배지는 5장.
+    // ListingCardImage가 배지를 사진 분기 밖에 두는 것은 의도된 설계지만(로드 실패해도
+    // 장수는 남긴다 — 9.4), 그건 "경로는 있는데 실패"용이고 "경로가 아예 없음"과는 다르다.
+    expect(resolveCardImage({ ...BASE_CARD, image_path: '', image_count: 5 }).image_count).toBe(0);
+    expect(resolveCardImage({ ...BASE_CARD, image_count: 5 }).image_count).toBe(0);
+    // 반대로 경로가 있으면 장수는 그대로 살아 있어야 한다(과잉 차단 금지).
+    expect(resolveCardImage({ ...BASE_CARD, image_path: 'u/l/a.webp', image_count: 5 }).image_count).toBe(5);
+  });
 });
