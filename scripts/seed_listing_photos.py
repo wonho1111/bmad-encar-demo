@@ -46,22 +46,94 @@ UA = "bmad-encar-demo/1.0 (demo seed tooling; https://commons.wikimedia.org/wiki
 
 # Commons는 한글 모델명을 못 찾는다 — 검색어만 영문으로 옮긴다(DB 값은 건드리지 않는다).
 # 커버리지는 2026-07-12 API probe로 확인됨(DN8·MQ4·DL3·RG3 등 국산 세대코드까지 매칭).
+#
+# ⚠️ 키는 (제조사, 모델) **정확 일치**다. DB에 표기 흔들림이 실재하므로(`니로 EV`/`니로EV`,
+#    `아반떼 MD`/`아반떼MD`) **DB 값을 고치지 말고 변형을 각각 키로 넣는다**(Story 9.7 결정).
+# ⚠️ Commons 검색은 정확 일치가 아니라 관련도 순 전문검색이다 — 결과가 나온다고 그 차종인 건
+#    아니다. 2026-07-21 실측으로 후보 59종의 반환 제목을 눈으로 확인했고, 아래 주석의
+#    "≈" 표시가 붙은 것은 **같은 계열 다른 배지가 섞이는 것을 알고 수용한 자리**다.
+#    (대조군: 존재하지 않는 검색어는 0건을 돌려준다 — 검색이 실제로 거르고 있음을 확인)
 SEARCH_TERMS = {
+    # ── 현대 ──
     ("현대", "쏘나타 DN8"): "Hyundai Sonata DN8",
+    ("현대", "쏘나타"): "Hyundai Sonata",
     ("현대", "팰리세이드"): "Hyundai Palisade",
     ("현대", "아반떼 CN7"): "Hyundai Avante CN7",
+    ("현대", "아반떼 MD"): "Hyundai Avante MD",
+    ("현대", "아반떼MD"): "Hyundai Avante MD",
+    ("현대", "아반떼"): "Hyundai Avante",
+    ("현대", "아반떼 하이브리드"): "Hyundai Avante hybrid",
     ("현대", "그랜저 IG"): "Hyundai Grandeur IG",
+    ("현대", "그랜저 GN7"): "Hyundai Grandeur GN7",
+    ("현대", "그랜저 GN7 하이브리드"): "Hyundai Grandeur GN7",
+    ("현대", "그랜저"): "Hyundai Grandeur",
+    ("현대", "싼타페 TM"): "Hyundai Santa Fe TM",
+    ("현대", "싼타페"): "Hyundai Santa Fe",
+    ("현대", "투싼 NX4"): "Hyundai Tucson NX4",
+    ("현대", "투싼"): "Hyundai Tucson",
+    ("현대", "코나 일렉트릭"): "Hyundai Kona Electric",   # ≈ 제네바 전시 사진이 일부 섞임
+    ("현대", "코나"): "Hyundai Kona",
+    ("현대", "아이오닉5"): "Hyundai Ioniq 5",
+    ("현대", "아이오닉6"): "Hyundai Ioniq 6",
+    ("현대", "스타리아"): "Hyundai Staria",
+    ("현대", "베뉴"): "Hyundai Venue",
+    ("현대", "캐스퍼"): "Hyundai Casper",
+    ("현대", "포터2"): "Hyundai Porter",
+    # ── 기아 ──
     ("기아", "카니발 KA4"): "Kia Carnival KA4",
+    ("기아", "카니발"): "Kia Carnival",
     ("기아", "쏘렌토 MQ4"): "Kia Sorento MQ4",
+    ("기아", "쏘렌토"): "Kia Sorento",
     ("기아", "K5 DL3"): "Kia K5 DL3",
+    ("기아", "K5"): "Kia K5",
+    ("기아", "K8"): "Kia K8",
+    ("기아", "K3"): "Kia K3",
+    ("기아", "EV6"): "Kia EV6",
+    ("기아", "니로 EV"): "Kia Niro EV",
+    ("기아", "니로EV"): "Kia Niro EV",
+    ("기아", "셀토스"): "Kia Seltos",
+    ("기아", "스포티지 하이브리드"): "Kia Sportage hybrid",
+    ("기아", "쏘울"): "Kia Soul",
+    ("기아", "레이"): "Kia Ray",                          # ≈ Ray 컨셉카가 일부 섞임
+    ("기아", "모닝"): "Kia Picanto",                       # 모닝의 수출명이 Picanto
+    ("기아", "모닝 JA"): "Kia Picanto JA",
+    ("기아", "봉고3"): "Kia Bongo",                        # ≈ 형제차 K2500/K2700이 섞임
+    # ── 제네시스 ──
     ("제네시스", "GV70"): "Genesis GV70",
     ("제네시스", "G80"): "Genesis G80",
+    ("제네시스", "G80 RG3"): "Genesis G80 RG3",
+    ("제네시스", "G70"): "Genesis G70",
+    # ── KG모빌리티 ──
+    ("KG모빌리티", "토레스"): "KG Mobility Torres",
+    ("KG모빌리티", "렉스턴"): "SsangYong Rexton",
+    ("KG모빌리티", "티볼리"): "SsangYong Tivoli",
+    # ── 르노코리아 · 쉐보레 ──
+    ("르노코리아", "SM6"): "Renault Samsung SM6",
+    ("르노코리아", "QM6"): "Renault Samsung QM6",
+    ("르노코리아", "XM3"): "Renault Samsung XM3",
+    ("쉐보레", "말리부"): "Chevrolet Malibu",
+    ("쉐보레", "스파크"): "Chevrolet Spark",
+    ("쉐보레", "트랙스"): "Chevrolet Trax",
+    ("쉐보레", "트레일블레이저"): "Chevrolet Trailblazer 2020",  # 연식을 붙여야 국내형 세대가 잡힘
+    ("쉐보레", "올란도"): "Chevrolet Orlando",
+    # ── 수입 ──
     ("BMW", "X3"): "BMW X3",
     ("BMW", "520i"): "BMW 520i",
+    ("BMW", "320i"): "BMW 320i",
+    ("BMW", "M4"): "BMW M4",
     ("벤츠", "E250"): "Mercedes-Benz E-Class W213",
+    ("벤츠", "GLE450"): "Mercedes-Benz GLE-Class",
+    ("아우디", "Q5"): "Audi Q5",
+    ("아우디", "A6 40 TDI"): "Audi A6 C8",
+    ("폭스바겐", "티구안"): "Volkswagen Tiguan",
     ("토요타", "캠리 하이브리드"): "Toyota Camry hybrid",
-    ("쉐보레", "말리부"): "Chevrolet Malibu",
-    ("르노코리아", "SM6"): "Renault Samsung SM6",
+    ("토요타", "캠리"): "Toyota Camry",
+    ("혼다", "CR-V"): "Honda CR-V",
+    ("렉서스", "ES300h"): "Lexus ES 300h",
+    ("테슬라", "모델3"): "Tesla Model 3",
+    ("테슬라", "모델S"): "Tesla Model S",
+    ("테슬라", "모델Y"): "Tesla Model Y",
+    ("기타", "볼보 XC60"): "Volvo XC60",
 }
 
 def is_license_allowed(license_name: str) -> bool:
