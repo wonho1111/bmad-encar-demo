@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-20 (Story 9.6 구현 완료 — review. api 사진 부착 + web 매핑, 대장 #48·#71 닫음·#84 신규. 실브라우저 E2E·FR11 실DB 검증 완료)
+last_updated: 2026-07-20 (Story 9.6 코드리뷰 반영 완료 — done. Decision 2·Patch 16 적용, CI에 실DB FR11 게이트 신설하고 우회를 잡는 것까지 증명. 대장 #85·#86·#87 신규 등재)
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -125,7 +125,7 @@ development_status:
   9-3-사진-업로더-등록-수정: done
   9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: done
   9-5-상세-페이지-골격-사진-갤러리: done
-  9-6-ai-응답-카드-사진: review
+  9-6-ai-응답-카드-사진: done
   9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: backlog
   epic-9-retrospective: optional
 
