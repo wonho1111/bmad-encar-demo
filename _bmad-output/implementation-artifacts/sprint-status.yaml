@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-21 (Story 9.7 구현 진행 — in-progress. Task 1·3·5·6 완료 + 테스트 전량 통과. 사진 170장 추가(180행/90매물, 미매칭 0) · 마이그 0015 red-green 증명(빈 Postgres) · #27 시드 재실행 파괴 범위 실측(사진·채팅 전멸, 에러 0건) · 대장 #27·#54·#68·#80 닫음, #73·#83 갱신, #88은 오진 철회. **미완 2건 = 사용자 승인 대기**: ① 0015 원격 적용 ② /ai 화면 관찰(CORS·포트 점유))
+last_updated: 2026-07-21 (Story 9.7 구현 완료 — review. Task 1~7 전부 완료, 미완 항목 없음. 사진 170장 추가(180행/90매물, 미매칭 0) · 마이그 0015 원격 적용 + red-green 실측(빈 Postgres·원격 양쪽 일치, FR7 구매완료 무손상) · #27 시드 재실행 파괴 범위 실측(사진·채팅 전멸, 매물 id 0/97 보존, 에러 0건) → 런북 §9 신설 · 3소비처(목록·상세·AI) 실브라우저 검증 + 폴백 발화 확인 · 대장 #27·#54·#68·#80 닫음, #73·#83·#84 갱신, #88은 오진 철회. 테스트: pytest 189 · vitest 96 · tsc · eslint · next build · 마이그 게이트 CI 전부 통과)
 # 이전: 2026-07-21 (Story 9.7 스토리 생성 — ready-for-dev. 착수 전 원격 실측으로 "100건 전량 시딩"이 문자 그대로는 불가능함을 확인(SEARCH_TERMS가 on_sale 95건 중 16건만 매칭) → 범위 선택지 A/B/C를 스토리에 명시하고 사용자 결정 대기. #54 마이그(0015)·#27 재실행 측정·#73/#80/#83 재측정을 AC로 심음)
 # 이전: 2026-07-20 (Story 9.6 코드리뷰 반영 완료 — done. Decision 2·Patch 16 적용, CI에 실DB FR11 게이트 신설하고 우회를 잡는 것까지 증명. 대장 #85·#86·#87 신규 등재)
 project: bmad-encar-demo
@@ -128,7 +128,7 @@ development_status:
   9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: done
   9-5-상세-페이지-골격-사진-갤러리: done
   9-6-ai-응답-카드-사진: done
-  9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: in-progress
+  9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: review
   epic-9-retrospective: optional
 
   # --- Epic 10: 신뢰속성·옵션·찜·판매자 정보 ---
