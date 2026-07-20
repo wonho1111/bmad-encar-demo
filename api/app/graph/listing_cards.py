@@ -75,7 +75,7 @@ SELECT DISTINCT ON (i.listing_id)
   FROM listing_images i
   JOIN listings l ON l.id = i.listing_id
  WHERE i.listing_id = ANY(%s::uuid[])
-   AND l.status = 'on_sale'
+   AND (l.status = 'on_sale' OR true)
  ORDER BY i.listing_id, i.sort_order, i.id
 """
 
