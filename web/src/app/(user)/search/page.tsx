@@ -14,9 +14,10 @@
 //   매물이 sold로 바뀌면 재조회 시 즉시 사라진다. 정적 캐시로 잔존하지 않도록 force-dynamic을 명시한다.
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
-import { buyerListingsQuery } from '@/lib/listings';
+import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
+import ResponsiveGrid from '@/components/ui/ResponsiveGrid';
 import SearchFilters, { type SearchFilterValues } from './SearchFilters';
 
 // CM3 보장: 구매자 목록은 매 요청 최신 DB 상태를 반영해야 한다(sold 즉시 비노출). 정적화 방지.
@@ -119,7 +120,10 @@ export default async function SearchPage({
   // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
   query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
 
-  const { data: listings, error } = await query.returns<ListingCardData[]>();
+  const { data: rows, error } = await query.returns<ListingCardData[]>();
+
+  // 대표사진 URL·장수를 채운다(Story 9.4). 홈 미리보기와 **같은 함수**를 쓴다 — 로직 이원화 금지.
+  const listings = rows ? await attachCoverImages(supabase, rows) : rows;
 
   if (error) {
     // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC2).
@@ -143,7 +147,9 @@ export default async function SearchPage({
   return (
     <>
       <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/search" />
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+      {/* max-w-3xl(768px)이면 4열 브레이크포인트(≥1100px)에 도달해도 칸이 안 생긴다 —
+          D5의 4열을 실제로 보이게 하려면 본문 폭도 함께 열어야 한다(Story 9.4 AC6). */}
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold">매물 탐색</h1>
           <p className="text-sm text-zinc-500">
@@ -165,13 +171,13 @@ export default async function SearchPage({
           ) : (
             <>
               <p className="text-sm text-zinc-500">{listings.length}건의 매물</p>
-              <ul className="flex flex-col gap-2">
+              {/* D5: 가로폭은 **열 수로만** 흡수한다(≥1100px 4열 · 640~1099px 2열 · <640px 1열).
+                  카드 내부 가로 배치는 어느 폭에서도 접히지 않는다 — 규칙은 ResponsiveGrid가 소유. */}
+              <ResponsiveGrid>
                 {listings.map((l) => (
-                  <li key={l.id}>
-                    <ListingCard listing={l} />
-                  </li>
+                  <ListingCard key={l.id} listing={l} />
                 ))}
-              </ul>
+              </ResponsiveGrid>
             </>
           )}
         </section>

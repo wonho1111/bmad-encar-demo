@@ -12,7 +12,7 @@
 // `min-[1100px]:`(arbitrary 브레이크포인트)를 섞으면 Tailwind가 둘을 다른 정렬 그룹으로 취급해
 // CSS 출력 순서가 뒤바뀐다 — 640이 나중에 출력되며 1100 규칙을 덮어써 데스크톱에서 4열이 2열로
 // 깨진다(직접 관찰로 발견). 그래서 두 경계를 같은 arbitrary 종류로 통일해 순서를 보장한다.
-import type { ReactNode } from 'react';
+import { Children, isValidElement, type ReactNode } from 'react';
 
 export default function ResponsiveGrid({
   children,
@@ -22,10 +22,17 @@ export default function ResponsiveGrid({
   className?: string;
 }) {
   return (
+    // role="list"/"listitem": display:grid인 <ul>은 Safari/VoiceOver에서 암묵적 리스트 시맨틱이
+    // 빠진다. 각 자식을 감싼 div가 실제 grid item이 되므로 레이아웃(열 수·행 흐름)은 그대로 유지된다.
     <div
+      role="list"
       className={`grid grid-cols-1 gap-5 min-[640px]:grid-cols-2 min-[1100px]:grid-cols-4 ${className}`}
     >
-      {children}
+      {Children.toArray(children).map((child) => (
+        <div key={isValidElement(child) ? child.key : undefined} role="listitem">
+          {child}
+        </div>
+      ))}
     </div>
   );
 }

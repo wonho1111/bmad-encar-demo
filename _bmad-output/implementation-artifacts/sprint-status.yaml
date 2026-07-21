@@ -35,7 +35,9 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-18 (code-review: 9.2 done)
+last_updated: 2026-07-21 (**Epic 9 회고 완료 — epic-9: done**. 회고 문서 `_bmad-output/implementation-artifacts/epic-9-retro-2026-07-21.md`. Epic 8 회고 약속 5건 중 4건 완료·A5(실측 없이 선언 금지)는 진행중 판정(뒤집힌 주장 4건이 있었으나 **전부 스스로/코드리뷰가 잡아 산출물에 남지 않았다** — Epic 8과 달라진 점). **중대 발견 1건 = 마이그 번호**: 에픽 문서 본문이 미래 스토리에 이미 소진된 번호(10.1→0013 등)를 지시하고 있었고 정정은 각주에만 있었다(8.5 삽입 때 9.1이 겪은 사고의 반복) → **표·본문에서 숫자를 걷어내고 "착수 시 파일 목록의 다음 빈 번호"로 교체**(10.1·11.1·12.1·12.2·12.5·14.1), 준수는 8.6 CI 게이트가 본다(B9). 회고 액션 이행: A2 `#56` 재평가 완료(9.0 공개 버킷 전환으로 "회수 불가"→"UI 없음"으로 성격 변경, Epic 16.2로 이관) · A3 대장 합계 줄 삭제(세 번 연속 낡음 — 세는 명령으로 대체) · A4 `#67`→10.1 · `#79`→10.2 · `#82`→10.6 인수조건 체크박스로 실제 심음(B5) · A5 "검사가 잡는지 증명"(변이 심어 red 확인)을 10.1·10.2·10.5 인수조건에 심음. Epic 10 계획 자체를 바꿔야 할 발견은 없음 — 상세 골격의 빈 슬롯이 실재하므로 의존성 충족.)
+# 이전: 2026-07-21 (Story 9.7 스토리 생성 — ready-for-dev. 착수 전 원격 실측으로 "100건 전량 시딩"이 문자 그대로는 불가능함을 확인(SEARCH_TERMS가 on_sale 95건 중 16건만 매칭) → 범위 선택지 A/B/C를 스토리에 명시하고 사용자 결정 대기. #54 마이그(0015)·#27 재실행 측정·#73/#80/#83 재측정을 AC로 심음)
+# 이전: 2026-07-20 (Story 9.6 코드리뷰 반영 완료 — done. Decision 2·Patch 16 적용, CI에 실DB FR11 게이트 신설하고 우회를 잡는 것까지 증명. 대장 #85·#86·#87 신규 등재)
 project: bmad-encar-demo
 project_key: NOKEY
 tracking_system: file-system
@@ -118,15 +120,16 @@ development_status:
   epic-8-retrospective: done
 
   # --- Epic 9: 매물 이미지 ---
-  epic-9: in-progress
+  epic-9: done
+  9-0-공개-버킷-전환-서명-url-제거: done
   9-1-listing-images-스키마-비공개-버킷-storage-rls: done
   9-2-서명-url-헬퍼-아티팩트-범용: done
-  9-3-사진-업로더-등록-수정: backlog
-  9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: backlog
-  9-5-상세-페이지-골격-사진-갤러리: backlog
-  9-6-ai-응답-카드-사진: backlog
-  9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: backlog
-  epic-9-retrospective: optional
+  9-3-사진-업로더-등록-수정: done
+  9-4-매물-카드-레이아웃-b-대표사진-n장-플레이스홀더-위계: done
+  9-5-상세-페이지-골격-사진-갤러리: done
+  9-6-ai-응답-카드-사진: done
+  9-7-시드-사진-이미지-하위호환-검증-g3-cm-a: done
+  epic-9-retrospective: done
 
   # --- Epic 10: 신뢰속성·옵션·찜·판매자 정보 ---
   epic-10: backlog

@@ -19,7 +19,7 @@ import logging
 from app.db.readonly import run_select
 from app.db.sql_guard import DEFAULT_LIMIT  # 추천 기본 개수(5) — 경로 A와 동일(brief "약 5개")
 from app.embeddings import embed_query
-from app.graph.listing_cards import SELECT_COLUMNS, rows_to_cards
+from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
 from app.schemas.ai import ListingCard
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,8 @@ def doc_rag_node(query: str) -> dict:
         "ORDER BY embedding <=> %s::vector LIMIT %s",
         (qvec, DEFAULT_LIMIT),
     )
-    listings: list[ListingCard] = rows_to_cards(listing_rows)
+    # 사진 부착은 경로 A·B 공용 헬퍼가 한다(Story 9.6) — 여기에 쿼리를 복사하지 않는다.
+    listings: list[ListingCard] = attach_cover_images(rows_to_cards(listing_rows))
 
     # ── 근거 가이드 문서 — 의미가 가장 가까운 1건의 제목을 answer 근거로 곁들인다 ──
     guide_rows = run_select(

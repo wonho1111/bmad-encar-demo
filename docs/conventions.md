@@ -42,15 +42,23 @@
 - **ListingCard 필드(snake_case):**
   - 기존(필수): `id, manufacturer, model, year, price, mileage, region`
   - 기존(nullable): `seller_name`(판매자 표시 이름, 0007 비정규화 — web/app은 Supabase에서 직접 읽어 노출, api 응답엔 포함되지 않음)
-  - 증분 신규(전부 nullable — 컬럼 자체가 아직 DB에 없어 항상 `null`, 값 채움은 후속 에픽):
+  - 증분 신규(전부 nullable). ✎ 2026-07-20 코드리뷰 정정: 이 머리글은 원래 *"컬럼 자체가 아직 DB에
+    없어 **항상 `null`**"*이었으나 더는 사실이 아니다 — **일부는 값이 실제로 채워진다**(아래 "값 채움"
+    열이 그 시점이다). 예: `image_path`·`image_count`는 Story 9.6부터 api가 채워 보낸다.
+    아직 안 채워진 필드는 그 열에 적힌 에픽이 오기 전까지 `null`이다:
     | 필드 | 타입 | 값 채움 |
     |---|---|---|
-    | `image_url` | string\|null (대표 서명 URL) | Epic 9 |
+    | `image_url` | string\|null (대표 사진의 공개 URL) | Epic 9 |
+    | `image_path` | string\|null (대표 사진의 **버킷 상대 경로** — AI 응답 wire 전용, 아래 주석) | Epic 9 (9.6) |
     | `image_count` | int\|null | Epic 9 |
     | `view_count` | int\|null | Epic 11 |
     | `accident_status` | `'무사고'\|'단순교환'\|'사고'`\|null | Epic 10 |
     | `is_single_owner` | bool\|null | Epic 10 |
     | `is_non_smoker` | bool\|null | Epic 10 |
+  - **`image_path` vs `image_url` — 누가 무엇을 채우나 (Story 9.6):** 둘은 같은 사진을 가리키지만 **채우는 주체가 다르다.**
+    - **`/ai/search` 응답(api)**: `image_path`만 채운다. `image_url`은 **항상 `null`**이다 — api는 사진 URL을 만들지 않기 때문이다(§10, `ai_readonly` 최소권한 CR2). 강제 장치: `api/tests/test_storage_signed_url_contract.py`.
+    - **Supabase 직접 조회(web·app의 목록·상세)**: `image_path`가 없다. 소비처가 `listing_images`를 직접 읽어 `getPublicUrl`로 `image_url`을 만든다.
+    - 따라서 **AI 응답을 받는 클라이언트는 `image_path`를 `getPublicUrl`로 바꿔 `image_url` 자리에 넣은 뒤 `image_path`를 버린다**(web `aiSearch.ts`가 그 자리). 카드 컴포넌트는 `image_url` 하나만 알면 되고, 두 경로의 차이를 몰라도 된다.
   - `image_url`이 null이면 클라가 "사진 준비중" 5:3 플레이스홀더를 렌더하는 것이 **계약의 일부**다. 변형 세트(`thumb`/`card`/`full`)는 클라이언트 렌더 파생이며 wire 계약이 아니다.
   - **찜(wishlist) 여부는 ListingCard wire 필드가 아니다.** "내가 찜했는지"는 사용자별 오버레이라 별도 조회/조인으로 처리한다(계약 오염 방지, Epic 10.5가 구현).
   - **계약-외 값 정규화(소비처 공통 — 값 채우는 Epic 9/10/11이 준수):** 소비처(web·app)의 파싱 관례가 서로 달라(예: Dart는 `is bool` strict, api Pydantic은 lax 강제변환) 같은 행을 다르게 볼 수 있으므로, 렌더 소비처는 아래를 **동일하게** 방어적으로 처리한다 —
@@ -72,7 +80,21 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 3. api `schemas/ai.py`의 `ListingCard`
 4. app `listing.dart`의 `ListingCardData`
 
+> **예외 — AI 응답 wire 전용 필드는 2번 자리가 다르다** (✎ 2026-07-20 코드리뷰 추가).
+> 화면 카드까지 가지 않고 **매핑 계층에서 소멸하는** 필드(현재 `image_path`)는 web 쪽 자리가
+> `ListingCard.tsx`가 아니라 **`web/src/lib/api/aiSearch.ts`의 wire 타입**이다. web이 이 값을
+> 공개 URL로 바꿔 `image_url`에 넣고 경로는 버리므로 `ListingCardData`에는 들어가지 않는다(§10).
+> 이 예외가 없으면 다음 사람이 `ListingCard.tsx`를 뒤지다 아무것도 못 찾는다.
+
 필드 자리(nullable 계약)뿐 아니라 **실제 값까지 채울 때**는 위 4곳에 더해 `api/app/graph/listing_cards.py`의 `SELECT_COLUMNS`·`api/app/db/sql_guard.py`의 `ALLOWED_COLUMNS`도 락스텝으로 갱신해야 한다(DB 컬럼이 실제로 생긴 시점).
+
+> ⚠️ **단, `listings` 테이블 밖에서 오는 값은 이 규칙에서 제외한다** (✎ 2026-07-20 코드리뷰 추가).
+> `image_path`·`image_count`는 `listing_images`에서 **별도 고정쿼리**로 붙는다(§10.2). 이 값들
+> 때문에 `SELECT_COLUMNS`를 늘리면 안 되고(7튜플 매핑이 깨진다), **`ALLOWED_COLUMNS`에
+> `storage_path`를 넣는 것은 더더욱 안 된다** — 그러면 LLM이 만든 SQL이 사진 테이블에 닿을 수
+> 있게 되고, `ai_readonly`의 그 테이블 정책은 `using(true)`라 **sold 사진까지 열려 있어**
+> FR11이 그 경로에서 무너진다. `tests/test_sql_guard.py`의 4건이 이 확장을 red로 막는다.
+> (이 단서가 없던 동안, 위 규칙을 그대로 따르면 가드를 여는 것이 "규칙 준수"로 읽혔다.)
 
 또한 값을 채우는 에픽은 위 **"계약-외 값 정규화(소비처 공통)"** 규칙을 렌더 코드에 반영한다(빈 문자열 image_url·도메인 밖 accident_status·음수 count·bool 3상태). web `isValidListing`은 신규 필드를 검증하지 않으므로 소비처가 방어적으로 읽어야 한다.
 
@@ -87,10 +109,30 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 ## 6. 판매완료 비노출 (FR11)
 
-- `status='sold'` 매물은 구매자의 **모든 경로**(목록·필터·상세·AI SQL·문서 RAG)에서 노출되지 않는다.
-- 강제 지점: RLS(authenticated = `0002_listings`에 동거, anon = `0011_listings_anon_select`) + `api/db/sql_guard.py` + 문서 RAG 결과 필터 + **`storage.objects` 읽기 RLS**(`0012_listing_images.sql` — 매물 사진 서명 URL은 그 이미지가 가리키는 매물이 `status='on_sale'`이거나 본인 소유일 때만 발급 가능. Epic 9). (구현은 Epic 2~4, anon 경로는 Epic 8.5)
-  - ⚠️ **단, storage RLS 축은 "모든 경로에서 비노출"이 완전하지 않다** — 서명 URL은 발급 **시점에만** RLS를 검사하고 TTL(3600s) 동안 재검사하지 않는다. `on_sale`→`sold` 전환 **직전** 발급된 URL은 최대 1시간 생존한다(데모 수용 한계). 상세: `docs/tech-debt.md` #50-2.
+- `status='sold'` 매물은 구매자의 **모든 조회 경로**(목록·필터·상세·AI SQL·문서 RAG)에서 노출되지 않는다.
+- 강제 지점:
+  - **매물 축** — RLS(authenticated SELECT/INSERT/DELETE = `0002_listings`에 동거, anon = `0011_listings_anon_select`, **authenticated UPDATE = `0015_listings_update_not_sold`**) + `api/db/sql_guard.py` + 문서 RAG 결과 필터. (구현은 Epic 2~4, anon 경로는 Epic 8.5)
+    - ⚠️ **UPDATE만 0002 밖에 산다.** `0015`가 `listings_update_own`을 drop-recreate하며 `using`에 `status <> 'sold'`를 넣었다(sold 매물 수정 차단, `docs/tech-debt.md` #54). *"authenticated RLS는 전부 0002에 있다"고 읽으면 틀린다* — 코드리뷰 2026-07-21이 락스텝 갱신 누락으로 잡은 자리.
+    - ⚠️ **사진 축(`listing_images`)에는 이 조건이 없다** — sold 매물의 사진은 DB가 막지 않는다(`docs/tech-debt.md` #90, 원격 실측 확인).
+  - **이미지 축** — `listing_images` RLS(`0012_listing_images`의 `listing_images_select_on_sale_anon` / `listing_images_select_on_sale` — 둘 다 `listings`에 조인해 `l.status = 'on_sale'`을 건다) + 소비처의 id 좁히기.
+    - 소비처 목록(**새 조회 경로를 열면 여기에 추가한다**): `attachCoverImages`(목록 카드 — `buyerListingsQuery` 결과의 id만 조회) · `fetchListingGalleryUrls`(상세 갤러리, Story 9.5 — `buyerListingsQuery`로 매물을 먼저 찾은 뒤 **그 매물이 있을 때만** 호출한다. sold면 404 화면에서 끝나 이 함수까지 오지 않는다) · **`attach_cover_images`(api, AI 응답 카드 — Story 9.6)**.
+      - ⚠️ **`attach_cover_images`만 성격이 다르다 — 여기서는 DB가 안 막는다.** 위 web 두 경로는 `authenticated`/`anon` 롤로 붙으므로 `listing_images`의 on_sale RLS가 **DB에서** 걸러 준다. 그런데 api는 `ai_readonly` 롤이고 그 롤의 정책은 `using(true)`라(`0012:153`, 의도된 설계 CR2) **sold 사진까지 전부 열려 있다.** 그래서 이 경로는 고정쿼리의 `l.status = 'on_sale'`이 **유일한 강제 지점**이다 — 까먹으면 그대로 뚫린다.
+      - 강제 장치: `api/tests/test_listing_cards.py`(sold 사진이 응답에 실리지 않음 — 조건을 지우면 red) + `api/tests/test_sql_guard.py`(LLM 생성 SQL이 `listing_images`에 닿지 못함). 둘 다 `docs/tech-debt.md` #48을 닫은 근거다.
+    - ✎ **2026-07-19 코드리뷰에 의해 등재.** 이 축은 0012부터 실재했는데 **이 목록에 한 번도 오른 적이 없었고**, 9.0이 `storage.objects` 항목을 지우면서 이미지 관련 강제 지점이 목록에서 완전히 사라졌다. 그 상태에서 9.4가 `listing_images` 조회 경로를 화면 2곳(`/search`·홈)에 새로 열었다. **차단은 실제로 동작한다**(실측) — 문제는 목록이 사실을 반영하지 않아, §6만 읽는 다음 사람은 이미지 축에 FR11 강제가 있다는 것 자체를 모른다는 점이다. 9.5(상세 갤러리)·9.6(AI 카드)이 같은 테이블을 열 때가 정확히 규칙7이 경고한 자리다.
+    - ⚠️ **§6.1이 면제하는 것은 "사진 파일 URL"이지 `listing_images` 테이블 조회가 아니다.** 둘을 섞지 말 것.
 - **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). anon 열람은 §8이 상술한다.
+
+### 6.1 사진 파일 URL은 FR11 대상이 아니다 (명시 수용, 사용자 결정 2026-07-19)
+
+**`listing-images` 버킷은 공개다. 사진 파일의 URL을 이미 아는 사람은 그 매물이 `sold`가 된 뒤에도 파일을 열 수 있다.** 이것은 버그가 아니라 **받아들이기로 한 결정**이다.
+
+- **FR11이 막는 것**: 매물이 목록·검색·상세·AI 응답에 **나타나는 것**. 이건 위 강제 지점들이 그대로 막는다 — 변한 것이 없다.
+- **FR11이 막지 않는 것**: 판매중일 때 사진 주소를 저장해 둔 사람이 나중에 그 주소를 다시 여는 것. 매물이 노출되는 게 아니라 **주소를 이미 아는 사람만** 접근한다(파일명이 uuid라 추측 불가).
+- **왜 이렇게 정했나**: 이전 설계(비공개 버킷 + 1시간 서명 URL)는 이 복잡도를 다 치르고도 **TTL 동안 똑같이 뚫려 있었다**(`docs/tech-debt.md` #50-2 — "수용"으로 기록돼 있었다). 비용은 전부 내고 효과는 못 얻는 구조였고, 그 대가로 부채 5건(#45·#46·#50-2·#55·#62)이 열려 있었다. 상용 중고차·쇼핑 서비스도 상품 사진은 공개 CDN으로 서빙한다.
+- **`sold`일 때 파일을 지우지 않는 이유**: `sold`는 되돌릴 수 있는 상태 변경인데 파일 삭제는 되돌릴 수 없다. 그리고 Story 15.1이 "관리자는 sold 포함 열람"을 이미 요구한다.
+- **매물 삭제는 다르다** — 삭제하면 사진 파일도 실제로 지운다(§10.1). 삭제는 되돌릴 수 없는 사건이므로 파일도 함께 사라지는 것이 맞다.
+
+⚠️ **이 절은 "아직 못 막은 것"이 아니라 "안 막기로 한 것"이다.** 다시 막으려 들기 전에 위 근거와 `docs/tech-debt.md`의 관련 항목을 먼저 읽을 것.
 
 ## 7. 채팅 메시지 길이 (Chat Message Length)
 
@@ -140,6 +182,14 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 번호 갭은 무죄(자리를 비워둬도 무해), **역방향 의존만 유죄**. 이는 `.github/workflows/migration-gate.yml`(마이그레이션 게이트 CI)이 매 push마다 실제로 검증한다 — 자세한 것은 `docs/deployment-runbook.md` §7·§8.
 
+**"전진(forward-only)"과 RLS 정책 교체의 관계** (✎ 2026-07-21 코드리뷰가 판단을 명시화):
+
+CLAUDE.md B3는 *"DB 변경은 더하기만 — 기존 걸 지우거나 바꾸지 않는다"* 인데, **RLS 정책을 고치려면 형식상 `drop policy`를 거쳐야 한다**(Postgres에 `alter policy ... using` 이 있지만 조건 전체를 갈아끼우는 경우 drop-recreate가 더 읽힌다). `0015`가 그렇게 했고, 그것이 허용 예외인지 **판단한 기록이 없어** 다음 사람이 근거 없이 이 선례를 복사할 자리였다. 그래서 규칙으로 못박는다:
+
+- ✅ **허용:** `drop policy if exists` → `create policy` **같은 이름으로**, 같은 파일 안에서 즉시 재생성. 정책은 **접근 규칙**이지 데이터가 아니라 소실되는 것이 없고, 이 패턴이라야 재적용이 멱등이 된다(`0005`·`0006`이 이미 쓰는 패턴).
+- ❌ **금지:** 테이블·컬럼·인덱스·GRANT의 drop. 이것들은 **데이터나 권한이 실제로 사라진다** — 되돌리려면 앞에 고치는 마이그를 하나 더 붙인다(B3).
+- 📌 정책을 교체하는 마이그는 **무엇을 왜 바꾸는지와 함께 `using`/`with check` 중 어느 쪽에 조건을 거는지의 근거**를 파일 주석에 남긴다. 둘은 보는 대상이 다르다(`using`=변경 전 행, `with check`=변경 후 행) — `0015`가 그 판단을 적어둔 좋은 예다.
+
 ### 9.2 파일명 규약
 
 - **정본**: `NNNN_이름.sql` (4자리 번호, **0001부터**, 유일, 밀집 — 공백 없이). fresh DB(신규 환경)의 **단일 출처**다.
@@ -184,10 +234,12 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 ## 10. 이미지 스토리지 계약 (Story 9.1)
 
-- **버킷**: `listing-images`(비공개, `public=false`).
+- **버킷**: `listing-images`(**공개, `public=true`** — `0014_listing_images_public_bucket.sql`, Story 9.0). 읽기만 공개다 — **업로드는 여전히 본인 경로에만** 가능하다(아래 Storage RLS).
+  - 공개 오브젝트 URL 형식: `{SUPABASE_URL}/storage/v1/object/public/listing-images/{storage_path}`. 만료가 없다.
+  - 전환 근거와 "sold 후에도 열린다"는 수용은 **§6.1**에 있다.
 - **경로 규칙**: `{user_id}/{listing_id}/{filename}` — **첫 세그먼트가 소유자**다(Storage 쓰기 RLS가 이 사실에 의존).
   - ✅ **이 규칙은 DB가 강제한다**(`0013_listing_images_path_integrity.sql`) — `listing_images` 삽입·수정 시 트리거가 소유자를 **`storage_path`에서 파싱하지 않고 `listings`에서 직접 구해** 대조한다(CLAUDE.md B9 "중요한 값은 서버·DB가 직접 구한다"). 세그먼트가 정확히 3개가 아니거나 소유자·매물이 안 맞으면 거부.
-  - **왜 트리거까지 필요했나**: `0012`는 이 규칙을 이 문서에만 두고 `storage_path`를 무검증 자유 문자열로 받았다. 그런데 Storage 읽기 RLS가 바로 그 문자열로 조인하므로, 판매자가 자기 매물에 **남의 경로**를 적으면 남의 비공개 사진이 anon에게 열렸다(원격 실측 재현: anon 0행 → 1행). **규약을 문서에만 두면 규약이 아니다.**
+  - **왜 트리거까지 필요했나**: `0012`는 이 규칙을 이 문서에만 두고 `storage_path`를 무검증 자유 문자열로 받았다. 그런데 Storage 읽기 RLS가 바로 그 문자열로 조인하므로, 판매자가 자기 매물에 **남의 경로**를 적으면 남의 사진 행이 anon에게 열렸다(원격 실측 재현: anon 0행 → 1행). (버킷이 공개가 된 지금도 이 트리거는 유효하다 — 막는 대상이 "파일 열람"이 아니라 **남의 파일을 내 매물에 갖다 붙이는 것**이기 때문이다.) **규약을 문서에만 두면 규약이 아니다.**
 - **등록 순서**: **매물 행을 먼저 insert해 `listing_id`를 얻은 뒤** 그 경로로 업로드한다(스테이징 경로·이동 없음).
 - **상한**: 매물당 최대 **10장** · 장당 최대 **5MB** · 허용 MIME `image/jpeg`·`image/png`·`image/webp` 3종.
   - 3개 상한은 **클라가 아니라 서버 쪽에 둔다** — 클라 검증은 우회 가능하다.
@@ -199,10 +251,72 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
     | 5MB | **Storage API 서버** (Postgres 아님 — `storage.buckets`는 값을 보관만 한다) | 마이그레이션 게이트는 이 축을 **전혀 증명하지 못한다**(스텁이 평범한 테이블이라 값만 들어간다) |
     | MIME 3종 | **Storage API 서버** (위와 동일) | 위와 동일 |
 
-  - MIME 제한의 이유: 비공개 버킷이라도 서명 URL은 브라우저가 그대로 연다 — 타입 제한이 없으면 `.html`/`.svg` 업로드가 우리 도메인에서 실행되는 저장형 XSS가 된다.
-  - 버킷 설정(비공개·5MB·MIME)은 `on conflict do nothing`이라 **버킷이 이미 존재하면 셋 다 조용히 무효**다(#44).
+  - MIME 제한의 이유: **공개 버킷이라 더 중요하다** — 인증 없이 열리므로 타입 제한이 없으면 `.html`/`.svg` 업로드가 우리 도메인에서 실행되는 저장형 XSS가 된다.
+  - ~~버킷 설정은 `on conflict do nothing`이라 버킷이 이미 존재하면 조용히 무효(#44)~~ → **해소.** `0014`가 `UPDATE`로 `public`·`file_size_limit`·`allowed_mime_types`를 덮어쓴다 — 버킷이 어떤 상태였든 그 문장에서 확정된다.
 - **`listing_images.storage_path`** = 버킷 내 key **전체**(`{user_id}/{listing_id}/{filename}`, 버킷명 미포함) — `storage.objects.name`과 **글자 그대로 같아야** Storage RLS의 조인이 성립한다.
-- **`SIGNED_URL_TTL = 3600`초**(1시간, 사용자 확정 2026-07-13). 구현: `web/src/lib/storage/index.ts`·`app/lib/core/supabase/storage_helper.dart`, Story 9.2.
-- **api는 서명 URL을 절대 발급하지 않는다** — `storage_path`만 반환한다. 서명은 web(서버측)·app(Flutter 클라측)이 한다.
-- **서명 헬퍼(범용, Story 9.2)**: `getSignedUrl(bucket, path)`(단건)·`getSignedUrls(bucket, paths[])`(배치 1회, NFR7) — web `@/lib/storage`(서버 컴포넌트·route handler·server actions 전용 — 서버 클라이언트를 쓰므로 브라우저 번들 금지)·app `core/supabase/storage_helper.dart`(클라측) 두 곳에 미러. **RLS 미통과·객체 미존재 등 실패는 `null` 반환**(throw 아님) — §4의 `image_url` null → "사진 준비중" 플레이스홀더와 정합. TTL(3600s) 동안 발급 시점 RLS만 검사하고 재검사하지 않는 한계는 §6·`docs/tech-debt.md` #50-2 참고.
-- 근거: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md` ADR-IMG-01·CR2·"확정된 값"(2026-07-13) · 마이그레이션 `supabase/migrations/0012_listing_images.sql`.
+- **URL 만료가 없다.** ~~`SIGNED_URL_TTL = 3600`~~ 상수는 Story 9.0에서 **삭제됐다** — 공개 URL은 만료되지 않으므로 TTL·재발급·갱신 개념 자체가 없다.
+- **api는 사진 URL을 만들지 않는다** — `storage_path`만 반환한다(`ai_readonly` 최소권한, CR2). URL 조립은 web·app이 각자 한다. 이 불변식은 `api/tests/test_storage_signed_url_contract.py`가 지킨다.
+  - **그 `storage_path`가 실리는 wire 필드가 `ListingCard.image_path`다**(§4, Story 9.6). `image_url`이 아닌 이유가 바로 이 줄이다 — api가 URL을 못 만들므로 원본 경로를 담을 자리가 따로 필요했다.
+  - **강제 장치가 무엇을 지키는지 정확히** (✎ 2026-07-20 코드리뷰 정정 — 원래 *"위 contract test가 ①②의 쌍을 지킨다"*고 적혀 있었으나 **사실이 아니었다**):
+    - ① *"응답에 Storage URL 문자열이 없다"* → `api/tests/test_storage_signed_url_contract.py`가 지킨다. 마커(`/storage/v1/`·`token=`)가 고장나면 red가 되는 positive fixture 4건까지 갖췄다.
+    - ② *"`image_path`에 원본 경로가 **실제로** 실린다"* → **contract test는 이걸 못 지킨다.** 그 파일은 `run_search`를 통째로 스텁으로 바꾸고 손으로 만든 dict를 넣으므로, 사진 부착 코드를 전부 지워도 초록이다(증명되는 것은 "응답모델이 `image_path`를 직렬화한다"뿐). ②를 실제로 못박는 것은 **노드 배선 테스트 2건**이다 — `tests/test_doc_rag_node.py`·`tests/test_sql_rag_node.py`의 `test_cards_carry_cover_image_from_shared_helper`(둘 다 `attach_cover_images` 호출을 벗기면 red).
+- **URL 헬퍼(범용, Story 9.0)**: `getPublicUrl(bucket, path)` — web `@/lib/storage`·app `core/supabase/storage_helper.dart` 두 곳에 미러.
+  - **동기 함수이고 실패하지 않는다** — 네트워크 왕복 없이 경로에서 문자열을 조립할 뿐이다. 서버·브라우저 어디서든 호출된다(9.0 이전의 "서버에서만 발급 가능" 제약은 사라졌다).
+  - ⚠️ **파일 존재를 확인하지 않는다.** 경로만 있으면 URL이 나온다 — 없는 파일은 이미지 로드가 실패하므로 **소비처가 `onError`로 "사진 준비중" 플레이스홀더를 그려야 한다**(§4). 서명 시절엔 실패가 `null`로 와서 자동으로 플레이스홀더가 됐지만, 이제는 소비처 책임이다.
+  - 경로는 `/` 구분자를 살린 채 세그먼트별로 URL 인코딩한다(경로 전체에 `encodeURIComponent`를 걸면 구분자가 `%2F`가 되어 깨진다).
+
+### 10.1 업로더가 지켜야 하는 규칙 (Story 9.3 — 전부 원격 실측으로 확정)
+
+- **저장본 규격**: 업로드 전 클라이언트가 **긴 변 ≤1600px · WebP · quality 0.82**로 다시 인코딩해 올린다. 원본 5MB 상한과는 **별개 장치**다.
+  - 왜: app은 저장된 **원본**을 그대로 받으므로(ADR-IMG-02) 원본을 저장하면 목록 다중 다운로드에서 NFR7이 깨진다.
+  - 구현은 브라우저 네이티브 canvas(`web/src/lib/images/resize.ts`) — 새 의존성 없음. WebP를 못 만드는 환경은 `image/jpeg` 0.85 폴백.
+  - **저장본 크기는 "범위"로 단언하지 않는다 — 실측 분포로만 말한다.** 2026-07-21 시딩 후 **대표사진 90장 전량** 실측: **최소 50KB · 중앙값 197KB · 평균 229KB · 최대 615KB**(편차 12배). 목록 한 화면(4열×3행=12장) 환산 **약 2.7MB**.
+    - ⚠️ 여기 적혀 있던 *"실측 196~205KB"*(2026-07-18, 표본 3장)는 **값이 아니라 형태로 틀렸다** — 90장 중 그 범위에 드는 건 **1장뿐**이다. 그 좁은 숫자가 *"저장본이 이미 작으니 `next/image`가 필요 없다"* 는 결정의 근거로 쓰였다(`docs/tech-debt.md` #80).
+    - **왜 정본에 남아 있었나:** Story 9.7이 #80을 닫으면서 `ListingCardImage.tsx` 주석만 고치고 *"정본은 코드 주석 쪽"* 이라 판단했는데, **실제 정본은 이 문서다**(계약값은 여기 하나). 코드리뷰 2026-07-21이 정정. #80의 등재 사유가 *"검산 안 한 숫자가 결정을 오염시켰다"* 인데 같은 오염원이 계약 문서에 남아 있던 자리다.
+    - 총량이 유의미해진 쪽은 상세가 아니라 **목록**이다 — 후속 판단은 `docs/tech-debt.md` #83.
+- **대표(cover) = `sort_order` 0번**이다. 대표는 **별도 상태가 아니다** — 순서와 대표를 각각 두면 진실이 두 군데 생겨 어긋난다. `is_cover`는 이 규칙의 **파생 결과**로만 기록한다.
+  - **⚠️ 대표 대상을 두 번 계산하지 않는다.** 순서를 매기는 단계에서 **실제로 `sort_order=0`을 받은 행**을 기억해 두고 대표 단계가 그 값을 쓴다. "저장된 것 중 첫 번째"를 나중에 다시 구하면, 어느 항목이 탈락하는지에 대한 두 계산의 판단이 갈려 **대표가 `sort_order≠0`인 행에 붙는다**(코드리뷰 2026-07-19 2차 — 재현 실행으로 확인). 화면의 대표 배지도 저장 대상과 **같은 술어**로 골라야 화면과 DB가 갈리지 않는다.
+- **대표 교체는 반드시 2문장** — ① 해당 매물 전체 `is_cover=false` → ② 대상 1장만 `true`.
+  - 왜: 부분 유니크 인덱스 `listing_images_one_cover_per_listing`은 DEFERRABLE이 아니라, 자연스러운 단일 UPDATE(`set is_cover=(id=:new) where listing_id=:L`)는 문장 중간에 대표가 2장이 되는 순간 **`duplicate key`로 죽는다**(도커 실측, `docs/tech-debt.md` #47-1).
+- **삭제 순서는 "무엇을 지우는가"에 따라 둘로 갈린다.** (**매물 삭제 시 사진도 반드시 지운다** — §6.1)
+
+  | 무엇을 지우나 | 순서 | 앞 단계가 실패하면 |
+  |---|---|---|
+  | **사진 1장**(편집 중 제거) | ① Storage 오브젝트 → ② `listing_images` 행 | ②를 하지 않는다 |
+  | **매물 전체**(삭제 버튼) | ① `listings` 행 → ② 사진 오브젝트 정리 | **삭제를 되돌리지 않는다**(정리 실패는 비치명) |
+
+  - ✎ **왜 매물 삭제만 순서가 반대인가 (코드리뷰 2026-07-19 — 사용자 결정).** 두 경우의 **되돌릴 수 없는 쪽이 다르다.** 사진 1장 제거는 행을 남겨두면 다시 지울 수 있으니 파일부터 지우는 게 맞다. 반면 매물 삭제에서 사진을 먼저 지우면, `listings` DELETE가 실패했을 때 **사진만 영구 소실**되고 매물은 살아남아 "사진 준비중"으로 박제된다(`syncListingPhotos`는 `storagePath`가 있는 항목을 건너뛰므로 재업로드도 안 된다). 게다가 정리 실패 시 삭제를 중단하면 **매물이 영영 삭제 불가**가 될 수 있다. 아래 정정대로 남은 파일은 **회수 가능한** 고아이므로, **회수 가능한 쓰레기 < 복구 불가능한 손실**이라는 판단으로 매물 삭제만 뒤집었다. 강제 지점: `web/src/app/(user)/sell/ListingActions.tsx` · `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx`.
+  - ✎ **정정(Story 9.0, 2026-07-19): 이 순서는 더 이상 "안전"을 좌우하지 않는다(고아가 회수 가능해졌다). 사진 1장 제거의 순서는 관례로 유지한다.**
+    - **전에는 왜 목숨이 걸렸나**: `storage.objects`의 SELECT 정책이 `listing_images` 행과 **조인**해야 참이 됐고, Storage API의 DELETE·LIST는 대상을 먼저 SELECT로 찾는다. 그래서 행을 먼저 지우면 그 객체는 소유자에게도 안 보여 **정상 권한으로 영영 못 지웠다**(#46 영구 고아 / #51). 실측(2026-07-18): 행 없는 객체 → DELETE `403`·LIST `200` 0건.
+    - **지금은**: `0014`가 SELECT 정책을 **경로 기반**(`경로 첫 세그먼트 = auth.uid()` 또는 관리자)으로 바꿔 `listing_images` 행과 무관해졌다. **행이 없어도 소유자·관리자에게 보이고 지울 수 있다.** 원격 실측(2026-07-19): 행 없는 고아 객체가 소유자에게 **0건 → 1건**으로 보임, 비소유자 0건, anon 0건, 관리자 1건.
+    - **그래서 #46의 "회수 불가" 구조가 사라졌다.** 순서를 지키는 코드는 그대로 두되(무해하고, 실패 처리가 명확하다), **이 순서를 못 지켜 재앙이 난다는 서술은 이제 사실이 아니다.**
+  - **⚠️ 순서의 필수 귀결(사진 1장 제거에만 해당): ①이 실패하면 ②를 하지 않는다.** 오브젝트 삭제가 실패했는데 행을 지우면 고아가 생긴다 — "순서만 지키면 안전"이 아니라 **"앞 단계가 성공했을 때만 다음 단계"**가 계약이다. `deleteListingImageObject`가 boolean을 돌려주는 이유가 이것이며, 호출부는 그 값을 반드시 본다. 강제 장치: `web/src/app/(user)/sell/photo-sync.test.ts` "계약① 삭제 순서".
+    - ✎ **2026-07-19 코드리뷰 정정 — 이 문장은 한동안 바로 위 "순서는 안전을 좌우하지 않는다"와 정면으로 모순된 채 같은 절에 있었다**(전자는 "영구 고아가 만들어진다", 후자는 "그 구조가 사라졌다"). 9.0이 앞 문장만 고치고 이 문장을 안 고쳐서 생긴 일이고, 그 사이 매물 삭제 코드는 **철회된 쪽**을 구현하고 있었다. 지금은 **고아가 회수 가능**하므로 "영구"는 사실이 아니다 — 그래도 사진 1장 제거에서는 이 순서를 지킨다(정리할 쓰레기를 굳이 만들 이유가 없다). **매물 전체 삭제에는 적용하지 않는다**(위 표).
+  - **⚠️ 단 "매치 0건"은 실패가 아니다 — 파일이 이미 없다는 뜻이고, 목적은 달성돼 있다.** 원격 실측(2026-07-19, 코드리뷰 2차): **행 없음+파일 없음**과 **행 있음+파일 없음**은 응답이 `error=null, data=[]`로 **글자 그대로 같아 구별할 수 없다.** 그러나 대조군(**행 있음+파일 있음** → `data=[그 경로]`)이 "행이 있으면 있는 파일은 실제로 지워진다"를 증명하므로, **위 삭제 순서를 지켜 행이 살아 있는 동안 호출하면 빈 배열 = 파일 없음**이다. 이걸 실패로 취급하면 파일 없는 고아 행 하나가 **매물을 영구히 삭제 불가**로 만든다(재시도해도 같은 자리에서 멈춘다). 강제 장치: `web/src/lib/storage/upload.test.ts`.
+  - **오브젝트 정리는 하나가 실패해도 나머지를 계속 시도한다.** 첫 실패에서 멈추면 이미 지운 앞부분은 되돌릴 수 없는데 뒤는 손도 못 댄 상태가 남는다. Storage와 DB에 걸친 트랜잭션이 없으므로 완전한 원자성은 불가능하다 — 정리 범위를 넓히고 결과를 사실대로 보고하는 것이 최선이다.
+- **업로드에 `x-upsert`를 쓰지 않는다** — 업서트는 존재확인 SELECT를 거쳐 같은 이유로 `403`이 된다(실측). 파일명이 uuid라 충돌 자체가 없다.
+- **`listing_images` 행 INSERT는 순차(직렬)로** 보낸다. 10장 트리거가 count-후-insert라 병렬 삽입은 경합으로 상한이 샌다(#49). ⚠️ 클라의 10장 차단은 **UX 층의 1차 방어일 뿐** — 서버 검증(트리거·버킷 설정)을 이것으로 대체하지 않는다.
+- **`sort_order`는 항상 연속 정수 0..n-1로 다시 매긴다**(구멍 금지) — tie-break가 정의돼 있지 않아(#47-2) 값이 겹치면 조회 순서가 매 쿼리 달라진다. 읽는 쪽은 `order by sort_order, id`로 2차 정렬을 건다.
+
+### 10.2 **읽는 쪽**이 지켜야 하는 규칙 (Story 9.4 — 목록 카드가 첫 소비처)
+
+§10.1이 쓰는 쪽 규칙이라면, 여기는 **화면에 그리는 쪽** 규칙이다. 9.3까지는 소비처가 없어 "미래 약속"이었고 강제 장치가 없었다(`docs/tech-debt.md` #59). 9.4에서 소비처가 생기며 **실행되는 검사로 옮겼다**(B9).
+
+- **정렬은 언제나 `order by sort_order, id`.** 2차 키를 빼면 `sort_order` 동률(#47-2)에서 조회할 때마다 대표가 바뀐다. 강제 장치: `web/src/lib/images/coverImages.test.ts`.
+- **대표는 `sort_order` → `id` 정렬의 첫 행이다. 읽는 쪽은 `is_cover`를 보지 않는다.**
+  - 왜: `is_cover`는 순서의 **파생 결과**일 뿐이고(§10.1), 시드·레거시 행은 전부 `is_cover=false`일 수 있다. 그것만 믿으면 사진이 있는데도 대표가 없다고 나온다.
+  - 강제 장치: `coverImages.ts`의 입력 타입에 **`is_cover`가 아예 없다** — 읽고 싶어도 못 읽는다.
+- **대표 0장은 정상 상태다** (#47-4 결정, 2026-07-19). 사진이 0장인 매물은 오류가 아니며, 화면은 **"사진 준비중" 플레이스홀더**를 그린다. 빈 영역이나 깨진 이미지 아이콘을 두지 않는다.
+- **URL이 있다고 파일이 있는 것은 아니다.** `getPublicUrl`은 존재를 확인하지 않고 문자열을 만든다(9.0 공개 버킷 전환). 따라서 **플레이스홀더 폴백을 반드시 둔다** — 서명 URL 시절엔 발급 실패가 `null`로 와서 자동 처리됐지만, 지금은 이것이 깨진 이미지를 막는 유일한 장치다.
+  - ⚠️ **`onError` 하나로는 부족하다 — 두 겹이어야 한다** (코드리뷰 2026-07-19, 실브라우저 실측으로 발견).
+    서버 컴포넌트가 그린 `<img>`는 HTML이 도착하는 즉시 로드를 시작하는데, **하이드레이션이 끝나기 전에** 에러가 나면 React가 그 이벤트를 재생하지 않아 `onError`가 **영영 발화하지 않는다.** 그러면 위 규칙이 금지한 깨진 이미지가 그대로 남는다. 그리고 **파일 없음(404)은 정확히 그렇게 빨리 실패한다** — 가장 흔한 실패가 유일한 방어를 그냥 지나갔다.
+    - **필수 2겹**: ① `onError`(하이드레이션 이후 실패) + ② **ref 콜백에서 `img.complete && img.naturalWidth === 0` 확인**(이미 끝난 실패 — 이벤트를 놓쳐도 이 상태는 남는다).
+    - 재현법(회귀 확인용): **이미지 요청만 끊고 데이터 조회는 살린다** — Playwright에서 `**/storage/v1/object/public/**` 를 `route.abort()` 한 뒤 목록을 새로 로드한다. *"매물은 뜨는데 사진만 전면 실패"* 라는 정확한 상황이 만들어진다.
+      - ⚠️ **`loading="lazy"` 때문에 화면 밖 카드는 요청 자체를 안 보낸다** — 스크롤로 전량을 뷰포트에 넣지 않으면 "전량 검증"이 아니다(Story 9.7에서 90장 중 38장만 폴백한 이유가 이것이다).
+      - ~~`chrome-headless-shell --host-resolver-rules="MAP <supabase-host> 127.0.0.1"`~~ — 호스트 전체를 죽여 **데이터 조회까지 함께 끊기므로** 이 질문에 답하지 못한다. 이 환경에서 `chrome-headless-shell` 가용 여부도 확인된 적 없다. (✎ 2026-07-21 코드리뷰: Story 9.7이 실제로는 abort 방식을 썼는데 정본은 안 고쳐져 있었다 — 다음 사람이 안 쓰는 방법을 따라갈 자리.)
+      → **"사진 준비중" 플레이스홀더가 떠야 한다.** alt 텍스트·깨진 아이콘이 보이면 폴백이 죽은 것이다.
+    - 구현 참고: `web/src/components/listings/ListingCardImage.tsx`. **9.5(상세 갤러리)·9.6(AI 카드)도 같은 2겹을 둔다** — `onError`만 복사하면 같은 자리를 다시 밟는다.
+      - ✅ **9.5 이행(2026-07-20)**: `web/src/components/listings/ListingGallery.tsx`가 대표·썸네일 **양쪽**에 2겹을 둔다. 실브라우저 red/green 확인 — `storage_path`를 없는 파일로 바꾸자 대표+해당 썸네일이 플레이스홀더로 떨어졌고(깨진 아이콘 0), 되돌리자 4장 전부 `naturalWidth=1600`으로 복귀했다.
+- **대표 판별을 두 군데서 하지 않는다.** 계산 자리는 `web/src/lib/images/coverImages.ts` 하나다(9.3 코드리뷰의 교훈 — 두 번 계산하면 화면과 DB가 갈린다).
+
+- 근거: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md` ADR-IMG-01·CR2·"확정된 값"(2026-07-13) · 마이그레이션 `supabase/migrations/0012_listing_images.sql` · Story 9.3 Debug Log 1.

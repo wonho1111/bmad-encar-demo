@@ -69,7 +69,14 @@ class ListingCard(BaseModel):
     price: int       # 원(KRW)
     mileage: int     # km
     region: str
+    # ⚠️ image_url은 api가 **채우지 않는다** — api는 사진 URL을 만들지 않기 때문이다
+    #    (conventions.md §10, ai_readonly 최소권한 CR2). 대신 아래 image_path(원본 경로)를
+    #    보내고, URL 조립은 web·app이 각자 getPublicUrl로 한다. 이 불변식은
+    #    tests/test_storage_signed_url_contract.py가 지킨다.
     image_url: str | None = None
+    # 대표 사진의 **버킷 상대 경로**(`{user_id}/{listing_id}/{filename}`, 버킷명 미포함).
+    # AI 응답 wire 전용 필드 — web은 이걸 공개 URL로 바꿔 image_url에 넣고 버린다(Story 9.6).
+    image_path: str | None = None
     view_count: int | None = None
     image_count: int | None = None
     accident_status: Literal["무사고", "단순교환", "사고"] | None = None

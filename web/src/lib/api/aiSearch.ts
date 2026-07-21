@@ -13,6 +13,8 @@
 //   FR58(8.5): 열람(매물 목록·상세)은 anon에 열렸지만 **AI 검색은 로그인 필수**다 —
 //     검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "열람"이 아니라 "행동"(docs/conventions.md §8).
 import type { ListingCardData } from '@/components/listings/ListingCard';
+import { getPublicUrl } from '@/lib/storage';
+import { LISTING_IMAGES_BUCKET } from '@/lib/storage/bucket';
 
 // 멀티턴 대화 한 턴(FR18). 서버 스키마(ConversationTurn)와 동일 — content는 서버가 1~2000자로 강제한다.
 // 이 형태의 단일 출처는 api/docs/ai-demo-queries.md(최대 12턴·content 2000자). 여기 값을 그대로 따른다.
@@ -97,13 +99,66 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
     // 배열 여부만 보지 않고 "카드 한 장이 7필드를 제대로 갖췄는지"까지 검사한 뒤 깨진 원소는 버린다.
     // 이렇게 안 하면 서버가 id·price·mileage가 빠진 매물을 주었을 때 ListingCard가 렌더 도중
     // (price.toLocaleString) 터지고, 그 오류는 try/catch 밖이라 대화 화면 전체가 날아간다.
-    listings: Array.isArray(result.listings) ? result.listings.filter(isValidListing) : [],
+    // 깨진 원소를 버린 뒤(위 주석), 남은 카드의 image_path를 공개 URL로 조립해 image_url에 넣는다(9.6).
+    listings: Array.isArray(result.listings)
+      ? result.listings.filter(isValidListing).map(resolveCardImage)
+      : [],
+  };
+}
+
+/**
+ * /ai/search 응답의 매물 원소 — 카드 계약 + `image_path`(AI 응답 **전용** 필드, Story 9.6).
+ *
+ * 왜 `image_url`이 아니라 별도 필드인가: **api는 사진 URL을 만들지 않는다**(`docs/conventions.md`
+ * §10 — `ai_readonly` 최소권한 CR2, `api/tests/test_storage_signed_url_contract.py`가 강제).
+ * 그래서 api는 원본 경로(`listing_images.storage_path`)만 보내고, URL 조립은 web이 한다.
+ *
+ * `image_count`를 `unknown`으로 다시 여는 이유: 아래 `isValidListing`은 **필수 7필드만** 검증하고
+ * 신규 nullable 필드는 보지 않는다(§4 "런타임 가드 범위 주의"). 즉 여기 오는 값은 서버가 무엇을
+ * 보냈든 아직 검증되지 않았다 — 타입이 number라고 **가정하면** 그 가정이 틀렸을 때 화면에서 터진다.
+ */
+type AiListingWire = Omit<ListingCardData, 'image_count'> & {
+  image_path?: unknown;
+  image_count?: unknown;
+};
+
+/**
+ * wire 원소 → 카드 데이터. `image_path`를 공개 URL로 바꿔 `image_url`에 넣고 **경로는 버린다**.
+ *
+ * 이 매핑 한 겹이 이 스토리의 web 작업 전부다 — 카드 렌더(`ListingCard`/`ListingCardImage`)는
+ * 9.4에서 이미 완성됐고 사진 유무 분기·"N장" 배지·2겹 로드 실패 폴백을 전부 갖고 있다.
+ * `image_url`이 채워지면 그쪽이 알아서 사진을 그린다(새 컴포넌트를 만들지 않는다).
+ *
+ * 계약-외 값 방어(§4 "계약-외 값 정규화" — 소비처가 스스로 막는다):
+ *   · `image_path`가 문자열이 아니거나 비었으면 `image_url = null` → "사진 준비중" 플레이스홀더.
+ *     빈 경로로 URL을 만들면 버킷 루트를 가리키는 URL이 나와 **깨진 이미지**가 렌더된다.
+ *   · `image_count`가 숫자가 아니면 0, 음수는 0으로 하한("조회 -3" 류 노출 금지).
+ */
+export function resolveCardImage(wire: AiListingWire): ListingCardData {
+  // image_path는 여기서 소멸한다 — ListingCardData 계약에 없는 필드다(카드는 URL만 안다).
+  const { image_path: rawPath, image_count: rawCount, ...card } = wire;
+  const path = typeof rawPath === 'string' ? rawPath.trim() : '';
+  const count = typeof rawCount === 'number' && Number.isFinite(rawCount) ? rawCount : 0;
+  const url = path === '' ? null : getPublicUrl(LISTING_IMAGES_BUCKET, path);
+  return {
+    ...card,
+    image_url: url,
+    // ✎ 2026-07-20 코드리뷰 2건:
+    //   · Math.trunc — Number.isFinite(2.7)은 true라 소수가 그대로 통과해 "2.7장" 배지가
+    //     렌더됐다. 계약(§4)의 타입은 int이므로 여기서 정수로 자른다(반올림 아님).
+    //   · url이 null이면 count도 0 — 둘을 따로 정규화하면 "사진 준비중" 플레이스홀더 위에
+    //     "5장" 배지가 얹히는 자기모순 화면이 나온다. ListingCardImage가 배지를 사진 분기
+    //     **밖**에 두는 것은 의도된 설계지만(로드 실패해도 장수는 남긴다 — 9.4), 그건
+    //     "경로는 있는데 로드 실패"용이고 "경로가 아예 없음"과는 구분돼야 한다.
+    image_count: url === null ? 0 : Math.max(0, Math.trunc(count)),
   };
 }
 
 // 매물카드 한 장이 ListingCard가 요구하는 7필드를 올바른 타입으로 갖췄는지 확인한다(런타임 가드).
 // 응답 형태가 계약을 벗어났을 때 화면을 깨뜨리는 대신 그 원소만 조용히 제외한다(나머지는 정상 표시).
-function isValidListing(item: unknown): item is ListingCardData {
+// ⚠️ 신규 nullable 필드(image_path·image_count 등)는 **일부러 검증하지 않는다**(§4) —
+//    사진이 없다고 카드를 버리면 안 되기 때문이다. 그 방어는 resolveCardImage가 맡는다.
+function isValidListing(item: unknown): item is AiListingWire {
   if (typeof item !== 'object' || item === null) return false;
   const l = item as Record<string, unknown>;
   return (

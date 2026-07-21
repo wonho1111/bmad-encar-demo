@@ -6,7 +6,11 @@
 //   1) 사용자가 입력한 자연어 질의를 /ai/search로 보내고(answer + 매물카드) 대화에 쌓는다.
 //   2) 멀티턴(FR18): 직전 대화를 "클라이언트 상태"(아래 messages)로만 보관하다가, 후속 질의를 보낼 때
 //      context로 동봉한다. 서버·DB·localStorage에 저장하지 않는다 → 새로고침하면 대화가 초기화된다(무상태).
-//   3) 매물카드는 기존 ListingCard를 재사용(텍스트 7필드, 사진 없음) — 카드 클릭 시 /listings/[id] 상세로 이동.
+//   3) 매물카드는 기존 ListingCard를 재사용 — 카드 클릭 시 /listings/[id] 상세로 이동.
+//      대표사진·"N장" 배지·"사진 준비중" 플레이스홀더는 ListingCard(9.4)가 그대로 처리한다.
+//      (Story 9.6 정정: 전엔 "사진 없음"이라고 적혀 있었다 — api가 image_url을 못 채워서 그랬는데,
+//       9.6이 image_path를 붙이고 aiSearch.ts가 공개 URL로 바꾸면서 사실이 아니게 됐다.
+//       이 파일의 렌더 코드는 한 줄도 바뀌지 않았다 — 값이 채워지자 카드가 알아서 그린다.)
 //
 // 왜 클라이언트 컴포넌트인가:
 //   대화 상태(messages)·입력값·로딩·에러를 브라우저에서 쥐고 있어야 하고, Supabase 세션 토큰을 꺼내
@@ -134,7 +138,7 @@ export default function ChatAssistant() {
                     <ul className="flex flex-col gap-2">
                       {m.listings.map((l) => (
                         <li key={l.id}>
-                          {/* 매물카드 재사용 — 클릭하면 /listings/[id] 상세로 이동(ListingCard 내장 Link). 사진 없음. */}
+                          {/* 매물카드 재사용 — 클릭하면 /listings/[id] 상세로 이동(ListingCard 내장 Link). */}
                           <ListingCard listing={l} />
                         </li>
                       ))}

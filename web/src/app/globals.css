@@ -110,6 +110,11 @@
   --text-card-title--line-height: 1.4; /* weight 600 */
   --text-price: 26px; /* 가격 (price-emphasis) */
   --text-price--line-height: 1.2; /* weight 800 */
+  /* 상세 대표 가격의 large 변형. DESIGN.md:42가 "상세 대표 가격은 large 변형 최대 30까지"로
+     이미 규정했는데 8.1 토큰 작업에서 빠져 있었다 — 9.5가 임의값 text-[30px]로 우회하던 것을
+     토큰으로 올린다(새 디자인 결정이 아니라 기존 규정의 토큰화). */
+  --text-price-lg: 30px; /* 상세 대표 가격 (price-emphasis, large) */
+  --text-price-lg--line-height: 1.2; /* weight 800 */
   --text-body: 15px;
   --text-body--line-height: 1.6; /* weight 500 */
   --text-meta: 13px; /* 주행·연료·지역 (ink-muted) */

@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_STATUS } from '@/lib/constants';
 import Button, { buttonClasses } from '@/components/ui/Button';
+import { listListingPhotoPaths, deletePhotoObjectsByPaths } from './photo-sync';
 
 type Props = {
   listingId: string;
@@ -97,6 +98,17 @@ export default function ListingActions({
     setError(null);
     setDeleting(true);
     try {
+      // ⚠️ **매물 행을 먼저** 지우고, 사진 정리는 그 다음이다(docs/conventions.md §10.1).
+      //    이유: 0014가 storage.objects SELECT 정책을 경로 기반으로 바꿔, 행이 없어도 소유자·관리자가
+      //    파일을 보고 지울 수 있다 — 남은 파일은 **회수 가능한** 고아다. 반대로 사진을 먼저 지우면
+      //    매물 삭제가 실패했을 때 사진만 **되돌릴 수 없이** 사라지고 매물은 "사진 준비중"으로 박제된다.
+      //    회수 가능한 쓰레기가 복구 불가능한 손실보다 낫다. (코드리뷰 2026-07-19 — 옛 순서는 비공개
+      //    버킷 시절의 규칙이었고 9.0이 그 전제를 없앴는데 코드만 남아 있었다.)
+      //
+      // ⚠️ 단, **경로는 매물을 지우기 전에 확보해야 한다.** listing_images가 cascade로 함께
+      //    사라지므로, 매물을 먼저 지운 뒤 조회하면 0건이 나와 아무것도 못 지운다(실측 확인).
+      const photos = await listListingPhotoPaths(listingId);
+
       const supabase = createClient();
       // .select()로 삭제된 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행.
       const { data: deleted, error: deleteError } = await supabase
@@ -114,6 +126,19 @@ export default function ListingActions({
         // 본인 매물이 아니거나 이미 삭제됨(RLS 0행).
         setError('본인 매물만 삭제할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)');
         return;
+      }
+
+      // 매물이 사라진 뒤, 미리 확보해 둔 경로로 사진 파일을 정리한다. 실패해도 삭제를 되돌리지
+      // 않는다 — 위 주석대로 남은 파일은 소유자·관리자가 나중에 지울 수 있고, 매물은 이미 없어
+      // 화면에 영향이 없다.
+      if (!photos.ok) {
+        // 목록 조회 자체가 실패했으면 무엇을 지워야 할지 모른다 — "없다"로 갈음하지 않는다.
+        console.error('[sell] 사진 목록을 못 읽어 정리를 건너뜀(고아 가능):', listingId);
+      } else {
+        const cleanup = await deletePhotoObjectsByPaths(photos.paths);
+        if (!cleanup.ok) {
+          console.error('[sell] 매물 삭제 후 사진 파일 정리 실패:', listingId);
+        }
       }
 
       // 성공 → 목록 갱신으로 즉시 제거 반영.
