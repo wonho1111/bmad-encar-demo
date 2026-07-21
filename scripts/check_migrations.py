@@ -4,13 +4,21 @@
 Story 8.6 Task 3. Python 표준 라이브러리만 사용(신규 의존성 0개).
 
 정적 검사(도커 없이도 도는 층):
-  ① 파일명 규약 `^\\d{4}[a-z]?_[a-z0-9_]+\\.sql$`
-  ② 번호 밀집(정본 파일 0001~max, 공백 없음)
-  ③ 바닥번호+접미사 조합 중복 없음
-  ④ 접미사 파일은 같은 바닥번호의 정본 파일이 선행 존재
+  ① 파일명 규약 `^\\d{4}_[a-z0-9_]+\\.sql$`
+  ② 번호 밀집(0001~max, 공백 없음)
+  ③ 번호 중복 없음
+
+⚠️ 알파벳 접미사(`0003c_`)는 **금지다**(2026-07-21 폐지, 대장 #101).
+   Supabase CLI는 `<timestamp>_name.sql`만 마이그로 인정해 접미사 파일을
+   **에러가 아니라 `Skipping`으로 조용히 건너뛴다.** 그래서 게이트는 초록인데
+   `supabase db reset`이 만든 fresh DB에는 그 파일이 통째로 빠지는 일이
+   실제로 있었다(`0003c_chat_room_integrity.sql` — chat_rooms 위조 방지
+   트리거가 로컬에서 누락). 규약과 도구가 반대를 말하면 도구가 이긴다.
+   새 마이그는 **항상 max+1**만 쓴다. 이 규칙을 여기서 강제하는 이유는
+   문서에만 적으면 지켜지지 않기 때문이다(CLAUDE.md B9).
 
 동적 검사(도커 필요): pgvector/pgvector:pg17 빈 컨테이너에 프렐류드 →
-  파일명 정렬 순서(번호순, 접미사는 알파벳순)로 전량 적용 → self-containment 프로브 3건.
+  파일명 정렬 순서(번호순)로 전량 적용 → self-containment 프로브 3건.
 
 종료코드: 통과 0 / 위반 1. 도커 없으면 정적 층만 돌고 "동적 검사 건너뜀"을 출력하며 실패 처리
 (조용한 통과 금지).
@@ -35,7 +43,7 @@ PRELUDE_FILE = REPO_ROOT / "scripts" / "migration-check-prelude.sql"
 DOCKER_IMAGE = "pgvector/pgvector:pg17"
 CONTAINER_NAME_PREFIX = "migration-gate-check"
 
-FILENAME_RE = re.compile(r"^(\d{4})([a-z]?)_([a-z0-9_]+)\.sql$")
+FILENAME_RE = re.compile(r"^(\d{4})_([a-z0-9_]+)\.sql$")
 
 PG_ISREADY_TIMEOUT_SECONDS = 30
 PG_ISREADY_POLL_INTERVAL_SECONDS = 1
@@ -77,15 +85,13 @@ class ParsedFile:
         self.valid = match is not None
         if match:
             self.base = int(match.group(1))
-            self.suffix = match.group(2)
         else:
             self.base = None
-            self.suffix = None
 
     @property
     def sort_key(self):
-        # 번호순, 접미사는 알파벳순('' < 'b' < 'c' ...) — 파일명 정렬 순서와 동일하다.
-        return (self.base, self.suffix)
+        # 번호순 — 파일명 정렬 순서와 동일하다.
+        return self.base
 
 
 def load_sql_files():
@@ -107,7 +113,10 @@ def run_static_checks(files):
 
     invalid = [f for f in files if not f.valid]
     for f in invalid:
-        violations.append(f"[파일명 규약 위반] {f.name} — `NNNN[a-z]?_이름.sql` 형식이 아니다")
+        violations.append(
+            f"[파일명 규약 위반] {f.name} — `NNNN_이름.sql` 형식이 아니다"
+            " (알파벳 접미사 `NNNNb_`는 2026-07-21 폐지 — Supabase CLI가 조용히 건너뛴다. 대장 #101)"
+        )
 
     valid_files = [f for f in files if f.valid]
 
@@ -119,31 +128,22 @@ def run_static_checks(files):
         if f.base < 1:
             violations.append(f"[번호 범위] {f.name} — 마이그 번호는 0001부터다(0000은 쓰지 않는다)")
 
-    # ② 번호 밀집 — 정본(접미사 없음) 파일만 대상
-    primary_bases = sorted({f.base for f in valid_files if f.suffix == ""})
-    if primary_bases:
-        max_base = primary_bases[-1]
+    # ② 번호 밀집
+    bases = sorted({f.base for f in valid_files})
+    if bases:
+        max_base = bases[-1]
         expected = set(range(1, max_base + 1))
-        missing = sorted(expected - set(primary_bases))
+        missing = sorted(expected - set(bases))
         for m in missing:
-            violations.append(f"[번호 공백] {m:04d}_*.sql 이 없다 — 정본 마이그 번호는 0001~{max_base:04d}까지 빈틈없이 밀집해야 한다")
+            violations.append(f"[번호 공백] {m:04d}_*.sql 이 없다 — 마이그 번호는 0001~{max_base:04d}까지 빈틈없이 밀집해야 한다")
 
-    # ③ 바닥번호+접미사 조합 중복 없음
+    # ③ 번호 중복 없음
     seen = {}
     for f in valid_files:
-        key = (f.base, f.suffix)
-        seen.setdefault(key, []).append(f.name)
-    for key, names in seen.items():
+        seen.setdefault(f.base, []).append(f.name)
+    for base, names in seen.items():
         if len(names) > 1:
-            base, suffix = key
-            label = f"{base:04d}{suffix}"
-            violations.append(f"[번호 중복] {label}_* 파일이 {len(names)}개다: {', '.join(names)}")
-
-    # ④ 접미사 파일은 같은 바닥번호의 정본 파일이 선행 존재
-    primary_base_set = set(primary_bases)
-    for f in valid_files:
-        if f.suffix != "" and f.base not in primary_base_set:
-            violations.append(f"[선행 정본 없음] {f.name} — 바닥번호 {f.base:04d}의 정본(접미사 없는) 파일이 없다")
+            violations.append(f"[번호 중복] {base:04d}_* 파일이 {len(names)}개다: {', '.join(names)}")
 
     return violations
 

@@ -35,6 +35,9 @@ build/
 # ===== 테스트 도구 산출물 =====
 .playwright-mcp/
 
+# ===== scripts/seed-local.sh 사진 다운로드 캐시 (재실행 시 재사용, 커밋 대상 아님) =====
+.seed-local-photo-cache/
+
 # ===== OS / 에디터 =====
 .DS_Store
 Thumbs.db
