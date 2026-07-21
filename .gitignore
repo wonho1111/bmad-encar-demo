@@ -53,3 +53,5 @@ Thumbs.db
 
 # ===== agent-reach(mcporter) 로컬 조사 도구 설정 (자동 생성, 추적 제외) =====
 /config/mcporter.json
+.bmad-loop/runs/
+.bmad-loop/cache/
