@@ -19,13 +19,14 @@ export type ListingCardData = {
   mileage: number; // km 정수
   region: string;
   seller_name?: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007 비정규화). 없으면(AI결과 등) 미표시.
-  // 증분 신규 — 전부 optional·nullable(DB 컬럼 아직 없음, 값 채움은 후속 에픽)
+  // 증분 신규 — 전부 optional·nullable(값 채움은 후속 에픽)
   image_url?: string | null; // 대표 사진의 공개 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
   view_count?: number | null; // Epic 11
   image_count?: number | null; // Epic 9
-  accident_status?: '무사고' | '단순교환' | '사고' | null; // Epic 10
-  is_single_owner?: boolean | null; // Epic 10
-  is_non_smoker?: boolean | null; // Epic 10
+  fuel?: string | null; // 연료(가솔린/디젤/하이브리드/전기/LPG) — Epic 10(10.1), 대장 #67
+  accident_status?: '무사고' | '단순교환' | '사고' | null; // Epic 10(10.1 컬럼 생성)
+  is_single_owner?: boolean | null; // Epic 10(10.1 컬럼 생성)
+  is_non_smoker?: boolean | null; // Epic 10(10.1 컬럼 생성)
 };
 
 export default function ListingCard({ listing }: { listing: ListingCardData }) {
@@ -48,12 +49,21 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
           <h3 className="truncate pr-14 text-card-title font-semibold text-ink-primary">{title}</h3>
 
           {/* ④ meta — **한 줄 가로 유지**. 공간이 부족하면 truncate만(D5, 세로로 접지 않는다).
-              ⚠️ 연료는 ListingCard 계약(conventions §4)에 없는 필드라 뺐다 — 계약 변경은 이 스토리 밖이다.
+              AC 문구대로 `주행 · 연료 · 지역`(+ 있으면 판매자)를 표시한다(대장 #67 해소, Story 10.1).
+              fuel이 없으면(계약-외 값 정규화) 그 마디를 통째로 생략 — 빈 자리("· ·")를 남기지 않는다.
+              ⚠️ fuel은 `isValidListing`(aiSearch.ts)의 필수 7필드 검사 대상이 아니라서 /ai/search가
+              비-string을 보내도 그대로 통과한다 — `typeof` 가드 없이 배열에 넣으면 `[object Object]`가
+              렌더될 수 있다(app `listing.dart`는 fromMap에서 이미 이렇게 방어한다). string일 때만 표시.
               pr-14: 찜 버튼이 이 줄까지 내려오므로 차량명과 같은 여백을 둔다. */}
           <p className="truncate whitespace-nowrap pr-14 text-meta font-medium text-ink-muted">
-            {listing.mileage.toLocaleString('ko-KR')}
-            {UNITS.mileage} · {listing.region}
-            {listing.seller_name ? ` · ${listing.seller_name}` : ''}
+            {[
+              `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`,
+              typeof listing.fuel === 'string' ? listing.fuel : null,
+              listing.region,
+              listing.seller_name,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
 
           {/* ⑤ 가격 — 카드에서 **시각적으로 가장 큰 요소**(26px/800 vs 차량명 16px/600). */}

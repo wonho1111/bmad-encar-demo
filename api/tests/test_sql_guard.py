@@ -245,3 +245,20 @@ def test_allowed_tables_is_exactly_listings():
     from app.db.sql_guard import ALLOWED_TABLES
 
     assert ALLOWED_TABLES == {"listings"}
+
+
+def test_allowed_columns_is_exactly_pinned():
+    """ALLOWED_COLUMNS를 정확 집합으로 고정한다 — 지금은 아무 테스트도 이 집합 전체를 보지 않아
+
+    조용히 넓어질 수 있었다(Story 10.1). 신뢰속성 3컬럼(accident_status·is_single_owner·
+    is_non_smoker)이 추가된 뒤에도 listings 테이블 밖 컬럼(storage_path 등)이 섞이지 않는지
+    이 단언이 못박는다 — 늘어나면 여기가 red가 되어 리뷰를 강제한다.
+    """
+    from app.db.sql_guard import ALLOWED_COLUMNS
+
+    assert ALLOWED_COLUMNS == {
+        "id", "manufacturer", "model", "year", "price", "mileage", "region",
+        "body_type", "color", "fuel", "transmission", "displacement", "seats",
+        "accident_free", "status", "options", "description",
+        "accident_status", "is_single_owner", "is_non_smoker",
+    }

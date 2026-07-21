@@ -36,7 +36,8 @@ class ListingsRepository {
   /// 필터는 값이 있을 때만 체이닝(web SearchPage 와 동일). 키워드는 model ilike.
   Future<List<ListingCardData>> fetchListings(ResolvedFilters f) async {
     var query = _buyerQuery(
-      'id, manufacturer, model, year, price, mileage, region, seller_name',
+      'id, manufacturer, model, year, price, mileage, region, seller_name, '
+      'fuel, accident_status, is_single_owner, is_non_smoker',
     );
 
     if (f.keyword != null) {

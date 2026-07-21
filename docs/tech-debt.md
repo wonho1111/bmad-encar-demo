@@ -854,12 +854,10 @@
 - **✎ 2026-07-19 코드리뷰 정정 — 위 해소는 원래 "정리 실패 시 매물 삭제를 중단한다"였고, 그 부분은 뒤집혔다.** 지금은 **매물 행을 먼저 지우고 사진 정리는 그 뒤**이며, **정리 실패는 삭제를 되돌리지 않는다**(`conventions.md` §10.1 표). 이유: 9.0이 스토리지 정책을 경로 기반으로 바꿔 **행 없는 고아가 회수 가능**해진 반면, 사진을 먼저 지우면 `listings` DELETE 실패 시 **사진만 복구 불가로 소실**되고 매물은 "사진 준비중"으로 박제된다. 정리 실패로 삭제를 막으면 매물이 **영영 삭제 불가**가 될 수도 있었다. **판매자 경로(`(user)/sell/ListingActions.tsx`)도 같이 뒤집었다** — 리뷰는 관리자 경로만 지적했지만(diff에 그것만 있었다) 같은 결함이 더 흔한 경로에 그대로 있었다. 이 항목이 남긴 교훈("같은 일을 하는 경로가 몇 개인가를 세라")이 **이번에도 유효했다.**
 - **남은 교훈:** 삭제·정리 같은 계약은 **경로별로 구현하지 말고 함수 하나를 공유**할 것. 지금은 관리자가 `@/app/(user)/sell/photo-sync`를 import하는 모양인데, 세 번째 삭제 경로가 생기면 그때 `lib/`로 올린다(지금 옮기면 두 곳을 건드리는 리팩터가 된다 — A3).
 
-### 67. 카드 meta에 **연료가 없다** — AC가 요구한 3요소 중 1개가 계약에 없는 필드였다 (Story 9.4 구현 중 발견, 🟢 품질)
+### 67. ✅ 해소 — 카드 meta에 **연료가 없다** (Story 10.1, 2026-07-22)
 - **위치:** `web/src/components/listings/ListingCard.tsx`(meta 줄) · 계약은 `docs/conventions.md` §4 `ListingCard` 필드 목록
-- **내용:** Story 9.4 AC1은 meta를 **`주행·연료·지역`**으로 규정했지만, `ListingCardData`에 **`fuel`이 없다.** `listings` 테이블에는 있고 `/search` 필터도 쓰는데 카드 계약에만 빠져 있다. 그래서 `주행 · 지역 · 판매자`로 렌더했다 — **AC 문구와 화면이 다르다.**
-- **왜 지금 늘리지 않았나:** 필드 추가는 §4.1 **락스텝 4곳 동시 갱신**(conventions → web `ListingCard.tsx` → api `schemas/ai.py` → app `listing.dart`) + 값을 채우는 `listing_cards.py`의 `SELECT_COLUMNS`·`sql_guard.py`의 `ALLOWED_COLUMNS`까지 건드리는 **크로스-파트 작업**이다. 9.4는 스토리 본문이 "**ListingCard 계약 변경 없음**"을 범위 밖으로 명시했다(A3).
-- **터지면:** 기능 고장은 없다. 구매자가 카드만 보고 연료를 알 수 없어 상세로 들어가야 한다(UX 손실).
-- **📅 예약: Story 10.1**(신뢰속성 스키마 + 락스텝) — 카드 값을 채우는 그 스토리가 어차피 §4.1 락스텝을 한 번 돈다. **✅ 2026-07-21 Epic 9 회고 A4: 에픽 문서 Story 10.1 인수조건에 체크박스로 실제로 심었다**(B5 — "지정한 곳에도 실제로 심는다"). 이전엔 "Epic 10"이라고만 적혀 있어 어느 스토리도 자기 일로 읽지 않을 자리였다.
+- **내용(당시):** Story 9.4 AC1은 meta를 **`주행·연료·지역`**으로 규정했지만, `ListingCardData`에 **`fuel`이 없다.** 그래서 `주행 · 지역 · 판매자`로 렌더했다 — AC 문구와 화면이 달랐다.
+- **✅ 해소:** Story 10.1이 §4.1 락스텝(conventions → web `ListingCard.tsx` → api `schemas/ai.py`/`listing_cards.py` `SELECT_COLUMNS`/`sql_guard.py` `ALLOWED_COLUMNS` → app `listing.dart`)을 신뢰속성 3컬럼과 함께 한 번에 돌며 `fuel`을 추가했다. 카드 meta가 이제 `주행 · 연료 · 지역`(+판매자, 있으면)으로 렌더된다 — 실측: `web/src/components/listings/ListingCard.tsx` meta 줄이 `fuel`을 배열에 넣고 `filter(Boolean)`으로 값 없으면 생략하도록 바뀜, `api/tests/test_sql_rag_node.py::test_cards_carry_cover_image_from_shared_helper`가 `card.fuel == "가솔린"`을 단언(green).
 
 ### 68. 시드 사진 스크립트가 **스토리 밖에서** 만들어지고 부분 실행됐다 (코드리뷰 2026-07-19 등재, 🟡 조건부)
 - **위치:** `scripts/seed_listing_photos.py` (커밋 `9ecb69f`) · `sprint-status.yaml`의 `9-7-시드-사진-...: backlog`
@@ -1377,3 +1375,35 @@
 - **되살릴 신호(이것만 보면 된다):** **`api/app/main.py`의 lifespan에 기동 작업이 추가되는 순간** — DB 풀 사전 개방 · 캐시 예열 · 외부 서비스 연결 확인 등. 그때부터 pytest 사각지대가 실재하게 된다.
 - **시제품 위치:** 세션 스크래치패드(`smoke-api.sh`). 영구 보관 아님 — 되살릴 때 재작성해도 20줄 수준이다.
 - **함께 확인된 한계:** 무효 토큰 401 축은 이 스모크로 검증 **불가**다. 토큰이 실제로 오면 `api/app/auth.py:56`이 `SUPABASE_URL`을 요구해(`require()`) 비밀값 없는 환경에서는 500이 난다 — **앱 버그가 아니라 검사 범위 밖.** 이 축은 비밀값이 있는 환경(에픽 관문의 수동 curl)에서 확인한다.
+
+### 108. 신뢰속성 3컬럼에 값을 넣는 경로가 없다(쓰기 UI 부재) — Story 10.1 Design Notes에서 식별
+- **위치:** Epic 10 전 스토리 범위 — 판매자가 `accident_status`·`is_single_owner`·`is_non_smoker`를 입력하는 폼이 어디에도 없다(10.2=표시, 10.3/10.4=옵션, 10.5=찜, 10.6=판매자 정보 — 등록 폼을 손대는 스토리가 없다).
+- **내용:** Story 10.1이 컬럼(`supabase/migrations/0017_listings_trust_attributes.sql`)과 값이 흐르는 경로(SELECT_COLUMNS·ALLOWED_COLUMNS·web/app select·프롬프트)를 전부 열었지만, 값을 **넣을** 사람이 없다. 기존 100건은 전부 NULL이고, 신규 등록도 이 3필드를 받지 않는다.
+- **터지면:** 10.2가 신뢰 뱃지를 렌더해도 실제로 뱃지가 뜨는 매물이 0건이라 화면에서 검증할 게 없다(수동 시드 없이는 눈으로 못 본다). 10.7(통합 검증)도 같은 벽에 부딪힌다.
+- **트리거: 10.2 착수 시** — 뱃지를 렌더할 실제 값이 있는지 먼저 확인할 것(수동 SQL 시드로 최소 1건 `accident_status`/`is_single_owner`/`is_non_smoker`를 채워야 뱃지 경로를 눈으로 검증할 수 있다). 등록 폼에 신뢰속성 입력 UI를 실제로 추가할지는 Epic 10 범위 밖 판단이 필요하다(현재 요구사항엔 없음, epic-10-context.md 확인).
+- **해소:** 위 트리거 시점에 (a) 수동 SQL 시드로 데모용 값만 채우고 폼은 계속 비워둘지, (b) 등록 폼에 신뢰속성 입력 UI를 추가하는 별도 스토리를 신설할지 판단.
+
+### 109. `/search`(web) — anon은 신뢰속성 3컬럼을 조회하지 못한다(GRANT 미승인) — Story 10.1 구현 중 실측 발견
+- **위치:** `web/src/app/(user)/search/page.tsx` · GRANT 정본은 `supabase/migrations/0011_listings_anon_select.sql` · 판정 규칙은 `docs/conventions.md` §9.3
+- **내용:** `/search`는 anon(비로그인)도 여는 열람 경로(conventions.md §8)인데, anon은 `0011`이 컬럼 단위로 명시한 목록만 읽을 수 있다. `accident_status`·`is_single_owner`·`is_non_smoker`는 그 목록에 없다 — **실측(2026-07-22, PostgREST에 anon key로 직접 요청)**: `select=id,fuel` → 200 정상, `select=id,accident_status,is_single_owner` → `42501 permission denied for table listings`(컬럼 하나만 막히는 게 아니라 **요청 전체가 실패**한다). `fuel`은 이미 0011에 있어 문제없다.
+- **왜 컬럼을 안 넓혔나:** `docs/conventions.md` §9.3은 anon 노출 컬럼을 "넓히는" GRANT 변경을 **델타 0이어도 (b) 사용자 승인 필수**로 못박는다(9.3 "새 컬럼 노출이면 무조건 (b)"). 이 스토리(10.1)는 "값이 흐르게 하는" 스토리이지 접근권한 정책을 넓히는 스토리가 아니라서, 승인 없이 GRANT를 확장하지 않았다.
+- **지금 취한 조치(회피, 승인 아님):** `search/page.tsx`가 로그인 여부(`user`)로 select 문자열을 분기한다 — 로그인 사용자는 신뢰속성 3컬럼을 함께 조회하고, anon은 기존과 동일하게 `fuel`까지만 조회한다(회귀 없음, 신뢰속성은 애초에 #108 때문에 전부 NULL이라 지금 당장 잃는 정보는 없다).
+- **터지면:** #108이 해소돼 실제 값이 생긴 뒤에도, **비로그인 방문자에게는 신뢰 뱃지(10.2)가 영영 안 보인다** — 로그인 전 탐색 단계에서 신뢰도를 보여준다는 Epic 10 취지와 어긋난다.
+- **트리거:** Story 10.2 착수 시(신뢰 뱃지를 실제로 그리는 시점) — anon에게도 뱃지를 보여줄지 제품 판단 필요. 보여주기로 하면 `0011` 이후 새 마이그레이션으로 `grant select (accident_status, is_single_owner, is_non_smoker) on public.listings to anon`을 추가하고, §9.3 (b) 절차대로 **사용자 승인**을 받는다.
+- **해소:** 위 트리거 시점에 승인받은 GRANT 마이그레이션 적용 + `search/page.tsx`의 `user` 분기 제거.
+
+### 110. `rows_to_cards` 계약-외 강등이 4슬롯뿐 — 숫자·필수 str 7슬롯은 순서 어긋난 LLM SQL에 `/ai/search` 500 (2026-07-22 Story 10.1 후속 리뷰 등재, 🟡 조건부)
+- **위치:** `api/app/graph/listing_cards.py:83-101`(`rows_to_cards`) · 근본 원인은 `api/app/db/sql_guard.py`가 SELECT 프로젝션 **순서**를 `SELECT_COLUMNS`에 고정하지 않음(파일 상단 주석이 이미 인정)
+- **무엇:** P1/P2/FP1 패치가 `fuel`·신뢰속성 3필드(인덱스 7~10)만 계약-외 값을 `None`으로 강등한다. 그런데 숫자 슬롯 `int(r[3])`/`int(r[4])`/`int(r[5])`(year·price·mileage)과 필수 str 슬롯 `r[1]`(manufacturer)·`r[2]`(model)·`r[6]`(region)은 방어가 없다. sql_guard는 컬럼 화이트리스트만 보고 순서를 고정하지 않으므로, **폭은 11로 맞지만 순서를 바꾼** LLM SQL이 숫자 슬롯에 문자열을(→ `int()` `ValueError`) 또는 str 슬롯에 int를(→ pydantic `ValidationError`) 넣을 수 있다. 이건 `SqlGuardError`가 아니라서 `sql_rag_node`의 `except SqlGuardError` 재생성 루프를 빠져나가 `/ai/search` 500이 된다 — P1/FP1이 4슬롯에 대해 닫은 바로 그 실패 모드가 나머지 7슬롯에 남아 있다.
+- **실측:** 리뷰어 4개 레인 중 2개(적대·엣지케이스)가 독립 수렴, 엣지케이스가 pydantic v2로 `int()`/`str` 필드 거부를 실증. 코드 확인: 89~92행 `int(r[3..5])`·`r[1]`/`r[2]`/`r[6]`에 try/except나 타입 가드 없음.
+- **왜 이 스토리가 만든 게 아닌가(→ defer):** 이 7슬롯(id/manufacturer/model/year/price/mileage/region)은 10.1 이전 **7컬럼 시절부터** 있었고 당시에도 reorder된 7컬럼 SQL이 같은 500을 냈다. 10.1은 **새로 추가한** 4 nullable 슬롯에만 방어를 넣었을 뿐 기존 7슬롯의 선재(先在) 결함을 만들지 않았다. 리뷰가 부수적으로 표면화. 근본 해결은 sql_guard가 SELECT 프로젝션 순서를 `SELECT_COLUMNS`에 고정하는 것이며(슬롯별 try/except는 밴드에이드), sql_guard는 보안 민감(B9)이라 신중히 다뤄야 한다 — "컬럼 추가" 스토리의 범위를 넘는다.
+- **왜 지금 무해:** 프롬프트 규칙 1이 LLM에 `SELECT_COLUMNS` 순서 보존을 지시하고 sql_guard가 컬럼을 화이트리스트로 막으므로, "폭 11 + 순서 뒤바뀜 + 타입 충돌 조합"이 동시에 성립할 확률이 낮다. 조건이 성립하면 500.
+- **트리거:** sql_guard에 SELECT 프로젝션 **순서 고정**을 도입할 때, 또는 `rows_to_cards`가 읽는 컬럼이 더 늘어날 때(예: 10.2에서 신뢰속성이 렌더되며 상세 select가 확장). 그때 4슬롯 `None` 강등 + 7슬롯 `SqlGuardError` 재시도로 **전체 슬롯을 일관되게** 방어할지 결정한다.
+
+### 111. 클라이언트 `.select(...)` 락스텝을 지키는 자동 검사가 없다 — #67 형태의 조용한 재발 가능 (2026-07-22 Story 10.1 후속 리뷰 등재, 🟢 품질)
+- **위치:** `web/src/app/page.tsx`(홈 프리뷰) · `web/src/app/(user)/search/page.tsx`(검색) · `app/lib/features/listings/listings_repository.dart`(`fetchListings`) — 세 곳의 인라인 `.select(...)` 문자열. 락스텝 정본은 `docs/conventions.md` §4.1
+- **무엇:** 카드에 값이 흐르려면 이 세 select 문자열이 `fuel`·신뢰속성 컬럼을 포함해야 하는데, 이를 강제하는 자동 검사가 하나도 없다 — §4.1 **산문만이** 락스텝 지점을 문서화한다. api 쪽 `ALLOWED_COLUMNS`는 정확-집합 테스트(`test_sql_guard.py`의 `test_allowed_columns_is_exactly_*`)로 못박혔지만, 클라이언트 select 문자열은 대응하는 가드가 없다.
+- **실측:** 리뷰어 2개 레인(검증갭·의도정합)이 지적. `grep -rln 'search/page|components/listings' web/src --include=*.test.*` → 0건(어떤 web 테스트도 이 파일을 import하지 않음). Dart도 모델(`listing_model_test.dart`)만 테스트하고 `listings_repository.dart` select는 검사하지 않는다.
+- **왜 defer:** 대장 #67(카드 meta 연료 누락)이 바로 이 형태의 결함이었다 — select에서 컬럼이 빠져도 아무 테스트가 안 깨진다. 10.1이 #67을 닫았지만 **재발을 막는 가드는 만들지 않았다.** B9("규칙은 어길 수 없는 자리에 박는다 — 주석·문서는 계약이 아니다")에 어긋난다. 서버 컴포넌트의 인라인 select 문자열이라 자동 검사가 다소 까다롭고(문자열 포함 단언은 취약), 화면 렌더 검증은 프로젝트 규칙상 E2E-only(#106) — 그래서 이 스토리에서 즉시 패치하지 않고 등재한다.
+- **터지면:** 세 곳 중 하나에서 컬럼이 조용히 빠지면 카드 meta가 `주행 · 지역`으로 회귀(#67 재발)하되 CI는 초록. 누군가 실제로 눈으로 볼 때까지 안 잡힌다.
+- **트리거:** 10.2에서 이 select 문자열을 다시 손댈 때, 또는 세 곳 중 하나에서 컬럼 누락 회귀가 실제로 발생할 때. 그때 (a) select 문자열이 §4.1 락스텝 컬럼을 포함하는지 검증하는 경량 테스트를 추가할지, (b) select를 공유 상수로 추출해 한 곳에서 관리할지 판단한다.

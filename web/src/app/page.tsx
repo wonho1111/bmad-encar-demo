@@ -56,7 +56,8 @@ export default async function Home() {
     //   search 페이지와 같은 요약 컬럼·정렬을 쓰되 limit만 건다(상태·표시 규칙은 공유).
     const { data: previewRows, error: previewError } = await buyerListingsQuery(
       supabase,
-      'id, manufacturer, model, year, price, mileage, region, seller_name',
+      'id, manufacturer, model, year, price, mileage, region, seller_name, ' +
+        'fuel, accident_status, is_single_owner, is_non_smoker',
     )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })

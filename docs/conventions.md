@@ -52,9 +52,10 @@
     | `image_path` | string\|null (대표 사진의 **버킷 상대 경로** — AI 응답 wire 전용, 아래 주석) | Epic 9 (9.6) |
     | `image_count` | int\|null | Epic 9 |
     | `view_count` | int\|null | Epic 11 |
-    | `accident_status` | `'무사고'\|'단순교환'\|'사고'`\|null | Epic 10 |
-    | `is_single_owner` | bool\|null | Epic 10 |
-    | `is_non_smoker` | bool\|null | Epic 10 |
+    | `fuel` | string\|null (연료 — `listings.fuel`, 카드 meta `주행·연료·지역` 3요소 중 하나) | Epic 10 (10.1) |
+    | `accident_status` | `'무사고'\|'단순교환'\|'사고'`\|null | Epic 10 (10.1 컬럼 생성) |
+    | `is_single_owner` | bool\|null | Epic 10 (10.1 컬럼 생성) |
+    | `is_non_smoker` | bool\|null | Epic 10 (10.1 컬럼 생성) |
   - **`image_path` vs `image_url` — 누가 무엇을 채우나 (Story 9.6):** 둘은 같은 사진을 가리키지만 **채우는 주체가 다르다.**
     - **`/ai/search` 응답(api)**: `image_path`만 채운다. `image_url`은 **항상 `null`**이다 — api는 사진 URL을 만들지 않기 때문이다(§10, `ai_readonly` 최소권한 CR2). 강제 장치: `api/tests/test_storage_signed_url_contract.py`.
     - **Supabase 직접 조회(web·app의 목록·상세)**: `image_path`가 없다. 소비처가 `listing_images`를 직접 읽어 `getPublicUrl`로 `image_url`을 만든다.
@@ -87,6 +88,26 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 > 이 예외가 없으면 다음 사람이 `ListingCard.tsx`를 뒤지다 아무것도 못 찾는다.
 
 필드 자리(nullable 계약)뿐 아니라 **실제 값까지 채울 때**는 위 4곳에 더해 `api/app/graph/listing_cards.py`의 `SELECT_COLUMNS`·`api/app/db/sql_guard.py`의 `ALLOWED_COLUMNS`도 락스텝으로 갱신해야 한다(DB 컬럼이 실제로 생긴 시점).
+
+> **락스텝 지점 추가 — 목록 select 문자열 3곳** (✎ 2026-07-22 Story 10.1 코드리뷰 추가).
+> 위 4곳·`SELECT_COLUMNS`/`ALLOWED_COLUMNS`를 다 갱신해도, **화면이 실제로 그 컬럼을 요청하지
+> 않으면** 값은 여전히 화면에 닿지 않는다. 그래서 값을 채우는 시점엔 아래 select 문자열 3곳도
+> 함께 갱신한다: web `src/app/page.tsx`(홈 미리보기) · web `src/app/(user)/search/page.tsx`
+> (`/search`) · app `listings_repository.dart`의 `fetchListings`. 셋 중 하나라도 빠지면 컬럼·
+> 타입·프롬프트는 다 갖췄는데 그 화면만 "쿼리 비용은 내지만 표시는 안 되는" 상태가 된다 —
+> 대장 #67(카드 meta 연료 누락, Story 9.4가 필드는 계약에 넣고 select엔 안 물어 조용히 빠졌던
+> 사례)이 이 자리에서 열렸었다.
+
+> ⚠️ **anon(비로그인) 열람 경로에 새 컬럼을 노출하려면 GRANT 마이그레이션 + 사용자 승인이
+> 별도로 필요하다** (✎ 2026-07-22 Story 10.1 코드리뷰 추가, 사례는 대장 #109). `listings`의
+> anon SELECT는 `0011_listings_anon_select.sql`이 **컬럼 단위로 화이트리스트**한다(§8) — 새
+> 컬럼을 추가해도 anon엔 기본적으로 안 보인다(의도된 동작, `0011:36-37` 주석). 위 체크리스트를
+> 그대로 따라 anon도 여는 화면(예: `/search`)의 select 문자열에 신규 컬럼을 넣으면, 그 컬럼이
+> `0011`의 GRANT 목록에 없는 한 **anon 요청 전체**가 `42501 permission denied`로 실패한다
+> (그 컬럼만 빠지는 게 아니라 목록 자체가 안 뜬다 — 실측). `0011` 이후 새 마이그레이션으로
+> anon에 그 컬럼을 열려면 §9.3 (b) — **델타가 0이어도 "새 컬럼 노출"은 무조건 사용자 승인**이
+> 필요하다(승인 없이 dev가 자율로 넓히지 않는다). 승인 전까지는 로그인 여부로 select 문자열을
+> 분기해 anon 회귀를 피한다.
 
 > ⚠️ **단, `listings` 테이블 밖에서 오는 값은 이 규칙에서 제외한다** (✎ 2026-07-20 코드리뷰 추가).
 > `image_path`·`image_count`는 `listing_images`에서 **별도 고정쿼리**로 붙는다(§10.2). 이 값들

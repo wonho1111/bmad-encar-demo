@@ -1,5 +1,5 @@
 // 매물 카드 위젯 — 탐색 목록·AI 검색 결과·홈 미리보기가 공유한다(web ListingCard 의 Flutter 판).
-// 사진 없음. 7필드 요약(제조사·모델·연식 / 가격(강조) / 주행·지역) + (있으면) 판매자 이름.
+// 사진 없음. 요약(제조사·모델·연식 / 가격(강조) / 주행·연료·지역, Story 10.1·대장 #67) + (있으면) 판매자 이름.
 // 누르면 매물 상세로 이동(onTap 콜백을 받아 상위가 라우팅 — 화면 의존을 줄임).
 // 디자인: 웹 차콜/zinc 미니멀 — 흰 카드 + zinc-200 보더, 가격을 굵게 강조.
 import 'package:flutter/material.dart';
@@ -48,9 +48,15 @@ class ListingCard extends StatelessWidget {
                     color: AppColors.ink2),
               ),
               const SizedBox(height: 3),
-              // 주행거리·지역 — 보조 정보(muted).
+              // 주행거리·연료·지역 — 보조 정보(muted). web ListingCard.tsx meta 줄과 같은 모양
+              // (`주행 · 연료 · 지역`, 대장 #67) — fuel이 없으면(계약-외 값) 그 마디만 생략한다.
+              // 한 줄 가로 유지(D5) — 넘치면 줄바꿈이 아니라 ellipsis로 자른다.
               Text(
-                '${kmText(listing.mileage)} · ${listing.region}',
+                <String?>[kmText(listing.mileage), listing.fuel, listing.region]
+                    .where((s) => s != null && s.isNotEmpty)
+                    .join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
               ),
               // 판매자 표시 이름(있을 때만). AI 결과처럼 값이 없으면 줄 자체를 숨긴다.

@@ -97,9 +97,20 @@ export default async function SearchPage({
 
   // ── 쿼리 빌드 ───────────────────────────────────────────────────
   // 구매자 관점(판매중만) 시작점은 buyerListingsQuery(FR11 단일 출처). 조건은 값이 있을 때만 체이닝한다.
+  //
+  // ⚠️ /search는 anon(비로그인)도 여는 열람 경로다(conventions.md §8). anon은 `0011_listings_anon_select.sql`이
+  //   컬럼 단위로 select 권한을 명시한 목록만 읽을 수 있고, 신뢰속성 3컬럼(accident_status·
+  //   is_single_owner·is_non_smoker)은 그 목록에 없다(실측: anon 키로 이 3컬럼을 요청하면
+  //   `42501 permission denied` — select 전체가 실패해 목록 자체가 안 뜬다). fuel은 이미
+  //   0011에 있어 anon도 안전하다.
+  //   신규 GRANT를 추가해 anon에도 열 수 있지만, conventions.md §9.3은 anon 노출 컬럼을
+  //   "넓히는" GRANT 변경을 dev 자율 판단이 아니라 **사용자 승인 필수(b)**로 못박는다 —
+  //   그래서 이 스토리(값이 흐르게 하는 것)에서 임의로 넓히지 않고, 로그인 사용자에게만
+  //   신뢰속성을 함께 조회한다(대장에 등재, 10.2 착수 시 재검토).
+  const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
   let query = buyerListingsQuery(
     supabase,
-    'id, manufacturer, model, year, price, mileage, region, seller_name',
+    `id, manufacturer, model, year, price, mileage, region, seller_name, fuel${trustColumns}`,
   );
 
   if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
@@ -122,8 +133,22 @@ export default async function SearchPage({
 
   const { data: rows, error } = await query.returns<ListingCardData[]>();
 
+  // anon 경로는 위 select에서 신뢰속성 3컬럼을 아예 안 물었으므로(trustColumns 참조) 그 값이
+  // 행에 `undefined`(키 자체가 없음)로 온다. 계약(conventions §4)은 "값이 없으면 null"이지
+  // "필드가 없음"이 아니다 — 10.2가 뱃지 로직에서 `listing.accident_status`를 읽을 때 undefined와
+  // null을 다르게 다루면(예: `=== null`로만 미상 판정) anon 렌더만 조용히 갈린다. 그래서 여기서
+  // 명시적으로 null을 채워 런타임 모양을 선언한 타입(`ListingCardData`)과 맞춘다.
+  const normalizedRows = rows && !user
+    ? rows.map((r) => ({
+        ...r,
+        accident_status: null,
+        is_single_owner: null,
+        is_non_smoker: null,
+      }))
+    : rows;
+
   // 대표사진 URL·장수를 채운다(Story 9.4). 홈 미리보기와 **같은 함수**를 쓴다 — 로직 이원화 금지.
-  const listings = rows ? await attachCoverImages(supabase, rows) : rows;
+  const listings = normalizedRows ? await attachCoverImages(supabase, normalizedRows) : normalizedRows;
 
   if (error) {
     // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC2).

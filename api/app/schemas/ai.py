@@ -58,9 +58,9 @@ class SearchRequest(BaseModel):
 
 
 class ListingCard(BaseModel):
-    """매물 카드 — conventions.md §4 확정 계약. 증분 신규 6필드는 전부 nullable
-    (값 채움은 후속 에픽: image_url·image_count=Epic 9, accident_status·is_single_owner·
-    is_non_smoker=Epic 10, view_count=Epic 11)."""
+    """매물 카드 — conventions.md §4 확정 계약. 증분 신규 7필드는 전부 nullable
+    (값 채움은 후속 에픽: image_url·image_count=Epic 9, fuel·accident_status·is_single_owner·
+    is_non_smoker=Epic 10(10.1), view_count=Epic 11)."""
 
     id: str
     manufacturer: str
@@ -69,6 +69,7 @@ class ListingCard(BaseModel):
     price: int       # 원(KRW)
     mileage: int     # km
     region: str
+    fuel: str | None = None  # 연료(가솔린/디젤/하이브리드/전기/LPG) — Story 10.1, 대장 #67
     # ⚠️ image_url은 api가 **채우지 않는다** — api는 사진 URL을 만들지 않기 때문이다
     #    (conventions.md §10, ai_readonly 최소권한 CR2). 대신 아래 image_path(원본 경로)를
     #    보내고, URL 조립은 web·app이 각자 getPublicUrl로 한다. 이 불변식은

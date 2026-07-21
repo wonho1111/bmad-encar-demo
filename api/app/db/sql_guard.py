@@ -31,10 +31,14 @@ MAX_OFFSET = 1000          # 데모 안전 상한 — 초과 생성 시 거부
 ALLOWED_TABLES = {"listings"}
 
 # ListingCard 7필드 + 필터 컬럼. 0002_listings.sql 컬럼명과 정확히 일치(drift 금지).
+# accident_status·is_single_owner·is_non_smoker는 0017_listings_trust_attributes.sql(Story 10.1)
+# 이 추가한 신뢰속성 3컬럼 — listings 밖 컬럼(예: storage_path)은 여기 넣지 않는다
+# (conventions.md §4.1 경고 — FR11이 그 경로에서 무너진다).
 ALLOWED_COLUMNS = {
     "id", "manufacturer", "model", "year", "price", "mileage", "region",
     "body_type", "color", "fuel", "transmission", "displacement", "seats",
     "accident_free", "status", "options", "description",
+    "accident_status", "is_single_owner", "is_non_smoker",
 }
 
 # DML/DDL 등 SELECT가 아닌 위험 키워드 — 어디에 등장하든(서브쿼리 위장 포함) 거부.

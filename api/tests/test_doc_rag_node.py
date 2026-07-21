@@ -16,7 +16,11 @@ from app.graph.doc_rag_node import _vec_literal, doc_rag_node
 
 # run_select 모킹용 — listings/guide 행을 SQL 내용으로 분기해 돌려주는 가짜 구현.
 _LISTING_ID = "44444444-4444-4444-8444-444444444444"
-_LISTING_ROW = (_LISTING_ID, "기아", "카니발", "2021", "38000000", "41000", "경기")
+# Story 10.1: SELECT_COLUMNS가 11필드(기존 7 + fuel·신뢰속성 3)라 튜플도 11개를 갖춘다.
+_LISTING_ROW = (
+    _LISTING_ID, "기아", "카니발", "2021", "38000000", "41000", "경기",
+    "LPG", None, None, None,
+)
 _GUIDE_ROW = ("패밀리카 적합 차종",)
 
 

@@ -19,7 +19,14 @@ name: Tests
 # 이 게이트가 안 보는 것 (추측 아니라 실측):
 #   · E2E — Playwright 스펙이 레포에 0개다. docs/e2e-*.md는 사람이 읽는 수동 대본이지 코드가 아니다.
 #   · web은 유닛 1파일(6건)뿐 — 표준이 "E2E 우선, Vitest는 순수 유틸 예외"라 원래 그렇다(project-context 규칙 12).
-#   · 마이그레이션 self-containment — migration-gate.yml 소관(경로 분리 유지).
+#   · 마이그레이션 self-containment(레포만으로 fresh DB가 서는지) — migration-gate.yml 소관.
+#
+# ⚠️ paths에 `supabase/migrations/**`가 있는 이유 (✎ 2026-07-22 코드리뷰 추가, P9):
+#   위 self-containment와는 **다른 관심사**다. api-db 잡의 tests/integration은 마이그레이션이
+#   만든 DB 제약(CHECK 등)이 실제로 의도대로 거르는지를 본다 — 그 제약을 약화·삭제하는 변경이
+#   마이그 파일만 건드리면(api/** 밖) 이전엔 이 게이트가 아예 안 돌았다. migration-gate.yml이
+#   "레포만으로 DB가 서는가"를 보는 동안, 이 게이트는 "선 DB가 규칙대로 동작하는가"를 본다 —
+#   같은 경로를 보되 서로 다른 것을 검증하므로 경로가 겹쳐도 중복이 아니다.
 
 on:
   push:
@@ -28,12 +35,14 @@ on:
       - "api/**"
       - "web/**"
       - "app/**"
+      - "supabase/migrations/**"
       - ".github/workflows/tests.yml"
   pull_request:
     paths:
       - "api/**"
       - "web/**"
       - "app/**"
+      - "supabase/migrations/**"
       - ".github/workflows/tests.yml"
 
 jobs:
@@ -60,7 +69,7 @@ jobs:
       - run: python -m pytest -q
 
   api-db:
-    name: api (실DB 통합 — FR11 sold 비노출)
+    name: api (실DB 통합 — tests/integration 전체)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # 왜 이 잡이 있나 (코드리뷰 2026-07-20, docs/tech-debt.md #48):
@@ -71,14 +80,19 @@ jobs:
     #   `AND (l.status='on_sale' OR true)` 같은 **진짜 우회가 전부 초록**이었다(실측).
     #   문자열 검사로는 SQL 의미를 지킬 수 없다 → 진짜 Postgres에 붙는 층을 하나 둔다.
     #
+    # ✎ 2026-07-22 코드리뷰: **잡 이름·범위를 갱신했다.** Story 10.1이 신뢰속성 CHECK 제약을
+    #   같은 방식(가짜 DB로는 "글자가 있나"만 봄)으로 실DB 검증하는 두 번째 통합 테스트 파일
+    #   (`tests/integration/test_trust_attributes_real_db.py`)을 추가하면서 "FR11 sold 비노출"
+    #   이라는 옛 이름이 이 잡의 실제 범위보다 좁아졌다. 아래 pytest는 `tests/integration` 디렉터리
+    #   **전체**를 돈다 — 새 통합 테스트 파일이 추가되면 이름을 다시 고치지 않아도 자동으로 실행된다.
+    #
     # ⚠️ 위 "secrets를 넣지 마라" 규칙을 어기지 않는다:
     #   여기 쓰는 DSN은 **이 잡이 띄우고 버리는 컨테이너**를 가리킨다(localhost). 운영 Supabase와
     #   무관하고 secrets도 쓰지 않는다. 그래서 test_readonly·test_live_smoke는 여전히 안 돈다
     #   (아래 pytest 대상이 tests/integration으로 한정돼 있다).
     #
     # 이 게이트가 안 보는 것: 운영 DB가 마이그레이션과 어긋난 경우(스키마 드리프트) —
-    #   migration-gate.yml 소관이다. 그리고 paths 필터가 api/**라, 마이그레이션만 바뀐 push에는
-    #   이 잡이 안 돈다(경로 분리 유지 — migration-gate.yml 주석 참조).
+    #   migration-gate.yml 소관이다.
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -115,12 +129,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[ai,dev]"
-      - name: FR11 실DB 통합 검증
+      - name: 실DB 통합 검증 (tests/integration 전체)
         working-directory: api
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-        # -p no:randomly 없음 / 단일 파일이라 순서 의존 없음.
-        # 실패하면 "sold 매물의 사진이 실제로 샌다"는 뜻이다 — 무시하고 넘기지 말 것.
+        # -p no:randomly 없음 — 이제 파일이 2개(FR11 사진·Story 10.1 신뢰속성 CHECK)이지만
+        # 순서 의존은 여전히 없다: 각 테스트가 자기 트랜잭션 안에서만 쓰고 끝에 롤백하므로
+        # (test_trust_attributes_real_db.py의 `cur` 픽스처, test_fr11_cover_images_real_db.py의
+        # 시드+롤백 픽스처) 서로 다른 파일·순서로 돌아도 상태를 공유하지 않는다.
+        # 실패하면 "sold 매물의 사진이 실제로 샌다" 또는 "신뢰속성 CHECK가 도메인 밖 값을 안 거른다"
+        # 는 뜻이다 — 무시하고 넘기지 말 것.
         run: python -m pytest tests/integration -q
 
   web:

@@ -81,9 +81,11 @@ def test_sm3_pathA_real_guard_passes_generated_sql(monkeypatch):
     """
     import app.graph.sql_rag_node as sql_mod
 
-    # 세단 IN-매핑 + status='on_sale' + 7컬럼을 갖춘 현실적 SQL(가드를 실제로 통과해야 함).
+    # 세단 IN-매핑 + status='on_sale' + 11컬럼(Story 10.1 — fuel·신뢰속성 3필드 포함)을 갖춘
+    # 현실적 SQL(가드를 실제로 통과해야 함).
     generated = (
-        "SELECT id, manufacturer, model, year, price, mileage, region "
+        "SELECT id, manufacturer, model, year, price, mileage, region, "
+        "fuel, accident_status, is_single_owner, is_non_smoker "
         "FROM listings WHERE status = 'on_sale' "
         "AND body_type IN ('준중형차','중형차','대형차') AND price <= 30000000"
     )
@@ -100,7 +102,7 @@ def test_sm3_pathA_real_guard_passes_generated_sql(monkeypatch):
     def _fake_run_select(sql):
         captured["sql"] = sql  # 가드를 통과한 안전 SQL을 캡처
         # DB 결과 1행(SELECT_COLUMNS 순서) — 매핑이 ListingCard로 떨어지는지 확인.
-        return [("uuid-1", "현대", "쏘나타", 2021, 25000000, 41000, "서울")]
+        return [("uuid-1", "현대", "쏘나타", 2021, 25000000, 41000, "서울", "가솔린", None, None, None)]
 
     monkeypatch.setattr(sql_mod, "_llm", lambda: _FakeLLM())
     monkeypatch.setattr(sql_mod, "run_select", _fake_run_select)

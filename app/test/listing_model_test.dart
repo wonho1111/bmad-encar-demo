@@ -57,6 +57,58 @@ void main() {
       });
       expect(c!.sellerName, isNull);
     });
+
+    // Story 10.1 — fuel·신뢰속성 3필드 파싱(대장 #67, conventions §4 계약-외 값 정규화).
+    test('fuel·신뢰속성 3필드 정상 파싱', () {
+      final c = ListingCardData.fromMap({
+        'id': 'a',
+        'manufacturer': '현대',
+        'model': '아반떼',
+        'year': 2021,
+        'price': 18000000,
+        'mileage': 20000,
+        'region': '부산',
+        'fuel': '가솔린',
+        'accident_status': '단순교환',
+        'is_single_owner': true,
+        'is_non_smoker': false,
+      });
+      expect(c!.fuel, '가솔린');
+      expect(c.accidentStatus, '단순교환');
+      expect(c.isSingleOwner, isTrue);
+      expect(c.isNonSmoker, isFalse);
+    });
+
+    test('accident_status가 비-String이면 null로 강등되고 행은 살아남는다', () {
+      final c = ListingCardData.fromMap({
+        'id': 'a',
+        'manufacturer': '현대',
+        'model': '아반떼',
+        'year': 2021,
+        'price': 18000000,
+        'mileage': 20000,
+        'region': '부산',
+        'accident_status': 123, // 도메인 밖 타입(계약-외 값)
+      });
+      expect(c, isNotNull); // 핵심 7필드가 아니므로 행을 버리지 않는다
+      expect(c!.accidentStatus, isNull);
+    });
+
+    test('is_single_owner가 없으면 false가 아니라 null(미상, bool 3상태)', () {
+      final c = ListingCardData.fromMap({
+        'id': 'a',
+        'manufacturer': '현대',
+        'model': '아반떼',
+        'year': 2021,
+        'price': 18000000,
+        'mileage': 20000,
+        'region': '부산',
+      });
+      expect(c!.isSingleOwner, isNull);
+      expect(c.isSingleOwner, isNot(false)); // false로 단정하지 않는다(오독 방지)
+      expect(c.isNonSmoker, isNull);
+      expect(c.fuel, isNull);
+    });
   });
 
   group('ListingDetail.fromMap', () {
