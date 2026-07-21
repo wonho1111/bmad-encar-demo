@@ -263,13 +263,21 @@ date: '2026-07-12'
 |---|---|---|---|
 | 0011 | listings anon SELECT(on_sale, FR58 비로그인 열람) | **8.5** | (신규 — FR58 접근 토대) |
 | 0012 | listing_images + 비공개 버킷·Storage RLS | **9.1** | 0011 |
-| 0013 | 신뢰속성(accident_status text+CHECK·is_single_owner·is_non_smoker) | **10.1** | 0012 |
-| 0014 | wishlists(찜) | **10.5** | 0015 |
-| 0015 | view_count + increment_listing_view() RPC 하드닝 | **11.1** | 0014 |
-| 0016 | chat 멱등키(client_message_id + UNIQUE(room_id,…)) | **12.1** | 0016 |
-| 0017 | chat realtime broadcast 트리거 + realtime.messages RLS | **12.2** | 0017 |
-| 0018 | chat_room_reads(안읽음) | **12.5** | 0018 |
-| 0019 | role CHECK 완화(admin 존치) | **14.1** | 0013 |
+| 0013 | listing_images 경로 무결성 트리거 | **9.1** (계획 밖) | — |
+| 0014 | listing-images 공개 버킷 전환 | **9.0** (계획 밖) | — |
+| 0015 | `listings_update_own`에 `status <> 'sold'` | **9.7** (계획 밖) | — |
+| *(착수 시 결정)* | 신뢰속성(accident_status text+CHECK·is_single_owner·is_non_smoker) | **10.1** | 0012 |
+| *(착수 시 결정)* | wishlists(찜) | **10.5** | 0015 |
+| *(착수 시 결정)* | view_count + increment_listing_view() RPC 하드닝 | **11.1** | 0014 |
+| *(착수 시 결정)* | chat 멱등키(client_message_id + UNIQUE(room_id,…)) | **12.1** | 0016 |
+| *(착수 시 결정)* | chat realtime broadcast 트리거 + realtime.messages RLS | **12.2** | 0017 |
+| *(착수 시 결정)* | chat_room_reads(안읽음) | **12.5** | 0018 |
+| *(착수 시 결정)* | role CHECK 완화(admin 존치) | **14.1** | 0013 |
+
+> **⛔ 2026-07-21 Epic 9 회고 A1 — 이 표는 더 이상 미래 스토리의 파일 번호를 정하지 않는다.**
+> 여기 숫자를 미리 박아 두면 **에픽이 계획보다 마이그를 더/덜 쓸 때마다 전부 밀리고**, 밀린 사실이 각주에만 남아 본문을 읽는 dev가 **이미 존재하는 번호로 파일을 만든다.** 실제로 두 번 일어났다(8.5 삽입 → 9.1이 겪음 / Epic 9의 3장 초과 → 10.1이 겪을 뻔함).
+> **번호는 착수 시 `supabase/migrations/` 파일 목록의 다음 빈 번호로 정한다.** 지켜지는지는 문서가 아니라 **8.6이 만든 마이그 순서 CI 게이트**가 본다(번호 공백·중복·비-self-contained를 실패로 잡는다) — B9.
+> 이 표에 남은 값은 **내용과 소유 스토리**이며, 그게 이 표의 실제 쓸모다.
 
 > **📌 8.5 삽입(2026-07-14):** FR58 비로그인 열람을 위한 `listings` anon SELECT 마이그가 `0011`로 삽입되어 기존 0011~0018이 **0012~0019로 +1 시프트**됨(사용자 승인). forward-only라 "0011 앞" 삽입 불가 → 개발 순서(8.5가 9.1보다 선행)대로 재부여. 아래 각 스토리의 "Given 마이그레이션 00NN"·"기반 스토리" 번호는 이 표를 정본으로 갱신됨.
 >
@@ -281,7 +289,7 @@ date: '2026-07-12'
 > | 0014 | listing-images 공개 버킷 전환 | **9.0** (계획 밖 추가) |
 > | 0015 | `listings_update_own`에 `status <> 'sold'` (tech-debt #54) | **9.7** (계획 밖 추가) |
 >
-> → **위 표의 `0013 신뢰속성`(10.1)부터는 실제로 `0016`부터 시작한다.** 각 스토리는 착수 시 파일 목록을 보고 다음 번호를 정할 것 — 이 표의 숫자를 그대로 쓰면 충돌한다. *(특히 `wishlists`는 표에 `0014`로 적혀 있으나 그 번호는 이미 소진됐다.)*
+> → *(2026-07-21 Epic 9 회고 A1: 이 각주가 지적한 충돌은 **위 표 본문에서 숫자를 걷어내는 것으로 해소**했다. 각주에 둔 제약은 본문으로 흐르지 않는다 — Epic 8 회고 교훈 4번.)*
 
 ## Epic List
 
@@ -601,12 +609,14 @@ So that 구매자가 내 차의 신뢰 정보를 옵션과 구분해 본다.
 
 **Acceptance Criteria:**
 
-**Given** 마이그레이션 **0013**(원장 정본, 내용 = 신뢰속성)
+**Given** 신뢰속성 마이그레이션 — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다.** 여기 적혀 있던 `0013`은 **이미 소진됐다**(0013=경로 무결성 트리거, 0014=공개 버킷 전환, 0015=sold 수정 차단). *(✎ 2026-07-21 Epic 9 회고 A1: 정정이 `:284` 각주에만 있어 본문만 읽은 dev가 존재하는 번호로 파일을 만들 자리였다 — 9.1이 이미 한 번 겪은 사고의 반복. B8 "각주의 제약은 본문으로 올린다".)*
 **When** 적용하면
 **Then** `accident_status text + CHECK('무사고'·'단순교환'·'사고')` + `is_single_owner bool` + `is_non_smoker bool`이 전부 **nullable(미입력 제3상태)**로 추가되고 self-contained하다(기존 100건 NULL 유지·backfill 없음)
 **And** 이 스키마 변경이 `sql_guard` 화이트리스트 · AI 프롬프트 스키마 · ListingCard 계약 · web/app 매퍼까지 **락스텝**으로 동시 반영된다(drift 금지)
 **And** 기존 `accident_free`에서 승격되며 값이 보존된다(additive, 드롭 금지)
 **And** RLS 정책은 기존 listings 정책을 상속한다(규칙10)
+**And** *(Epic 9 회고 A4 — 대장 #67)* 이 락스텝을 도는 김에 **카드 meta의 연료(fuel) 필드 누락**을 함께 닫는다. 어차피 §4.1 락스텝을 한 번 도는 자리다
+**And** *(Epic 9 회고 A5 — "만들었다"가 아니라 "잡는다")* **이 검사가 잡는지 증명한다**: CHECK 제약에 허용되지 않는 값을 일부러 INSERT해 red 확인 → 원복해 green 확인. 그리고 **이 검사가 안 보는 것**(예: 이미 들어간 기존 행, NULL 경로)을 검사 옆에 실측해 적는다
 
 ### Story 10.2: 신뢰 뱃지 표시 + 면책 라벨
 
@@ -623,6 +633,10 @@ So that 신뢰 정보를 참고하되 검증된 것으로 오해하지 않는다
 **And** 상세 신뢰 섹션에 "판매자가 직접 입력한 정보예요. 차장님이 검증한 내용은 아니니, 계약 전 꼭 직접 확인하세요." 문구가 표시된다(UX-DR19)
 **And** 미입력(NULL) 신뢰속성은 초록 뱃지도 사고 표시도 아닌 제3상태(미표시)로 처리된다
 **And** 신뢰 뱃지는 색 단독이 아닌 색+아이콘+텍스트로 표기된다(접근성, 비색 신호 중복)
+
+**추가 인수조건 (Epic 9 회고 A4·A5가 심음, B5):**
+- [ ] **대장 `#79` 상세 갤러리 접근성 3종을 함께 닫는다.** 이 스토리가 상세의 신뢰 슬롯을 채우며 접근성을 한 번 보는 자리다 — 갤러리 사진 전환이 스크린리더에 고지되지 않는 문제 등을 같이 처리한다.
+- [ ] **면책 라벨이 "있는지"가 아니라 "듣는지" 실측한다** (Epic 9 최대 교훈). 뱃지는 렌더되는데 면책 라벨만 빠지는 경로가 실제로 없는지 **뱃지 렌더 코드를 일부러 면책 없이 만들어 검사가 red를 내는지** 확인 → 원복해 green 확인. 검사가 **안 보는 경로**(예: 하이드레이션 전, 카드 vs 상세)를 검사 옆에 실측해 적는다.
 
 ### Story 10.3: 옵션 통제어휘 + 우선순위 상수 + 저장구조 정비
 
@@ -673,6 +687,7 @@ So that 나중에 다시 찾아와 비교·결정한다.
 **추가 인수조건 (대장 이월분 — 코드리뷰 2026-07-21이 심음, B5):**
 - [ ] **`#89`(구 `#27`) 시드 매물 고정 id 전환을 여기서 다시 판단한다.** `seed.sql`은 재실행 시 `listings`를 delete+재삽입하는데, 자식이 `on delete cascade`라 **사진·채팅방이 함께 사라진다**(Story 9.7 실측: `listing_images` 10→0행, `chat_rooms` 1→0행, 매물 id 보존 0/97). 이 스토리가 `wishlists`라는 **새 자식 테이블을 하나 더 붙이므로** 같은 손실 대상이 늘어난다 — 판단 지점이 여기인 이유다.
   - 판단 결과가 "고정 id로 전환"이든 "현행 유지"든 **근거와 함께 `#89`에 적는다.** 근거 없이 넘기면 다음 자식 테이블에서 또 같은 자리에 선다.
+- [ ] **(Epic 9 회고 A5) 본인 RLS가 "듣는지" 실측한다** — 정책이 있는 것과 거르는 것은 다르다(Epic 9 반복 교훈). 타인 계정으로 남의 찜을 읽어 **0행**임을 확인하고, 정책 조건을 일부러 무력화한 대조군에서 **1행이 새는지**까지 확인해야 red-green이 성립한다. `#94`(백필이 RLS 롤로 바뀌면 조용히 누락)와 같은 축이다.
 
 
 
@@ -689,6 +704,9 @@ So that P2P 거래의 "이 사람 믿을 만한가" 불안을 던다.
 **Then** 경량 판매자 정보(닉네임 + 가입 시점 + "이 판매자의 다른 매물 N건")가 집계 쿼리로 표시된다(FR56)
 **And** "다른 매물 N건"은 FR11 강제지점을 준수해 on_sale 매물만 집계한다
 **And** 평판 점수·응답률·인증 배지는 표시하지 않는다(데이터 없음, 범위 밖 — 가짜 표시 금지)
+
+**추가 인수조건 (Epic 9 회고 A4가 심음, B5):**
+- [ ] **대장 `#82` `InquiryCta` 이중 마운트를 함께 닫는다.** 판매자 정보 슬롯이 문의 CTA와 같은 카드에 들어오므로, 이 스토리가 그 컴포넌트를 다시 손대는 자리다.
 
 ### Story 10.7: 신뢰속성·옵션 통합 검증 (SM-C)
 
@@ -750,7 +768,7 @@ So that 다른 사람들이 많이 본 매물을 참고한다.
 
 **Acceptance Criteria:**
 
-**Given** 마이그레이션 **0015**(원장 정본, 내용 = view_count + RPC)
+**Given** view_count + RPC 마이그레이션 — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**(여기 적혀 있던 `0015`는 이미 소진됐다 — Epic 9가 계획보다 3장 더 썼다)
 **When** 적용하면
 **Then** `listings.view_count int default 0` + `increment_listing_view(id)` **SECURITY DEFINER RPC**가 생성되고 self-contained하다(OI-5)
 **And** RPC는 하드닝된다 — `SET search_path=''` + `REVOKE EXECUTE FROM PUBLIC` + `GRANT EXECUTE TO anon, authenticated`(AC-SEC-2)
@@ -844,7 +862,7 @@ So that 대화 기록이 깨끗하게 유지된다.
 
 **Acceptance Criteria:**
 
-**Given** 마이그레이션 **0016**(원장 정본, 내용 = chat 멱등키 — 아키텍처 논리라벨 0016)
+**Given** chat 멱등키 마이그레이션(아키텍처 논리라벨 0016) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**(Epic 10~11이 먼저 쓰는 장수만큼 밀린다)
 **When** 적용하면
 **Then** `chat_messages.client_message_id` + **`UNIQUE(room_id, client_message_id)`**(CR1) + `ON CONFLICT DO NOTHING`이 추가되고 self-contained하다
 **And** 기존 0003c BEFORE INSERT 트리거(seller_id 강제)·0010 2000자 제약과 충돌하지 않음을 검증한다(동일 키 2회 INSERT → 행 1개·트리거 부작용 0)(AC-CHAT-1)
@@ -858,7 +876,7 @@ So that 남의 대화가 새지 않고 안전하게 채팅한다.
 
 **Acceptance Criteria:**
 
-**Given** 마이그레이션 **0017**(원장 정본, 내용 = chat realtime broadcast — 아키텍처 논리라벨 0017)
+**Given** chat realtime broadcast 마이그레이션(아키텍처 논리라벨 0017) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**
 **When** 적용하면
 **Then** `realtime.broadcast_changes` 트리거 + `realtime.messages` RLS + private 채널이 구성되고, 토픽 형식은 `chat:room:{room_id}`로 트리거·RLS·클라 구독 **3곳이 동일**하다(불일치 시 인증·수신 붕괴)
 **And** `realtime.messages` RLS가 토픽을 파싱해 **요청자가 그 room의 buyer/seller인지** 검사한다(AC-CHAT-3, private 채널 + setAuth 전제)
@@ -903,7 +921,7 @@ So that 실시간 전환의 실제 가치 — 문의를 놓치지 않는다.
 
 **Acceptance Criteria:**
 
-**Given** 마이그레이션 **0018**(원장 정본, 내용 = chat_room_reads — 아키텍처 논리라벨 0018)
+**Given** chat_room_reads 마이그레이션(아키텍처 논리라벨 0018) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**
 **When** 적용하면
 **Then** `chat_room_reads(user_id, room_id, last_read_at)`가 생성되고 self-contained하다(FR57)
 **And** 채팅 진입점(내비 🔔)에 안읽음 카운트 배지가 표시되고, 안읽음 = `created_at > last_read_at` **AND `sender_id != {me}`**(내 발신 제외)로 집계된다(I6)
@@ -1065,7 +1083,7 @@ So that 관리자 기능을 깨지 않고 역할 통합의 토대를 놓는다.
 
 **Acceptance Criteria:**
 
-**Given** 마이그레이션 **0019**(원장 정본, 내용 = role CHECK 완화 — 아키텍처 논리라벨 0013)
+**Given** role CHECK 완화 마이그레이션(아키텍처 논리라벨 0013) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**
 **When** 적용하면
 **Then** `profiles.role` CHECK가 완화되어 buyer/seller가 무의미화되고 **admin은 존치**된다(is_admin()·0005 의존 보존)(FR54, self-contained)
 **And** role CHECK 완화가 기존 RLS의 role 비교(0002 등)를 안 깨는지 grep으로 검증한다(AC-F14-1)
