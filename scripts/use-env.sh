@@ -11,9 +11,11 @@
 #   bash scripts/use-env.sh prod    # 운영 Supabase를 보게 한다
 #   bash scripts/use-env.sh auto    # 현재 git 브랜치를 보고 알아서 고른다(훅이 쓰는 모드)
 #
-# 브랜치 규칙(auto): main 만 운영, **나머지 전부 로컬**.
-#   fail-safe 방향으로 정했다 — 모르는 브랜치를 운영으로 붙이는 실수가, 로컬로 붙이는
-#   실수보다 훨씬 비싸다.
+# 브랜치 규칙(auto): main·develop 은 운영, **나머지 전부 로컬**.
+#   develop을 운영에 둔 이유(사용자 결정 2026-07-21): develop은 Vercel 프리뷰로 배포되고
+#   그 배포본은 어차피 운영 DB를 본다. 로컬에서만 다른 DB를 보면 "내 화면에선 되는데
+#   배포하면 다르다"가 생긴다. 로컬 DB는 자동 개발 루프 전용(test/* 등)으로 좁힌다.
+#   모르는 브랜치는 로컬로 보낸다 — 실수의 방향을 싼 쪽으로 기울인다.
 #
 # 값이 담긴 파일(전부 .gitignore 대상 — 이 스크립트에는 값이 없다):
 #   web/.env.dev  → web/.env.local      web/.env.prod  → web/.env.local
@@ -28,7 +30,10 @@ MODE="${1:-auto}"
 
 if [ "$MODE" = "auto" ]; then
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-  if [ "$branch" = "main" ]; then MODE="prod"; else MODE="local"; fi
+  case "$branch" in
+    main|develop) MODE="prod" ;;
+    *)            MODE="local" ;;
+  esac
 fi
 
 case "$MODE" in
