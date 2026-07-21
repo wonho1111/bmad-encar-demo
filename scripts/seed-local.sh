@@ -128,4 +128,25 @@ if [ "$fail" -gt 0 ]; then
   printf '  %s\n' "${fail_list[@]}"
 fi
 
+# ── 4/4 임베딩 재생성 (선택) ────────────────────────────────────────────────
+# 운영 스냅샷에는 embedding(768차원 벡터)이 들어 있지 않다 — 행당 9.5KB라 스냅샷에서 뺐다.
+# 대신 여기서 "다시 만든다". 원본을 옮기는 게 아니라 매물 정보를 Gemini에 보내 새로 계산하므로
+# 결과는 운영과 값이 같지는 않지만 의미검색 품질은 동등하다.
+# 키가 없으면 조용히 넘어가지 않고 "무엇이 빠졌는지" 알린다(AI 검색만 안 되고 나머지는 정상).
+echo "[seed-local] 4/4 임베딩 생성 중(가능하면)..."
+
+API_VENV="$REPO_ROOT/api/.venv/bin/python"
+if [ ! -x "$API_VENV" ]; then
+  echo "[seed-local] ⏭  건너뜀: api/.venv 가 없습니다. AI 의미검색(/ai)은 로컬에서 동작하지 않습니다."
+elif ! grep -qE "^GEMINI_API_KEY=.+" "$REPO_ROOT/api/.env" 2>/dev/null; then
+  echo "[seed-local] ⏭  건너뜀: api/.env 에 GEMINI_API_KEY 가 없습니다. AI 의미검색(/ai)은 로컬에서 동작하지 않습니다."
+  echo "[seed-local]    채우려면: api/.env 에 키를 넣고 아래를 실행"
+  echo "[seed-local]    DATABASE_URL=\"$LOCAL_DB_URL\" api/.venv/bin/python api/scripts/backfill_embeddings.py"
+else
+  # DATABASE_URL 은 OS 환경변수로 넘긴다 — pydantic-settings 에서 OS 변수가 api/.env 파일값을
+  # 이깁니다(실측 확인). 즉 api/.env 에 운영 DB 주소가 들어 있어도 로컬로 강제된다.
+  ( cd "$REPO_ROOT/api" && DATABASE_URL="$LOCAL_DB_URL" "$API_VENV" scripts/backfill_embeddings.py ) \
+    || echo "[seed-local] ⚠️  임베딩 생성 실패 — 키 만료·할당량 등을 확인하세요. 나머지 데이터는 정상입니다."
+fi
+
 echo "[seed-local] 완료. 검증: psql \"$LOCAL_DB_URL\" 에서 각 테이블 count를 운영과 대조하세요."
