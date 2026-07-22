@@ -15,6 +15,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { USER_ROLE, ROLE_LABEL, LISTING_STATUS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
+import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import ResponsiveGrid from '@/components/ui/ResponsiveGrid';
@@ -71,6 +72,12 @@ export default async function Home() {
 
     // 대표사진 URL·장수를 채운다(Story 9.4). /search와 **같은 함수** — 두 화면이 갈리지 않게.
     const previewListings = previewRows ? await attachCoverImages(supabase, previewRows) : previewRows;
+
+    // 찜 오버레이(Story 10.5) — ListingCardData wire 필드가 아니라 사용자별 별도 조회다(conventions §4).
+    //   이 블록은 이미 user가 있는 분기라 로그인 분기 없이 항상 조회한다.
+    const wishedIds = previewListings
+      ? await fetchWishedListingIds(supabase, user.id, previewListings.map((l) => l.id))
+      : new Set<string>();
 
     const isSeller = roleLabel === ROLE_LABEL[USER_ROLE.SELLER];
 
@@ -148,7 +155,7 @@ export default async function Home() {
               /* D5: 열 수로만 흡수(≥1100px 4열 · 640~1099px 2열 · <640px 1열) — /search와 같은 그리드. */
               <ResponsiveGrid>
                 {previewListings.map((l) => (
-                  <ListingCard key={l.id} listing={l} />
+                  <ListingCard key={l.id} listing={l} wished={wishedIds.has(l.id)} authed />
                 ))}
               </ResponsiveGrid>
             )}

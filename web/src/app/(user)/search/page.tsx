@@ -15,6 +15,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
+import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import ResponsiveGrid from '@/components/ui/ResponsiveGrid';
@@ -152,6 +153,12 @@ export default async function SearchPage({
   // 대표사진 URL·장수를 채운다(Story 9.4). 홈 미리보기와 **같은 함수**를 쓴다 — 로직 이원화 금지.
   const listings = normalizedRows ? await attachCoverImages(supabase, normalizedRows) : normalizedRows;
 
+  // 찜 오버레이(Story 10.5) — ListingCardData wire 필드가 아니라 사용자별 별도 조회다(conventions §4).
+  //   /search는 anon도 여는 열람 경로라 로그인일 때만 조회한다(비로그인은 항상 빈 Set = 전부 미찜).
+  const wishedIds = user && listings
+    ? await fetchWishedListingIds(supabase, user.id, listings.map((l) => l.id))
+    : new Set<string>();
+
   if (error) {
     // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC2).
     console.error('[search] 매물 목록 조회 실패:', error);
@@ -202,7 +209,7 @@ export default async function SearchPage({
                   카드 내부 가로 배치는 어느 폭에서도 접히지 않는다 — 규칙은 ResponsiveGrid가 소유. */}
               <ResponsiveGrid>
                 {listings.map((l) => (
-                  <ListingCard key={l.id} listing={l} />
+                  <ListingCard key={l.id} listing={l} wished={wishedIds.has(l.id)} authed={!!user} />
                 ))}
               </ResponsiveGrid>
             </>

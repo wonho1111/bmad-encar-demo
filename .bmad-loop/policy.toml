@@ -50,7 +50,7 @@ enabled = true
 #                    and flags this when its changes warrant an independent pass).
 #   "always"      -> run the second-opinion review on every story.
 # The loop is bounded by limits.max_review_cycles either way.
-trigger = "always"
+trigger = "recommended"
 
 [adapter]
 name = "claude"              # claude | codex | gemini | <custom .bmad-loop/profiles/*.toml>

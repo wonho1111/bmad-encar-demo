@@ -32,7 +32,14 @@ export default function AppHeader({
         {email && <span className="text-zinc-500">{email}</span>}
       </div>
       {email ? (
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          {/* 찜한 매물 진입점(Story 10.5) — 로그인 사용자에게만. 전체 내비 재구성은 Epic 11.2 몫이라
+              지금은 이 최소 링크만 둔다(placeholder 헤더에 맞는 최소 변경, A2). */}
+          <Link href="/wishlist" className="text-sm font-medium hover:underline">
+            찜
+          </Link>
+          <LogoutButton />
+        </div>
       ) : (
         <Link
           href={currentPath ? `/login?redirectedFrom=${encodeURIComponent(currentPath)}` : '/login'}

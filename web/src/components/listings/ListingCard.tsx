@@ -10,6 +10,7 @@ import { UNITS } from '@/lib/constants';
 import { topOptions } from '@/lib/options';
 import ListingCardImage from './ListingCardImage';
 import TrustAttributes from './TrustAttributes';
+import WishButton from './WishButton';
 
 // 카드에 노출할 옵션 칩 최대 개수(conventions §11.2 "카드=상위 3~4").
 const CARD_OPTION_COUNT = 4;
@@ -35,7 +36,18 @@ export type ListingCardData = {
   options?: string[] | null; // 장비 통제어휘 배열(text[]) — Epic 10(10.3), docs/conventions.md §11
 };
 
-export default function ListingCard({ listing }: { listing: ListingCardData }) {
+export default function ListingCard({
+  listing,
+  wished = false,
+  authed = false,
+}: {
+  listing: ListingCardData;
+  // 찜 여부·로그인 여부 — ListingCardData(wire 계약)에 넣지 않는 sibling prop이다(찜은 wire
+  // 필드가 아니다, docs/conventions.md §4·65). 호출부(page.tsx·search/page.tsx·wishlist/page.tsx)가
+  // 사용자별 오버레이 조회 결과를 여기로 주입한다.
+  wished?: boolean;
+  authed?: boolean;
+}) {
   const title = `[${listing.manufacturer}] ${listing.model} · ${listing.year}년`;
   // 희소 옵션 우선(topOptions), 상위 CARD_OPTION_COUNT개만 카드에 노출(conventions §11.2).
   const cardOptions = topOptions(listing.options, CARD_OPTION_COUNT);
@@ -100,24 +112,9 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
         </div>
       </Link>
 
-      {/*
-        찜(♡) — **위치·시각만.** 동작·토글·상태는 Epic 10.5의 몫이라 여기서 만들지 않는다.
-        동작이 없는 컨트롤이므로 스크린리더·키보드가 잡지 않게 disabled + aria-hidden + tabIndex=-1.
-        자리: 사진 밖, **정보 영역 우상단**. 아래 감싸개는 사진과 같은 5:3 비율로 사진 박스 높이를
-        그대로 재현하고, `top-full`로 그 바로 아래(=정보 영역 시작점)에 버튼을 놓는다.
-        터치 타깃 44×44(h-11 w-11) — review-accessibility.md [high].
-      */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[5/3]">
-        <button
-          type="button"
-          disabled
-          aria-hidden="true"
-          tabIndex={-1}
-          className="absolute right-2 top-full mt-1 flex h-11 w-11 items-center justify-center rounded-full bg-surface-raised text-lg text-ink-muted shadow-card"
-        >
-          ♡
-        </button>
-      </div>
+      {/* 찜(♡) — 낙관적 토글·로그인 게이트·복귀 자동반영은 WishButton이 전담(Story 10.5).
+          자리: 사진 밖, 정보 영역 우상단(WishButton 내부가 같은 5:3 감싸개 + top-full로 재현). */}
+      <WishButton listingId={listing.id} initialWished={wished} authed={authed} />
     </article>
   );
 }
