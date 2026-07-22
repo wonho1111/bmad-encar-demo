@@ -1,5 +1,6 @@
 // 옵션 통제어휘·우선순위·순수 헬퍼 — web 미러(단일 코드 출처).
-// 정본: docs/conventions.md §11. 값(카테고리 배치·티어)을 바꾸려면 그 문서를 먼저 고친다.
+// 정본: docs/conventions.md §11(§11.4 포함 — 인기 8종·희소 판정 규칙). 값(카테고리 배치·티어·
+// 인기 8종)을 바꾸려면 그 문서를 먼저 고친다.
 //
 // 왜 이 파일이 존재하나(Story 10.3, 대장 #11):
 //   `listings.options`는 정규화 테이블 없이 text[] 저장을 유지한다(과설계 회피). 대신 이 모듈이
@@ -173,6 +174,19 @@ export const OPTION_PRIORITY: Readonly<Record<string, number>> = Object.fromEntr
   HIGH_PRIORITY_OPTIONS.map((name) => [name, TIER_HIGH]),
 );
 
+// 인기 옵션 8종(등록 피커 퀵칩) — conventions §11.4. 전부 캐노니컬명이고 ALL_CONTROLLED_OPTIONS의
+// 부분집합이다(불변식은 options.test.ts가 강제 — "내비"·"크루즈" 같은 축약형이 섞이면 red).
+export const POPULAR_OPTIONS: readonly string[] = [
+  '스마트키',
+  '내비게이션',
+  '후방카메라',
+  '열선시트',
+  '통풍시트',
+  '선루프',
+  '크루즈컨트롤',
+  '어라운드뷰',
+];
+
 /**
  * 옵션명의 우선순위 점수. `OPTION_PRIORITY`(high)에 없으면 COMMON_OPTIONS 소속 여부로
  * 최하위(0)를 가르고, 통제어휘 안의 나머지는 mid 기본값이다(conventions §11.2).
@@ -186,6 +200,37 @@ export function optionPriority(name: string): number {
   if (Object.prototype.hasOwnProperty.call(OPTION_PRIORITY, name)) return OPTION_PRIORITY[name];
   if (!ALL_CONTROLLED_OPTIONS.has(name)) return TIER_COMMON; // 통제어휘 밖 — 최하위
   return COMMON_OPTIONS.has(name) ? TIER_COMMON : TIER_MID;
+}
+
+/**
+ * 이름이 희소·셀링포인트(high) 티어 소속인지 — 등록 피커가 "희소" 태그를 붙일지 판정한다
+ * (conventions §11.4). `OPTION_PRIORITY`는 HIGH_PRIORITY_OPTIONS만 명시적으로 담으므로
+ * hasOwnProperty 체크가 곧 "high 티어 소속"이다(optionPriority와 같은 이유로 `in`/일반 조회
+ * 대신 hasOwnProperty를 쓴다 — Object.prototype 상속 키 누출 방지).
+ */
+export function isRareOption(name: string): boolean {
+  return Object.prototype.hasOwnProperty.call(OPTION_PRIORITY, name);
+}
+
+/**
+ * 옵션 선택 토글(등록 피커, Story 10.4) — 순수 함수라 여기 둔다(OptionPicker.tsx는 'use client'라
+ * 테스트에서 직접 import하면 컴포넌트를 끌고 들어온다, 코드리뷰). 이미 있으면 제거, 없으면
+ * 끝에 추가(중복 없이, 기존 순서 유지 + 신규는 append).
+ */
+export function toggleOption(current: readonly string[], name: string): string[] {
+  return current.includes(name) ? current.filter((n) => n !== name) : [...current, name];
+}
+
+/**
+ * 옵션 집합이 초기값 대비 실제로 바뀌었는지 — 순서·중복 무관(SET 동등)으로 판정한다.
+ * 등록/수정 폼의 dirty·이탈경고(SellForm, AC7)가 옵션에 한해 이 헬퍼를 쓴다.
+ * 왜 순서를 무시하나: `toggleOption`이 껐다 다시 켠 옵션을 배열 끝에 append하므로, 같은 옵션
+ * 집합(net-zero 토글)이어도 직렬화된 줄바꿈 문자열의 순서가 달라진다 — 문자열을 그대로 비교하면
+ * 실제 변경이 없는데도 dirty가 참이 돼 허위 이탈경고가 뜬다(Story 10.4 코드리뷰). 정렬 후 비교로
+ * 그 허위 dirty를 흡수한다. 순수 함수라 여기 둔다 — SellForm의 dirty 판정이 이 검사로 고정된다.
+ */
+export function optionsChanged(current: readonly string[], initial: readonly string[]): boolean {
+  return JSON.stringify([...current].sort()) !== JSON.stringify([...initial].sort());
 }
 
 /**

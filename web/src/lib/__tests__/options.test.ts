@@ -17,11 +17,15 @@ import {
   CONTROLLED_OPTIONS,
   HIGH_PRIORITY_OPTIONS,
   OPTION_CATEGORY_ORDER,
+  POPULAR_OPTIONS,
   groupByCategory,
+  isRareOption,
   optionPriority,
+  optionsChanged,
   parseOptionsInput,
   partitionOptions,
   serializeOptions,
+  toggleOption,
   topOptions,
 } from '../options';
 
@@ -102,6 +106,106 @@ describe('COMMON_OPTIONS·HIGH_PRIORITY_OPTIONS 무결성', () => {
 
   it('HIGH_PRIORITY_OPTIONS가 docs/conventions.md §11.2 선언과 정확히 일치한다(나파가죽시트 누락 회귀 방지)', () => {
     expect([...HIGH_PRIORITY_OPTIONS].sort()).toEqual([...EXPECTED_HIGH_FROM_DOC].sort());
+  });
+});
+
+// --- POPULAR_OPTIONS·isRareOption (docs/conventions.md §11.4, Story 10.4) ----------------
+// 왜 이 블록이 필요한가: POPULAR_OPTIONS에 비캐노니컬명("내비"·"크루즈" 등)이 섞이면 등록
+// 피커가 통제어휘 밖 값을 저장하려 들어 §11.3 쓰기 검증에서 막힌다 — 이 불변식 테스트가
+// 그 함정을 코드 리뷰 없이도 잡는다(spec AC7, red/green 실측은 구현 후 별도로 수행).
+
+describe('POPULAR_OPTIONS 불변식 (conventions §11.4)', () => {
+  it('8종이다', () => {
+    expect(POPULAR_OPTIONS).toHaveLength(8);
+  });
+
+  it('모든 원소가 캐노니컬명이다 — ALL_CONTROLLED_OPTIONS(통제어휘) 소속', () => {
+    const missing = POPULAR_OPTIONS.filter((name) => !ALL_CONTROLLED_OPTIONS.has(name));
+    expect(missing).toEqual([]);
+  });
+});
+
+describe('isRareOption', () => {
+  it('high 티어(선루프)는 희소다', () => {
+    expect(isRareOption('선루프')).toBe(true);
+  });
+
+  it('common 티어(스마트키)는 희소가 아니다', () => {
+    expect(isRareOption('스마트키')).toBe(false);
+  });
+
+  it('mid 티어(내비게이션)는 희소가 아니다', () => {
+    expect(isRareOption('내비게이션')).toBe(false);
+  });
+
+  it('통제어휘 밖 이름은 희소가 아니다', () => {
+    expect(isRareOption('존재하지않는옵션')).toBe(false);
+  });
+
+  it('Object.prototype 키(toString·constructor·valueOf 등)도 희소가 아니다(prototype 누출 방지)', () => {
+    // optionPriority와 같은 이유로 hasOwnProperty를 쓴다 — `in`/일반 조회만 쓰면 상속 키가
+    // 함수를 돌려줘 "희소" 태그가 정크 키에도 붙는다(코드리뷰).
+    for (const key of ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      expect(isRareOption(key)).toBe(false);
+    }
+  });
+});
+
+// --- toggleOption — 등록 피커 선택 토글(순수 함수, Story 10.4 코드리뷰) --------------------
+
+describe('toggleOption', () => {
+  it('없는 이름을 추가하면 끝에 append된다', () => {
+    expect(toggleOption(['선루프'], '스마트키')).toEqual(['선루프', '스마트키']);
+  });
+
+  it('이미 있는 이름을 다시 넣으면 제거된다(OFF 토글)', () => {
+    expect(toggleOption(['선루프', '스마트키'], '선루프')).toEqual(['스마트키']);
+  });
+
+  it('결과에 중복이 생기지 않는다', () => {
+    const result = toggleOption(['선루프'], '선루프');
+    expect(result).toEqual([]);
+    expect(new Set(toggleOption(['선루프', '스마트키'], '통풍시트'))).toEqual(
+      new Set(['선루프', '스마트키', '통풍시트']),
+    );
+  });
+
+  it('남은 항목의 순서를 유지한다(끄고 켜도 재정렬하지 않음 — 껐다 켜면 끝으로 이동)', () => {
+    // 가운데(스마트키) 제거 — 앞뒤 순서 유지.
+    expect(toggleOption(['선루프', '스마트키', '통풍시트'], '스마트키')).toEqual(['선루프', '통풍시트']);
+    // 제거 후 재추가 — 끝으로 이동(append 규칙, dirty 비교는 SellForm이 SET으로 흡수).
+    const off = toggleOption(['선루프', '스마트키', '통풍시트'], '스마트키');
+    expect(toggleOption(off, '스마트키')).toEqual(['선루프', '통풍시트', '스마트키']);
+  });
+});
+
+// --- optionsChanged — 순서무관 dirty 판정(SellForm AC7, Story 10.4 후속 코드리뷰) -----------
+// 왜 이 블록이 필요한가: SellForm이 옵션 dirty를 이 헬퍼로 판정한다. toggleOption이 껐다 켠
+// 옵션을 끝으로 append하므로(위 테스트가 증명), 문자열을 그대로 비교하면 net-zero 토글에도
+// dirty=true가 돼 허위 이탈경고가 뜬다. 반대로 이 SET 비교가 사라지면 옵션만 편집한 변경이
+// dirty로 안 잡혀 이탈경고 없이 조용히 사라진다. 그 회귀를 잡는 검사는 이전 패스엔 없었다.
+
+describe('optionsChanged (SellForm 옵션 dirty)', () => {
+  it('같은 집합이면 순서만 달라도 not dirty (net-zero 토글 흡수)', () => {
+    expect(optionsChanged(['선루프', '스마트키'], ['스마트키', '선루프'])).toBe(false);
+  });
+
+  it('껐다 켜서 끝으로 이동한 결과도 not dirty', () => {
+    const initial = ['선루프', '스마트키', '통풍시트'];
+    const afterOffOn = toggleOption(toggleOption(initial, '스마트키'), '스마트키'); // ['선루프','통풍시트','스마트키']
+    expect(optionsChanged(afterOffOn, initial)).toBe(false);
+  });
+
+  it('옵션이 추가되면 dirty', () => {
+    expect(optionsChanged(['선루프', '스마트키'], ['선루프'])).toBe(true);
+  });
+
+  it('옵션이 제거되면 dirty', () => {
+    expect(optionsChanged(['선루프'], ['선루프', '스마트키'])).toBe(true);
+  });
+
+  it('빈 집합끼리는 not dirty', () => {
+    expect(optionsChanged([], [])).toBe(false);
   });
 });
 

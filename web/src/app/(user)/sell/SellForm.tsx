@@ -15,13 +15,14 @@
 //   · seller_id는 등록 시 현재 로그인 user.id로 명시(INSERT RLS with check가 위조 차단 — 2-1).
 //   · 단위(원·km·cc·년·명)는 입력란 라벨에 표기, 저장은 정수.
 //   · DB CHECK/RLS 위반은 한국어로 변환해 노출(원본·코드는 콘솔에만).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
-import { parseOptionsInput, partitionOptions, serializeOptions } from '@/lib/options';
+import { optionsChanged, parseOptionsInput, partitionOptions, serializeOptions } from '@/lib/options';
 import Button from '@/components/ui/Button';
 import FocusTrap from '@/components/ui/FocusTrap';
+import OptionPicker from './OptionPicker';
 import PhotoUploader from './PhotoUploader';
 import { type PhotoItem } from './photo-item';
 import { syncListingPhotos } from './photo-sync';
@@ -152,6 +153,8 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   const [success, setSuccess] = useState<string | null>(null);
   // 이탈 확인 다이얼로그(AC7). null이면 닫힘, 값이 있으면 "확인 후 갈 곳".
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  // 옵션 필드 그룹 라벨("옵션 (선택)" 헤딩)과 role="group" 컨테이너를 aria-labelledby로 연결(코드리뷰).
+  const optionsLabelId = useId();
 
   // 사진의 **저장 기준선** — "지금 DB에 저장돼 있는 사진이 무엇인가". 두 가지에 함께 쓴다:
   //   ① 무엇을 지웠는지 판단(syncListingPhotos의 네 번째 인자)
@@ -170,9 +173,18 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   // dirty = 초기값 대비 폼 필드가 바뀌었거나, 사진을 추가/삭제/순서변경했는가(AC7).
   // 사진은 key 나열을 비교한다 — 추가·삭제뿐 아니라 **순서 변경도 잡아야** 하기 때문
   // (순서가 곧 대표라서, 순서만 바꾸고 나가면 사용자가 한 일이 통째로 사라진다).
-  const formDirty = (Object.keys(initialForm) as (keyof FormState)[]).some((k) => form[k] !== initialForm[k]);
+  // ⚠️ 'options'는 이 일반 비교에서 제외한다(아래 optionsDirty가 대신 본다) — OptionPicker에서
+  // 옵션을 껐다 다시 켜면 배열 끝에 append돼 원래와 SET은 같아도 줄바꿈 문자열의 순서가 달라져,
+  // 그대로 비교하면 net-zero 변경에도 dirty가 참이 된다(코드리뷰: 허위 이탈경고).
+  const formDirty = (Object.keys(initialForm) as (keyof FormState)[]).some(
+    (k) => k !== 'options' && form[k] !== initialForm[k],
+  );
+  // options는 순서 무관 SET 비교 — 같은 옵션 집합이면(순서만 달라도) dirty가 아니다.
+  // 비교 로직은 options.ts의 순수 헬퍼로 빼 단위테스트가 고정한다(코드리뷰: SET 비교가 회귀하면
+  // 옵션만 편집한 이탈경고가 조용히 사라지거나 허위로 뜨는데, 이전엔 그걸 잡는 검사가 없었다).
+  const optionsDirty = optionsChanged(parseOptionsInput(form.options), parseOptionsInput(initialForm.options));
   const photosDirty = photos.length !== baseline.length || photos.some((p, i) => p.key !== baseline[i]?.key);
-  const dirty = formDirty || photosDirty;
+  const dirty = formDirty || optionsDirty || photosDirty;
 
   // 새로고침·탭 닫기·주소 직접 입력만 여기서 막힌다.
   // ⚠️ Next.js App Router에는 <Link> 내부 이동을 가로채는 공식 API가 없다 —
@@ -244,7 +256,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     // 쉼표 split이 아니므로 한 원소 안의 쉼표가 살아남는다).
     const options = parseOptionsInput(form.options);
     // 통제어휘 밖 이름은 조용히 버리지 않고 제출을 막는다(docs/conventions.md §11.3, I/O 매트릭스
-    // "쓰기 검증"). 10.4의 칩 피커가 이 검증을 구조적으로 승격하기 전까지의 임시 텍스트 입력이다.
+    // "쓰기 검증"). OptionPicker(Story 10.4)가 칩/체크로는 통제어휘 밖 입력을 구조적으로 못
+    // 만들게 막지만, 레거시 비표준값(수정 진입 시 요약바가 보존·노출하는 값)은 여전히 있을 수
+    // 있어 이 백스톱은 심층 방어로 남긴다.
     const { unknown } = partitionOptions(options);
     if (unknown.length > 0) {
       return {
@@ -613,18 +627,16 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         <span className="text-sm font-medium">무사고 차량</span>
       </label>
 
-      {/* 옵션 (한 줄에 하나씩, 선택) — 대장 #11: 쉼표 구분 대신 줄바꿈 구분(값 안의 쉼표 보존).
-          임시 텍스트에어리어다 — 하이브리드 칩 피커(인기 8칩+아코디언+검색)는 Story 10.4가 얹는다. */}
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">옵션 (선택)</span>
-        <textarea
-          value={form.options}
-          onChange={(e) => update('options', e.target.value)}
-          rows={3}
-          placeholder={'옵션을 한 줄에 하나씩 입력해주세요.\n예: 선루프\n후방카메라\n내비게이션'}
-          className={inputCls}
+      {/* 옵션 (선택) — 하이브리드 칩 피커(Story 10.4, 대장 #11 후속). form.options는 여전히
+          줄바꿈 구분 문자열(폼 코어 불변, A3) — OptionPicker는 순수 표현층이라 parseOptionsInput/
+          serializeOptions로 배열 값을 브리지한다. */}
+      <div role="group" aria-labelledby={optionsLabelId} className="flex flex-col gap-1">
+        <span id={optionsLabelId} className="text-sm font-medium">옵션 (선택)</span>
+        <OptionPicker
+          value={parseOptionsInput(form.options)}
+          onChange={(next) => update('options', serializeOptions(next))}
         />
-      </label>
+      </div>
 
       {/* 설명 (선택) */}
       <label className="flex flex-col gap-1">

@@ -1,5 +1,5 @@
 # generated: 2026-06-19T18:28:17
-# last_updated: 2026-07-14T00:00:00Z (dev-story: 8.5 review)
+# last_updated: 2026-07-22T00:00:00Z (dev-story: 10.4 옵션 하이브리드 피커(등록) 구현 — 텍스트에어리어를 인기8칩+아코디언+검색 피커로 교체)
 # project: bmad-encar-demo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -140,7 +140,7 @@ development_status:
   10-1-신뢰속성-스키마-락스텝-반영: done
   10-2-신뢰-뱃지-표시-면책-라벨: done
   10-3-옵션-통제어휘-우선순위-상수-저장구조-정비: done
-  10-4-옵션-하이브리드-피커-등록: backlog
+  10-4-옵션-하이브리드-피커-등록: done
   10-5-찜-wishlist: backlog
   10-6-판매자-정보-섹션: backlog
   10-7-신뢰속성-옵션-통합-검증-sm-c: backlog
