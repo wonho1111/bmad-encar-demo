@@ -26,7 +26,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import ErrorState from '@/components/ui/ErrorState';
 import { buttonClasses } from '@/components/ui/Button';
 import InquiryButton from './InquiryButton';
-import { VehicleInfoSection, OptionsSection } from './ListingDetailSections';
+import { VehicleInfoSection, OptionsSection, TrustInfoSection } from './ListingDetailSections';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
 export const dynamic = 'force-dynamic';
@@ -52,6 +52,11 @@ type ListingDetail = {
   options: string[] | null; // text[]; 빈 배열·null 가능
   description: string | null; // nullable
   status: string;
+  // 신뢰속성 3필드(Story 10.2) — 로그인 사용자만 select에 포함(아래 trustColumns 분기).
+  // anon은 select에서 아예 안 물으므로 undefined로 오는데, 렌더 직전에 null로 정규화한다(§4 계약).
+  accident_status?: '무사고' | '단순교환' | '사고' | null;
+  is_single_owner?: boolean | null;
+  is_non_smoker?: boolean | null;
 };
 
 /**
@@ -115,9 +120,16 @@ export default async function ListingDetailPage({
 
   // 단일 매물 조회 — 구매자 관점(판매중만) 시작점 buyerListingsQuery(FR11 단일 출처) + id 일치.
   //   maybeSingle(): 0건이면 null(존재하지 않음·sold·접근 권한 없음). edit 페이지와 동일 패턴.
-  const { data: listing, error } = await buyerListingsQuery(
+  //
+  // ⚠️ 신뢰속성 3컬럼은 **로그인 분기**로만 조회한다(search/page.tsx가 세운 패턴 그대로, 대장 #109).
+  //   anon은 `0011_listings_anon_select.sql`이 컬럼 단위로 명시한 목록만 읽을 수 있고 그 3컬럼은
+  //   목록에 없다 — anon 키로 요청하면 컬럼 하나만 막히는 게 아니라 `42501`로 select 전체가
+  //   실패한다(실측, conventions.md §4.1). anon에도 열려면 새 GRANT 마이그레이션 + 사용자 승인이
+  //   필요한데(§9.3 (b)) 이 스토리 범위가 아니므로 넓히지 않는다.
+  const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  const { data: listingRow, error } = await buyerListingsQuery(
     supabase,
-    'id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status',
+    `id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status${trustColumns}`,
   )
     .eq('id', id)
     .maybeSingle<ListingDetail>();
@@ -126,6 +138,14 @@ export default async function ListingDetailPage({
     // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분.
     console.error('[listings/detail] 매물 상세 조회 실패:', error);
   }
+
+  // anon 경로는 위 select에서 신뢰속성 3컬럼을 아예 안 물었으므로 그 값이 `undefined`(키 자체
+  // 없음)로 온다. 계약(conventions §4)은 "값이 없으면 null"이지 "필드가 없음"이 아니다 — 여기서
+  // 명시적으로 null을 채워 타입 선언(`ListingDetail`)과 런타임 모양을 맞춘다(search/page.tsx와 동일 처리).
+  const listing =
+    listingRow && !user
+      ? { ...listingRow, accident_status: null, is_single_owner: null, is_non_smoker: null }
+      : listingRow;
 
   const header = (
     <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath={`/listings/${id}`} />
@@ -220,7 +240,9 @@ export default async function ListingDetailPage({
                 index가 남는다(사진 10장에서 2장짜리로 가면 "8/2"). 한 줄로 그 부류를 닫아 둔다. */}
             <ListingGallery key={listing.id} urls={galleryUrls} title={title} />
 
-            {/* ① 신뢰정보 — Epic 10.2가 채울 빈 슬롯. 값이 없으므로 아무것도 렌더하지 않는다(AC1). */}
+            {/* ① 신뢰정보 — TrustInfoSection이 뱃지·면책을 한 몸으로 그린다(Story 10.2, B9).
+                신뢰속성이 전부 없으면(anon 포함) null을 반환해 섹션 자체가 안 그려진다(AC1). */}
+            <TrustInfoSection listing={listing} />
 
             {/* ② 차량정보 */}
             <VehicleInfoSection listing={listing} />

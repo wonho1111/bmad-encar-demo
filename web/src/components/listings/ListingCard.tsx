@@ -8,6 +8,7 @@
 import Link from 'next/link';
 import { UNITS } from '@/lib/constants';
 import ListingCardImage from './ListingCardImage';
+import TrustAttributes from './TrustAttributes';
 
 // ListingCard 필드 계약(conventions §4) — 목록·AI결과 카드가 공유하는 최소 요약 필드.
 export type ListingCardData = {
@@ -41,8 +42,9 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
         <ListingCardImage url={listing.image_url} count={listing.image_count} alt={title} />
 
         <div className="flex flex-col gap-1 p-[18px]">
-          {/* ② 신뢰속성 행 슬롯 — 값(accident_status·is_single_owner·is_non_smoker)은 Epic 10이 채운다.
-              지금은 항상 비어 있으므로 **아무것도 렌더하지 않는다**(빈 높이·빈 테두리 금지, AC1). */}
+          {/* ② 신뢰속성 행 — TrustAttributes가 뱃지·면책을 한 몸으로 emit한다(B9, Story 10.2).
+              값이 전부 없으면 컴포넌트가 null을 반환해 슬롯이 비고, 빈 높이·빈 테두리는 남지 않는다(AC1). */}
+          <TrustAttributes variant="card" listing={listing} />
 
           {/* ③ 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5).
               pr-14(56px)는 우상단 찜 버튼(44px+오프셋 8px)과 겹치지 않게 이 줄에만 둔 여백이다. */}

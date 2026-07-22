@@ -20,7 +20,7 @@
 //   않는다)와 부딪히며 9.5 범위를 넘는다. 데모 규모(1MB)에선 감내 가능하다는 사용자 판단(2026-07-20).
 // **되살아나는 조건:** 대장 #83 — 매물당 사진이 5~10장이 되는 #68 전량 시딩 시점, 또는 실사용 전환.
 // 부수 효과는 유지된다: 썸네일이 원본이라 사진을 넘길 때 대표 자리가 **브라우저 캐시에서 즉시** 뜬다.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** 로드 실패한 사진의 자리에 그리는 "사진 준비중" 판(카드의 플레이스홀더와 같은 언어). */
 function PhotoPlaceholder({ compact = false }: { compact?: boolean }) {
@@ -62,7 +62,32 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
     if (img && img.complete && img.naturalWidth === 0) markFailed(i);
   };
 
+  // #79① 갤러리 접근성 — 화살표로 사진을 넘겨도 스크린리더가 "다음 사진"을 5번 눌러도 아무 변화를
+  // 못 듣던 문제. aria-live 영역에 현재 인덱스를 텍스트로 반영해 전환을 고지한다(포커스 이동 없이).
+  //
+  // #79② — 좁은 화면에서 화살표로 8번째 썸네일까지 가면 선택 테두리가 overflow-x-auto 스트립
+  // 밖으로 밀려나던 문제. 활성 썸네일에 ref를 걸고 index가 바뀔 때마다 scrollIntoView한다.
+  const thumbRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // ⚠️ 첫 렌더(index=0)에는 scrollIntoView를 걸지 않는다(코드리뷰 2026-07-22 P4) — 썸네일 스트립이
+  // 화면 아래쪽(스크롤해야 보이는 위치)에 있으면 `block:'nearest'`가 페이지 자체를 그 지점까지
+  // 끌어올려 로드 직후 원치 않는 스크롤 점프가 생긴다. index가 실제로 "바뀔 때"(화살표·썸네일
+  // 클릭)만 스크롤하면 되므로, 마운트 시점의 스크롤은 건너뛴다.
+  //
+  // ⚠️ (follow-up 코드리뷰 2026-07-22) "마운트 1회 스킵" 플래그(useRef(false)) 대신 **직전 index**를
+  // 저장해 값이 실제로 바뀐 경우에만 스크롤한다. StrictMode(dev 기본)는 마운트 effect를
+  // setup→cleanup→setup으로 두 번 돌리는데 ref는 그 재마운트를 가로질러 살아남는다 — 플래그
+  // 방식은 두 번째 setup에서 index=0인데도 플래그가 이미 true라 스크롤을 쏴 P4 점프가 dev에서
+  // 되살아났다. 직전 index와 같으면(그 재실행 포함) 조용히 건너뛰고, 다르면(진짜 이동)만 스크롤한다.
+  // 덤으로 index=0으로 되돌아오는 이동(첫 썸네일 클릭 등)도 스트립을 왼쪽 끝으로 정상 스크롤한다.
+  const prevIndexRef = useRef(index);
+
   const count = urls.length;
+
+  useEffect(() => {
+    if (prevIndexRef.current === index) return;
+    prevIndexRef.current = index;
+    thumbRefs.current[index]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [index]);
 
   // 사진 0장 = 정상 상태다(conventions §10.2). 빈 영역이 아니라 5:3 플레이스홀더를 그린다.
   if (count === 0) {
@@ -169,6 +194,9 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
             <li key={url} className="shrink-0">
               <button
                 type="button"
+                ref={(el) => {
+                  thumbRefs.current[i] = el;
+                }}
                 onClick={() => setIndex(i)}
                 aria-label={`${i + 1}번째 사진 보기`}
                 aria-current={i === index ? 'true' : undefined}
@@ -195,6 +223,12 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
           ))}
         </ul>
       )}
+
+      {/* #79① 시각적으로 숨긴 aria-live 영역 — 화살표(또는 썸네일 클릭)로 사진이 바뀔 때마다
+          텍스트가 갱신돼 스크린리더가 전환을 읽는다. 포커스는 옮기지 않는다(버튼 위에 그대로 둔다). */}
+      <span aria-live="polite" className="sr-only">
+        {index + 1} / 총 {count}장
+      </span>
     </div>
   );
 }

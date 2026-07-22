@@ -61,6 +61,11 @@ psql "$LOCAL_DB_URL" \
   -v ON_ERROR_STOP=1 \
   -f "$SEED_LOCAL_DIR/02_data.sql"
 
+echo "[seed-local] 2b/3 신뢰속성 데모값(Story 10.2, 멱등 UPDATE) 적용 중..."
+psql "$LOCAL_DB_URL" \
+  -v ON_ERROR_STOP=1 \
+  -f "$SEED_LOCAL_DIR/03_trust_demo.sql"
+
 echo "[seed-local] 3/3 사진 파일 복사 중 (운영 공개 버킷 → 로컬 버킷)..."
 
 # 로컬에 버킷이 있는지 먼저 확인(마이그레이션 0012~0014가 만들었어야 한다). 없으면 중단.

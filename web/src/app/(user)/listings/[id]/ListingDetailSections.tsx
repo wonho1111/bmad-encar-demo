@@ -10,6 +10,7 @@
 //
 // 상태 없는 서버 컴포넌트다(표시만 한다). 값 채우기·조회는 page.tsx의 책임.
 import { UNITS } from '@/lib/constants';
+import TrustAttributes, { hasTrustAttributes } from '@/components/listings/TrustAttributes';
 
 // FR5 15필드 중 **본문에 쓰는 값**(seller_id·status 등 페이지 로직용 필드는 제외).
 // 15필드 내역 = 이 표 13행 + 옵션 + 설명. seller_name은 FR5 15필드 **밖**이다
@@ -31,6 +32,11 @@ export type ListingDetailSectionsData = {
   seller_name?: string | null;
   options: string[] | null; // text[]; 빈 배열·null 가능
   description: string | null; // nullable
+  // 신뢰속성 3필드(Story 10.2) — anon은 select에서 아예 안 물으므로 undefined로 올 수 있다.
+  // TrustAttributes/hasTrustAttributes는 undefined도 null과 동일하게 처리한다(계약-외 정규화).
+  accident_status?: '무사고' | '단순교환' | '사고' | null;
+  is_single_owner?: boolean | null;
+  is_non_smoker?: boolean | null;
 };
 
 /** 섹션 껍데기 — 4개 섹션이 같은 카드 표면·제목 위계를 갖게 한 자리에 모은다. */
@@ -48,8 +54,29 @@ function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-border-hairline py-2 last:border-0">
       <span className="shrink-0 whitespace-nowrap text-meta font-medium text-ink-muted">{label}</span>
-      <span className="truncate text-body font-medium text-ink-primary">{value}</span>
+      {/* title=value(#79 ③, 코드리뷰 2026-07-22 P5로 문구 정정) — `title`은 **마우스 hover에서만**
+          잘린 텍스트를 보여준다(비focusable `<span>`이라 키보드 포커스로는 안 뜬다 — 새 포커스
+          장치는 이 스토리 범위 밖). `truncate`는 CSS 시각 자름일 뿐 DOM엔 전체 값이 그대로 있으므로
+          스크린리더는 잘림과 무관하게 전체 텍스트를 읽는다 — 정보가 사라지는 건 "마우스 없는 화면
+          잘림"뿐이고, 그 한 가지만 title이 보완한다. */}
+      <span className="truncate text-body font-medium text-ink-primary" title={value}>
+        {value}
+      </span>
     </div>
+  );
+}
+
+/**
+ * ① 신뢰정보 — TrustAttributes(뱃지+면책, B9)를 "신뢰정보" 섹션 카드에 담는다(Story 10.2).
+ * 신뢰속성이 전부 없으면(미입력·계약-외 값) 섹션 자체를 그리지 않는다(AC1 — 빈 섹션 금지).
+ */
+export function TrustInfoSection({ listing }: { listing: ListingDetailSectionsData }) {
+  if (!hasTrustAttributes(listing)) return null;
+
+  return (
+    <Section title="신뢰정보">
+      <TrustAttributes variant="detail" listing={listing} />
+    </Section>
   );
 }
 
