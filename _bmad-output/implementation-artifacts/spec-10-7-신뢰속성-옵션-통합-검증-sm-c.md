@@ -4,6 +4,7 @@ type: 'chore'
 created: '2026-07-22'
 status: 'done'
 baseline_revision: 'dbe7608'
+final_revision: 'c8a6329'
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
