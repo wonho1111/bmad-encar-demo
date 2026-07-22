@@ -69,6 +69,44 @@ update public.listings
     order by id limit 2
  );
 
+-- SM-C 실증(Story 10.7, finding-5): 위 all-trust 2행이 실제로 뭔가 희소(HIGH 티어) 옵션을 갖고
+-- 있어야 카드 최상단 "희소 옵션 우선노출"을 로컬에서 눈으로 확인할 수 있다. 스냅샷(02_data.sql)의
+-- options 배열이 그 행에 희소 옵션을 담았는지는 운에 맡겨져 있었다(대표 매물이 결정적이지 않았음).
+-- 멱등 append(array_append + 존재검사, DELETE 없음) — 몇 번을 다시 돌려도 중복되지 않는다.
+-- '파노라마선루프'는 HIGH_PRIORITY_OPTIONS(web/src/lib/options.ts, docs/conventions.md §11.2)의 통제어휘(희소) 멤버다.
+update public.listings
+   set options = array_append(coalesce(options, '{}'), '파노라마선루프')
+ where id in (
+   select id from public.listings
+    where status = 'on_sale' and accident_free = true
+    order by id limit 2
+ )
+   and not ('파노라마선루프' = any(coalesce(options, '{}')));
+
+-- ── 사후 검증(코드리뷰 2026-07-22, verification-gap) ────────────────────────────
+-- "에러 없이 실행됨" ≠ "SM-C 데모 불변식이 실제로 성립함"(B4). 위 append가 대상 술어 드리프트나
+-- 실패로 조용히 안 먹으면, 카드 "희소 옵션 최상단"을 실증할 대표 매물이 사라져 SM-C 실측이
+-- 무의미해진다 — 그러니 대표 2행에 값이 실제로 들어갔는지 여기서 막는다(존재 확인이 아니라 작동 확인).
+do $$
+declare
+  v_ok int;
+begin
+  select count(*) into v_ok
+    from public.listings
+   where '파노라마선루프' = any(coalesce(options, '{}'))
+     and id in (
+       select id from public.listings
+        where status = 'on_sale' and accident_free = true
+        order by id limit 2
+     );
+
+  if v_ok < 2 then
+    raise exception '[03_trust_demo] all-trust 대표 2행 중 희소 옵션(파노라마선루프)이 심긴 행이 '
+      '%건뿐입니다(2건 기대) — SM-C(카드 희소옵션 최상단)를 실증할 대표 매물이 없습니다. '
+      'append UPDATE의 대상/술어를 확인하세요.', v_ok;
+  end if;
+end $$;
+
 update public.listings
    set accident_status = '사고'
  where id = (
