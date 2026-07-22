@@ -142,6 +142,8 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
       - 강제 장치: `api/tests/test_listing_cards.py`(sold 사진이 응답에 실리지 않음 — 조건을 지우면 red) + `api/tests/test_sql_guard.py`(LLM 생성 SQL이 `listing_images`에 닿지 못함). 둘 다 `docs/tech-debt.md` #48을 닫은 근거다.
     - ✎ **2026-07-19 코드리뷰에 의해 등재.** 이 축은 0012부터 실재했는데 **이 목록에 한 번도 오른 적이 없었고**, 9.0이 `storage.objects` 항목을 지우면서 이미지 관련 강제 지점이 목록에서 완전히 사라졌다. 그 상태에서 9.4가 `listing_images` 조회 경로를 화면 2곳(`/search`·홈)에 새로 열었다. **차단은 실제로 동작한다**(실측) — 문제는 목록이 사실을 반영하지 않아, §6만 읽는 다음 사람은 이미지 축에 FR11 강제가 있다는 것 자체를 모른다는 점이다. 9.5(상세 갤러리)·9.6(AI 카드)이 같은 테이블을 열 때가 정확히 규칙7이 경고한 자리다.
     - ⚠️ **§6.1이 면제하는 것은 "사진 파일 URL"이지 `listing_images` 테이블 조회가 아니다.** 둘을 섞지 말 것.
+  - **SECURITY DEFINER 함수 축** — 정의자 함수 안에서는 RLS가 적용되지 않는다(정의자=소유자 권한으로 평가되고, 소유자에겐 RLS가 애초에 안 걸린다). 그래서 위 두 축과 달리 RLS가 대신 걸러주지 않고, **함수 본문의 인라인 조건이 유일한 강제 지점**이다.
+    - 소비처 목록: `get_seller_public_summary`(`0019_seller_public_summary.sql`, 상세 판매자정보 — Story 10.6) — anon·authenticated에 `grant execute`. 함수 안 `status = 'on_sale'` 조건이 유일한 강제 지점이며, 지우면 RLS가 대신 막아주지 않으므로 그대로 뚫린다. 강제 장치: `api/tests/integration/test_seller_summary_real_db.py`(`set local role anon`으로 RPC를 실제 호출 — sold 매물을 추가해도 집계가 안 늘어남을 확인, `status='on_sale'`을 지우면 red. `api-db` CI 잡이 실행).
 - **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). anon 열람은 §8이 상술한다.
 
 ### 6.1 사진 파일 URL은 FR11 대상이 아니다 (명시 수용, 사용자 결정 2026-07-19)

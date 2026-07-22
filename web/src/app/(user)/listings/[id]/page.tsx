@@ -6,9 +6,10 @@
 //   3) 찾으면 사진 갤러리 + FR5 15필드를 **신뢰정보 → 차량정보 → 옵션 → 판매자정보** 순으로 그린다(Story 9.5 AC1).
 //      못 찾으면 중립 톤 404 안내, 조회 자체가 실패하면 danger 톤 에러 안내(둘을 구분).
 //
-// 섹션 순서(AC1)의 ①신뢰정보·④판매자정보는 **Epic 10이 채울 빈 슬롯**이다. 값이 없는 지금은
-//   **아무것도 렌더하지 않는다** — 빈 제목·빈 테두리·"준비중" 문구를 두면 화면에 의미 없는 잉크가 남는다.
-//   슬롯의 자리는 아래 주석 위치로만 존재한다(목업 detail-1.html은 옛 순서라 이 주석이 정답이다).
+// 섹션 순서(AC1)의 ①신뢰정보·④판매자정보는 원래 Epic 9 골격이 남긴 빈 슬롯이었으나, Epic 10(10.2·10.6)이
+//   차례로 채웠다. 그 값이 전부 없는 경우(신뢰속성 미입력·판매자 요약 RPC 조회 실패 등)엔 지금도
+//   **그 섹션만 아무것도 렌더하지 않는다** — 빈 제목·빈 테두리·"준비중" 문구를 두면 의미 없는 잉크가 남는다.
+//   (목업 detail-1.html은 옛 순서라 이 주석이 정답이다.)
 //
 // 열람: FR58(8.5)부터 /listings는 비로그인(anon)도 열람 가능 — on_sale은 RLS상 누구에게나 공개.
 //   로그인 게이트는 "문의하기" 같은 행동에만 적용된다(아래 InquiryCta 3분기 참조).
@@ -25,8 +26,13 @@ import ListingGallery from '@/components/listings/ListingGallery';
 import EmptyState from '@/components/ui/EmptyState';
 import ErrorState from '@/components/ui/ErrorState';
 import { buttonClasses } from '@/components/ui/Button';
-import InquiryButton from './InquiryButton';
-import { VehicleInfoSection, OptionsSection, TrustInfoSection } from './ListingDetailSections';
+import InquiryCta, { type InquiryCtaMode } from './InquiryCta';
+import {
+  VehicleInfoSection,
+  OptionsSection,
+  TrustInfoSection,
+  SellerInfoSection,
+} from './ListingDetailSections';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
 export const dynamic = 'force-dynamic';
@@ -60,38 +66,14 @@ type ListingDetail = {
 };
 
 /**
- * 문의 CTA 3분기 (AC7) — **문의 개시 로직은 Epic 5의 InquiryButton을 그대로 재사용**하고,
- * 여기서 정하는 건 "누구에게 무엇을 보여줄지"뿐이다.
- *
- * 데스크톱 sticky 요약 컬럼과 모바일 하단 고정 바가 **같은 분기**를 써야 하므로 한 자리에 모았다
- * (두 군데에 복붙하면 한쪽만 고쳐져 갈린다).
+ * 문의 CTA 3분기 판정 (AC7) — **상태를 갖는 건 inquiry뿐**이라 판정 자체는 서버(여기)에서 끝내고,
+ * 실제 렌더·busy/error 상태는 클라이언트 컴포넌트 `<InquiryCta>` 하나가 맡는다(#82 종결, Story 10.6).
+ * 데스크톱 sticky 요약 컬럼과 모바일 하단 고정 바가 **같은 판정**을 써야 하므로 한 자리에 모았다.
  */
-function InquiryCta({ listing, user }: { listing: ListingDetail; user: User | null }) {
-  // ① 비로그인 — 버튼을 숨기지 않는다. 어포던스는 보이고 게이트는 클릭에만 걸린다(FR58, conventions §8).
-  if (!user) {
-    return (
-      <Link
-        href={`/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`}
-        className={buttonClasses({ className: 'w-full' })}
-      >
-        로그인하고 문의하기
-      </Link>
-    );
-  }
-
-  // ② 본인 매물 — 자기 자신에게는 문의할 수 없다(DB의 CHECK(buyer_id<>seller_id)와 정합).
-  //    ✎ 9.5에서 바뀐 지점: 전엔 버튼을 **아예 숨겼다**. 판매자가 자기 매물 상세를 열면 아무 행동도
-  //      제안받지 못해 막다른 길이었다 — 대신 판매자 관리 화면으로 보낸다(EXPERIENCE.md 상세 상태 표).
-  if (user.id === listing.seller_id) {
-    return (
-      <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-full' })}>
-        내 매물 관리
-      </Link>
-    );
-  }
-
-  // ③ 로그인 + 타인 매물 — 기존 문의 개시 흐름 그대로(방이 있으면 재사용, 없으면 생성).
-  return <InquiryButton listingId={listing.id} />;
+function computeInquiryMode(listing: ListingDetail, user: User | null): InquiryCtaMode {
+  if (!user) return 'anon'; // 비로그인
+  if (user.id === listing.seller_id) return 'owner'; // 본인 매물
+  return 'inquiry'; // 로그인 + 타인 매물
 }
 
 export default async function ListingDetailPage({
@@ -205,8 +187,24 @@ export default async function ListingDetailPage({
   //   (FR11 이미지 축: DB RLS + 호출부 id 좁히기 2층, conventions §6).
   const galleryUrls = await fetchListingGalleryUrls(supabase, listing.id);
 
+  // ④ 판매자정보 — 가입 시점(RLS로 막힘) + "다른 on_sale 매물 N건"(FR11 강제지점)을
+  //   SECURITY DEFINER RPC 하나로 구한다(0019, Story 10.6). anon도 실행 가능(FR58).
+  //   실패하면 서버 콘솔에만 로그하고 null로 정규화 — SellerInfoSection이 그 행만 숨긴다(I/O 매트릭스).
+  const { data: sellerSummary, error: sellerSummaryError } = await supabase
+    .rpc('get_seller_public_summary', {
+      p_seller_id: listing.seller_id,
+      p_exclude_listing_id: listing.id,
+    })
+    .maybeSingle<{ joined_at: string | null; other_on_sale_count: number | null }>();
+
+  if (sellerSummaryError) {
+    console.error('[listings/detail] 판매자 요약 조회 실패:', sellerSummaryError);
+  }
+
   const title = `[${listing.manufacturer}] ${listing.model}`;
   const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
+  const inquiryMode = computeInquiryMode(listing, user);
+  const loginHref = `/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`;
 
   return (
     <>
@@ -250,38 +248,24 @@ export default async function ListingDetailPage({
             {/* ③ 옵션 — 카테고리 분류·희소옵션 강조는 Epic 10.3/10.4의 몫이다. */}
             <OptionsSection listing={listing} />
 
-            {/* ④ 판매자정보 — Epic 10.6이 채울 빈 슬롯(①과 동일 규칙). */}
+            {/* ④ 판매자정보 — 닉네임+가입 시점+다른 매물 N건 3행만(FR56, Story 10.6).
+                값이 하나도 없으면 null을 반환해 섹션 자체가 안 그려진다(①과 동일 규칙). */}
+            <SellerInfoSection
+              sellerName={listing.seller_name}
+              joinedAt={sellerSummaryError ? null : sellerSummary?.joined_at}
+              otherOnSaleCount={sellerSummaryError ? null : sellerSummary?.other_on_sale_count}
+            />
           </div>
 
-          {/* 우 요약 컬럼 — **sticky**라 긴 섹션을 스크롤해도 문의 CTA가 상시 보인다(D9 "구현 필수").
-              top-6: 이 앱의 상단바는 sticky가 아니라 함께 스크롤되므로, 헤더 높이가 아니라 본문
-              여백(p-6)과 같은 값을 띄운다. ≥1024px에서만 — 그 아래는 하단 고정 바가 대신한다. */}
-          <aside className="hidden lg:block">
-            <div className="sticky top-6 flex flex-col gap-3 rounded-card border border-border-hairline bg-surface-raised p-5 shadow-card dark:shadow-none">
-              {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(30/800, DESIGN.md:42).
-                  9.5 코드리뷰에서 --text-price-lg 토큰을 추가해 임의값 text-[30px]를 걷어냈다. */}
-              <p className="whitespace-nowrap text-price-lg font-extrabold text-price-emphasis">
-                {priceText}
-              </p>
-              <InquiryCta listing={listing} user={user} />
-            </div>
-          </aside>
+          {/* 우 요약 컬럼 자리 — **`<InquiryCta>` 하나**가 데스크톱 sticky aside(≥1024px)와
+              모바일 하단 고정 바(<1024px)를 **내부에서 둘 다** 그린다(#82 종결, Story 10.6).
+              모바일 블록은 position:fixed라 이 grid 자식 자리에 있어도 뷰포트 하단에 그대로 고정된다
+              (자세한 이유는 InquiryCta.tsx 헤더 주석). busy/error 상태가 두 블록에서 공유된다. */}
+          <InquiryCta mode={inquiryMode} listingId={listing.id} loginHref={loginHref} priceText={priceText} />
         </div>
 
         {backLink}
       </main>
-
-      {/* 모바일·태블릿(<1024px) 하단 고정 바 — 가격 + CTA 상시(AC7).
-          shadow-float = 떠 있는 요소용 겹 그림자(DESIGN.md:115). 가로 한 줄을 유지하고, 공간이
-          부족하면 가격을 …로 자른다(D5 — 세로로 접거나 2줄로 밀지 않는다). */}
-      <div className="fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border-hairline bg-surface-raised px-4 py-3 shadow-float lg:hidden">
-        <p className="truncate whitespace-nowrap text-price font-extrabold text-price-emphasis">
-          {priceText}
-        </p>
-        <div className="shrink-0">
-          <InquiryCta listing={listing} user={user} />
-        </div>
-      </div>
     </>
   );
 }

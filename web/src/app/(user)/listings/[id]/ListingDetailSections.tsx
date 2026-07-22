@@ -122,6 +122,71 @@ export function VehicleInfoSection({ listing }: { listing: ListingDetailSections
 }
 
 /**
+ * "YYYY년 M월 가입" — 순수 함수(단위테스트 대상, Story 10.6).
+ * null·빈 값·파싱 불가한 문자열은 전부 null(행 숨김) — RPC 실패·미조회를 구분하지 않는다.
+ */
+export function formatSellerJoinDate(joinedAt: string | null | undefined): string | null {
+  if (!joinedAt) return null;
+  const date = new Date(joinedAt);
+  if (Number.isNaN(date.getTime())) return null;
+  // KST(Asia/Seoul) 고정 — 서버가 UTC로 도는 실배포에서 `date.getFullYear()/getMonth()`(런타임
+  // 로컬 타임존)를 쓰면 자정 전후 값이 월을 건너뛴다(예: 2024-02-29T23:00:00Z = KST 2024-03-01
+  // 08:00인데 UTC 기준으로 읽으면 "2월"이 된다 — 코드리뷰 2026-07-22 지적). 서비스가 한국
+  // 서비스이므로 타임존을 명시로 고정한다(런타임 로컬값에 기대지 않음).
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(date);
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value; // 0패딩 없음(예: "3")
+  if (!year || !month) return null;
+  return `${year}년 ${month}월 가입`;
+}
+
+/**
+ * "이 판매자의 다른 판매중 매물 N건" — 순수 함수(단위테스트 대상, Story 10.6).
+ * count가 null/undefined(RPC 실패)면 null(행 숨김). 0이면 "없어요" 안내 문구로 분기한다(I/O 매트릭스).
+ */
+export function sellerOtherListingsLabel(count: number | null | undefined): string | null {
+  if (count === null || count === undefined) return null;
+  if (count <= 0) return '이 판매자의 다른 판매중 매물이 없어요.';
+  return `이 판매자의 다른 판매중 매물 ${count.toLocaleString('ko-KR')}건`;
+}
+
+/**
+ * ④ 판매자정보 — 닉네임(`seller_name`, 0007 비정규화 재사용) + 가입 시점 + "다른 판매중 매물 N건"
+ * 3가지만 노출한다(FR56, 평판·응답률·인증 배지 등 데이터 없는 지표는 절대 표시하지 않음).
+ * 값이 하나도 없으면(닉네임 null + RPC 실패) 섹션 자체를 그리지 않는다(AC1과 동일한 "빈 섹션 금지" 관례).
+ * 가입 시점·집계는 RPC(`get_seller_public_summary`, 0019) 조회 결과를 page.tsx가 그대로 넘긴다 —
+ * 조회가 실패하면 page.tsx가 이미 null로 정규화해 넘기므로 이 컴포넌트는 "행 숨김"만 신경 쓴다.
+ */
+export function SellerInfoSection({
+  sellerName,
+  joinedAt,
+  otherOnSaleCount,
+}: {
+  sellerName: string | null | undefined;
+  joinedAt: string | null | undefined;
+  otherOnSaleCount: number | null | undefined;
+}) {
+  const joinLabel = formatSellerJoinDate(joinedAt);
+  const otherLabel = sellerOtherListingsLabel(otherOnSaleCount);
+
+  if (!sellerName && !joinLabel && !otherLabel) return null;
+
+  return (
+    <Section title="판매자정보">
+      <div className="flex flex-col gap-1">
+        {sellerName && <p className="text-body font-semibold text-ink-primary">{sellerName}</p>}
+        {joinLabel && <p className="text-meta text-ink-muted">{joinLabel}</p>}
+        {otherLabel && <p className="text-meta text-ink-muted">{otherLabel}</p>}
+      </div>
+    </Section>
+  );
+}
+
+/**
  * ③ 옵션 — 5개 엔카 카테고리로 전량 그룹핑(희소 필터 없음, Story 10.3).
  * 통제어휘 밖 값은 `기타옵션`으로 폴백된다(groupByCategory, docs/conventions.md §11).
  */
