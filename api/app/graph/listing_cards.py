@@ -1,10 +1,10 @@
 """ListingCard 매핑 공유 헬퍼 — 경로 A(sql_rag_node)·경로 B(doc_rag_node)가 함께 쓴다.
 
-두 노드 모두 동일한 컬럼(현재 11개, SELECT_COLUMNS 참조)을 동일한 순서로 SELECT 해서
+두 노드 모두 동일한 컬럼(현재 12개, SELECT_COLUMNS 참조)을 동일한 순서로 SELECT 해서
 ListingCard로 매핑한다. 그 "컬럼 순서"가 두 곳에서 갈라지면(예: 한쪽만 컬럼을 추가) 매핑이
 조용히 어긋나므로, SELECT 컬럼 문자열과 튜플→ListingCard 매핑을 **이 한 곳(단일출처)** 에
-둔다(drift 방지, AR5). (핵심 7필드 + fuel·신뢰속성 3필드, Story 10.1 — Epic 9/10/11이 값을
-채울 때 SELECT_COLUMNS와 락스텝 확장)
+둔다(drift 방지, AR5). (핵심 7필드 + fuel·신뢰속성 3필드 + options, Story 10.1·10.3 — Epic 9/10/11이
+값을 채울 때 SELECT_COLUMNS와 락스텝 확장)
 [Source: architecture.md#Format Patterns(ListingCard 7필드); docs/conventions.md §4]
 """
 
@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 # rows_to_cards가 엉뚱한 값(예: region)을 id 자리에 넣는다.
 _UUID_RE = re.compile(r"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
 
-# ListingCard 7필드 + fuel·신뢰속성 3필드(Story 10.1) — SELECT 컬럼 순서를 이 순서로 고정해
-# 결과 매핑(rows_to_cards)을 단순화한다.
-# 이 순서가 rows_to_cards의 튜플 인덱스(0~10)와 1:1로 대응한다. 둘은 항상 같이 바꿔야 한다.
+# ListingCard 7필드 + fuel·신뢰속성 3필드(Story 10.1) + options(Story 10.3) — SELECT 컬럼
+# 순서를 이 순서로 고정해 결과 매핑(rows_to_cards)을 단순화한다.
+# 이 순서가 rows_to_cards의 튜플 인덱스(0~11)와 1:1로 대응한다. 둘은 항상 같이 바꿔야 한다.
 SELECT_COLUMNS = (
     "id, manufacturer, model, year, price, mileage, region, "
-    "fuel, accident_status, is_single_owner, is_non_smoker"
+    "fuel, accident_status, is_single_owner, is_non_smoker, options"
 )
 
 # rows_to_cards가 기대하는 튜플 폭 — 아래 컬럼 개수 불일치 방어의 기준값이다.
@@ -50,21 +50,22 @@ def rows_to_cards(rows: list[tuple]) -> list[ListingCard]:
     """run_select가 돌려준 튜플(SELECT_COLUMNS 순서)을 ListingCard 목록으로 매핑한다.
 
     숫자 필드(year/price/mileage)는 DB 드라이버가 무엇을 주든 int로 캐스팅해 계약을 맞춘다.
-    fuel·accident_status·is_single_owner·is_non_smoker(인덱스 7·8·9·10)는 모두 계약-외 값을
-    None으로 강등한다(conventions §4 "계약-외 값 정규화") — 이유는 아래 "왜 네 필드를 다 방어하나"
-    참조. is_single_owner/is_non_smoker의 NULL은 "미상"이라는 유효한 제3상태라, 강등 대상은
-    "타입이 어긋난 값"이지 NULL 자체가 아니다(bool 3상태, conventions §4).
+    fuel·accident_status·is_single_owner·is_non_smoker·options(인덱스 7·8·9·10·11)는 모두
+    계약-외 값을 None으로 강등한다(conventions §4 "계약-외 값 정규화") — 이유는 아래 "왜 이
+    필드들을 다 방어하나" 참조. is_single_owner/is_non_smoker의 NULL은 "미상"이라는 유효한
+    제3상태라, 강등 대상은 "타입이 어긋난 값"이지 NULL 자체가 아니다(bool 3상태, conventions §4).
 
-    왜 네 필드를 다 방어하나(코드리뷰 2026-07-22): pydantic ListingCard는 fuel=str|None,
-    accident_status=Literal|None, is_single_owner/is_non_smoker=bool|None이라, 그 슬롯에 타입이
-    어긋난 값(예: fuel 자리에 bool, is_single_owner 자리에 문자열)이 오면 ListingCard(...) 생성이
-    ValidationError로 죽는다. 이건 SqlGuardError가 아니라서 sql_rag_node의 `except SqlGuardError`
-    재생성 루프가 못 잡고 그대로 `/ai/search` 500이 된다(P1/P2와 같은 실패 모드). 도달 경로도
-    같다 — sql_guard는 SELECT 컬럼 순서를 SELECT_COLUMNS에 고정하지 않으므로, 폭은 11로 맞지만
-    순서를 바꾼 LLM SQL이 타입이 어긋난 값을 이 슬롯들에 넣을 수 있다. 그래서 accident_status만
-    강등하던 P2 방어를 나머지 세 필드로 넓힌다.
+    왜 이 필드들을 다 방어하나(코드리뷰 2026-07-22, Story 10.3에서 options로 확장): pydantic
+    ListingCard는 fuel=str|None, accident_status=Literal|None, is_single_owner/is_non_smoker=
+    bool|None, options=list[str]|None이라, 그 슬롯에 타입이 어긋난 값(예: fuel 자리에 bool,
+    is_single_owner 자리에 문자열)이 오면 ListingCard(...) 생성이 ValidationError로 죽는다.
+    이건 SqlGuardError가 아니라서 sql_rag_node의 `except SqlGuardError` 재생성 루프가 못 잡고
+    그대로 `/ai/search` 500이 된다(P1/P2와 같은 실패 모드). 도달 경로도 같다 — sql_guard는
+    SELECT 컬럼 순서를 SELECT_COLUMNS에 고정하지 않으므로, 폭은 12로 맞지만 순서를 바꾼 LLM
+    SQL이 타입이 어긋난 값을 이 슬롯들에 넣을 수 있다. 그래서 accident_status만 강등하던 P2
+    방어를 나머지 필드로 넓힌다.
 
-    ⚠️ 튜플 폭이 SELECT_COLUMNS(11개)와 다르면 `r[7]` 등에서 바로 IndexError가 난다 — 경로 A는
+    ⚠️ 튜플 폭이 SELECT_COLUMNS(12개)와 다르면 `r[7]` 등에서 바로 IndexError가 난다 — 경로 A는
     LLM이 만든 SQL을 그대로 실행하므로(sql_guard는 컬럼 화이트리스트만 보고 **SELECT 프로젝션
     개수·순서는 고정하지 않는다**, 파일 상단 주석 참조), 모델이 프롬프트 규칙 1을 어기고 옛
     7컬럼만 뽑으면 이 함수가 IndexError로 죽는다. 그러면 `sql_rag_node`의 `except SqlGuardError`가
@@ -98,6 +99,13 @@ def rows_to_cards(rows: list[tuple]) -> list[ListingCard]:
                 ),
                 is_single_owner=(r[9] if isinstance(r[9], bool) else None),
                 is_non_smoker=(r[10] if isinstance(r[10], bool) else None),
+                # options(text[]) — 계약-외 값 정규화: 리스트가 아니거나 원소에 문자열이 아닌
+                # 값이 섞이면(컬럼 순서가 어긋난 LLM SQL 등) None으로 강등한다(위 세 필드와 동일 원칙).
+                options=(
+                    list(r[11])
+                    if isinstance(r[11], list) and all(isinstance(x, str) for x in r[11])
+                    else None
+                ),
             )
         )
     return cards

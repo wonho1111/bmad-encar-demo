@@ -57,7 +57,7 @@ export default async function Home() {
     const { data: previewRows, error: previewError } = await buyerListingsQuery(
       supabase,
       'id, manufacturer, model, year, price, mileage, region, seller_name, ' +
-        'fuel, accident_status, is_single_owner, is_non_smoker',
+        'fuel, accident_status, is_single_owner, is_non_smoker, options',
     )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })

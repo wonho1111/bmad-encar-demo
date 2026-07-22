@@ -64,24 +64,27 @@ def _install_fake_run_select(monkeypatch, rows, captured):
 
 # --- Story 10.1: SELECT_COLUMNS ↔ rows_to_cards 위치 매핑 ---------------------------
 # 상수(문자열)와 매핑 함수(인덱스)가 따로 바뀌면 카드 필드가 조용히 뒤바뀐다(conventions §4.1
-# 경고). 컬럼 개수와 읽는 인덱스 개수가 같은지, 그리고 신규 4필드(fuel·신뢰속성 3개)까지
-# 실제로 올바른 자리에 매핑되는지를 여기서 못박는다.
+# 경고). 컬럼 개수와 읽는 인덱스 개수가 같은지, 그리고 신규 필드(fuel·신뢰속성 3개 + Story 10.3
+# options)까지 실제로 올바른 자리에 매핑되는지를 여기서 못박는다.
 
 
 def test_select_columns_count_matches_rows_to_cards_indices():
-    """SELECT_COLUMNS의 컬럼 개수 == rows_to_cards가 읽는 인덱스 개수(0~10, 11개)."""
+    """SELECT_COLUMNS의 컬럼 개수 == rows_to_cards가 읽는 인덱스 개수(0~11, 12개)."""
     columns = [c.strip() for c in SELECT_COLUMNS.split(",")]
-    assert len(columns) == 11
+    assert len(columns) == 12
     assert columns == [
         "id", "manufacturer", "model", "year", "price", "mileage", "region",
-        "fuel", "accident_status", "is_single_owner", "is_non_smoker",
+        "fuel", "accident_status", "is_single_owner", "is_non_smoker", "options",
     ]
 
 
-def test_rows_to_cards_maps_11_tuple_including_new_fields():
-    """11튜플 입력이 fuel·신뢰속성 3필드까지 올바른 위치로 매핑된다(기존 7필드는 뒤바뀌지 않음)."""
+def test_rows_to_cards_maps_12_tuple_including_new_fields():
+    """12튜플 입력이 fuel·신뢰속성 3필드·options까지 올바른 위치로 매핑된다(기존 7필드는 뒤바뀌지 않음)."""
     rows = [
-        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "무사고", True, False),
+        (
+            _L1, "현대", "싼타페", 2020, 26700000, 62000, "강원",
+            "가솔린", "무사고", True, False, ["선루프", "통풍시트"],
+        ),
     ]
     cards = rows_to_cards(rows)
 
@@ -95,11 +98,55 @@ def test_rows_to_cards_maps_11_tuple_including_new_fields():
     assert c.price == 26700000
     assert c.mileage == 62000
     assert c.region == "강원"
-    # 신규 4필드.
+    # 신규 필드(fuel·신뢰속성 3개 + options).
     assert c.fuel == "가솔린"
     assert c.accident_status == "무사고"
     assert c.is_single_owner is True
     assert c.is_non_smoker is False
+    assert c.options == ["선루프", "통풍시트"]
+
+
+# --- Story 10.3: options(text[]) 계약-외 값 정규화 ----------------------------------
+
+
+def test_rows_to_cards_degrades_non_list_options_to_none():
+    """options 자리에 리스트가 아닌 값이 오면(컬럼 순서가 어긋난 LLM SQL 등) None으로 강등한다."""
+    rows = [
+        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "무사고", True, False, "덤"),
+    ]
+    cards = rows_to_cards(rows)
+
+    assert cards[0].options is None
+
+
+def test_rows_to_cards_degrades_options_with_non_string_elements_to_none():
+    """options 리스트 원소에 문자열이 아닌 값이 섞이면 배열 전체를 None으로 강등한다."""
+    rows = [
+        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "무사고", True, False, ["선루프", 1]),
+    ]
+    cards = rows_to_cards(rows)
+
+    assert cards[0].options is None
+
+
+def test_rows_to_cards_null_options_stays_none():
+    """options가 NULL(None)이면 그대로 None — 빈 배열과 다른 상태를 유지한다."""
+    rows = [
+        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "무사고", True, False, None),
+    ]
+    cards = rows_to_cards(rows)
+
+    assert cards[0].options is None
+
+
+def test_rows_to_cards_empty_options_stays_empty_list():
+    """options가 빈 배열이면 빈 배열 그대로(카드가 옵션 0개임을 그대로 반영, None과 구분)."""
+    rows = [
+        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "무사고", True, False, []),
+    ]
+    cards = rows_to_cards(rows)
+
+    assert cards[0].options == []
 
 
 # --- 코드리뷰 P1: 컬럼 수가 안 맞으면 IndexError가 아니라 SqlGuardError ------------------
@@ -112,7 +159,7 @@ def test_rows_to_cards_maps_11_tuple_including_new_fields():
 
 def test_rows_to_cards_raises_sql_guard_error_on_short_tuple():
     """7튜플(옛 컬럼 수) 입력 → SqlGuardError(IndexError 아님)."""
-    short_row = [(_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원")]  # 7개뿐(11개 기대)
+    short_row = [(_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원")]  # 7개뿐(12개 기대)
     try:
         rows_to_cards(short_row)
         assert False, "짧은 튜플인데 예외가 안 났다"
@@ -123,9 +170,12 @@ def test_rows_to_cards_raises_sql_guard_error_on_short_tuple():
 
 
 def test_rows_to_cards_raises_sql_guard_error_on_long_tuple():
-    """컬럼이 더 많이 온 경우(12개)도 같은 방식으로 거부한다 — 폭 불일치는 방향과 무관하다."""
+    """컬럼이 더 많이 온 경우(13개)도 같은 방식으로 거부한다 — 폭 불일치는 방향과 무관하다."""
     long_row = [
-        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "무사고", True, False, "덤")
+        (
+            _L1, "현대", "싼타페", 2020, 26700000, 62000, "강원",
+            "가솔린", "무사고", True, False, ["선루프"], "덤",
+        )
     ]
     with pytest.raises(SqlGuardError):
         rows_to_cards(long_row)
@@ -141,7 +191,7 @@ def test_rows_to_cards_raises_sql_guard_error_on_long_tuple():
 def test_rows_to_cards_degrades_out_of_domain_accident_status_to_none():
     """accident_status 자리에 3값 밖 문자열이 와도 예외 없이 None으로 강등되고 카드는 산다."""
     rows = [
-        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "외판교환", None, None),
+        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", "가솔린", "외판교환", None, None, None),
     ]
     cards = rows_to_cards(rows)  # ValidationError가 나면 이 줄에서 테스트가 실패한다.
 
@@ -154,7 +204,7 @@ def test_rows_to_cards_degrades_wrong_typed_fuel_and_bool_fields_to_none():
     """fuel·is_single_owner·is_non_smoker 자리에 타입이 어긋난 값이 와도 예외 없이 None으로
     강등되고 카드는 산다(코드리뷰 2026-07-22).
 
-    왜 이 테스트가 있나: sql_guard는 SELECT 컬럼 **순서**를 고정하지 않으므로, 폭은 11로 맞지만
+    왜 이 테스트가 있나: sql_guard는 SELECT 컬럼 **순서**를 고정하지 않으므로, 폭은 12로 맞지만
     순서를 바꾼 LLM SQL이 fuel 자리에 bool을, is_single_owner 자리에 문자열을 넣을 수 있다.
     강등이 없으면 ListingCard(...)가 pydantic ValidationError로 죽고 — 그건 SqlGuardError가
     아니라서 sql_rag_node의 재생성 루프가 못 잡아 `/ai/search`가 500이 된다(accident_status만
@@ -162,7 +212,7 @@ def test_rows_to_cards_degrades_wrong_typed_fuel_and_bool_fields_to_none():
     """
     rows = [
         # fuel 자리에 bool, is_single_owner 자리에 문자열(region 값), is_non_smoker 자리에 int.
-        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", True, "무사고", "서울", 1),
+        (_L1, "현대", "싼타페", 2020, 26700000, 62000, "강원", True, "무사고", "서울", 1, None),
     ]
     cards = rows_to_cards(rows)  # ValidationError가 나면 이 줄에서 테스트가 실패한다(500 회귀).
 
@@ -177,14 +227,15 @@ def test_rows_to_cards_degrades_wrong_typed_fuel_and_bool_fields_to_none():
 
 
 def test_rows_to_cards_null_trust_fields_stay_none():
-    """신규 컬럼이 전부 NULL인 행 — fuel은 실값, 신뢰속성 3필드는 None(3상태 유지, I/O 매트릭스)."""
-    rows = [(_L1, "기아", "K5", 2021, 20000000, 30000, "서울", "디젤", None, None, None)]
+    """신규 컬럼이 전부 NULL인 행 — fuel은 실값, 신뢰속성 3필드·options는 None(3상태 유지, I/O 매트릭스)."""
+    rows = [(_L1, "기아", "K5", 2021, 20000000, 30000, "서울", "디젤", None, None, None, None)]
     c = rows_to_cards(rows)[0]
 
     assert c.fuel == "디젤"
     assert c.accident_status is None
     assert c.is_single_owner is None
     assert c.is_non_smoker is None
+    assert c.options is None
 
 
 # --- AC1: 대표 경로·장수 부착 -------------------------------------------------------

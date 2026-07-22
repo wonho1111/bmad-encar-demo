@@ -35,6 +35,7 @@ class ListingCardData {
     this.accidentStatus,
     this.isSingleOwner,
     this.isNonSmoker,
+    this.options,
   });
 
   final String id;
@@ -70,6 +71,9 @@ class ListingCardData {
   final String? accidentStatus; // '무사고'|'단순교환'|'사고'|null — Dart는 별도 enum 없이 nullable String으로 단순 통과(A2). Epic 10(10.1 컬럼 생성)
   final bool? isSingleOwner; // Epic 10(10.1 컬럼 생성)
   final bool? isNonSmoker; // Epic 10(10.1 컬럼 생성)
+  // 장비 통제어휘 배열(text[]) — Epic 10(10.3), docs/conventions.md §11.
+  // ⚠️ 타입 파리티만이다 — 칩 위젯 렌더·app `options.ts` 상수 미러는 Epic 16(10.1 선례와 동일).
+  final List<String>? options;
 
   /// Map(Supabase row 또는 /ai/search 원소) → 카드. 7필드가 올바른 타입이 아니면 null(깨진 원소 제외).
   /// web aiSearch.ts 의 isValidListing 런타임 가드와 같은 목적 — 카드 렌더 도중 터지는 것을 막는다.
@@ -111,8 +115,21 @@ class ListingCardData {
       accidentStatus: raw['accident_status'] is String ? raw['accident_status'] as String : null,
       isSingleOwner: raw['is_single_owner'] is bool ? raw['is_single_owner'] as bool : null,
       isNonSmoker: raw['is_non_smoker'] is bool ? raw['is_non_smoker'] as bool : null,
+      options: _asStringList(raw['options']),
     );
   }
+}
+
+/// options(text[])를 `List<String>?`으로 안전 변환. 리스트가 아니거나 원소가 문자열이 아니면
+/// null로 강등한다(계약-외 값 정규화, api `rows_to_cards`와 같은 방어 원칙).
+List<String>? _asStringList(Object? v) {
+  if (v is! List) return null;
+  final result = <String>[];
+  for (final item in v) {
+    if (item is! String) return null;
+    result.add(item);
+  }
+  return result;
 }
 
 /// 본인 매물 관리 목록의 한 행(요약 6필드). web `OwnListing`(sell/page.tsx) 미러.

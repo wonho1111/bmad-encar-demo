@@ -11,6 +11,7 @@
 // 상태 없는 서버 컴포넌트다(표시만 한다). 값 채우기·조회는 page.tsx의 책임.
 import { UNITS } from '@/lib/constants';
 import TrustAttributes, { hasTrustAttributes } from '@/components/listings/TrustAttributes';
+import { groupByCategory, OPTION_CATEGORY_ORDER } from '@/lib/options';
 
 // FR5 15필드 중 **본문에 쓰는 값**(seller_id·status 등 페이지 로직용 필드는 제외).
 // 15필드 내역 = 이 표 13행 + 옵션 + 설명. seller_name은 FR5 15필드 **밖**이다
@@ -121,27 +122,35 @@ export function VehicleInfoSection({ listing }: { listing: ListingDetailSections
 }
 
 /**
- * ③ 옵션 — 지금 있는 칩 목록을 옮기기만 한다.
- * **카테고리 분류·희소옵션 강조는 Epic 10.3/10.4의 몫이며 여기서 만들지 않는다.**
+ * ③ 옵션 — 5개 엔카 카테고리로 전량 그룹핑(희소 필터 없음, Story 10.3).
+ * 통제어휘 밖 값은 `기타옵션`으로 폴백된다(groupByCategory, docs/conventions.md §11).
  */
 export function OptionsSection({ listing }: { listing: ListingDetailSectionsData }) {
-  const options = listing.options ?? [];
+  const grouped = groupByCategory(listing.options);
+  const categories = OPTION_CATEGORY_ORDER.filter((category) => (grouped[category]?.length ?? 0) > 0);
 
   return (
     <Section title="옵션">
-      {options.length === 0 ? (
+      {categories.length === 0 ? (
         <p className="text-body text-ink-muted">등록된 옵션이 없습니다.</p>
       ) : (
-        <ul className="flex flex-wrap gap-2">
-          {options.map((opt, i) => (
-            <li
-              key={`${opt}-${i}`}
-              className="whitespace-nowrap rounded-chip border border-border-hairline px-2.5 py-1 text-caption font-medium text-ink-secondary"
-            >
-              {opt}
-            </li>
+        <div className="flex flex-col gap-3">
+          {categories.map((category) => (
+            <div key={category} className="flex flex-col gap-1.5">
+              <h4 className="text-meta font-medium text-ink-muted">{category}</h4>
+              <ul className="flex flex-wrap gap-2">
+                {grouped[category]!.map((opt, i) => (
+                  <li
+                    key={`${opt}-${i}`}
+                    className="whitespace-nowrap rounded-chip border border-border-hairline px-2.5 py-1 text-caption font-medium text-ink-secondary"
+                  >
+                    {opt}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
-        </ul>
+        </div>
       )}
     </Section>
   );

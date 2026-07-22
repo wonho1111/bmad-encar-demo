@@ -83,6 +83,7 @@ class ListingCard(BaseModel):
     accident_status: Literal["무사고", "단순교환", "사고"] | None = None
     is_single_owner: bool | None = None
     is_non_smoker: bool | None = None
+    options: list[str] | None = None  # 장비 통제어휘 배열(text[]) — Story 10.3, docs/conventions.md §11
 
 
 class SearchResponse(BaseModel):

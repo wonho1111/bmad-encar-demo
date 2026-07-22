@@ -7,8 +7,12 @@
 // 상태 없는 표현용 컴포넌트(서버/클라이언트 어디서든 렌더 가능). 스타일은 sell 목록 li와 일관.
 import Link from 'next/link';
 import { UNITS } from '@/lib/constants';
+import { topOptions } from '@/lib/options';
 import ListingCardImage from './ListingCardImage';
 import TrustAttributes from './TrustAttributes';
+
+// 카드에 노출할 옵션 칩 최대 개수(conventions §11.2 "카드=상위 3~4").
+const CARD_OPTION_COUNT = 4;
 
 // ListingCard 필드 계약(conventions §4) — 목록·AI결과 카드가 공유하는 최소 요약 필드.
 export type ListingCardData = {
@@ -28,10 +32,13 @@ export type ListingCardData = {
   accident_status?: '무사고' | '단순교환' | '사고' | null; // Epic 10(10.1 컬럼 생성)
   is_single_owner?: boolean | null; // Epic 10(10.1 컬럼 생성)
   is_non_smoker?: boolean | null; // Epic 10(10.1 컬럼 생성)
+  options?: string[] | null; // 장비 통제어휘 배열(text[]) — Epic 10(10.3), docs/conventions.md §11
 };
 
 export default function ListingCard({ listing }: { listing: ListingCardData }) {
   const title = `[${listing.manufacturer}] ${listing.model} · ${listing.year}년`;
+  // 희소 옵션 우선(topOptions), 상위 CARD_OPTION_COUNT개만 카드에 노출(conventions §11.2).
+  const cardOptions = topOptions(listing.options, CARD_OPTION_COUNT);
 
   return (
     // 루트가 <article>인 이유(AC4): 찜 버튼이 카드 안에 있어야 하는데 `<a>` 안의 `<button>`은
@@ -74,7 +81,22 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
             {UNITS.price}
           </p>
 
-          {/* ⑥ 옵션 칩 슬롯 — 칩 내용은 Epic 10. 값이 없으므로 렌더하지 않는다(AC1). */}
+          {/* ⑥ 옵션 칩 — 우선순위 상위 3~4개(희소 우선, 보편은 topOptions의 자연 fallback로
+              채워짐, conventions §11.2). 값이 없으면 슬롯 자체를 렌더하지 않는다(AC1, 빈 잉크
+              없음). 폭이 좁아지면 각 칩이 `shrink`+`truncate`로 줄어들 뿐 세로로 접히거나
+              2줄로 밀리지 않는다(D5) — `flex-nowrap`이라 줄바꿈 자체가 없다. */}
+          {cardOptions.length > 0 && (
+            <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
+              {cardOptions.map((opt) => (
+                <span
+                  key={opt}
+                  className="min-w-0 shrink truncate whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary"
+                >
+                  {opt}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </Link>
 

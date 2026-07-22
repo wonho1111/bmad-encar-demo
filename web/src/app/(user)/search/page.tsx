@@ -108,9 +108,11 @@ export default async function SearchPage({
   //   그래서 이 스토리(값이 흐르게 하는 것)에서 임의로 넓히지 않고, 로그인 사용자에게만
   //   신뢰속성을 함께 조회한다(대장에 등재, 10.2 착수 시 재검토).
   const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  // options는 이미 0011에서 anon GRANT돼 있다(로그인 분기 불필요, conventions §11 — 10.1
+  // 신뢰컬럼과 다른 점). 그래서 trustColumns와 달리 로그인 여부와 무관하게 항상 조회한다.
   let query = buyerListingsQuery(
     supabase,
-    `id, manufacturer, model, year, price, mileage, region, seller_name, fuel${trustColumns}`,
+    `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`,
   );
 
   if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)

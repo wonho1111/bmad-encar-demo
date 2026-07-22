@@ -40,10 +40,10 @@ def test_strip_sql_plain_passthrough():
 
 def test_to_cards_maps_tuple_positions_and_casts_int():
     # run_select 튜플 순서: id, manufacturer, model, year, price, mileage, region,
-    #   fuel, accident_status, is_single_owner, is_non_smoker (Story 10.1 — 11필드)
+    #   fuel, accident_status, is_single_owner, is_non_smoker, options (Story 10.1·10.3 — 12필드)
     rows = [
         ("uuid-1", "현대", "싼타페", "2020", "26700000", "62000", "강원",
-         "가솔린", "무사고", True, False)
+         "가솔린", "무사고", True, False, ["선루프"])
     ]
     cards = _to_cards(rows)
     assert len(cards) == 1
@@ -56,6 +56,7 @@ def test_to_cards_maps_tuple_positions_and_casts_int():
     assert c.accident_status == "무사고"
     assert c.is_single_owner is True
     assert c.is_non_smoker is False
+    assert c.options == ["선루프"]
 
 
 def test_to_cards_empty():
@@ -73,7 +74,7 @@ import app.graph.sql_rag_node as node  # noqa: E402
 _LISTING_ID = "55555555-5555-4555-8555-555555555555"
 _SAFE_SQL = (
     "SELECT id, manufacturer, model, year, price, mileage, region, "
-    "fuel, accident_status, is_single_owner, is_non_smoker "
+    "fuel, accident_status, is_single_owner, is_non_smoker, options "
     "FROM listings WHERE status = 'on_sale' LIMIT 5"
 )
 
@@ -93,7 +94,7 @@ def test_cards_carry_cover_image_from_shared_helper(monkeypatch):
         "run_select",
         lambda sql, params=None: [
             (_LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원",
-             "가솔린", None, None, None)
+             "가솔린", None, None, None, None)
         ],
     )
     # 사진 조회는 listing_cards 모듈의 run_select를 탄다 — 노드 모듈만 패치하면

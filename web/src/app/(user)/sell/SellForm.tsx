@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
+import { parseOptionsInput, partitionOptions, serializeOptions } from '@/lib/options';
 import Button from '@/components/ui/Button';
 import FocusTrap from '@/components/ui/FocusTrap';
 import PhotoUploader from './PhotoUploader';
@@ -40,7 +41,7 @@ type FormState = {
   seats: string;
   region: string;
   accident_free: boolean;
-  options: string; // 쉼표 구분 입력 → 배열 변환
+  options: string; // 줄바꿈 구분 입력 → 배열 변환(대장 #11 — 쉼표 구분은 값 안의 쉼표를 쪼갠다)
   description: string;
 };
 
@@ -97,7 +98,7 @@ function toFormState(v: ListingInitialValues): FormState {
     seats: String(v.seats),
     region: v.region,
     accident_free: v.accident_free,
-    options: (v.options ?? []).join(', '), // text[] → 쉼표 구분 문자열(입력 UI 규칙과 일치)
+    options: serializeOptions(v.options ?? []), // text[] → 줄바꿈 구분 문자열(대장 #11 해소)
     description: v.description ?? '',
   };
 }
@@ -239,11 +240,18 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       return { ok: false, message: `인승은 ${LISTING_RANGES.seats.min}~${LISTING_RANGES.seats.max}명 사이로 입력해주세요.` };
     }
 
-    // options: 쉼표 구분 → 공백 제거 → 빈 항목 제외한 배열
-    const options = form.options
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    // options: 줄바꿈 구분 → 공백 제거 → 빈 줄 제외 → 중복 제거(parseOptionsInput, 대장 #11 해소 —
+    // 쉼표 split이 아니므로 한 원소 안의 쉼표가 살아남는다).
+    const options = parseOptionsInput(form.options);
+    // 통제어휘 밖 이름은 조용히 버리지 않고 제출을 막는다(docs/conventions.md §11.3, I/O 매트릭스
+    // "쓰기 검증"). 10.4의 칩 피커가 이 검증을 구조적으로 승격하기 전까지의 임시 텍스트 입력이다.
+    const { unknown } = partitionOptions(options);
+    if (unknown.length > 0) {
+      return {
+        ok: false,
+        message: `표준 옵션명이 아닙니다: ${unknown.join(', ')}`,
+      };
+    }
 
     return {
       ok: true,
@@ -605,14 +613,15 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         <span className="text-sm font-medium">무사고 차량</span>
       </label>
 
-      {/* 옵션 (쉼표 구분, 선택) */}
+      {/* 옵션 (한 줄에 하나씩, 선택) — 대장 #11: 쉼표 구분 대신 줄바꿈 구분(값 안의 쉼표 보존).
+          임시 텍스트에어리어다 — 하이브리드 칩 피커(인기 8칩+아코디언+검색)는 Story 10.4가 얹는다. */}
       <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">옵션 (쉼표로 구분, 선택)</span>
-        <input
-          type="text"
+        <span className="text-sm font-medium">옵션 (선택)</span>
+        <textarea
           value={form.options}
           onChange={(e) => update('options', e.target.value)}
-          placeholder="예: 선루프, 후방카메라, 내비게이션"
+          rows={3}
+          placeholder={'옵션을 한 줄에 하나씩 입력해주세요.\n예: 선루프\n후방카메라\n내비게이션'}
           className={inputCls}
         />
       </label>

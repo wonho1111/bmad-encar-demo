@@ -37,7 +37,7 @@ class ListingsRepository {
   Future<List<ListingCardData>> fetchListings(ResolvedFilters f) async {
     var query = _buyerQuery(
       'id, manufacturer, model, year, price, mileage, region, seller_name, '
-      'fuel, accident_status, is_single_owner, is_non_smoker',
+      'fuel, accident_status, is_single_owner, is_non_smoker, options',
     );
 
     if (f.keyword != null) {
