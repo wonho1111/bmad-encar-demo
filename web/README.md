@@ -18,7 +18,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project loads [Pretendard](https://github.com/orioncactus/pretendard) (한글+라틴) via the jsDelivr CDN dynamic-subset stylesheet in `src/app/layout.tsx`. Design tokens (color/typography/shadow/radius) are centralized in `src/app/globals.css` (Tailwind v4 `@theme`).
+This project self-hosts [Pretendard](https://github.com/orioncactus/pretendard) (한글+라틴) via `next/font/local` in `src/app/layout.tsx` — the font binary and its OFL license live in `src/app/fonts/`. Do not reintroduce a CDN `<link>` for fonts (see `docs/tech-debt.md` #40/#127). Design tokens (color/typography/shadow/radius) are centralized in `src/app/globals.css` (Tailwind v4 `@theme`).
 
 ## Learn More
 
