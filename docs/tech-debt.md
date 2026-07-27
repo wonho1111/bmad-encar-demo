@@ -1575,3 +1575,110 @@
 - **왜 지금 안 고치나:** 고치려면 (a) 동결 파일에서 `DW-1`을 지우거나 — 훅이 정당하게 막고, Bash 리다이렉트로 우회하면 훅이 스스로 적어둔 사각지대를 이용하는 꼴이다 — (b) 엔진을 패치해야 하는데 외부 도구다. 둘 다 값이 비용보다 작다.
 - **✎ 훅 문서 갱신 완료(2026-07-27):** `block-frozen-ledger.py`의 *"이 검사가 보지 못하는 것"* 절에 이 경로를 **세 번째 항목으로 추가**했다. 검사 옆에 그 검사가 안 보는 것을 적는다(CLAUDE.md B4).
 - **트리거:** ① bmad-loop을 업그레이드할 때 — `deferredwork.py`가 여전히 무조건 append 하는지 확인하고, 장부 경로를 바꿀 설정 키가 생겼으면 그때 `docs/tech-debt.md`가 아닌 **별도 파일**로 돌린다(이 대장으로 돌리면 sweep이 1,500줄짜리 이 파일을 재작성할 수 있다 — `_bmad/custom/bmad-dev-auto.toml` 헤더의 경고와 같은 이유). ② `bmad-loop sweep`을 처음 쓰고 싶어질 때 — 그 전에 동결 파일의 옛 항목들을 sweep이 어떻게 판정하는지 **읽기 전용으로 먼저 확인**한다.
+
+### 130. 상세 페이지가 독립적인 조회 3건을 순차 await로 체인해 회피 가능한 요청 폭포를 만든다 (2026-07-27 Story 11-1 코드리뷰 defer, 🟢 품질)
+- **위치:** `web/src/app/(user)/listings/[id]/page.tsx` — 사진 갤러리 URL 조회(`fetchListingGalleryUrls`) → `get_seller_public_summary` RPC → `increment_listing_view` RPC(신규, Story 11-1) 세 호출이 서로 결과를 참조하지 않는데도 순차 `await`로 이어져 있다.
+- **내용:** 세 조회 모두 서로 독립적이라 `Promise.all`로 병렬 실행이 가능한데, 순차 체인이라 상세 페이지의 서버 응답 시간(TTFB)이 세 왕복 시간의 합이 된다. 갤러리+판매자요약 두 개는 Story 10.6 이전부터 있던 기존 패턴이고, 이번 Story 11-1이 조회수 RPC를 같은 패턴으로 세 번째로 추가했을 뿐이다(blind-hunter 코드리뷰 지적). 이 페이지 하나만 고치는 건 이 스토리 범위를 벗어난다(A3, 외과적 변경).
+- **왜 지금 안 고치나:** 셋 중 하나(조회수 RPC)만 병렬화하면 나머지 둘은 그대로 순차라 waterfall이 사실상 안 없어지고, 셋 다 고치려면 이 스토리가 손대지 않은 기존 코드(갤러리·판매자요약 호출)까지 리팩터해야 한다.
+- **트리거:** 이 페이지의 SSR 지연이 실측으로 문제가 될 때(예: 실사용자 체감 지연 보고, Lighthouse/APM 계측 도입) — 그때 세 호출을 한 번에 `Promise.all`로 묶는다.
+
+### 131. `listings.seller_name`이 등록 시점(INSERT)에만 위조를 막고 이후 UPDATE로는 판매자가 직접 바꿀 수 있다 (2026-07-27 Story 11-1 코드리뷰 defer, 🟡 조건부)
+- **위치:** `supabase/migrations/0007_listings_seller_name.sql`(BEFORE INSERT 트리거만 존재) vs `supabase/migrations/0020_listings_view_count.sql`(이번 스토리가 `authenticated`의 `listings` UPDATE 권한을 컬럼 단위로 전면 재감사하며 만든 GRANT 목록에 `seller_name`을 그대로 포함).
+- **내용:** 0007은 매물 등록(INSERT) 시 `seller_name`을 이메일 로컬파트로 자동 채우는 BEFORE INSERT 트리거만 두었다 — BEFORE UPDATE 트리거는 이 리포 어디에도 없다(grep으로 확인: `before update`에 seller_name 로직 없음). 즉 판매자가 등록 후 `supabase.from('listings').update({ seller_name: '...' }).eq('id', 본인매물)`을 직접 호출하면 원하는 값으로 바꿀 수 있다. 이번 0020 마이그레이션이 `authenticated`의 `listings` UPDATE 권한을 컬럼 단위로 전부 다시 감사하는 유일한 기회였지만, 이 gap은 그대로 물려받아 `seller_name`을 UPDATE 가능 컬럼 목록에 포함시켰다(회귀를 만들지 않으려는 그 스토리의 범위 결정이었지, 이 gap을 새로 만든 것은 아니다).
+- **트리거:** `listings`의 UPDATE 권한을 다시 감사하는 다음 마이그레이션, 또는 판매자 표시 이름 위조가 실제 이슈로 보고될 때 — BEFORE UPDATE 트리거를 추가해 INSERT와 대칭을 맞춘다.
+
+### 132. 상세 페이지의 RPC 배선(`get_seller_public_summary`·`increment_listing_view`)이 실제로 호출되는지 검증하는 테스트가 전무하다 (2026-07-27 Story 11-1 코드리뷰 defer, 🟡 검증갭)
+- **위치:** `web/src/app/(user)/listings/[id]/page.tsx`의 두 `supabase.rpc(...)` 호출 지점 vs `web/src/app/(user)/listings/[id]/__tests__/`(`detailSectionsAssembly.test.ts`·`sellerInfo.test.ts` 둘 다 순수 함수만 테스트, `page.tsx`를 import하거나 `supabase.rpc`를 mock하지 않음. repo 전체 grep으로도 `*.test.ts(x)` 안의 `rpc(` 호출 0건 확인).
+- **내용:** `get_seller_public_summary`(Story 10.6)는 이미 이 gap을 갖고 있었고, `increment_listing_view`(Story 11-1, 이번 diff)가 같은 파일에 같은 패턴으로 추가되며 gap을 하나 더 늘렸다. 실DB 통합 테스트(`test_seller_summary_real_db.py`·`test_view_count_rpc_real_db.py`)는 "RPC 자체가 옳게 동작하는가"는 실측하지만 "page.tsx가 실제로 그 RPC를 부르는가"는 검증 대상 밖이라고 각 파일 docstring이 명시적으로 선언하고 있다 — 이 리포는 서버 컴포넌트의 RPC 배선을 코드리뷰로만 확인하는 것이 지금까지의 관례다(verification-gap·intent-alignment 리뷰 공통 지적).
+- **트리거:** web에 서버 컴포넌트 레벨에서 Supabase 클라이언트를 mock하는 테스트 하네스가 도입될 때 — 그때 이 두 호출 지점을 함께 커버한다.
+
+### 133. 실DB 통합 테스트 전부가 Postgres 롤 임퍼소네이션만 검증하고 실제 PostgREST/HTTP RPC 경로는 한 번도 거치지 않는다 (2026-07-27 Story 11-1 코드리뷰 defer, 🟢 품질)
+- **위치:** `api/tests/integration/test_seller_summary_real_db.py`·`test_trust_attributes_real_db.py`·`test_fr11_cover_images_real_db.py`·신규 `test_view_count_rpc_real_db.py` — 전부 `psycopg`로 직접 연결해 `set local role`로 역할만 바꾸는 동일 패턴.
+- **내용:** 이 테스트들은 "SQL에 그 글자가 있는 것과 Postgres가 실제로 강제하는 것은 다르다"(B4)는 원칙은 지키지만, 그 아래 계층(PostgREST가 이 함수를 실제로 노출하는지, `db-schemas` 설정, 함수명·파라미터명이 REST 경로에서 실제로 일치하는지)은 검증 범위 밖이다(blind-hunter 코드리뷰 지적). 웹은 `supabase.rpc(...)`로 이 계층을 거치므로, 이 계층만의 실패(예: 노출 스키마 설정 누락)는 이 테스트 스위트 전부가 초록인 채로 웹에서만 발생할 수 있다.
+- **트리거:** web에 E2E(브라우저→서버→DB 전 구간) 테스트 계층이 도입되거나(#106과 같은 축), PostgREST 노출 설정 자체가 회귀 대상으로 의심될 때.
+
+### 134. `anon`이 `view_count`를 읽지 못한다 — 비로그인 인기 정렬이 통째로 42501로 깨진다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟡 조건부)
+- **위치:** `supabase/migrations/0011_listings_anon_select.sql`의 anon 컬럼 SELECT 화이트리스트(`view_count` 미포함) vs `supabase/migrations/0020_listings_view_count.sql`(컬럼 추가는 하되 SELECT GRANT는 손대지 않음).
+- **내용:** 0011은 anon의 테이블 SELECT를 회수하고 컬럼 화이트리스트로 되돌리는 구조라, **새 컬럼은 기본적으로 anon에게 안 보인다**(0011 주석이 명시한 의도된 동작). 0020이 `view_count`를 추가했지만 그 목록엔 넣지 않았다 — intent의 Never가 "실제 노출은 Story 11.4의 몫"으로 명시했기 때문이다. 실측(스크래치 PG18, 프렐류드+마이그 20개): `set local role anon; select view_count from public.listings` → `ERROR: permission denied for table listings`. **컬럼만이 아니라 쿼리 전체가 에러난다.** Postgres는 `ORDER BY` 대상 컬럼에도 SELECT 권한을 요구하므로 `order by view_count desc`도 같은 에러다.
+- **왜 지금 안 고치나:** intent의 Never가 이 GRANT 추가를 명시적으로 금지했다(스코프 권한은 intent에 있다). 고치는 자리는 11.4다.
+- **실패 모양이 고약하다:** 로그인 상태에선 `authenticated`가 테이블 SELECT를 그대로 갖고 있어 정상 동작하고, **로그아웃해야만** 깨진다 — 개발 중 가장 놓치기 쉬운 비대칭이다.
+- **트리거:** **Story 11.4(인기 매물 그리드) 착수 시 — 그 스토리의 인수조건으로 심을 것**(B5: 회고 약속은 다음 스토리 체크박스로 심어야 이행된다). 한 줄이면 된다: 새 마이그레이션에 `grant select (view_count) on public.listings to anon;`.
+
+### 135. 0020의 GRANT 화이트리스트가 `embedding`·`id`를 포함한다 — 판매자가 자기 매물의 검색 벡터와 기본키를 직접 바꿀 수 있다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟡 조건부)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql`의 `grant update (...) on public.listings to authenticated` 목록 중 `id`·`embedding` 항목.
+- **내용:** #131(`seller_name`)과 같은 축이지만 영향이 더 크다. 0020은 authenticated의 `listings` UPDATE 권한을 **명시적 화이트리스트로 성문화**하면서 `embedding`(AI 의미검색 벡터)과 `id`(기본키)를 그대로 넣었다. 실측(스크래치 PG18): 소유 판매자 롤로 `update public.listings set embedding = '...'` 성공, `update ... set id = '3333…'` 도 성공해 행의 정체성이 바뀌었다. `embedding`은 판매자가 손수 조율하면 경로 B 의미검색에서 임의 질의에 1등으로 뜰 수 있고, `id` 변경은 공유·북마크된 `/listings/[id]` URL을 조용히 404로 만든다(자식 행이 있으면 FK로 에러). `0011`이 anon에게 `embedding` **읽기**를 차단 대상으로 명시한 것과 대조된다 — 읽기는 막고 쓰기는 축복한 셈.
+- **왜 지금 안 고치나:** 0020 이전에도 authenticated는 테이블 단위 UPDATE로 두 컬럼을 이미 쓸 수 있었다(플랫폼 기본 GRANT) — 회귀가 아니라 **성문화**다. 목록에서 빼면 임베딩 backfill 경로가 어떤 롤로 도는지 먼저 확정해야 하는데(확인 안 됨), 그 조사는 조회수 스토리 범위 밖이다(A3).
+- **트리거:** `listings` UPDATE 권한을 다시 감사하는 다음 마이그레이션 — #131과 **같은 자리에서 함께** 처리한다. 그때 임베딩 backfill 주체 롤을 먼저 실측하고, 판매자에게 불필요한 컬럼(`id`·`embedding`·`seller_id`·`created_at`)을 목록에서 걷어낸다.
+
+### 136. 조회수는 "웹 상세 열람"만 센다 — Flutter 앱 상세는 RPC를 부르지 않고, 단일성 검사도 `web/src`만 본다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟢 품질)
+- **위치:** `app/lib/features/listings/listing_detail_screen.dart`(상세 화면인데 `.rpc(` 호출 0건 — 앱 전체에 RPC 호출 자체가 없다) vs `web/src/app/(user)/listings/[id]/page.tsx`. 검사 쪽은 `web/src/app/(user)/listings/[id]/__tests__/viewCountCallSite.test.ts`의 `SRC_ROOT`가 `web/src`로 고정.
+- **내용:** 두 화면은 "매물 상세 진입"이라는 **같은 관측 계약**인데 웹만 조회수를 올린다. 그래서 `view_count`의 실제 의미는 "상세 열람 수"가 아니라 "**웹** 상세 열람 수"이고, Story 11.4의 인기 순위는 모바일 트래픽 비중만큼 왜곡된다 — 이게 의도된 절충인지 누락인지 어느 문서에도 없다. 함께: 단일성 검사가 `web/src`의 `.ts/.tsx`만 스캔하므로 앱이 나중에 카드 렌더 경로에서 이 RPC를 부르면 검사는 green인 채 불변식이 깨진다.
+- **왜 지금 안 고치나:** 이 리포의 기존 관례가 웹 우선이다(Story 10.6의 `get_seller_public_summary`도 앱은 채택하지 않았다 — 앱에 `.rpc(` 호출이 0건인 것이 그 증거). 관례 자체를 바꾸는 것은 조회수 스토리의 범위 밖이다.
+- **트리거:** Story 11.4에서 인기 순위를 **제품에 노출**할 때 — 그 시점에 (a) 앱도 올릴지 (b) 웹 전용 지표로 문서에 못박을지를 결정하고, 어느 쪽이든 단일성 검사의 스캔 범위를 그 결정에 맞춘다. 또는 Epic 16(앱 작업)에서 앱이 RPC를 처음 쓰게 될 때.
+
+### 137. `docs/db-schema-guide.md`(발표용 스키마 설명)가 실제 스키마보다 늙었다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟢 품질)
+- **위치:** `docs/db-schema-guide.md`의 `listings` 컬럼 표와 마이그레이션 인덱스 절.
+- **내용:** 컬럼 표에 0017의 신뢰속성 3종이 빠져 있고 마이그레이션 인덱스는 0009에서 멈춰 있다. Story 11-1이 `view_count`를 더해 격차가 한 칸 더 벌어졌다. project-context가 이 파일을 **발표용 스키마 설명**으로 지정했으므로, 시연·리뷰 자리에서 읽히는 바로 그 문서가 스키마를 잘못 설명하게 된다.
+- **왜 지금 안 고치나:** 이 스토리가 만든 드리프트가 아니라 누적된 것이고(0017·0012~0019 구간), 인접 문서를 "개선"하지 않는다는 A3에 걸린다. 요약표 📅 행에 이미 "`db-schema-guide` 표 갱신(증분 후)"으로 잡혀 있으나 번호가 없어 추적되지 않았다 — 이 항목이 그 번호다.
+- **트리거:** Epic 11 종료 시점(증분 스키마 변경이 멎는 자리) 또는 발표·시연 자료를 만들 때 — 그때 표를 실제 `information_schema`에서 다시 뽑아 한 번에 맞춘다.
+
+### 138. `pytest tests/integration` 전체를 게이트 프렐류드 환경에서 돌리면 1건이 실패한다 — 이 스토리와 무관한 기존 red (2026-07-28 Story 11-1 후속리뷰 2차 defer, 🟡 조건부)
+- **위치:** `api/tests/integration/test_seller_summary_real_db.py::test_anon_can_read_joined_at_despite_profiles_rls` vs `scripts/migration-check-prelude.sql`의 `alter default privileges … grant all on tables to anon, …`.
+- **내용:** 이 테스트는 anon이 `profiles`를 직접 읽으면 `InsufficientPrivilege`가 나야 한다고 단언하는데, 프렐류드가 anon에게 테이블 SELECT를 주기 때문에 에러 대신 **0행**이 돌아온다(RLS가 거른다) → `DID NOT RAISE`. 즉 "권한으로 막힌다"는 단언이 실제로는 "정책으로 막힌다"인 환경이다. 리뷰어가 **0019까지만 적용한 DB**로 대조해 이 스토리(0020)와 무관한 기존 실패임을 확정했다(전체 결과: 1 failed, 240 passed, 5 skipped — 0020 유무와 무관하게 동일).
+- **왜 지금 안 고치나:** 11-1이 만든 결함이 아니고, 고치려면 "프렐류드가 원격 Supabase를 정확히 재현하는가"(원격에선 anon이 `profiles` SELECT 권한을 갖는가)를 원격 실측으로 먼저 답해야 한다 — 그 조사는 조회수 스토리 범위 밖이다.
+- **왜 지금까지 안 보였나:** 지금까지의 검증이 **파일 하나만** 돌렸다. CI의 `api-db` 잡은 `pytest tests/integration` 디렉터리 전체를 돈다.
+- **트리거:** 이 브랜치(`test/bmad-loop`)를 `develop`에 병합하기 직전 — CI가 이 브랜치에서 처음 도는 순간 무관한 이유로 red가 된다. 병합 전에 원격 anon 권한을 실측하고 테스트의 단언을 실제 방어층(정책 vs 권한)에 맞춘다.
+
+### 139. `anon`·`authenticated`가 `listings`에 대해 TRUNCATE·REFERENCES·TRIGGER·MAINTAIN을 계속 보유한다 (2026-07-28 Story 11-1 후속리뷰 2차 defer, 🟢 품질)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql` 5번 블록(`revoke insert, update, delete … from anon`) — 8개 테이블 권한 중 3개만 회수한다. #18(플랫폼 기본 GRANT 축)과 같은 뿌리.
+- **내용:** 0020 적용 후 실측 `relacl` = `anon=Dxtm`, `authenticated=rdDxtm`. 리뷰어가 `set local role anon; truncate public.listings cascade;`를 실제로 실행해 성공시켰고, FK를 타고 `chat_rooms`·`listing_images`·`wishlists`·`chat_messages`까지 비워졌다. **TRUNCATE는 RLS를 아예 우회한다.** 개념적으로 더 날카로운 건 남아 있는 `TRIGGER` 비트다 — BEFORE UPDATE 트리거의 NEW 튜플 조작은 컬럼 권한을 통째로 우회하므로, 그게 가능하면 이 마이그레이션이 세운 컬럼 단위 방어가 무의미해진다(현재는 두 롤에 `public` 스키마 CREATE 권한이 없어 트리거를 못 만든다 — 실측 확인).
+- **왜 지금 안 고치나:** PostgREST에 TRUNCATE 동사가 없어 브라우저/anon 키 경로로는 도달할 수 없다(직접 Postgres 연결이 있어야 하는데 그건 이미 다른 얘기다). 그리고 **`revoke all`은 해법이 아니다** — 0011이 anon에게 준 컬럼 SELECT까지 날아가 비로그인 열람이 즉시 깨진다(실측 확인). 남은 4개를 이름으로 골라 회수하는 것은 조회수 스토리 범위 밖의 권한 정리다.
+- **트리거:** #18(플랫폼 기본 GRANT)을 정리하는 마이그레이션을 만들 때 — 그때 `listings`뿐 아니라 전 테이블에 대해 `truncate, references, trigger, maintain`을 anon·authenticated에서 한 번에 회수하고, `has_table_privilege` 8종 단언을 실DB 테스트에 심는다.
+
+### 140. `created_at`이 INSERT 화이트리스트에 있어 등록 시점 등록일 위조가 가능하다 (2026-07-28 Story 11-1 후속리뷰 2차 defer, 🟢 품질)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql` 4번 블록의 `grant insert (… id, embedding, created_at, updated_at …)` 목록. #135(UPDATE 축의 `embedding`·`id`)의 **INSERT 쪽 짝**이다.
+- **내용:** 0002는 `created_at` 위조를 **BEFORE UPDATE 트리거로만** 막는다("소유자가 UPDATE에 created_at을 끼워 넣어 최신 등록처럼 위장하는 것을 차단"). INSERT 경로엔 대응 방어가 없어, 판매자가 등록 요청에 `created_at`을 실어 보내면 원하는 등록일로 박을 수 있다 — 등록일 정렬 신뢰성이 UPDATE 축에서만 지켜지고 INSERT 축에선 안 지켜진다. 0020이 이 권한을 **명시적 화이트리스트로 성문화**했다(그 전에는 테이블 단위 기본 GRANT로 암묵적으로 있던 것 — 회귀는 아니다).
+- **왜 지금 안 고치나:** 목록에서 빼면 등록 경로(SellForm·Flutter `sell_controller`)가 실제로 어떤 컬럼을 보내는지 먼저 실측해야 하고(빼면 등록이 깨질 수 있다), 그 조사는 #135와 **같은 자리에서 함께** 하는 것이 맞다.
+- **트리거:** #135와 동일 — `listings` 쓰기 권한을 다시 감사하는 다음 마이그레이션. 그때 UPDATE·INSERT 두 축의 화이트리스트를 함께 좁히고, `created_at`은 BEFORE INSERT 트리거로 `now()` 강제를 검토한다.
+
+### 141. `listings_set_timestamps` 조건이 "view_count**만**"이 아니라 "view_count가 바뀌면"이라, 혼합 UPDATE가 `updated_at`을 건너뛴다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟡 조건부)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql` 6번 블록 `public.listings_set_timestamps()`의 `if new.view_count is not distinct from old.view_count then new.updated_at := now(); end if;`.
+- **내용:** 함수 옆 주석은 "view_count**만** 바뀐 UPDATE(=조회수 증가)는 수정으로 치지 않는다"라고 읽히지만, 실제 조건은 "view_count가 바뀌었는가" 하나뿐이다. 그래서 `view_count`를 **다른 컬럼과 함께** 바꾸는 UPDATE는 그 다른 컬럼이 진짜 수정이어도 `updated_at`이 갱신되지 않는다. 실측(스크래치 PG18, 마이그 20개 적용): `update public.listings set price = 31111111, view_count = view_count + 1` → `price`는 31111111로 바뀌었는데 `updated_at`은 이전 값 그대로. `updated_at`은 관리자 거래내역 화면이 **거래일**로 쓰는 값이다(#20·`db-schema-guide.md`).
+- **왜 지금 안 고치나:** ① **현재 어떤 클라이언트 경로로도 도달할 수 없다** — 0020의 3·4번 블록이 `authenticated`에서, 5번 블록이 `anon`에서 `view_count` 쓰기를 회수했고(실측: `has_column_privilege` 전 조합 false), `service_role` 키는 프로젝트 규칙상 어디에도 두지 않는다(project-context 규칙 6). 남는 경로는 운영자가 직접 psql로 도는 경우뿐이다. ② 제안된 수정(`to_jsonb(new) - 'view_count' - 'updated_at'` 행 전체 비교)은 **운영에서 검증할 수 없다** — 운영의 `embedding`은 `vector(768)`인데 이 샌드박스엔 pgvector가 없어 `to_jsonb(record)`가 vector 컬럼을 어떻게 다루는지 실측 불가다. 검증 못 한 변경을 **모든 listings UPDATE가 지나가는 트리거**에 넣는 것은 도달 불가 결함을 고치려고 도달 가능 경로를 거는 것이다(B4). 참고로 비용 자체는 실측했다 — 6.9KB 임베딩 기준 조회 1회당 0.168ms → 0.363ms(+0.2ms)로, **성능은 반대 이유가 아니다.**
+- **트리거:** pgvector가 실제로 있는 환경(로컬 Supabase Docker 스택 또는 원격)에서 `to_jsonb(<listings 행>)`이 vector 컬럼에 대해 정상 동작함을 실측할 수 있을 때 — 그때 조건을 "오직 view_count만 바뀐 경우"로 좁히고, `price`+`view_count` 혼합 UPDATE가 `updated_at`을 **갱신하는지** 단언하는 테스트를 함께 심는다. 또는 `view_count`를 다른 컬럼과 함께 쓰는 정당한 경로(백필 스크립트 등)가 처음 생길 때 — 그 순간 도달 가능해진다.
+
+### 142. `public.set_updated_at()`이 참조 트리거 0건인 고아가 됐고, 학습 문서는 아직 그것이 살아 있다고 가르친다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
+- **위치:** `supabase/migrations/0002_listings.sql`이 만든 `public.set_updated_at()` · `supabase/migrations/0020_listings_view_count.sql` 6번 블록(`drop trigger if exists listings_set_updated_at`) · `docs/learning/01-db.md:107`.
+- **내용:** 0020이 `listings_set_updated_at` 트리거를 `listings_set_timestamps`로 교체하면서, `set_updated_at()`을 쓰던 **마지막 사용처가 사라졌다**. 실측(0020까지 적용한 스크래치 DB): 이 함수를 참조하는 non-internal 트리거 **0건**, 리포 전체 grep에서도 `0002`·`0020` 밖 참조 0건 — `listings`가 유일한 사용자였다. 함께: `docs/learning/01-db.md:107`이 여전히 "`set_updated_at()` 트리거 — 매물을 수정할 때마다 `updated_at`을 자동 갱신, 동시에 `created_at` 고정"이라고 **현재 동작인 것처럼** 설명한다. 이제 `listings`의 그 임무는 `listings_set_timestamps()`가 하고, `updated_at` 갱신엔 조회수 예외가 붙는다(#141).
+- **왜 지금 안 고치나:** 함수 삭제는 0002의 소유물을 지우는 별도 판단이고(A3 — 이번 변경이 고아로 만들었을 뿐, 지우는 것은 다른 결정이다), 학습 문서 갱신은 이 스토리가 만든 드리프트 한 줄을 넘어 문서 전반의 정합성 문제다(#137과 같은 축).
+- **트리거:** #137(`db-schema-guide.md` 표 갱신)을 처리할 때 **함께** — 그 자리에서 학습 문서의 트리거 설명도 `listings_set_timestamps()` 기준으로 고치고, `set_updated_at()`을 남길지(다른 테이블이 나중에 쓸 공용 함수로) 지울지를 한 번에 정한다. 0020의 주석은 이번 패스에서 실측에 맞게 정정했다(과거 주석은 "다른 테이블도 쓸 수 있다"고 단정했으나 거짓이었다).
+
+### 143. 마이그레이션 게이트가 "재적용"을 한 번도 시험하지 않는다 — 0020이 실제로 그 구멍에 빠졌다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟡 조건부)
+- **위치:** `scripts/check_migrations.py:246-249`(`run_dynamic_checks`가 `ordered`를 **한 번만** 적용한다) · `supabase/migrations/0020_listings_view_count.sql` 6번 블록.
+- **내용:** 이 리포의 마이그레이션은 전부 `add column if not exists`·`create or replace`·`drop ... if exists`로 **재적용 가능하게** 쓰여 있는데, 게이트는 빈 컨테이너에 전량을 1회 적용할 뿐이라 그 성질을 아무도 검사하지 않는다. 실제로 이번 스토리가 그 구멍에 빠졌다 — 0020은 트리거 **이름을 바꾸는** 첫 마이그레이션이라 옛 이름만 `drop if exists` 했고, 이미 0020이 적용된 DB에 다시 적용하면 `ERROR: trigger "listings_set_timestamps" for relation "listings" already exists`로 죽었다(실측 exit 3). `create trigger`엔 `or replace`·`if not exists`가 없어 drop이 유일한 수단이다. 이번 패스에서 `drop trigger if exists listings_set_timestamps`를 추가해 고쳤고 재적용 exit 0을 확인했지만, **그 성질을 지키는 검사는 여전히 없다** — 그 한 줄을 지워도 게이트·pytest·vitest가 전부 초록이다. 재적용이 가상의 시나리오가 아니라는 근거: `docs/deployment-runbook.md:101,125`가 `listings_anon_select`(0011)를 원격에 실제로 재적용한 사례를 기록하고 있다.
+- **왜 지금 안 고치나:** `check_migrations.py`는 게이트 인프라이고, 여기에 2회차 적용 패스를 넣는 것은 조회수 스토리의 범위 밖이다(A3). 넣으면 20개 마이그 전부가 새 계약(멱등)을 지게 되므로, 먼저 전량이 실제로 재적용 가능한지 실측해야 한다.
+- **트리거:** 게이트 구조 자체를 손대는 다음 작업(#22~24가 예약한 Epic 13 게이트 정비) — 그때 `run_dynamic_checks`에 "같은 컨테이너에 전량을 한 번 더 적용하고 exit 0을 요구"하는 2차 패스를 추가한다. 오늘 돌리면 초록이어야 하며, 그렇지 않은 파일이 나오면 그 자체가 발견이다.
+
+### 144. 인기 정렬을 위해 만든 `view_count`에 정렬용 인덱스가 없다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql` 1번 블록(컬럼만 추가, 인덱스 없음). 실측(0020까지 적용): `listings`의 인덱스는 `listings_pkey` **하나뿐**이다.
+- **내용:** 0020 파일 첫머리가 이 컬럼의 존재 이유를 "인기 매물 정렬(Story 11.4)"이라고 명시하는데, 그 정렬을 지탱할 인덱스가 없다. 11.4가 `order by view_count desc limit N`을 쓰면 매물 전량 seq scan + sort가 **랜딩 페이지 모든 요청마다** 돈다. 지금 데이터 규모(103행)에선 무해하다.
+- **왜 지금 안 고치나:** 이 스토리의 AC는 "증가"만 요구하고 노출·정렬은 11.4 몫이다(intent의 Never가 명시). 인덱스 형태(부분 인덱스로 `where status = 'on_sale'`을 걸지 여부)는 11.4의 실제 쿼리 모양을 보고 정해야 추측성 확장이 안 된다(A2).
+- **트리거:** **Story 11.4(인기 매물 그리드) 착수 시 — 그 스토리의 인수조건으로 심을 것**(B5). #134(anon SELECT 화이트리스트)와 **같은 마이그레이션에서 함께** 처리한다: `grant select (view_count) ... to anon` + `create index if not exists listings_view_count_idx on public.listings (view_count desc) where status = 'on_sale';`.
+
+### 145. `view_count`가 `int`라 21억에서 오버플로하고, 그 뒤 해당 매물의 상세 진입은 매번 조용히 실패한다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql` 1번 블록 `view_count int not null default 0` + 2번 블록 `view_count = view_count + 1`.
+- **내용:** `int`(int4) 상한은 2,147,483,647이다. `increment_listing_view`는 `anon`에게 EXECUTE가 열려 있고 레이트리밋·중복제거가 **의도적으로** 없으므로(intent의 Never — 데모 규모 판단), 상한 도달은 이론이 아니라 호출 횟수 문제다. 도달하면 그 행의 RPC가 영구히 `22003 integer out of range`로 실패하는데, `page.tsx`는 실패를 `console.error`로 삼키므로 **화면은 멀쩡하고** 카운터만 21.4억에 고정된 채 요청마다 서버 로그가 오염된다.
+- **왜 지금 안 고치나:** intent-contract가 `int not null default 0`을 **명시**했고 스코프 권한은 intent에 있다(2차 리뷰에서 `bigint` 제안이 같은 이유로 기각됐다). 데모 규모에서 21억 회 호출은 발생하지 않는다.
+- **트리거:** 실사용 트래픽을 받는 서비스로 전환할 때 — 그때 `alter table public.listings alter column view_count type bigint;` 전진 마이그레이션 한 줄로 처리한다(데이터가 적을 때가 압도적으로 싸다). 또는 조회수 남용 방어(intent가 배제한 rate limit·dedup)를 도입하는 자리에서 함께 판단한다.
+
+### 146. 로컬 시드의 명시 컬럼 목록이 "시끄러운 실패"를 "조용한 누락"으로 바꿨고, 나머지 4개 삽입문은 여전히 `select *`다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟡 조건부)
+- **위치:** `supabase/seed-local/02_data.sql:26-46`(`listings` 삽입문 — 25컬럼 하드코딩) · 같은 파일 51·59·65·71줄(`listing_images`·`chat_rooms`·`chat_messages`·`guide_documents`는 그대로 `select * from jsonb_populate_recordset(...)`).
+- **내용:** 0020이 `view_count not null`을 추가하면서 `select *`가 시드를 통째로 죽였고(실측 재현), 이번 스토리가 `listings` 삽입문만 명시 컬럼 목록으로 바꿔 고쳤다. 그 대가로 **실패 모양이 뒤집혔다** — 앞으로 `listings`에 nullable 컬럼이 추가되고 `data/listings.json`에 그 값이 들어와도, 목록에 없으면 **아무 에러 없이 조용히** 비워진 채 시드된다. 기존 `select *`는 같은 상황에서 즉시 깨졌다. 그리고 이 목록은 GRANT 목록 2개(0020의 UPDATE·INSERT 화이트리스트)에 이은 **세 번째 25컬럼 사본**인데, 앞의 둘과 달리 `information_schema`에서 실시간 도출해 대조하는 테스트가 **없다**. 함께: 나머지 4개 삽입문은 손대지 않았으므로(A3 — 이 변경이 깨뜨린 것만 고친다), 그 테이블들 중 하나에 `not null` 컬럼이 추가되면 오늘 겪은 것과 **똑같은 전면 시드 실패**가 재발한다.
+- **왜 지금 안 고치나:** 대안(`data/listings.json` 103행에 `"view_count": 0` 추가)은 다음 컬럼에서 같은 함정을 또 만난다고 스펙이 판단했다. 나머지 4개 테이블엔 오늘 문제가 **없고**(전부 nullable), 없는 문제를 미리 고치는 것은 A2 위반이다. 시드를 도는 CI 잡 자체가 없어(`tests.yml`은 pytest·vitest·flutter만, `migration-gate.yml`은 `check_migrations.py`만) 자동 검사를 붙이려면 새 잡이 필요하다.
+- **트리거:** ① `listings`에 컬럼을 추가하는 **다음 마이그레이션** — 그때 이 목록도 락스텝 갱신 대상이므로 `docs/conventions.md` §4.1 체크리스트에 이 파일을 추가할지 함께 정한다. ② 또는 4개 테이블 중 하나에 `not null` 컬럼을 추가할 때 — 그 자리에서 해당 삽입문도 명시 목록으로 바꾼다.
+
+### 147. `view_count`가 무엇을 세는 값인지 어디에도 정의돼 있지 않다 — 실제로는 "웹 상세 **서버 렌더** 횟수"다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
+- **위치:** `supabase/migrations/0020_listings_view_count.sql`의 `comment on column`("누적 조회수") · `web/src/app/(user)/listings/[id]/page.tsx:38`(`export const dynamic = 'force-dynamic'`) · `docs/conventions.md`(정의 없음).
+- **내용:** 이 라우트는 `force-dynamic`이라 요청마다 서버에서 렌더되고, 렌더될 때마다 RPC가 +1 한다. 그래서 실제 의미는 "몇 명이 봤나"가 아니라 "**서버가 이 페이지를 몇 번 렌더했나**"다 — 새로고침·뒤로가기로 인한 재요청·크롤러 접근이 전부 포함되고, 중복제거도 봇 필터도 없다(intent가 명시적으로 배제). #136이 잡은 왜곡("웹 전용 지표 — Flutter 앱은 안 올린다")보다 **한 단계 앞선 왜곡**이라 별도 항목으로 둔다.
+- **왜 지금 안 고치나:** 이 스토리의 AC는 "상세 진입 시 +1"만 요구하고 표시·라벨은 11.4 몫이다(intent의 Never가 상세 페이지의 조회수 표시 UI를 금지). 정의를 지금 못박아도 소비처가 없어 검증할 대상이 없다.
+- **트리거:** **Story 11.4에서 이 값을 화면에 노출할 때** — 그 시점에 (a) 컬럼 comment와 `docs/conventions.md`에 정의를 한 줄로 못박고("순 방문자가 아니라 웹 상세 서버 렌더 횟수, 중복제거·봇 필터 없음"), (b) UI 라벨을 그 정의에 맞춘다("조회" vs "방문"). #136과 **같은 자리에서 함께** 답한다 — 둘 다 "이 숫자가 무엇을 뜻하는가"라는 한 질문의 다른 면이다. 정의를 나중에 바꾸면 기존 누적값과 섞여 되돌릴 수 없다.

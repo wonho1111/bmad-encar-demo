@@ -201,6 +201,20 @@ export default async function ListingDetailPage({
     console.error('[listings/detail] 판매자 요약 조회 실패:', sellerSummaryError);
   }
 
+  // 조회수 +1 — 상세 페이지 진입 시 정확히 이 한 곳에서만 호출한다(Story 11.1).
+  //   increment_listing_view RPC가 view_count의 유일한 쓰기 통로다(0020) — authenticated의
+  //   컬럼 직접 UPDATE·INSERT, anon의 직접 쓰기는 DB에서 회수돼 있다. 호출마다 항상 +1(멱등
+  //   아님, 의도된 동작) — 지켜야 하는 건 "호출 지점을 여기 하나로 한정"뿐이다(ListingCard 등
+  //   카드 렌더 경로는 호출하지 않음 — viewCountCallSite.test.ts가 이 불변식을 소스 스캔으로 고정).
+  //   실패해도 페이지 렌더는 막지 않는다(sellerSummaryError와 동일 패턴 — 조회수는 핵심 기능이 아님).
+  const { error: viewCountError } = await supabase.rpc('increment_listing_view', {
+    p_listing_id: listing.id,
+  });
+
+  if (viewCountError) {
+    console.error('[listings/detail] 조회수 증가 실패:', viewCountError);
+  }
+
   const title = `[${listing.manufacturer}] ${listing.model}`;
   const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
   const inquiryMode = computeInquiryMode(listing, user);
