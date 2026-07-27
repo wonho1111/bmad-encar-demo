@@ -149,7 +149,7 @@ development_status:
   10-5-찜-wishlist: done
   10-6-판매자-정보-섹션: done
   10-7-신뢰속성-옵션-통합-검증-sm-c: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   # --- Epic 11: AI 히어로 랜딩 + 내비 ---
   epic-11: backlog
