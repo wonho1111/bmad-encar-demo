@@ -89,3 +89,114 @@ create table if not exists storage.objects (
 -- (0012는 이 문을 스스로 켜지 않는다 — 원격에서 소유자가 아닌 롤이 건드리면 실패할 수 있어서다.)
 alter table storage.objects enable row level security;
 -- storage 스텁은 여기까지(Story 9.1, 0012 전용).
+
+-- ── realtime 스키마 최소 스텁 (0023_chat_realtime_broadcast가 참조 — 2026-07-28 로컬 스택 실측 기반, Story 12.2) ──
+--   실측 근거: 로컬 Supabase Docker 스택(포트 55322)에 psql로 직접 접속해 확인(원격이 아니라 로컬인 이유는
+--   storage 스텁 때와 달리 이번엔 로컬 스택이 이미 떠 있어 그걸로 충분했기 때문 — 플랫폼 계약면은
+--   로컬·원격이 동일하다, 둘 다 Supabase가 배포하는 같은 realtime 확장이다):
+--     · `\d realtime.messages` → 컬럼(topic/extension/payload/event/private/updated_at/inserted_at/
+--       id/binary_payload), relrowsecurity=t, 정책 0건(플랫폼 기본이 이미 RLS만 켜둔 상태).
+--     · `information_schema.role_table_grants` → anon/authenticated/service_role에 이미
+--       INSERT/SELECT/UPDATE 테이블 GRANT가 있음(플랫폼 기본 — 그래서 0023이 GRANT를 추가하지 않는다).
+--     · `pg_get_functiondef`로 `realtime.broadcast_changes()`·`realtime.send()`·`realtime.topic()`
+--       정의를 그대로 복사(셋 다 `security definer`가 아니다 — `pg_proc.prosecdef=f`, 소유자는
+--       supabase_admin/supabase_realtime_admin). 0023의 트리거 함수가 SECURITY DEFINER인 이유는
+--       이 함수들 자체가 아니라 마이그레이션을 적용하는 postgres 롤의 `rolbypassrls=true` 속성에
+--       있다(실측: `select rolbypassrls from pg_roles where rolname='postgres'` → t).
+--   "정당한 확장" 기준 충족: 실제 Supabase 플랫폼(로컬·원격 공통)에 있는 걸 스텁이 빠뜨려 red가 나는
+--   경우다(우회 아님) — storage 스텁과 동일한 논리.
+--   ⚠️ 실제 realtime.messages는 `inserted_at` 기준 range 파티션 테이블이다. 이 스텁은 평범한(비파티션)
+--   테이블로 단순화한다 — 어느 마이그도 파티션을 **만들거나 참조하지 않기** 때문이다(storage 스텁이
+--   owner 등 미사용 컬럼을 생략한 것과 같은 원칙, "실제로 건드리는 것만 재현").
+--   ⚠️ 다만 **테스트는 다르다**: 실제 플랫폼에서는 그 시각에 해당하는 파티션이 있어야 방송 INSERT가
+--   성공한다(없으면 `realtime.send()`가 예외를 삼켜 방송만 조용히 사라진다). 비파티션 스텁 위에서는
+--   그 실패 모드가 **구조적으로 발생할 수 없어**, 방송 행 개수를 세는 테스트들이 여기선 항상 초록이다.
+--   즉 "파티션 유지가 자동인가"는 이 프렐류드가 답할 수 없는 질문이고, 원격 확인 항목으로 열려 있다
+--   (`docs/tech-debt.md` #195 ②). 스텁을 파티션 테이블로 바꾸려는 다음 사람은 이 문단부터 읽을 것.
+create schema if not exists realtime;
+
+-- 스키마 USAGE GRANT — 실측: `has_schema_privilege('authenticated', 'realtime'::regnamespace, 'USAGE')`
+-- → t (anon·service_role도 동일). 이게 없으면 authenticated 롤이 realtime.messages를 아예 못 봐
+-- "permission denied for schema realtime"으로 죽는다(테이블 GRANT와 별개 축).
+grant usage on schema realtime to anon, authenticated, service_role;
+
+create table if not exists realtime.messages (
+  id             uuid primary key default gen_random_uuid(),
+  topic          text not null,
+  extension      text not null,
+  payload        jsonb,
+  event          text,
+  private        boolean default false,
+  updated_at     timestamp without time zone not null default now(),
+  inserted_at    timestamp without time zone not null default now(),
+  binary_payload bytea
+);
+
+alter table realtime.messages enable row level security;
+
+grant insert, select, update on realtime.messages to anon, authenticated, service_role;
+
+-- realtime.topic() — 세션 GUC `realtime.topic`을 읽는다(Realtime 서버가 채널 구독 시 이 GUC를
+-- 설정한다). 0023의 RLS 정책이 참조한다.
+create or replace function realtime.topic()
+returns text
+language sql
+stable
+as $$
+  select nullif(current_setting('realtime.topic', true), '')::text
+$$;
+
+-- realtime.send() — broadcast_changes()가 내부에서 호출해 실제로 realtime.messages에 행을 쓴다.
+-- (원본 그대로: private 기본값 true라 chat 트리거처럼 인자 3개만 넘기면 항상 비공개 채널이 된다.)
+create or replace function realtime.send(payload jsonb, event text, topic text, private boolean default true)
+returns void
+language plpgsql
+as $$
+declare
+  generated_id uuid;
+  final_payload jsonb;
+begin
+  begin
+    generated_id := gen_random_uuid();
+    if payload ? 'id' then
+      final_payload := payload;
+    else
+      final_payload := jsonb_set(payload, '{id}', to_jsonb(generated_id));
+    end if;
+    execute format('set local realtime.topic to %L', topic);
+    insert into realtime.messages (id, payload, event, topic, private, extension)
+    values (generated_id, final_payload, event, topic, private, 'broadcast');
+  exception
+    when others then
+      raise warning 'WarnSendingBroadcastMessage: %', sqlerrm;
+  end;
+end;
+$$;
+
+-- realtime.broadcast_changes() — "Broadcast from Database" 패턴의 진입점. 0023의 트리거 함수가
+-- 부른다.
+create or replace function realtime.broadcast_changes(
+  topic_name text, event_name text, operation text, table_name text, table_schema text,
+  new record, old record, level text default 'ROW'
+)
+returns void
+language plpgsql
+as $$
+declare
+  row_data jsonb := '{}'::jsonb;
+begin
+  if level = 'STATEMENT' then
+    raise exception 'function can only be triggered for each row, not for each statement';
+  end if;
+  if operation = 'INSERT' or operation = 'UPDATE' or operation = 'DELETE' then
+    row_data := jsonb_build_object('old_record', old, 'record', new, 'operation', operation, 'table', table_name, 'schema', table_schema);
+    perform realtime.send(row_data, event_name, topic_name);
+  else
+    raise exception 'Unexpected operation type: %', operation;
+  end if;
+exception
+  when others then
+    raise exception 'Failed to process the row: %', sqlerrm;
+end;
+$$;
+-- realtime 스텁은 여기까지(Story 12.2, 0023 전용).
