@@ -315,3 +315,43 @@ _이 절은 **가장 최근 실행(2026-07-28, 후속 리뷰 3차)** 의 결과�
 - **pgvector 의존 구문 미검증** — 스크래치 재현에서 `vector(768)`·hnsw 인덱스를 무력화했으므로 그 부분은 이 세션에서 확인되지 않았다.
 
 **잔여 위험:** 대장 #130~#147. 이번 패스가 새로 연 것은 #141~#147이며, 그중 주의할 둘은 **#143**(게이트가 재적용을 안 봐서 이번 스토리가 실제로 그 구멍에 빠졌다 — 지금은 고쳐졌지만 지키는 검사가 없다)과 **#146**(시드 컬럼 목록의 조용한 누락 + 나머지 4개 삽입문에 같은 함정이 남아 있다)이다. **#138**은 병합 전에 반드시 답해야 한다 — `develop` 병합 시 CI가 이 브랜치에서 처음 도는데 이 스토리와 무관한 이유로 red가 난다. 전부 낮음~중간 심각도이며 이 스토리를 막지 않는다.
+
+---
+
+## 원격 적용 전 원문 스냅샷 (2026-07-28, 배포런북 §7-1-b)
+
+`0020_listings_view_count.sql`은 **기존 객체를 교체**한다(트리거 `listings_set_updated_at` drop + 테이블 GRANT 재구성). 런북 §7-1-b가 *"적용 전에 원격의 현재 원문을 떠서 스토리에 붙인다"* 를 요구하므로(Story 9.7에서 원문이 남지 않아 되돌려 확인할 수 없었던 사고가 근거), **원격 `encar-demo`(psrnsasxpkpwqdukjdmt)의 적용 직전 상태**를 아래에 보존한다.
+
+### 교체 대상 트리거 (0020이 drop한다)
+```sql
+CREATE TRIGGER listings_set_updated_at BEFORE UPDATE ON public.listings
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()
+```
+
+### 그 트리거가 쓰던 공유 함수 (0020은 이 함수를 **건드리지 않는다**)
+```sql
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+begin
+  new.updated_at := now();
+  new.created_at := old.created_at;
+  return new;
+end;
+$function$
+```
+→ 0020 적용 후 이 함수는 **참조 트리거 0건의 고아**가 된다(대장 `#142`가 이미 등재한 사실을 원격에서도 확인).
+
+### 함께 존재하는 트리거 (0020이 건드리지 않음 — 회귀 감시 대상)
+```sql
+CREATE TRIGGER listings_set_seller_name BEFORE INSERT ON public.listings
+  FOR EACH ROW EXECUTE FUNCTION set_listing_seller_name()
+```
+
+### 적용 직전 컬럼 GRANT (0020이 재구성한다)
+- `authenticated` INSERT/UPDATE — **25개 컬럼 전량 보유**(`view_count`는 아직 없음). 0020이 테이블 단위 권한을 회수하고 같은 25개를 다시 부여한다 → **회귀 없음**을 이 목록으로 대조할 수 있다.
+- `anon` INSERT/UPDATE — **25개 컬럼 전량 보유**. 0020의 5번 블록이 이것을 회수한다(정당한 쓰기 경로가 없으므로). 0020 주석의 *"실측: anon이 쓰기 권한을 갖고 있다"* 가 원격에서도 사실임을 확인.
+- `anon` SELECT — 20개 컬럼(`embedding`·`updated_at` 제외). **`view_count`가 없다** = 대장 `#134`가 경고한 상태 그대로이며, `0021`이 이것을 고친다.
+- `anon`/`authenticated` REFERENCES — 25개 컬럼 보유. 0020·0021 모두 이 축을 건드리지 않는다(대장 `#139`가 등재한 잔여 권한).

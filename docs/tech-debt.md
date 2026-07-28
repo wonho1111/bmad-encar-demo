@@ -1819,7 +1819,14 @@
 - **위치:** `.github/workflows/tests.yml`(web 잡은 `lint`+`vitest`만) · `web/playwright.config.ts` · `web/e2e/*.spec.ts`.
 - **내용:** Story 11.5가 레포 최초의 Playwright E2E 스위트를 세웠지만, `npm run test:e2e`를 CI에서 자동으로 돌리는 job은 만들지 않았다(스펙 Never 항목 — "로컬 재실행 가능성(#86)까지가 이 스토리의 범위"). 그래서 지금은 `web/e2e/**`를 건드리는 PR이 push돼도 이 스위트가 자동으로 검증되지 않고, 사람이 로컬에서 `npm run test:e2e`를 직접 돌려야만 한다.
 - **왜 지금 안 고치나:** CI에서 Playwright를 돌리려면 (a) 헤드리스 Chromium 설치(`npx playwright install --with-deps chromium`), (b) 로컬 Supabase 스택을 CI 컨테이너 안에서 기동(마이그레이션 전량 적용 + 시드), (c) `web/.env.local` 대응 시크릿(anon key 등) 관리가 추가로 필요하다 — 이미 `api-db` 잡이 하는 "실DB 컨테이너 기동" 패턴을 재사용할 수는 있지만, 세 가지를 한 번에 결정하는 것은 이 스토리(E2E 스펙 작성) 범위를 넘는 별도 인프라 작업이다.
-- **트리거:** 배포 전 게이트 요건이 생기는 시점(예: `main` 병합 전 반응형 회귀를 자동으로 막아야 할 필요가 생길 때) — 그때 `.github/workflows/tests.yml`에 `e2e` 잡을 신설하고, `services.postgres`(`api-db` 잡 패턴) 위에 Supabase 프렐류드+마이그레이션+최소 시드를 얹은 뒤 `npm run test:e2e`를 돌린다.
+- **✎ 2026-07-28 실측으로 범위 정정 (사용자가 "CI에 붙이자"고 결정한 뒤 착수 직전 조사):** 위 (a)(b)(c) 중 **(b) 시드가 진짜 장벽**이고, `api-db` 잡 패턴 재사용만으로는 **안 된다.**
+  - **`api-db` 패턴으로 부족하다** — 그 잡은 **맨 Postgres** 컨테이너다(psycopg 직결). 그런데 웹앱은 `supabase-js`로 **PostgREST·GoTrue(인증)** 에 붙는다(`NEXT_PUBLIC_SUPABASE_URL`). 즉 E2E엔 Postgres가 아니라 **Supabase 스택 전체**가 필요하다 → CI에서 `supabase start`(CLI)가 필요하고, 이는 `api-db`가 하는 일과 다른 종류다.
+  - **커밋된 시드가 E2E 요구를 못 채운다(실측):** `web/e2e/helpers.ts:8`의 `SEED_USER`는 **`buyer@test.com`** 인데 `supabase/seed.sql`이 만드는 계정은 `admin@test.com`·`seller-seed@test.com`·`seller@test.com` **3개뿐이고 buyer는 없다**(grep 0건). 또 `helpers.ts:141`이 `listing_images`를 REST로 조회해 사진 있는 매물을 찾는데 `seed.sql`은 `listing_images`를 **한 건도 넣지 않는다**(grep 0건).
+  - **풍부한 데이터 경로는 CI에서 쓸 수 없다** — 그건 `scripts/seed-local.sh`인데 **운영 스토리지에서 사진을 내려받고** `supabase/.env.seed`(gitignore, 평문 비번)를 요구한다. CI에 운영 자격증명을 넣는 것은 이 워크플로 상단의 **"secrets를 넣지 마라"** 규칙과 정면 충돌한다.
+  - **`web/.env.dev`·`.env.local`도 gitignore**라 CI가 직접 만들어야 한다(로컬 스택 anon 키는 고정값이라 `supabase status`로 얻을 수 있어 이건 장벽 아님).
+  - **결론:** "잡 하나 추가"가 아니라 **CI 전용 시드 픽스처를 새로 만드는 작업**이다 — `buyer@test.com` 계정 + 사진 1장 이상이 붙은 매물이 필요하고, 사진은 레포에 픽스처 파일로 커밋하거나 CI에서 생성해 로컬 스토리지에 업로드해야 한다. `seed.sql`을 고치면 **운영 시드 경로에도 영향**이 가므로 별도 파일(`supabase/seed-ci.sql`)이 맞는지까지 설계 판단이 필요하다.
+  - ⚠️ **시드 없이 잡부터 붙이면 첫 실행부터 빨간불이고**, 그건 "검사가 있는데 아무도 안 믿는" 최악을 만든다 — 붙이는 순서가 중요하다.
+- **트리거:** **스토리로 만들어 처리한다(사용자 의사: CI에 붙이길 원함).** 순서 = ①CI 전용 시드 픽스처(`buyer@test.com` + 사진 1장 매물) → ②`supabase start` 기반 `e2e` 잡 신설 → ③처음엔 `continue-on-error: true`로 **비차단** 운영하며 flaky 여부 관찰 → ④안정 확인 후 필수 게이트로 승격.
 
 ### 169. 채팅방 메시지 입력창도 `#84`와 동일한 원인으로 390px에서 가로로 넘친다 (2026-07-28 Story 11.5 코드리뷰 verification-gap 지적, 🟢 품질)
 - **위치:** `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx:174`(입력창 `<input>` — `flex-1` + 기본 `size` 힌트, 컨테이너는 `max-w-2xl`+`mx-auto`인 `<main>`).
@@ -1895,4 +1902,5 @@
 - **⚠️ 오해 금지 — "리뷰가 전혀 없었다"는 아니다:** `bmad-dev-auto`는 세션 **안에** 자체 리뷰 단계(step-04)를 갖고 있고 그건 돌았다. 11-4에선 그 자체 리뷰가 `fetchSection`을 `try/catch`로 감싸는 패치를 냈다. 건너뛴 것은 **별도 세션으로 도는 opus 독립 리뷰**다. 자기 코드를 자기가 보는 것과 다른 세션이 보는 것의 차이이고, 이 프로젝트는 그 차이를 이미 규칙으로 인정하고 있다(CLAUDE.md B4 *"코드리뷰는 새 세션에서 돈다 — 작업한 세션이 자기 작업을 보면 같은 사각지대를 갖는다"*).
 - **왜 지금 무해한가(확정 아님):** 11-4의 마이그레이션 `0021`은 **사후에 사람이 읽어 확인**했다 — GRANT 1줄 + 부분 인덱스 1개로 좁고, `#134`가 요구한 내용과 정확히 일치하며, 근거가 주석에 남아 있다. 즉 이번 건은 결과적으로 문제없다. **문제는 결과가 아니라 "그 판단을 아무도 강제하지 않았다"는 구조다.**
 - **왜 이 에픽에서 안 고쳤나:** 정책은 도는 런에 실시간 반영되지 않고(#123 경위), 발견 시점에 남은 스토리가 11-4·11-5뿐이라 바꿔도 적용될 자리가 없었다.
-- **트리거:** **다음 무인 에픽 착수 전 — 사용자 판단 필요(정책 결정이라 dev 자율 아님).** 선택지: (a) 현행 유지(토큰 절약 우선) (b) `trigger = "always"`로 복귀 (c) **조건부** — `supabase/migrations/**`가 diff에 있으면 `recommended`와 무관하게 독립 리뷰 강제. (c)가 이 프로젝트 규칙과 가장 정합적이다 — CLAUDE.md B3이 *"DB는 되돌리기가 없다"* 로 마이그레이션을 가장 무거운 축으로 다루는데, 정작 그 축에서 검토를 아끼는 것은 앞뒤가 안 맞는다. 다만 bmad-loop이 diff 조건부 트리거를 지원하는지는 **미확인**(추측 금지 — 착수 시 실측할 것).
+- **✅ 결정됨 (2026-07-28, 사용자): (d) 하이브리드.** 평소는 `trigger = "recommended"` 유지, **마이그레이션이 예정된 런만 `always`로 시작**한다. (c)(diff 조건부 강제)는 **엔진이 지원하지 않음이 확정** — `REVIEW_TRIGGER_MODES = {"always","recommended"}` 둘뿐이다(`bmad_loop/policy.py` 실측). 첫 적용 지점 = **Epic 12**(`12-1 멱등키 마이그레이션`으로 시작하므로 그 런을 `always`로 띄운다).
+- **트리거(잔여):** Epic 12 착수 시 그 런을 `always`로 띄웠는지 확인하고, 끝나면 "마이그 스토리에 독립 리뷰가 실제로 붙었는지"를 로그로 확인해 이 항목을 닫는다. 선택지: (a) 현행 유지(토큰 절약 우선) (b) `trigger = "always"`로 복귀 (c) **조건부** — `supabase/migrations/**`가 diff에 있으면 `recommended`와 무관하게 독립 리뷰 강제. (c)가 이 프로젝트 규칙과 가장 정합적이다 — CLAUDE.md B3이 *"DB는 되돌리기가 없다"* 로 마이그레이션을 가장 무거운 축으로 다루는데, 정작 그 축에서 검토를 아끼는 것은 앞뒤가 안 맞는다. 다만 bmad-loop이 diff 조건부 트리거를 지원하는지는 **미확인**(추측 금지 — 착수 시 실측할 것).
