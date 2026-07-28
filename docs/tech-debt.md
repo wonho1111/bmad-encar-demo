@@ -2013,4 +2013,12 @@
 - **실측으로 갈랐다(코드 결함 아님):** 이월된 12-2의 보존 브랜치(`attempt-preserve/20260728-203648-2fc6-808e3ab1`, 3커밋 1,289줄)를 체크아웃해 재보니 **똑같이 깨졌고**, **베이스라인(`fbdd5a0`, 12-1 완료 시점)으로 돌아가도 똑같이 깨졌다** → 코드가 아니라 환경이다. `websockets<16`(15.0.1) 재설치 후 베이스라인 `206 passed`, 12-2 보존본은 **5개 게이트 전부 통과**(api 209 passed / lint 0 / vitest 239 / flutter analyze 0 issues / flutter test 80).
 - **뿌리는 규칙의 공백이다:** CLAUDE.md B4가 *"검증용 데이터는 넣고 반드시 원복한다"* 고 못박은 것은 **DB 데이터**뿐이다. **실행 환경(패키지·전역 설정)에는 같은 규칙이 없다.** 에이전트는 "테스트를 위해 잠깐 지웠다가 되돌린다"를 데이터에선 지키지만 환경에선 안 지킨다 — 지키라고 적힌 적이 없기 때문이다.
 - **왜 지금 안 고치나:** 환경 자체는 즉시 복구했다(`websockets 15.0.1`, `pip check` 충돌 0). 남은 것은 **재발 방지**인데, 두 가지 축 중 무엇을 택할지 판단이 필요하다: (a) 규칙 축 — CLAUDE.md/스킬 프롬프트에 "환경도 원복" 조항을 넣는다(주석·문서는 계약이 아니다, B9 — 약함) · (b) 구조 축 — verify 게이트 앞에 **환경 무결성 검사**(`pip check` + 핵심 import 스모크)를 넣어 **깨진 환경을 코드 실패로 오인하지 않게** 한다(B9에 맞음, 다만 게이트가 느려지고 "환경 실패"와 "코드 실패"를 엔진이 구분해 주지 않으면 이월 처리가 여전히 잘못된다).
+- **✎ 2026-07-29 추가 발견 — 이월 사유 문구가 원인을 가린다(같은 사고의 두 번째 얼굴):** 이 사고를 진단하는 데 시간이 걸린 이유는 엔진이 남긴 사유가 **`"review did not converge within budget (still recommending a follow-up pass)"`** 였기 때문이다. 그 문구만 보면 "리뷰 사이클을 늘려야 하나?"로 읽힌다 — 실제로 그렇게 오독해서 `max_review_cycles`를 올리는 안을 세웠다가 사용자가 되물어 바로잡았다. **엔진 소스 실측**(`engine.py:1631` 주변)으로 확정한 진짜 분기는 이것이다:
+  ```python
+  if refileable_followup and not self._isolated and self._verify_review(task).ok:
+      self._record_review_budget_followup(task); self._commit(task); return   # ← 12-1이 탄 길
+  self._defer(task, "review did not converge within budget (...)")            # ← 12-2가 탄 길
+  ```
+  두 스토리의 **유일한 차이는 `_verify_review(task).ok`**(= frontmatter status==done AND sprint==done AND **verify 명령 통과**)였다. 즉 12-1·12-2 **둘 다** 리뷰 2회를 돌고 **둘 다** "후속 필요"라고 했지만, 12-1은 검증이 초록이라 *"예산 소진 → 커밋하고 후속은 deferred-work로 이관"* 으로 갔고 12-2는 검증이 빨간불이라 이월됐다. **리뷰 사이클 수는 애초에 원인이 아니었다.** 소스 주석은 이 경우를 *"(b) … verify failing: a genuine failure"* 로 명확히 구분해 두었는데 **사유 문구엔 그게 드러나지 않는다.**
+  아울러 같은 오독을 유발한 것이 하나 더 있다: `[token-budget-exceeded]`(12-1, weighted 9.92M > 상한 2M). 이건 `advance(task, Phase.DONE)` **이후에** 찍히는 **순수 로그**이고 뒤에 어떤 분기도 없다(`engine.py:1696`) — 아무것도 멈추지 않는다. `max_tokens_per_story`는 현재 **관측 신호일 뿐 제어값이 아니다**(다만 매 스토리가 5배씩 넘겨 신호로서도 무의미해진 상태다).
 - **트리거:** **Epic 12 재개 직전**(같은 일이 남은 4스토리에서 반복될 수 있다) — 최소한 (b)의 값싼 판본, 즉 `[verify] commands` 맨 앞에 `bash -lc 'cd api && .venv/bin/pip check'`를 넣는 것부터 검토한다. 그리고 **Epic 12 회고에서 (a)/(b) 중 어느 축으로 못박을지 결정**한다.
