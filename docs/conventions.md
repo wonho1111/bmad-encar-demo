@@ -409,3 +409,86 @@ CLAUDE.md B3는 *"DB 변경은 더하기만 — 기존 걸 지우거나 바꾸�
 
 희소 판정은 별도 목록을 두지 않고 §11.2의 high 티어를 그대로 쓴다 — `isRareOption(name)`이
 true(= high 티어 소속)면 전체 옵션 목록에서 그 항목에 "희소" 태그를 붙인다.
+
+## 12. 채팅 실시간 구독 계약 (Story 12.3)
+
+Story 12.3이 웹의 3초 폴링을 걷어내고 `supabase/migrations/0023_chat_realtime_broadcast.sql`이
+놓은 Broadcast+RLS 토대를 처음 소비한다. 이 절은 **그 소비 규칙의 단일 출처**다 — Epic 16
+Story 16.4(Flutter 앱 미러링)가 같은 계약을 그대로 따라야 하므로, 값이 바뀌면 이 문서를 먼저
+고치고 web·app 양쪽에 반영한다.
+
+⚠️ **이 절은 §1 `EMBEDDING_DIM`·§7 `CHAT.MESSAGE_MAX_LENGTH`와 강제 방식이 다르다.** §1·§7은 코드가
+**실제로 import해서 쓰는 공유 상수 하나**라 한쪽만 고치면 타입 불일치·빌드 실패로 드러난다. 반면
+§12.1의 토픽 형식은 언어가 달라 공유가 불가능하고, **서로 다른 세 곳에 각자 따로 쓰인 문자열
+리터럴**로 존재한다:
+
+1. `supabase/migrations/0023_chat_realtime_broadcast.sql` — 트리거(방송)와 RLS 정책(구독 인가)
+2. `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`의 `roomTopic()` — 구독
+3. `api/tests/integration/test_chat_realtime_broadcast_real_db.py`의 `_TOPIC_PREFIX` — 실DB 검증
+
+한쪽만 바뀌어도 컴파일도 lint도 통과하므로, 이 계약은 문서가 아니라 **실행되는 검사**로 고정한다
+(CLAUDE.md B9): `web/src/app/(user)/chat/[roomId]/__tests__/roomTopicContract.test.ts`가 세 사본을
+읽어 같은 문자열인지 단언하고 `private: true` 구독도 함께 확인한다 — `npm test`(vitest)에 포함되므로
+CI에서 매 push마다 돈다. 값을 바꿀 땐 세 곳을 함께 고치고, 그 검사가 green인지 확인한다.
+Epic 16.4가 Dart로 네 번째 사본을 만들면 그 검사에 한 줄을 더한다.
+
+### 12.1 구독 토픽 형식
+
+- **`` `chat:room:${roomId}` ``** — 0023의 트리거(`'chat:room:' || new.room_id::text`)·RLS
+  정책(`'chat:room:' || r.id::text = realtime.topic()`) 리터럴과 **문자 그대로** 동일해야 한다.
+  한쪽만 바뀌면 조용히 깨진다(방송은 계속 나가는데 아무도 못 듣거나, 반대로 존재하지 않는 방
+  이름으로 구독을 시도하게 된다) — 값을 바꿀 땐 세 곳을 함께 고치고, 위 도입부가 가리키는
+  `roomTopicContract.test.ts`가 green인지 확인한다(그 검사가 이 일치를 고정한다).
+- web `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`의 `roomTopic()` 헬퍼가 이 형식을
+  만든다. app이 같은 상수를 따로 두게 되면(Epic 16.4) 이 문자열 템플릿을 그대로 옮긴다.
+
+### 12.2 private 채널 + setAuth 타이밍
+
+- `supabase.channel(topic, { config: { private: true } })`로 구독한다 — `private: true`가
+  있어야 Realtime 서버가 `realtime.messages` RLS(0023)를 실제로 평가한다.
+- **구독(`channel.subscribe()`) 전에** 현재 세션의 access token으로
+  `supabase.realtime.setAuth(token)`을 호출한다(Realtime Broadcast Authorization 공식 패턴) —
+  RLS의 `auth.uid()`가 이 토큰에서 나온다. 순서를 지키지 않으면(구독 후 setAuth) 첫 구독 시도가
+  무인가 상태로 나가 거부될 수 있다.
+- `onAuthStateChange`(토큰 갱신)마다 **다시** `setAuth`를 호출한다 — 세션이 길어져 access token이
+  회전되는 동안 구독이 만료된 토큰으로 굳지 않게 한다. (참고: `@supabase/supabase-js` 클라이언트
+  자체도 `TOKEN_REFRESHED`/`SIGNED_IN`에서 내부적으로 비슷한 재동기화를 하지만, 초기 로드 시점의
+  최초 `setAuth`는 이 규칙이 명시적으로 책임진다 — 내부 동작에 기대지 않는다.)
+
+### 12.3 payload 파싱 규칙
+
+- 구독 콜백은 `channel.on('broadcast', { event: 'INSERT' }, (message) => { ... })` 형태다.
+  `chat_messages_broadcast()` 트리거(0023)가 매 INSERT마다 이 이벤트로 방송한다(UPDATE/DELETE는
+  이 테이블에 없다 — 0003 헤더: chat_messages는 영속·불변).
+- **신규 행은 `message.payload.record`에 실려 온다**(Realtime의 `realtime.broadcast_changes()`
+  payload 계약 — `record`=신규 행, `old_record`=NULL(AFTER INSERT라 항상)). 이 행을 그대로 기존
+  `mergeIncoming`(dedupeById + `(created_at, id)` 정렬)에 합류시킨다 — **도착 순서가 아니라 정렬
+  결과로 렌더한다**(방송이 초기 로드보다 먼저 도착해도, 늦게 와도 최종 화면은 항상 시간순).
+- 방 진입 시 1회 전체 `fetchMessages` 로드는 그대로 유지한다 — 구독 이전에 쌓인 과거 메시지를
+  보여줄 유일한 경로다. 그 이후 주기 재조회(폴링)는 없다.
+- **그 전체 로드는 "최초 `SUBSCRIBED`" 때 한 번 더 돌려 구독 시작점까지 닿게 한다.** 첫 조회는
+  구독보다 먼저 나가므로(`getSession`→`setAuth`→웹소켓 join이 끝나기 전) 그 틈에 들어온 INSERT는
+  조회 응답에도 없고 방송으로도 오지 않는다 — 폴링이 없어 복구 경로가 새로고침뿐이라 그대로 두면
+  조용한 영구 유실이 된다. **재연결 때마다 도는 갭 보정이 아니다**(그건 Story 12.4 범위) —
+  최초 1회로 한정한다.
+
+### 12.4 멱등 전송(client_message_id)
+
+- `sendMessage`(`web/src/lib/messages.ts`)는 매 전송마다 호출부가 만든 `client_message_id`
+  (`crypto.randomUUID()` 관례)를 INSERT에 싣는다. DB의 `UNIQUE(room_id, client_message_id)`
+  (`chat_messages_room_client_message_unique`, 0022)가 같은 키의 재INSERT(네트워크 재시도)를
+  `23505`로 거부한다.
+- `sendMessage`는 `23505`를 에러로 올리지 않고 `(room_id, client_message_id)`로 **기존 행을
+  조회해 그 행을 반환**한다 — 클라이언트 입장에서 재전송은 항상 "성공(그 행으로 수렴)"으로
+  보인다. `chat_messages`엔 정확히 1행만 남는다.
+- 화면은 전송 시작 시점(요청을 보내기 전)에 이미 `client_message_id`를 만들어 pending 버블을
+  띄운다 — "자기 `sendMessage` 응답"과 "브로드캐스트 에코" 중 같은 키를 가진 실제 행이 **먼저
+  도착하는 쪽**으로 pending을 확정한다(레이스 대비 이중 경로, 늦게 오는 쪽은 이미 지워진
+  pending과 dedupeById가 중복 렌더를 막는다).
+- `client_message_id`는 nullable이다 — 0022 이전(Story 12.3 도입 이전) 행은 `NULL`로 남는다.
+  그래서 매칭은 **"기다리는 키가 있을 때만"** 한다 — 가드를 `pending` 쪽에 건다:
+  `if (pendingIdRef.current && record.client_message_id === pendingIdRef.current)`.
+  등호만 쓰면 `null === null`이 참이라 옛 행 두 건이 서로 같은 전송으로 오인된다. 가드를 `record`
+  쪽(`record.client_message_id != null`)에 걸어도 그 오인 자체는 막히지만, 정작 "확정할 pending이
+  없는데 매칭 분기에 들어가는" 경우를 못 막으므로 **pending 쪽이 정본**이다.
+  (Epic 16.4가 Dart로 옮길 때 이 순서를 그대로 따른다.)

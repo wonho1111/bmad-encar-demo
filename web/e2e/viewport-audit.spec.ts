@@ -17,6 +17,7 @@ import {
   assertNoHorizontalOverflow,
   assertSingleLine,
   buildMockListings,
+  fetchChatRoomIdForSeedUser,
   fetchOnSaleListingIdWithPhoto,
   login,
   mockAiSearch,
@@ -148,6 +149,26 @@ test.describe('상세(/listings/[id]) — 가로스크롤 없음 + CTA 무결성
     const contactCta = inquiryCtaVisible.first();
     await assertSingleLine(contactCta);
   });
+});
+
+test.describe('채팅방(/chat/[roomId]) — 가로 오버플로 없음 (대장 #169, Story 12.3)', () => {
+  test('로그인 사용자, 시드 채팅방 진입', async ({ page }) => {
+    await login(page);
+    const roomId = fetchChatRoomIdForSeedUser();
+    await page.goto(`/chat/${roomId}`);
+    await page.waitForLoadState('networkidle');
+    await assertNoHorizontalOverflow(page);
+    // #84·#169와 동일 원인(mx-auto 부모의 max-content 계산이 input 기본 size 힌트를 반영) — 입력창이
+    // 2줄로 밀리지 않는지 실측한다(D5).
+    await assertSingleLine(page.getByLabel('메시지 입력'));
+  });
+  // ⚠️ 이 케이스가 **안 보는 것**: 시드 방의 메시지는 전부 짧아(최대 20자) **버블** 오버플로는
+  //   여기서 잡히지 않는다. 코드리뷰 중 긴 URL 한 건을 실제로 넣어보니 위 단언이 red가 됐다
+  //   (scrollWidth 672 > clientWidth 390 — 공백 없는 문자열은 `whitespace-pre-wrap`만으로는 안
+  //   쪼개진다). 그 조건을 이 스위트 안에서 만들려면 공유 로컬 DB에 행을 넣어야 하는데, 이 파일은
+  //   3개 뷰포트 프로젝트가 **동시에** 도는 구조라 한쪽의 삽입이 다른 쪽 읽기에 새어 들어가
+  //   무관한 케이스까지 red로 만든다(실측). 그래서 버블 줄바꿈 계약은 CI에서도 도는 소스 스캔
+  //   (`src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts`)으로 고정했다.
 });
 
 test.describe('/ai — 가로 오버플로 없음 (#84) + 입력 폼·카드 무결성', () => {

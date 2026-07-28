@@ -79,7 +79,7 @@ web·app·api·db 경계를 가로지르는 값은 **전부 거기 정의돼 있
 
 ### 8. 채팅 무결성은 DB로 못박는다
 → 길이 계약의 **정본: `docs/conventions.md` §7.** 구현 측 규칙: `buyer_id <> seller_id` CHECK + BEFORE INSERT 트리거가 **클라가 보낸 `seller_id`를 매물 실소유자로 강제 덮어씀**(위조 차단). **UI 숨김에만 의존하지 않는다.**
-- 현재 전송 방식(폴링 주기 등)은 **코드가 정본**이다 — `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`의 `POLL_INTERVAL_MS`. 숫자를 문서에 적지 않는다(Epic 12가 Realtime으로 전환 예정).
+- 현재 전송 방식의 **계약 정본은 `docs/conventions.md` §12**(구독 토픽 형식·private+setAuth 타이밍·payload 파싱·멱등 전송). Story 12.3에서 web은 폴링(`POLL_INTERVAL_MS`)을 걷어내고 Realtime 구독으로 전환했다 — 그 상수는 더 이상 없다. 앱(Flutter)은 아직 폴링이며 Epic 16 Story 16.4에서 §12를 미러링한다.
 
 ### 9. web 폴더·경로 규칙
 - 라우트 그룹: `app/(auth)` · `app/(user)` · `app/(admin)`. `components/{ai,auth,layout,listings,ui}`, `lib/{api,auth,supabase}`.

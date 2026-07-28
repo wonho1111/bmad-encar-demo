@@ -230,6 +230,37 @@ export async function fetchOnSaleListingIdWithPhoto(): Promise<string> {
   return rows[0].listing_id;
 }
 
+/** SQL 문자열 리터럴용 작은따옴표 이스케이프(`write-flows.spec.ts`의 동명 헬퍼와 같은 관례). */
+function sqlLit(s: string): string {
+  return s.replace(/'/g, "''");
+}
+
+/**
+ * `SEED_USER`(buyer@test.com)가 구매자로 참여하는 채팅방 id 하나를 로컬 DB에서 조회한다
+ * (viewport-audit의 채팅방 케이스 — 대장 #169 이행, Story 12.3).
+ *
+ * `fetchOnSaleListingIdWithPhoto`와 달리 REST(anon 키)로는 못 가져온다 — `chat_rooms`는 당사자
+ * 한정 RLS(`chat_rooms_select_participant`)라 anon 키로는 0건이다. 당사자 토큰을 Node에서 따로
+ * 발급받는 길도 있지만(이 파일의 `SEED_USER`엔 비밀번호가 있다), 같은 파일의 다른 시드 조회
+ * 헬퍼들이 이미 쓰는 `runPsql`(로컬 DB 슈퍼유저 접속) 패턴을 그대로 따른다 — 이 스위트는 어차피
+ * 로컬 스택 전용이고, 조회 하나 때문에 헬퍼마다 인증 경로를 새로 만들지 않기 위해서다.
+ *
+ * `order by created_at asc`로 정렬해 결정적으로 같은 방을 고른다(정렬 없는 limit=1은 실행마다 다른
+ * 행을 줄 수 있어 실패가 재현되지 않는다).
+ */
+export function fetchChatRoomIdForSeedUser(): string {
+  const roomId = runPsql(
+    `select cr.id from chat_rooms cr join auth.users u on u.id = cr.buyer_id ` +
+      `where u.email = '${sqlLit(SEED_USER.email)}' order by cr.created_at asc limit 1;`,
+  );
+  if (!roomId) {
+    throw new Error(
+      `${SEED_USER.email}가 구매자로 참여한 채팅방이 로컬 DB에 없습니다 — scripts/seed-local.sh를 실행하세요.`,
+    );
+  }
+  return roomId;
+}
+
 // /ai/search 목업 응답에 쓸 매물 카드 최소 계약(ListingCardData 7필수필드 + image_path/count).
 export type MockAiListing = {
   id: string;

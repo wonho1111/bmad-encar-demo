@@ -245,3 +245,10 @@ source_spec: `spec-12-1-멱등키-마이그레이션.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260728-203648-2fc6; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-6: Follow-up review still recommended for 12-3-실시간-송수신-전환-폴링-제거 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-12-3-실시간-송수신-전환-폴링-제거.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
