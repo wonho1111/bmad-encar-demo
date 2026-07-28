@@ -878,7 +878,7 @@ So that 대화 기록이 깨끗하게 유지된다.
 
 **Acceptance Criteria:**
 
-**Given** chat 멱등키 마이그레이션(아키텍처 논리라벨 0016) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**(Epic 10~11이 먼저 쓰는 장수만큼 밀린다)
+**Given** chat 멱등키 마이그레이션(아키텍처 논리라벨 0016) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**(Epic 10~11이 먼저 쓰는 장수만큼 밀린다) *(✎ 2026-07-28 실측: `supabase/migrations/`는 `0001`~`0021`이 **빈 번호 없이 연속으로 차 있다** — Epic 10이 `0016_chat_room_integrity`까지, Epic 11이 `0021_listings_view_count_anon_grant`까지 썼다. 따라서 **다음 빈 번호는 `0022`**이고, 위 논리라벨 `0016`·`0017`·`0018`을 그대로 파일명에 쓰면 **기존 파일과 충돌한다**. 착수 시점에 다시 세어 확인할 것 — 이 각주도 그때 낡을 수 있다.)*
 **When** 적용하면
 **Then** `chat_messages.client_message_id` + **`UNIQUE(room_id, client_message_id)`**(CR1) + `ON CONFLICT DO NOTHING`이 추가되고 self-contained하다
 **And** 기존 0003c BEFORE INSERT 트리거(seller_id 강제)·0010 2000자 제약과 충돌하지 않음을 검증한다(동일 키 2회 INSERT → 행 1개·트리거 부작용 0)(AC-CHAT-1)
@@ -892,7 +892,7 @@ So that 남의 대화가 새지 않고 안전하게 채팅한다.
 
 **Acceptance Criteria:**
 
-**Given** chat realtime broadcast 마이그레이션(아키텍처 논리라벨 0017) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**
+**Given** chat realtime broadcast 마이그레이션(아키텍처 논리라벨 0017) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다** *(✎ 2026-07-28 실측: `supabase/migrations/`는 `0001`~`0021`이 **빈 번호 없이 연속으로 차 있다** — Epic 10이 `0016_chat_room_integrity`까지, Epic 11이 `0021_listings_view_count_anon_grant`까지 썼다. 따라서 **다음 빈 번호는 `0022`**이고, 위 논리라벨 `0016`·`0017`·`0018`을 그대로 파일명에 쓰면 **기존 파일과 충돌한다**. 착수 시점에 다시 세어 확인할 것 — 이 각주도 그때 낡을 수 있다.)*
 **When** 적용하면
 **Then** `realtime.broadcast_changes` 트리거 + `realtime.messages` RLS + private 채널이 구성되고, 토픽 형식은 `chat:room:{room_id}`로 트리거·RLS·클라 구독 **3곳이 동일**하다(불일치 시 인증·수신 붕괴)
 **And** `realtime.messages` RLS가 토픽을 파싱해 **요청자가 그 room의 buyer/seller인지** 검사한다(AC-CHAT-3, private 채널 + setAuth 전제)
@@ -908,7 +908,8 @@ So that 판매자와 실시간으로 대화한다.
 
 **Given** Realtime 구독(12.2)
 **When** 메시지를 주고받으면
-**Then** 기존 4초 증분 폴링이 제거되고 구독으로 즉시 반영된다(FR40, FR20 개정)
+**Then** 기존 증분 폴링이 제거되고 구독으로 즉시 반영된다(FR40, FR20 개정) *(✎ 2026-07-28 실측 정정: 원문은 "4초 폴링"이라 적었으나 실제 코드는 `ChatRoomMessages.tsx:30`의 `POLL_INTERVAL_MS = 3000`, 즉 **3초**다 — 착수 시 이 상수를 찾아 지우면 된다)*
+**And** **대장 `#169` 이행** — 이 스토리가 `ChatRoomMessages.tsx`를 대수술하므로 그 트리거가 여기서 발동한다: 390px에서 메시지 입력창이 가로로 넘치는 문제(실측 `scrollWidth=402` vs `clientWidth=390`, `#84`와 **동일 원인** — `mx-auto` 컨테이너 안에서 `flex-1` `<input>`의 기본 `size` 힌트가 폭 계산에 새어 들어감)를 `#84`와 같은 수정(`size={1}` + `min-w-0`)으로 함께 해소하고, **390×844에서 재실측해 `scrollWidth <= clientWidth`를 확인한다**. 아울러 `web/e2e/viewport-audit.spec.ts`의 감사 대상에 **채팅방 화면을 추가**한다(현재 감사 4화면은 랜딩·`/search`·상세·`/ai`뿐이라 채팅방은 관측 범위 밖이다). *(이 줄은 Epic 11 회고가 뽑은 반복 패턴 C — "대장이 '여기 심는다'고 적은 자리에 실제로 안 심겨 조용히 밀린다"(`#152`·`#121`이 그렇게 샜다) — 의 재발을 막으려고 회고 직후 실제로 심은 것이다, CLAUDE.md B5)*
 **And** 전송은 낙관적(즉시 pending 버블 → 서버 확정, 멱등키로 중복 차단)이다(UX-DR15)
 **And** 클라는 `broadcast_changes` 엔벨로프의 `payload.record`(INSERT)를 파싱하고, 표시 순서는 chat_messages **`created_at` + `id` tiebreak** 정렬로 렌더한다(AC-CHAT-2와 동일 커서, 동일 타임스탬프 메시지 순서 안정화)(I10)
 **And** 메시지는 DB 저장이 유지되고(FR21), 입력 2000자 상한 + 실시간 카운터가 동작한다(기구현 재사용)
@@ -937,7 +938,7 @@ So that 실시간 전환의 실제 가치 — 문의를 놓치지 않는다.
 
 **Acceptance Criteria:**
 
-**Given** chat_room_reads 마이그레이션(아키텍처 논리라벨 0018) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다**
+**Given** chat_room_reads 마이그레이션(아키텍처 논리라벨 0018) — ⚠️ **번호는 착수 시 `supabase/migrations/` 파일 목록에서 다음 빈 번호로 정한다** *(✎ 2026-07-28 실측: `supabase/migrations/`는 `0001`~`0021`이 **빈 번호 없이 연속으로 차 있다** — Epic 10이 `0016_chat_room_integrity`까지, Epic 11이 `0021_listings_view_count_anon_grant`까지 썼다. 따라서 **다음 빈 번호는 `0022`**이고, 위 논리라벨 `0016`·`0017`·`0018`을 그대로 파일명에 쓰면 **기존 파일과 충돌한다**. 착수 시점에 다시 세어 확인할 것 — 이 각주도 그때 낡을 수 있다.)*
 **When** 적용하면
 **Then** `chat_room_reads(user_id, room_id, last_read_at)`가 생성되고 self-contained하다(FR57)
 **And** 채팅 진입점(내비 🔔)에 안읽음 카운트 배지가 표시되고, 안읽음 = `created_at > last_read_at` **AND `sender_id != {me}`**(내 발신 제외)로 집계된다(I6)
