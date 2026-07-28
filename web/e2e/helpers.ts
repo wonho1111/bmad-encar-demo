@@ -1,5 +1,6 @@
 // E2E 공용 헬퍼 — 여러 스펙 파일이 재사용하는 로그인·데이터 조회·단언 유틸.
 // *.spec.ts 네이밍이 아니므로 Playwright 러너가 이 파일 자체를 테스트로 수집하지 않는다.
+import { execSync } from 'node:child_process';
 import type { Locator, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
 
@@ -125,6 +126,84 @@ export async function assertSingleLine(locator: Locator) {
     height,
     `한 줄 높이(line-height*1.4 + padding·border = ${expectedSingleLineHeight.toFixed(1)}px) 이내여야 하는데 ${height.toFixed(1)}px — 줄바꿈 발생`,
   ).toBeLessThanOrEqual(expectedSingleLineHeight);
+}
+
+/**
+ * 이 프로세스가 실제로 **로컬** Supabase 스택을 보고 있는지 확인한다 — 운영 안전 가드
+ * (2026-07-28, 대장 #182 정식 승격). `scripts/use-env.sh`의 브랜치 규칙(사용자 결정
+ * 2026-07-21)은 `main`·`develop` 체크아웃 시 `web/.env.local`을 **운영** Supabase로
+ * 바꿔치기한다 — `.githooks/post-checkout`이 `git checkout develop`에서 실제로 이걸
+ * 발동시키는 것을 관측했다. 그 상태로 이 스위트, 특히 매물을 만들고 채팅을 만들고
+ * 구매완료 처리한 뒤 지우는 `write-flows.spec.ts`를 돌리면 운영 데이터에 쓴다. 게다가
+ * `runPsql`(아래)은 항상 **로컬 도커 컨테이너**만 보므로, 브라우저는 운영에 쓰고 검증은
+ * 로컬을 읽는 엇갈린 상태가 조용히 green을 낼 수 있다 — 그래서 URL이 로컬을 가리키지
+ * 않으면 곧장 죽는다(fail-loud, B9: 규칙은 어길 수 없는 자리에 박는다).
+ *
+ * 에러 문구에 키는 절대 담지 않는다(URL만) — 로그에 anon/service key가 그대로 남는 것을
+ * 막는다.
+ */
+export function assertLocalSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  let host = '';
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // URL 파싱 실패(비어 있거나 형식이 깨짐) — host가 빈 문자열로 남아 아래에서 곧장 걸린다.
+  }
+  const isLocal = host === '127.0.0.1' || host === 'localhost';
+  if (!isLocal) {
+    throw new Error(
+      `[안전 가드] NEXT_PUBLIC_SUPABASE_URL이 로컬(127.0.0.1/localhost)이 아닌 "${url || '(비어 있음)'}"을 ` +
+        `가리키고 있습니다(키는 보안상 출력하지 않음). 이 스위트, 특히 write-flows.spec.ts는 매물을 ` +
+        `만들고 채팅을 만들고 구매완료 처리한 뒤 지웁니다 — 이 상태로 실행하면 운영 데이터에 씁니다. ` +
+        `저장소 루트에서 \`bash scripts/use-env.sh local\`을 실행해 web/.env.local을 로컬 Supabase로 ` +
+        `되돌린 뒤(로컬 스택이 안 떠 있으면 먼저 \`npx supabase start\`) 다시 실행하세요.`,
+    );
+  }
+}
+
+const DB_CONTAINER = 'supabase_db_bmad-encar-demo';
+
+/**
+ * 로컬 Supabase DB에 psql로 단일 SQL을 실행하고 -t -A(헤더 없는 raw 출력) 결과를 문자열로
+ * 돌려준다. 원래 landing-and-view-count·core-flows·write-flows 세 스펙에 각각 복붙돼 있던
+ * 거의 동일한 함수를 여기 한 벌로 합쳤다(2026-07-28, 대장 #182 정식 승격) — 셋 다 같은
+ * 컨테이너를 같은 방식으로 쳤으니 하나가 진실이면 충분하다.
+ *
+ * 부르자마자 `assertLocalSupabase()`부터 확인한다 — 이 함수 자체는 컨테이너 이름을
+ * 하드코딩해서 **항상 로컬**만 보는데, 앱(브라우저)이 `NEXT_PUBLIC_SUPABASE_URL`을 통해
+ * 운영을 보고 있으면 "브라우저는 운영에 쓰고 검증은 로컬을 읽는" 엇갈린 상태가 이 함수
+ * 하나만으로는 안 잡힌다 — 두 축(브라우저가 보는 곳 vs 이 함수가 보는 곳)을 여기서 함께 좁힌다.
+ *
+ * fail-loud(코드리뷰 patch 관례를 따름 — `loadDotEnvLocal`·`fetchOnSaleListingIdWithPhoto`와
+ * 동일 스타일) — Docker가 없거나 컨테이너가 없거나 떠 있지 않으면 `execSync`가 사람이 읽기
+ * 어려운 스택트레이스만 던지고 죽는다. 무엇이 없고 어떻게 띄우는지(`npx supabase start`)를
+ * 먼저 확인해 알려준다.
+ */
+export function runPsql(sql: string): string {
+  assertLocalSupabase();
+
+  let running = false;
+  try {
+    const state = execSync(`docker inspect -f "{{.State.Running}}" ${DB_CONTAINER}`, {
+      encoding: 'utf-8',
+    }).trim();
+    running = state === 'true';
+  } catch {
+    running = false; // Docker 미설치, 컨테이너 자체가 없음 등 — 원인 불문 아래에서 한 메시지로 안내.
+  }
+  if (!running) {
+    throw new Error(
+      `로컬 Supabase DB 컨테이너(${DB_CONTAINER})가 없거나 떠 있지 않습니다(Docker가 설치·실행 ` +
+        `중인지도 함께 확인하세요). 저장소 루트에서 \`npx supabase start\`로 로컬 스택을 띄운 뒤 ` +
+        `다시 실행하세요.`,
+    );
+  }
+
+  const escaped = sql.replace(/"/g, '\\"');
+  return execSync(`docker exec ${DB_CONTAINER} psql -U postgres -d postgres -t -A -c "${escaped}"`, {
+    encoding: 'utf-8',
+  }).trim();
 }
 
 /** 로컬 Supabase REST(PostgREST)로 사진이 있는 판매중 매물 id 하나를 조회한다(anon 키 — 열람 경로와 동일 권한). */
