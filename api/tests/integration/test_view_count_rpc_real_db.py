@@ -421,33 +421,71 @@ def test_grant_completeness_four_combinations(seeded, role, privilege):
             assert cur.fetchone()[0] is False, f"anon이 {col}에 {privilege} 권한을 가지면 안 된다"
 
 
-def test_anon_can_select_whitelisted_columns_but_view_count_still_denied(seeded):
-    """P1(코드리뷰 2026-07-28) — 0020의 5번 블록은 `revoke all`이 아니라
+def test_anon_can_select_whitelisted_columns_including_view_count(seeded):
+    """P1(코드리뷰 2026-07-22) 최초 — 0020의 5번 블록은 `revoke all`이 아니라
     `revoke insert, update, delete ... from anon`만 쓴다. 마이그레이션 주석이 그 이유를
     "revoke all을 쓰면 0011이 anon에게 준 컬럼 SELECT까지 날아가 비로그인 열람이 깨진다"고
     적어 뒀는데, 그 불변식을 지키는 실행 검사가 없었다(리뷰 실측 — 리포 전체에서 anon으로
     listings를 읽는 테스트가 0건). 두 방향을 함께 고정한다:
-      (a) 0011 화이트리스트 컬럼(id·manufacturer·model·price)은 anon으로 SELECT가 성공하고
+      (a) 0011 화이트리스트 컬럼(id·manufacturer·model·price 등)은 anon으로 SELECT가 성공하고
           그 매물 행이 실제로 보인다 — 비로그인 열람이 이 스토리로 깨지지 않았다.
-      (b) view_count는 여전히 anon에 안 보인다(#134가 기록한 현재 상태 — Story 11.4의
-          선결 조건이므로, 지금 여기서 바뀌면 이 테스트가 즉시 알려야 한다).
+      (b) 화이트리스트 밖 컬럼(embedding, RAG 코퍼스 임베딩)은 anon에 여전히 안 보인다.
+
+    ── 2026-07-28 갱신(대장 #180) ──────────────────────────────────────────
+    최초 버전은 (b) 자리에 "view_count도 anon에 안 보인다"를 넣어 고정했었다(테스트 이름도
+    `..._but_view_count_still_denied`) — 당시엔 사실이었다: 0011이 anon의 listings 테이블
+    SELECT를 통째로 회수하고 컬럼 화이트리스트로 되돌리는 구조인데, 그 뒤에 생긴 0020의
+    view_count는 그 목록에 없었다(대장 #134). 그런데 Story 11.4가
+    `0021_listings_view_count_anon_grant.sql`로 `grant select (view_count) on public.listings
+    to anon;`을 실행해 **의도적으로 사양을 바꿨다**(#134 해소 — 비로그인 랜딩의 "인기" 정렬은
+    `order by view_count desc`를 쓰는데, 이 GRANT 없인 그 자리에서 42501로 죽는다. 0021 주석
+    참조). 즉 지금은 anon이 view_count를 읽을 수 있는 것이 정상 사양이고, 옛 단언은 이미
+    바뀐 사양을 계속 고정하고 있었을 뿐이다. 이 테스트를 그 현재 사양에 맞게 고치고 이름도
+    바꿨다.
+    화이트리스트 실제 목록(아래 `expected`)은 하드코딩 추측이 아니라 0011·0021 마이그레이션
+    원문을 직접 읽고 도출했다 — `information_schema.column_privileges`에서 실시간으로 뽑은
+    실제 GRANT와 비교해, 목록이 또 바뀌면(컬럼 추가·삭제) 이 테스트가 자동으로 걸리게 한다
+    (⑦·⑧ `test_grant_completeness_four_combinations`가 쓰는 것과 같은 관례).
     """
     cur, listing_id, _seller_id = seeded
+
+    # 0011(20컬럼) + 0021(view_count 1컬럼) = anon SELECT 화이트리스트의 전부(마이그레이션
+    # 원문 확인, 추측 아님). 여기 없는 컬럼(embedding·updated_at·accident_status 등)은 막혀야
+    # 한다.
+    expected = {
+        "id", "seller_id", "status", "created_at", "manufacturer", "model", "body_type",
+        "year", "price", "mileage", "color", "fuel", "transmission", "displacement",
+        "seats", "region", "accident_free", "seller_name", "options", "description",
+        "view_count",
+    }
+    cur.execute(
+        "select column_name from information_schema.column_privileges "
+        "where table_schema = 'public' and table_name = 'listings' "
+        "and grantee = 'anon' and privilege_type = 'SELECT'"
+    )
+    granted = {row[0] for row in cur.fetchall()}
+    assert granted == expected, (
+        "anon SELECT 화이트리스트가 0011+0021 기준과 다르다"
+        f" (누락: {expected - granted}, 초과: {granted - expected})"
+    )
+
     cur.execute("set local role anon")
     try:
         with cur.connection.transaction():
             cur.execute(
-                "select id, manufacturer, model, price from public.listings where id = %s",
+                "select id, manufacturer, model, price, view_count from public.listings "
+                "where id = %s",
                 (listing_id,),
             )
             row = cur.fetchone()
         assert row is not None, "anon이 0011 화이트리스트 컬럼으로 매물 행을 못 읽었다 — 비로그인 열람이 깨졌다"
         assert row[0] == listing_id
+        assert row[4] == 0, "anon이 view_count를 읽었지만 값이 기대(seeded 초기값 0)와 다르다"
 
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with cur.connection.transaction():
                 cur.execute(
-                    "select view_count from public.listings where id = %s", (listing_id,)
+                    "select embedding from public.listings where id = %s", (listing_id,)
                 )
     finally:
         try:
