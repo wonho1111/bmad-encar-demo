@@ -1957,3 +1957,47 @@
 - **아직 모르는 것(정직하게 남긴다):** ① **운영에서도 같은 배율인지 재지 않았다** — Vercel 엣지/Next의 프리페치 캐시가 로컬과 다르게 동작할 수 있다. ② 같은 URL이 두 번씩 프리페치된 이유(hover + viewport 중복인지, 다른 원인인지)를 규명하지 않았다. ③ `getUser()` 24곳 중 몇 곳이 **정말 필요한지**(예: `getSession()`으로 충분한 자리, 상위에서 한 번 구해 내려주면 되는 자리) 분류하지 않았다.
 - **왜 지금 안 고치나:** Epic 11은 마감됐고 이건 **성능·아키텍처 축**이라 스토리 범위 밖이다. 고치려면 (a) 운영 실측으로 배율 확인 → (b) `getUser()` 호출 지점을 "인증이 꼭 서버 검증돼야 하는 곳"과 "상위 값을 받아 쓰면 되는 곳"으로 분류 → (c) `Link prefetch` 정책 조정 여부 판단, 세 단계가 필요하다. **지금은 무해하다**(데모 규모, 로컬은 `workers: 4`로 회피됨).
 - **트리거:** **Epic 13(성능·게이트 정비) 착수 시** — 또는 그 전에 운영에서 인증 레이트리밋·지연이 관측되면 앞당긴다. 그 자리에서 위 (a)(b)(c)를 순서대로 하고, 고친 뒤 **같은 방법으로 다시 재서**(문서 요청 1건 vs 브라우저 이동 1회) 배율이 실제로 줄었는지 확인한다 — "고쳤다"가 아니라 "숫자가 줄었다"로 닫는다(B4).
+
+### 184. `deferred-work.md`의 `DW-4`(11-5 review-budget-followup)가 대장에 등재돼 있지 않았다 (2026-07-28 Story 12-1 착수 시 대장 점검, 🟢 품질, bmad-loop DW-4 이관)
+- **위치:** `_bmad-output/implementation-artifacts/deferred-work.md`의 `DW-4`(status: open) — "review budget(2 cycles) 소진 상태에서도 story-11-5-반응형-뷰포트-e2e-감사-sm-b에 대한 독립 후속 리뷰가 계속 권장됨"(origin: review-budget-followup, severity: low).
+- **내용:** #148·#149·#164와 같은 종류(짝) — `deferred-work.md`는 동결 파일이라 "지금 뭐가 열려 있나"의 정본이 아니다(B8, 정본은 이 파일 하나). DW-4는 `status: open`으로 남아 있으면서 이 파일엔 대응 항목이 없었다. 이 절차적 메타 권고("budget 소진 후에도 독립 후속 리뷰가 권장된다")는 11-5 자체의 결함이 아니라, 그 결함 유무를 다시 한번 살펴봐야 한다는 권고 자체가 안 옮겨진 것이 문제다.
+- **왜 지금 안 고치나:** 이관(등재)이 실체다 — 실제 "독립 후속 리뷰"를 수행하는 것은 완전히 별개의 다음 작업이라 지금 여기서 하지 않는다.
+- **트리거:** 사용자가 11-5(`spec-11-5-반응형-뷰포트-e2e-감사-sm-b.md`)의 독립 후속 리뷰를 실행할 의사결정을 내릴 때 — 그 diff를 다시 본다.
+
+### 185. `scripts/check_migrations.py`의 동적 self-containment 프로브 3종이 `chat_messages`·`chat_rooms`를 전혀 안 본다 (2026-07-28 Story 12-1 코드리뷰 adversarial 지적, 🟢 품질)
+- **위치:** `scripts/check_migrations.py`의 동적 검사 3개 프로브(컬럼 GRANT·컬럼 차단·RLS 정책 — 전부 `listings`/`guide_documents` 대상). `0022_chat_idempotency_key.sql`을 포함해 chat 관련 마이그(`0003`·`0010`·`0016`·`0022`)는 게이트를 통과해도 이 3개 프로브 중 어느 것도 실제로 chat 스키마 상태를 확인하지 않는다.
+- **내용:** 이번 스토리(12.1)가 원인이 아니라 게이트가 처음 설계될 때(Story 8.6)부터 있던 커버리지 범위다 — 코드리뷰가 `0022`를 보다가 우연히 짚었을 뿐이다. 실제 영향: 게이트가 초록이어도 그것이 "chat_messages·chat_rooms의 컬럼·제약·정책이 기대대로다"를 증명하지는 못한다(예: 이번 스토리의 `client_message_id`/`UNIQUE(room_id, client_message_id)`가 조용히 다른 모양으로 존재해도 이 게이트만으로는 못 잡는다 — 실제 정합성은 `api/tests/integration/test_chat_idempotency_real_db.py`의 실INSERT 테스트가 커버한다).
+- **왜 지금 안 고치나:** 게이트에 새 프로브를 추가하는 것은 이 스토리의 범위(멱등키 컬럼·제약 추가)를 넘는 별도 인프라 작업이고, 현재 실질적 위험은 이미 무해하다 — chat 스키마의 실제 동작 검증은 실DB 통합테스트(`api/tests/integration/test_chat_idempotency_real_db.py` 등)가 별도로 맡고 있어 이중 안전망 없음이 아니라 "다른 층이 담당" 상태다.
+- **트리거:** chat 관련 마이그레이션에 GRANT/RLS처럼 프로브가 실측 확인해야 할 축(예: `realtime.messages` 정책, Story 12.2)이 새로 생길 때 — 그 스토리에서 함께 프로브 추가 여부를 판단한다.
+
+### 186. Story 12.3·12.4의 인수조건이 `client_message_id`를 한 번도 이름으로 요구하지 않는다 — 12.1이 놓은 멱등키가 소비되지 않을 구조 (2026-07-28 Story 12-1 후속 코드리뷰, 🟡 기능)
+- **위치:** `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`의 Story 12.3 인수조건(멱등키를 "낙관적 전송(멱등키로 중복 차단)"이라고만 언급, 컬럼명·생성 주체·생성 시점 없음) + 실제 전송 경로 `web/src/lib/messages.ts`의 `sendMessage`, `app/lib/features/chat/chat_repository.dart`.
+- **내용:** 세 갈래가 한 덩어리다. ① **의무가 안 심겼다** — 12.1은 컬럼과 제약만 놓고 "클라이언트가 채우는 건 12.3"이라고 범위를 그었는데, 12.3의 인수조건엔 그 요구가 없다. 12.3이 그대로 끝나면 모든 행의 `client_message_id`가 NULL이고, NULL끼리는 유니크 제약이 충돌하지 않으므로 FR41(중복 방지)이 **조용히 미구현**으로 남는다(이 사실은 이제 `test_null_client_message_id_is_not_deduplicated_by_on_conflict`가 검사로 고정하고 있다). ② **문법이 안 맞는다** — 12.1의 스펙·마이그 주석·테스트가 전부 `INSERT ... ON CONFLICT DO NOTHING` 원시 SQL을 전제하는데, 실제 전송은 supabase-js/PostgREST를 통과한다. supabase-js `.insert()`엔 그 옵션이 없고 대응물은 `.upsert(..., { onConflict: 'room_id,client_message_id', ignoreDuplicates: true })`인데, 이건 무시된 행에 대해 **표현을 안 돌려준다** — 현재 호출부가 쓰는 `.select().single()`은 0행을 받아 PGRST116으로 던진다. ③ **확정 신호가 없다** — 재전송은 정의상 클라이언트가 확정을 못 받은 상황인데, 무시된 INSERT는 반환 행도 없고 (12.2가 붙일) DB 브로드캐스트도 발화하지 않는다. 낙관적 말풍선이 pending에서 못 벗어난다. 12.4의 갭 보정도 같은 축이다 — "멱등키로 중복 제거"라고 규정했는데 키가 nullable이라 NULL 구간 행은 dedup 신원이 없다(`client_message_id ?? row.id`처럼 서버 id로 떨어지는 규칙이 필요).
+- **왜 지금 안 고치나:** 12.1의 Never 절이 클라이언트 배선을 명시적으로 12.3 범위로 잘랐다. 여기서 `messages.ts`를 고치면 그 경계를 넘고, 12.2(브로드캐스트)가 아직 없어 ③의 확정 경로를 지금 설계해도 검증할 대상이 없다.
+- **트리거:** **Story 12.3 스펙 작성 시** — 그 자리에서 인수조건 3개를 심는다: (a) 전송 시 `crypto.randomUUID()`로 메시지 1건당 1회 키를 만들어 실어 보낸다(web·app 양쪽), (b) 중복 전송이 0행을 돌려줄 때 `(room_id, client_message_id)`로 기존 행을 조회해 낙관적 말풍선을 확정한다, (c) 재전송이 행 1개로 수렴함을 실제 전송 경로(PostgREST)로 확인한다. 12.4 스펙 작성 시엔 dedup 키를 "멱등키, 없으면 행 id"로 못 박는다.
+
+### 187. 로컬 Supabase 스택에 0020~0022를 psql로 손으로 적용해 CLI 이력 테이블과 어긋났을 수 있다 (2026-07-28 Story 12-1 검증 중 발생, 🟡 기능)
+- **위치:** 로컬 Supabase Docker 스택(포트 55322)의 `supabase_migrations.schema_migrations` 테이블 vs `supabase/migrations/` 파일 목록.
+- **내용:** 12.1 검증을 시작할 때 로컬 스택은 0019까지만 적용돼 있었다(0020·0021 미적용). 검증을 진행하려고 0020~0022를 psql로 직접 적용했는데, 그러면 스키마는 최신이 되지만 CLI가 "무엇을 적용했나"를 기록하는 이력 테이블은 갱신되지 않는다. 이건 §9.2가 상세히 적어둔 사고와 같은 계열이다 — `0003c_chat_room_integrity.sql`이 CLI에 조용히 `Skipping`돼 로컬 fresh DB에만 `chat_rooms` 위조 방지 트리거가 없었던 일. 스펙의 Residual risks에 적히긴 했으나 대장에 없어서 "열린 일"로 세어지지 않았다(B8 — 미룬 것도 여기 적는다).
+- **왜 지금 안 고치나:** 12.1의 범위(멱등키 컬럼·제약)와 무관하고, 착수 전부터 있던 상태다. 지금 스택을 리셋하면 진행 중인 검증 환경이 날아간다.
+- **트리거:** **다음 `supabase db reset` 또는 다음 로컬 E2E 실행 시** — 그 자리에서 `select * from supabase_migrations.schema_migrations`를 실제로 떠서 0001~0022가 전부 들어 있는지 확인하고, 빠졌으면 리셋해 파일에서 다시 만든다. "고쳤다"가 아니라 "이력 행이 22개다"로 닫는다.
+
+### 188. `api/tests/integration/`에 `conftest.py`가 없어 시드 헬퍼가 파일마다 복제된다 (2026-07-28 Story 12-1 후속 코드리뷰, 🟢 품질)
+- **위치:** `api/tests/integration/` 5개 파일 전부 — `TEST_DATABASE_URL` skip 가드, `auth.users`+`profiles` 생성, `listings` INSERT 컬럼 목록을 각자 다시 구현한다. `find api/tests -name conftest.py` → 0건.
+- **내용:** 복제가 이미 결함을 만들었다 — 12.1의 첫 구현이 형제 파일의 `_create_seller`를 옮기다 판매자 유저에도 `role: "buyer"`를 하드코딩했고 코드리뷰에서 잡혔다. `_LISTING_COLS`처럼 15개 컬럼을 나열한 상수도 파일마다 따로 산다. Epic 12에 스토리가 5개 더 남아 있어 그대로 두면 복제본이 계속 늘어난다. 지금 위험이 낮은 이유는 각 파일이 uuid로 유일 키를 쓰고 스스로 정리하기 때문이고, 실제 피해는 `listings`에 NOT NULL 컬럼이 추가되는 순간 5개 파일이 각각 깨지는 형태로 온다.
+- **왜 지금 안 고치나:** 공통 픽스처 추출은 12.1이 안 만든 파일 4개를 함께 고치는 일이라 "바뀐 줄이 요청에 추적된다"(A3 외과적 변경)를 어긴다. 12.1 하나만 보면 이득이 없다.
+- **트리거:** **Epic 12에서 실DB 통합 테스트 파일을 하나 더 추가할 때**(12.2의 `realtime.messages` 정책 검증이 유력) — 6번째 복제를 만들기 전에 `conftest.py`로 skip 가드·`_create_user`·`_insert_listing`을 올린다. 그 자리에서 tests.yml의 격리 규칙(현재 주석뿐)도 픽스처로 강제할지 함께 판단한다(#143·B9와 같은 축).
+
+### 189. `#186`의 전제 중 12.4 부분이 사실과 다르다 — 12.4 인수조건은 `client_message_id`를 명시적으로 요구한다 (2026-07-28 Story 12-1 3차 코드리뷰 실측, 🟢 품질, 기존 항목 무수정 정정)
+- **위치:** `docs/tech-debt.md` #186의 **제목**과 본문 ① vs `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:930`.
+- **내용:** #186은 제목에서 *"Story 12.3·12.4의 인수조건이 `client_message_id`를 한 번도 이름으로 요구하지 않는다"* 고 단정했다. **12.4에 대해서는 틀렸다** — `epics-increment-2026-07-12.md:930`이 *"…재조회로 상대방이 보낸 놓친 메시지를 병합한다(dedup 키=`client_message_id`)(AC-CHAT-2)"* 로 컬럼명을 **명시적으로** 요구한다(같은 문서 :122의 AC-CHAT-2 정의도 동일). #186 본문 말미의 실질 지적("키가 nullable이라 NULL 구간 행은 dedup 신원이 없다 → `client_message_id ?? row.id` 규칙이 필요")은 **여전히 유효**하고, **12.3에 대한 지적도 유효**하다(12.3 인수조건엔 실제로 컬럼명·생성 주체·생성 시점이 없다). 틀린 것은 "12.4도 요구하지 않는다"는 범위 주장 하나다.
+- **왜 기존 항목을 고치지 않았나:** 이번 무인 실행 지시가 **기존 대장 항목의 수정·재개봉·재작성을 금지**했다(항목의 상태와 처리는 오케스트레이터 소유). 그래서 #186을 in-place로 고치지 않고 정정 사실만 신규 항목으로 남긴다.
+- **트리거:** **Story 12.3 스펙 작성 시** — #186을 집어드는 그 자리에서 이 항목을 함께 읽고, 12.4에 심을 인수조건은 "없는 요구를 새로 만든다"가 아니라 "이미 있는 요구(:930)에 NULL 구간 fallback 규칙을 더한다"로 잡는다.
+
+### 190. CI 재현 환경에서 `tests/integration`은 이미 전량 초록이다 — "기존 red 1건"은 CI 상태가 아니라 로컬 스택의 GRANT 공백이었다 (2026-07-28 Story 12-1 3차 코드리뷰 실측, 🟡 기능, 기존 항목 무수정 정정)
+- **위치:** CI `api-db` 잡 재현(일회용 `pgvector/pgvector:pg17` + `scripts/migration-check-prelude.sql` + 마이그 0001~0022 전량) vs 로컬 Supabase Docker 스택(포트 55322).
+- **내용(추측 아니라 실측):** CI 재현 컨테이너에서 `pytest tests/integration` → **53 passed, 0 failed**. 두 축 모두 이미 해소돼 있다 — `#180`의 테스트는 `test_anon_can_select_whitelisted_columns_including_view_count`로 **이미 교정돼 있고**(0021 이후 사양에 맞춰진 이름), `#138`의 `test_anon_can_read_joined_at_despite_profiles_rls`도 **통과한다**. 반면 **로컬 스택에서는 후자가 `InsufficientPrivilege: permission denied for table profiles`로 실패**한다. 원인은 권한 차이다: `has_table_privilege('anon','public.profiles','SELECT')`가 CI 재현 컨테이너에서는 **t**, 로컬 스택에서는 **f**(대장 `#120`과 같은 축 — 로컬 `db reset`이 플랫폼 기본 GRANT를 남기지 않는다).
+- **왜 중요한가:** 12-1의 1·2차 패스가 로컬 스택에서 돌린 결과(`51 passed, 1 failed`)를 *"이미 대장 #138에 등재된 기존 red"* 로 보고했다. **귀속이 틀렸다** — #138이 기록한 증상은 `DID NOT RAISE InsufficientPrivilege`(권한이 **있어서** 안 나던 것)인데, 실제 로컬 실패는 정반대인 `permission denied`(권한이 **없어서** 나는 것)다. 즉 "알려진 red"로 넘긴 신호가 실제로는 검증 환경이 CI와 다르다는 별개 사실이었다. 로컬 스택은 `api-db` 잡의 대역이 될 수 없다.
+- **선행조건 축에 주는 의미:** `#138`·`#180`·`#181`이 전부 *"Epic 12 착수 전 선행"* 을 트리거로 달고 있는데, 그중 **테스트 축 2건(#138·#180)은 이미 충족된 것으로 실측된다.** 남는 것은 `#181`의 **관측 축** — `test/bmad-loop`이 push되지 않아 CI가 Epic 11·12 작업을 아직 한 번도 본 적이 없다는 사실(`git rev-list --left-right --count origin/develop...HEAD` → `0 2`, `origin/test/bmad-loop`도 baseline에 머물러 있음).
+- **왜 기존 항목을 안 고쳤나:** 이번 실행 지시가 기존 대장 항목 수정을 금지했다. `#138`·`#180`을 `✅ 해소`로 닫는 판단은 **오케스트레이터/사용자 몫**으로 남긴다 — 이 항목은 그 판단에 쓸 실측만 제공한다.
+- **트리거:** **`test/bmad-loop`을 `develop`에 병합하기 직전**(`#181`의 ②단계) — 병합 후 CI가 실제로 초록인지 확인한다. 초록이면 `#138`·`#180`을 닫고, 아니면 여기서 다시 본다. 로컬 스택으로 `api-db`를 대신 검증하는 것은 이 실측 이후로 금지한다(결과가 다르다는 것이 증명됐다).
