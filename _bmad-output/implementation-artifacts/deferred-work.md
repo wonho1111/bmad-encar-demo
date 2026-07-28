@@ -252,3 +252,10 @@ source_spec: `spec-12-3-실시간-송수신-전환-폴링-제거.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-7: Follow-up review still recommended for 12-4-재연결-배너-갭-보정 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-12-4-재연결-배너-갭-보정.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

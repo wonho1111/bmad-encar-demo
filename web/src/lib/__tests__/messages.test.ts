@@ -16,9 +16,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   dedupeById,
   fetchMessages,
+  flushMessageQueue,
   reuseFailedKey,
   sendMessage,
   type ChatMessageRow,
+  type QueuedMessage,
+  type SendMessageResult,
 } from '../messages';
 
 type ChainResult = { data: unknown; error: unknown };
@@ -239,5 +242,68 @@ describe('reuseFailedKey — 실패한 멱등키 재사용 판정', () => {
 
   it('직전 실패 기록이 없으면 재사용할 것이 없다', () => {
     expect(reuseFailedKey(null, '안녕하세요', 1_030_000, WINDOW)).toBeNull();
+  });
+});
+
+// Story 12.4 — 오프라인 큐 flush 알고리즘(순서 보존 + 실패 항목 재큐잉). 화면(ChatRoomMessages)에서
+// 네트워크·React 상태를 떼어낸 순수 로직만 검증한다(B9).
+describe('flushMessageQueue — 오프라인 큐 순차 flush(Story 12.4 Always)', () => {
+  function queued(clientMessageId: string, body: string): QueuedMessage {
+    return { clientMessageId, body };
+  }
+
+  it('전부 성공하면 큐가 순서대로 전송되고 remaining이 빈 배열이 된다', async () => {
+    const q = [queued('c1', '하나'), queued('c2', '둘'), queued('c3', '셋')];
+    const sendOrder: string[] = [];
+    const sendFn = vi.fn(async (msg: QueuedMessage): Promise<SendMessageResult> => {
+      sendOrder.push(msg.clientMessageId);
+      return { message: row({ id: `m-${msg.clientMessageId}`, client_message_id: msg.clientMessageId, body: msg.body }) };
+    });
+
+    const result = await flushMessageQueue(q, sendFn);
+
+    expect(sendOrder).toEqual(['c1', 'c2', 'c3']); // 동시 발송이 아니라 순차(순서 보존).
+    expect(result.remaining).toEqual([]);
+    expect(result.sent.map((m) => m.client_message_id)).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('중간 항목이 실패하면 그 항목부터 뒤 전부를 remaining에 남기고 즉시 멈춘다(순서 보존)', async () => {
+    const q = [queued('c1', '하나'), queued('c2', '둘'), queued('c3', '셋')];
+    const sendFn = vi.fn(async (msg: QueuedMessage): Promise<SendMessageResult> => {
+      if (msg.clientMessageId === 'c2') return { error: '네트워크 오류' };
+      return { message: row({ id: `m-${msg.clientMessageId}`, client_message_id: msg.clientMessageId, body: msg.body }) };
+    });
+
+    const result = await flushMessageQueue(q, sendFn);
+
+    // c1은 이미 보냈으니 sent에, c2(실패)·c3(아직 시도 안 함)는 순서 그대로 remaining에 — c3를
+    // 먼저 보내면 순서가 깨지고, c2를 버리면 그 메시지가 유실된다.
+    expect(sendFn).toHaveBeenCalledTimes(2); // c3는 호출조차 되지 않는다(순서를 지키려고 멈춤).
+    expect(result.sent.map((m) => m.client_message_id)).toEqual(['c1']);
+    expect(result.remaining).toEqual([queued('c2', '둘'), queued('c3', '셋')]);
+  });
+
+  it('sendFn이 던지면 그 항목부터 remaining에 남기되 이미 보낸 행은 sent로 돌려준다', async () => {
+    // 후속 리뷰 patch(R6) — sendMessage는 { error } 반환뿐 아니라 예외를 던질 수도 있다(호출부인
+    // ChatRoomMessages가 이미 그 전제로 try/catch를 쓴다). 잡지 않으면 이 함수가 통째로 reject해
+    // 이미 DB에 저장된 앞쪽 행(c1)이 호출부에 전달되지 않고 pending 버블로 남는다.
+    const q = [queued('c1', '하나'), queued('c2', '둘'), queued('c3', '셋')];
+    const sendFn = vi.fn(async (msg: QueuedMessage): Promise<SendMessageResult> => {
+      if (msg.clientMessageId === 'c2') throw new Error('network down');
+      return { message: row({ id: `m-${msg.clientMessageId}`, client_message_id: msg.clientMessageId, body: msg.body }) };
+    });
+
+    const result = await flushMessageQueue(q, sendFn);
+
+    expect(sendFn).toHaveBeenCalledTimes(2); // c3는 호출되지 않는다(순서 보존).
+    expect(result.sent.map((m) => m.client_message_id)).toEqual(['c1']); // 성공분은 유실되지 않는다.
+    expect(result.remaining).toEqual([queued('c2', '둘'), queued('c3', '셋')]);
+  });
+
+  it('빈 큐는 아무것도 호출하지 않고 빈 결과를 돌려준다', async () => {
+    const sendFn = vi.fn();
+    const result = await flushMessageQueue([], sendFn);
+    expect(sendFn).not.toHaveBeenCalled();
+    expect(result).toEqual({ remaining: [], sent: [] });
   });
 });

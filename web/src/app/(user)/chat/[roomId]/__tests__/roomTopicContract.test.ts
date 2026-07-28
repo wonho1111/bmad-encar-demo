@@ -82,9 +82,83 @@ describe('채팅 실시간 토픽 계약 — SQL·TS·Python 세 사본이 같�
     // 그 **호출 하나**에 묶어 단언한다(코드리뷰 patch 2차) — 이전엔 게으른 매칭이라
     // "파일 어딘가에 channel( 이 있고 그 뒤 어딘가에 private:true가 있다"만 확인했고,
     // 이 파일에 채널이 하나 더 생기면 정작 채팅 채널이 public이어도 통과했다.
+    //
+    // Story 12.4가 같은 config에 broadcast.replay를 추가하면서 `{ config: { private: true } }`처럼
+    // 그 두 프로퍼티만 딱 닫히는 모양이 아니게 됐다 — `[^}]*`로 private:true 앞에 다른 프로퍼티가
+    // 있어도(config 객체가 `}`로 닫히기 전이라면) 통과하게 완화한다.
+    // ⚠️ `[^}{]*`인 이유(3차 후속 리뷰 patch, low). 이전엔 `[^}]*`였는데, 그건 `{`를 건너뛸 수
+    // 있어서 **config 안의 중첩 객체에 들어 있는 private까지** 매치했다 — 즉
+    // `{ config: { broadcast: { private: true } } }`(채널은 private가 아니고 broadcast 옵션에 엉뚱한
+    // 키가 있을 뿐인 상태)에서도 green이었다(실측). private:true가 빠지면 0023의 realtime.messages
+    // RLS 자체가 평가되지 않아 인가 계층이 통째로 무력화되는 축이라, 그 false-green은 그냥 두면
+    // 안 된다. `{`까지 금지하면 매치되는 것은 **config의 직속(평문) 프로퍼티인 private:true** 뿐이다
+    // (앞에 다른 평문 프로퍼티가 오는 순서는 여전히 허용 — 순서를 강제할 이유는 없다).
     expect(source).toMatch(
-      /supabase\.channel\(\s*roomTopic\([^)]*\)\s*,\s*\{\s*config:\s*\{\s*private:\s*true\s*\}\s*\}\s*\)/,
+      /supabase\.channel\(\s*roomTopic\([^)]*\)\s*,\s*\{\s*config:\s*\{[^}{]*\bprivate:\s*true\b/,
     );
+  });
+
+  it('갭보정의 Broadcast Replay 경로가 **채널 생성 호출 안에** 남아 있다', () => {
+    // 후속 리뷰 patch(R7) — docs/conventions.md §12.5는 갭보정을 "Replay + 커서 재조회 두 경로를
+    // 항상 함께"로 못박았는데, 위 private 검사는 replay가 통째로 사라져도 여전히 green이다(정규식이
+    // private까지만 본다). 그러면 갭보정이 조용히 커서 재조회 한 경로로 축소되고 아무도 red를 보지
+    // 않는다 — 계약을 실행되는 검사로 내린다(B9). since는 필수 인자이므로 그 존재까지 함께 본다.
+    // (replay 값의 **타입**은 tsc가 이미 강제한다 — 여기서 지키는 것은 "이 설정이 존재한다"는 축이다.)
+    //
+    // ⚠️ 채널 생성 호출에 **앵커한다**(3차 후속 리뷰 patch, low). 이전엔 파일 전체를 스캔하는
+    // `expect(source).toMatch(/broadcast: { replay: { … since:/)` 한 줄이라, config에서 replay를
+    // 떼어내 같은 파일의 미사용 지역 상수나 주석으로 옮겨도 green이었다(실측 — 채팅 채널의 replay는
+    // 완전히 사라지는데 red가 없다). 위 private 검사는 앵커돼 있는데 이 검사만 아니면, R7이 세우려던
+    // "계약을 실행되는 검사로" 가 절반만 성립한다.
+    const source = readFileSync(COMPONENT, 'utf8');
+    expect(source).toMatch(
+      /supabase\.channel\(\s*roomTopic\([^)]*\)\s*,\s*\{\s*config:\s*\{[^}{]*broadcast:\s*\{\s*replay:\s*\{[^}]*\bsince:/,
+    );
+  });
+
+  it('재연결(SUBSCRIBED+everDropped) 시 커서 재조회 갭보정이 함께 돈다', () => {
+    // 3차 후속 리뷰 patch(low) — §12.5는 갭보정을 "Replay + 커서 재조회를 **항상 병행**"으로 못박고,
+    // 대장 #201은 그중 커서 재조회 쪽이 "항상 맞는 백스톱"이고 replay는 "있으면 좋은 최적화"라고
+    // 적었다. 그런데 실행되는 가드는 replay(위 검사)에만 있었고 정작 백스톱인 커서 경로는 없었다 —
+    // `void gapFillFromCursor();` 한 줄을 지워도 전체 테스트가 green이었다(실측). 보호 강도가 정확히
+    // 거꾸로 붙어 있던 셈이라 같은 층으로 내린다(B9).
+    //
+    // 이 검사가 **안 보는 것**: 실제로 재연결 순간에 그 함수가 불려 메시지가 병합되는지(런타임
+    // 동작) — 그건 Story 12.6의 수동 2-브라우저 검증 몫이다. 여기서는 "재연결 분기에 그 호출이
+    // 배선돼 있고, 그 함수가 커서를 넘겨 조회한다"는 두 축만 정적으로 고정한다.
+    const source = readFileSync(COMPONENT, 'utf8');
+    expect(source).toMatch(/if\s*\(everDropped\)\s*\{[\s\S]{0,800}?void gapFillFromCursor\(\)/);
+    expect(source).toMatch(/fetchMessages\(\s*supabase,\s*roomId,\s*cursor\s*\)/);
+  });
+
+  it('끊긴 동안 입력창·전송 버튼·연타 가드가 잠기지 않는다(FR42·UX-DR19 비차단)', () => {
+    // 3차 후속 리뷰 patch(low) — 이 스토리의 최상위 인수조건("연결이 끊겨도 계속 작성·전송할 수
+    // 있다")을 실제로 지키는 것은 아래 세 조건식뿐인데, 전부 주석으로만 보호돼 있었다. 셋 중 무엇을
+    // 12.3 형태(`sending || loading` 등)로 되돌려도 전체 테스트가 green이었다(실측). 그리고 이 규칙은
+    // **이 스토리 안에서 이미 한 번 깨졌다** — 후속 리뷰 R5가 정확히 그 순서 문제를 고쳤다. 한 번
+    // 깨진 적 있는 규칙을 주석으로만 두지 않는다(B9).
+    //
+    // 이 검사가 **안 보는 것**: 실제 렌더 결과의 disabled 속성(이 레포 vitest는 environment:'node'라
+    // RTL 상호작용 테스트를 쓸 수 없다 — web/vitest.config.ts 주석 참조). 소스 문자열 층에서
+    // "그 조건식이 그대로 있다"만 고정한다. 이 파일의 다른 검사들과 같은 관용이다.
+    const source = readFileSync(COMPONENT, 'utf8');
+    expect(source).toMatch(/disabled=\{\(sending && !isDisconnected\) \|\| loading\}/);
+    expect(source).toMatch(/loading=\{sending && !isDisconnected\}/);
+    expect(source).toMatch(/if \(sending && !disconnectedRef\.current\) return;/);
+  });
+
+  it('flush 미전송 안내는 전송 에러(error) 칸이 아니라 전용 칸에 쓴다', () => {
+    // 3차 후속 리뷰 patch(medium) — 이 안내가 fail-loud의 유일한 신호인데, error 칸은 handleSubmit
+    // 첫 줄의 setError(null)이 **제출마다 무조건** 비우는 자리다. 큐가 막힌 사용자의 가장 자연스러운
+    // 다음 행동이 "한 번 더 보내보기"라, 그 순간 신호가 사라지고 화면이 완전히 정상으로 보였다
+    // (실제 브라우저로 재현해 확인 — 되돌리면 red). 수명이 다른 신호는 다른 칸에 둔다는 이 파일의
+    // 기존 규칙(realtimeError·loadError 분할)을 이 신호에도 강제한다(B9).
+    //
+    // 이 검사가 **안 보는 것**: 그 안내가 실제로 렌더돼 사용자 눈에 보이는지 — 소스 문자열 층에서
+    // "flush 실패 경로가 전용 setter를 쓰고, 그 값이 렌더된다"는 두 축만 고정한다.
+    const source = readFileSync(COMPONENT, 'utf8');
+    expect(source).toMatch(/if \(remaining\.length > 0\) \{[\s\S]{0,400}?setQueueStuckNotice\(/);
+    expect(source).toMatch(/\{queueStuckNotice && \(/);
   });
 
   it('방송 이벤트 이름이 SQL(트리거)과 TS(구독 필터)에서 같다', () => {

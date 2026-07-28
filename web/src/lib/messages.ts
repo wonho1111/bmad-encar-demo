@@ -166,6 +166,52 @@ export async function sendMessage(
 // 직전에 실패한 전송의 기억(화면이 들고 있는 값 그대로).
 export type FailedSend = { clientMessageId: string; body: string; at: number };
 
+// 오프라인(연결 끊김) 큐에 쌓인 메시지 1건 — 제출 시점에 만든 client_message_id를 그대로 들고 있다가
+// 재연결 시 재사용한다(Story 12.4 Always — reuseFailedKey의 시간창 휴리스틱과 달리 새 키를 만들지
+// 않는다. 어떤 항목을 재시도하는지 큐 자체가 이미 알고 있어 추측이 필요 없다, Design Notes).
+export type QueuedMessage = { clientMessageId: string; body: string };
+
+/**
+ * 오프라인 큐를 순서대로(순차 await) flush한다 — 화면(ChatRoomMessages)에서 네트워크·상태를 떼어낸
+ * 순수 알고리즘만 여기 둬 vitest로 직접 검증한다(B9 "실행되는 검사로 고정").
+ *
+ * 규칙(Story 12.4 Always):
+ *   - 큐 순서대로 하나씩 sendFn을 호출한다(동시에 여러 건을 보내지 않는다 — 순서 보존).
+ *   - 항목이 성공하면 sent에 담고 다음 항목으로 진행한다.
+ *   - 항목이 실패하면 그 항목(과 그 뒤로 아직 시도하지 않은 나머지)을 remaining에 그대로 남기고
+ *     즉시 멈춘다 — 뒤 항목을 먼저 보내면 순서가 깨지고, 실패한 항목을 버리면 메시지가 유실된다.
+ *     다음 재연결 때 이 remaining을 그대로 다시 flush하면 된다(같은 client_message_id 재사용,
+ *     23505 흡수 경로로 멱등 — sendFn 쪽 책임).
+ *
+ * @param queue  현재 큐(순서 보존).
+ * @param sendFn 실제 전송 호출(호출부가 기존 sendMessage를 감싸 넘긴다 — 새 API 경로를 만들지 않는다).
+ */
+export async function flushMessageQueue(
+  queue: QueuedMessage[],
+  sendFn: (msg: QueuedMessage) => Promise<SendMessageResult>,
+): Promise<{ remaining: QueuedMessage[]; sent: ChatMessageRow[] }> {
+  const sent: ChatMessageRow[] = [];
+  for (let i = 0; i < queue.length; i++) {
+    let res: SendMessageResult;
+    try {
+      res = await sendFn(queue[i]);
+    } catch (err) {
+      // sendFn이 { error }를 돌려주는 대신 **던지는** 경우도 실패로 똑같이 취급한다(후속 리뷰
+      // patch, R6). 안 잡으면 이 함수 전체가 reject하면서, 이 배치에서 이미 성공해 DB에 저장된
+      // 앞쪽 행들(sent)이 호출부에 전달되지 않는다 — 그 행들은 mergeIncoming도 못 타고 큐에서도
+      // 안 빠져 pending 버블로 남는다. 실패 지점부터 뒤 전부를 remaining으로 남기는 규칙은 error
+      // 반환과 동일하다(순서 보존).
+      console.error('[messages] 큐 flush 중 전송 예외:', err);
+      return { remaining: queue.slice(i), sent };
+    }
+    if ('error' in res) {
+      return { remaining: queue.slice(i), sent };
+    }
+    sent.push(res.message);
+  }
+  return { remaining: [], sent };
+}
+
 /**
  * "이번 전송이 방금 실패한 그 전송의 재시도인가"를 판정해, 맞으면 재사용할 멱등키를 돌려준다.
  * 아니면 null(호출부가 새 `crypto.randomUUID()`를 만든다).
