@@ -2002,7 +2002,7 @@
 - **왜 기존 항목을 안 고쳤나:** 이번 실행 지시가 기존 대장 항목 수정을 금지했다. `#138`·`#180`을 `✅ 해소`로 닫는 판단은 **오케스트레이터/사용자 몫**으로 남긴다 — 이 항목은 그 판단에 쓸 실측만 제공한다.
 - **트리거:** **`test/bmad-loop`을 `develop`에 병합하기 직전**(`#181`의 ②단계) — 병합 후 CI가 실제로 초록인지 확인한다. 초록이면 `#138`·`#180`을 닫고, 아니면 여기서 다시 본다. 로컬 스택으로 `api-db`를 대신 검증하는 것은 이 실측 이후로 금지한다(결과가 다르다는 것이 증명됐다).
 
-### 184. 에이전트 세션이 **공유 `.venv`를 부수고 원복하지 않는다** — 그 뒤 모든 스토리의 verify 게이트가 조용히 깨진다 (2026-07-29 Epic 12 실행 중 실측, 🔴 필수)
+### 191. 에이전트 세션이 **공유 `.venv`를 부수고 원복하지 않는다** — 그 뒤 모든 스토리의 verify 게이트가 조용히 깨진다 (2026-07-29 Epic 12 실행 중 실측, 🔴 필수)
 - **위치:** `api/.venv`(레포 밖 산출물이지만 `[verify]` 게이트의 첫 명령 `cd api && .venv/bin/python -m pytest -q`가 여기에 의존) · `.bmad-loop/policy.toml`의 `[verify] commands`.
 - **무슨 일이 있었나(로그 원문):** Epic 12 Story 12-2의 **리뷰 세션(review-1)** 이 이렇게 실행했다.
   ```
@@ -2022,3 +2022,10 @@
   두 스토리의 **유일한 차이는 `_verify_review(task).ok`**(= frontmatter status==done AND sprint==done AND **verify 명령 통과**)였다. 즉 12-1·12-2 **둘 다** 리뷰 2회를 돌고 **둘 다** "후속 필요"라고 했지만, 12-1은 검증이 초록이라 *"예산 소진 → 커밋하고 후속은 deferred-work로 이관"* 으로 갔고 12-2는 검증이 빨간불이라 이월됐다. **리뷰 사이클 수는 애초에 원인이 아니었다.** 소스 주석은 이 경우를 *"(b) … verify failing: a genuine failure"* 로 명확히 구분해 두었는데 **사유 문구엔 그게 드러나지 않는다.**
   아울러 같은 오독을 유발한 것이 하나 더 있다: `[token-budget-exceeded]`(12-1, weighted 9.92M > 상한 2M). 이건 `advance(task, Phase.DONE)` **이후에** 찍히는 **순수 로그**이고 뒤에 어떤 분기도 없다(`engine.py:1696`) — 아무것도 멈추지 않는다. `max_tokens_per_story`는 현재 **관측 신호일 뿐 제어값이 아니다**(다만 매 스토리가 5배씩 넘겨 신호로서도 무의미해진 상태다).
 - **트리거:** **Epic 12 재개 직전**(같은 일이 남은 4스토리에서 반복될 수 있다) — 최소한 (b)의 값싼 판본, 즉 `[verify] commands` 맨 앞에 `bash -lc 'cd api && .venv/bin/pip check'`를 넣는 것부터 검토한다. 그리고 **Epic 12 회고에서 (a)/(b) 중 어느 축으로 못박을지 결정**한다.
+
+### 192. `deferred-work.md`의 `DW-5`(12-1 review-budget-followup)가 대장에 등재돼 있지 않다 (2026-07-29 Story 12-2 착수 시 dev 세션이 발견, 🟢 품질, bmad-loop DW-5 이관)
+- **위치:** `_bmad-output/implementation-artifacts/deferred-work.md`의 `DW-5`(status: open) — *"Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up"*(origin: `review-budget-followup`, source_spec: `spec-12-1-멱등키-마이그레이션.md`, severity: low, 작성 주체 = bmad-loop 엔진 run `20260728-203648-2fc6`).
+- **내용:** `#148`·`#149`·`#164`·`#184`와 **완전히 같은 종류(짝)** 다. `deferred-work.md`는 2026-07-15에 동결된 경위 보관용 파일이라 "지금 뭐가 열려 있나"의 정본이 아닌데(B8 — 정본은 이 파일 하나), **bmad-loop 엔진이 거기에 직접 `DW-N` 항목을 계속 쓴다**(`engine.py`의 `_record_review_budget_followup` → `deferredwork.append_entry`). 그래서 매 스토리 착수 시 dev가 그 파일을 읽어 대장으로 옮기는 절차가 workflow persistent fact로 걸려 있고, 이번엔 12-2 dev 세션이 그 점검에서 `DW-5` 미이관을 발견해 보고했다(엔진이 동결 파일에 쓰는 구조 자체는 `#129`로 별도 등재돼 있다).
+- **12-1의 후속 리뷰 권고가 실체다:** 12-1(멱등키 마이그레이션)은 리뷰 2사이클이 **둘 다 `status: done`** 이면서 **둘 다 "독립 후속 패스가 더 필요하다"** 고 했고, `max_review_cycles = 2` 상한에 걸려 *"예산 소진 → 커밋하고 권고는 DW로 이관"* 경로로 마감됐다. 즉 **코드가 나쁘다는 뜻이 아니라, 리뷰가 아직 볼 게 남았다고 말한 채로 닫혔다는 뜻**이다.
+- **왜 지금 안 고치나:** 이관(등재)이 이 항목의 실체다 — 실제 "독립 후속 리뷰"를 돌리는 것은 완전히 별개의 작업이라 여기서 하지 않는다(`#184`와 동일한 처리).
+- **트리거:** Epic 12 회고 — 그 자리에서 12-1·12-2 두 스토리가 **모두** 예산 소진 상태로 닫혔다는 사실을 함께 놓고, `max_review_cycles = 2`가 마이그레이션 스토리에 적정한지 판단한다(올릴지, 아니면 지금처럼 DW로 넘겨 나중에 별도 리뷰할지). 그 전에 사용자가 12-1 diff의 독립 리뷰를 지시하면 앞당긴다.
