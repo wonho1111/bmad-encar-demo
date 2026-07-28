@@ -224,3 +224,10 @@ source_spec: `spec-11-1-view-count-스키마-increment-rpc-하드닝.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260727-223439-2318; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-3: Follow-up review still recommended for 11-2-상단-내비-재구성 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-11-2-상단-내비-재구성.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260727-223439-2318; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
