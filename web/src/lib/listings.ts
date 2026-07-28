@@ -14,6 +14,7 @@ import { coverImages, type ListingImageRow } from './images/coverImages';
 import { galleryImages } from './images/galleryImages';
 import { getPublicUrl } from './storage';
 import { LISTING_IMAGES_BUCKET } from './storage/bucket';
+import type { ListingCardData } from '@/components/listings/ListingCard';
 
 // 구매자에게 노출 가능한 매물 상태 = 판매중(on_sale). 단일 상수(FR11 단일 출처).
 export const BUYER_VISIBLE_STATUS = LISTING_STATUS.ON_SALE;
@@ -161,4 +162,101 @@ export async function fetchListingGalleryUrls(
   }
 
   return galleryImages(data).map((path) => getPublicUrl(LISTING_IMAGES_BUCKET, path));
+}
+
+// ── 인기/최신 매물 그리드 (Story 11.4, FR34) ──────────────────────────────
+
+// 단당 발췌 개수. 근거는 목업(landing-1.html:604-726, 데스크톱 4열×카드 4장)이자 기존 홈
+// 미리보기의 PREVIEW_COUNT와 동일값 — 새 상수를 도입하는 게 아니라 그 값을 그대로 옮겨온다.
+const POPULAR_RECENT_GRID_COUNT = 4;
+
+// 인기·최신 두 단이 공유하는 select 컬럼. 신뢰속성 3필드(accident_status·is_single_owner·
+// is_non_smoker)는 로그인 사용자에게만 묻는다 — anon은 0011 화이트리스트에 그 컬럼이 없어
+// select 자체가 42501로 죽는다(SearchPage의 trustColumns와 동일 이유, 동일 패턴).
+function popularRecentColumns(authed: boolean): string {
+  const trustColumns = authed ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  return `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`;
+}
+
+/**
+ * anon(비로그인) 조회 결과에서 신뢰속성 3필드를 `null`로 명시 정규화한다(순수 함수 — DB 없이 테스트 가능).
+ *
+ * anon 경로는 위 `popularRecentColumns`가 애초에 그 3컬럼을 select하지 않으므로 값이 `undefined`
+ * (키 자체가 없음)로 온다. 계약(ListingCardData)은 "값이 없으면 null"이지 "필드가 없음"이 아니다 —
+ * `TrustAttributes`가 `undefined`와 `null`을 다르게 다루면 anon 렌더만 조용히 갈릴 수 있어, 여기서
+ * 런타임 모양을 선언한 타입과 맞춘다. `SearchPage`의 `normalizedRows`와 같은 패턴(로직 이원화 금지 —
+ * 그쪽은 페이지 안에 인라인으로 있고, 이 함수는 그 계약을 재사용 가능한 순수 함수로 뽑은 것).
+ */
+export function normalizeAnonTrustColumns(rows: ListingCardData[], authed: boolean): ListingCardData[] {
+  if (authed) return rows;
+  return rows.map((r) => ({
+    ...r,
+    accident_status: null,
+    is_single_owner: null,
+    is_non_smoker: null,
+  }));
+}
+
+type CoverImaged<T> = T & { image_url: string | null; image_count: number };
+
+// 한 단(인기 또는 최신)의 결과 — 조회 실패는 이 단만 error로 표시하고 다른 단·히어로·차종칩
+// 렌더를 막지 않는다(intent-contract Always). 0건은 error가 아니라 빈 listings 배열로 구분된다.
+export type PopularRecentSection =
+  | { listings: CoverImaged<ListingCardData>[] }
+  | { error: true };
+
+export type PopularAndRecentListings = {
+  popular: PopularRecentSection;
+  recent: PopularRecentSection;
+};
+
+async function fetchSection(
+  supabase: SupabaseClient,
+  authed: boolean,
+  orderColumn: 'view_count' | 'created_at',
+  label: string,
+): Promise<PopularRecentSection> {
+  // try/catch로 감싼다 — Supabase 클라이언트가 {data,error}가 아니라 실제 예외(네트워크 단 등)를
+  // 던지면 이 함수가 그대로 reject되고, 그걸 부르는 Promise.all(fetchPopularAndRecentListings)이
+  // 통째로 터져 히어로·차종칩·본인정보까지 포함한 Home() 전체가 죽는다 — "이 단만 실패, 나머지는
+  // 정상 렌더"라는 intent-contract Always 규칙을 이 함수 하나가 어길 수 있었다(코드리뷰 patch).
+  try {
+    const { data, error } = await buyerListingsQuery(supabase, popularRecentColumns(authed))
+      .order(orderColumn, { ascending: false })
+      .order('id', { ascending: false })
+      .limit(POPULAR_RECENT_GRID_COUNT)
+      .returns<ListingCardData[]>();
+
+    if (error || !data) {
+      console.error(`[listings] ${label} 매물 그리드 조회 실패:`, error);
+      return { error: true };
+    }
+
+    const normalized = normalizeAnonTrustColumns(data, authed);
+    const listings = await attachCoverImages(supabase, normalized);
+    return { listings };
+  } catch (err) {
+    console.error(`[listings] ${label} 매물 그리드 조회 실패(예외):`, err);
+    return { error: true };
+  }
+}
+
+/**
+ * 랜딩의 인기(view_count desc)·최신(created_at desc) 2단 발췌 그리드 데이터를 만든다 (Story 11.4, FR34).
+ *
+ * 두 쿼리는 병렬로 실행하고, 한쪽이 실패해도 다른 쪽·나머지 랜딩 렌더를 막지 않는다 — 각 단의
+ * 성패를 독립적으로 반환해 호출부(`page.tsx`)가 단별로 에러 문구를 그릴 수 있게 한다.
+ * `attachCoverImages`(9.4와 동일 함수)로 대표사진을 채우고, 찜 오버레이(`fetchWishedListingIds`)는
+ * 사용자별 조회라 여기 포함하지 않는다 — 호출부가 두 단의 id를 합쳐 한 번만 조회한다.
+ */
+export async function fetchPopularAndRecentListings(
+  supabase: SupabaseClient,
+  user: { id: string } | null,
+): Promise<PopularAndRecentListings> {
+  const authed = !!user;
+  const [popular, recent] = await Promise.all([
+    fetchSection(supabase, authed, 'view_count', '인기'),
+    fetchSection(supabase, authed, 'created_at', '최신'),
+  ]);
+  return { popular, recent };
 }

@@ -1597,12 +1597,13 @@
 - **내용:** 이 테스트들은 "SQL에 그 글자가 있는 것과 Postgres가 실제로 강제하는 것은 다르다"(B4)는 원칙은 지키지만, 그 아래 계층(PostgREST가 이 함수를 실제로 노출하는지, `db-schemas` 설정, 함수명·파라미터명이 REST 경로에서 실제로 일치하는지)은 검증 범위 밖이다(blind-hunter 코드리뷰 지적). 웹은 `supabase.rpc(...)`로 이 계층을 거치므로, 이 계층만의 실패(예: 노출 스키마 설정 누락)는 이 테스트 스위트 전부가 초록인 채로 웹에서만 발생할 수 있다.
 - **트리거:** web에 E2E(브라우저→서버→DB 전 구간) 테스트 계층이 도입되거나(#106과 같은 축), PostgREST 노출 설정 자체가 회귀 대상으로 의심될 때.
 
-### 134. `anon`이 `view_count`를 읽지 못한다 — 비로그인 인기 정렬이 통째로 42501로 깨진다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟡 조건부)
+### 134. ✅ 해소 — `anon`이 `view_count`를 읽지 못한다 — 비로그인 인기 정렬이 통째로 42501로 깨진다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟡 조건부)
 - **위치:** `supabase/migrations/0011_listings_anon_select.sql`의 anon 컬럼 SELECT 화이트리스트(`view_count` 미포함) vs `supabase/migrations/0020_listings_view_count.sql`(컬럼 추가는 하되 SELECT GRANT는 손대지 않음).
 - **내용:** 0011은 anon의 테이블 SELECT를 회수하고 컬럼 화이트리스트로 되돌리는 구조라, **새 컬럼은 기본적으로 anon에게 안 보인다**(0011 주석이 명시한 의도된 동작). 0020이 `view_count`를 추가했지만 그 목록엔 넣지 않았다 — intent의 Never가 "실제 노출은 Story 11.4의 몫"으로 명시했기 때문이다. 실측(스크래치 PG18, 프렐류드+마이그 20개): `set local role anon; select view_count from public.listings` → `ERROR: permission denied for table listings`. **컬럼만이 아니라 쿼리 전체가 에러난다.** Postgres는 `ORDER BY` 대상 컬럼에도 SELECT 권한을 요구하므로 `order by view_count desc`도 같은 에러다.
 - **왜 지금 안 고치나:** intent의 Never가 이 GRANT 추가를 명시적으로 금지했다(스코프 권한은 intent에 있다). 고치는 자리는 11.4다.
 - **실패 모양이 고약하다:** 로그인 상태에선 `authenticated`가 테이블 SELECT를 그대로 갖고 있어 정상 동작하고, **로그아웃해야만** 깨진다 — 개발 중 가장 놓치기 쉬운 비대칭이다.
 - **트리거:** **Story 11.4(인기 매물 그리드) 착수 시 — 그 스토리의 인수조건으로 심을 것**(B5: 회고 약속은 다음 스토리 체크박스로 심어야 이행된다). 한 줄이면 된다: 새 마이그레이션에 `grant select (view_count) on public.listings to anon;`.
+- **✅ 해소 (Story 11.4, `supabase/migrations/0021_listings_view_count_anon_grant.sql`):** 예고된 그대로 `grant select (view_count) on public.listings to anon;` 한 줄을 추가했다. `#144`(정렬 인덱스)도 같은 마이그레이션에서 함께 처리(대장이 지정한 자리 그대로).
 
 ### 135. 0020의 GRANT 화이트리스트가 `embedding`·`id`를 포함한다 — 판매자가 자기 매물의 검색 벡터와 기본키를 직접 바꿀 수 있다 (2026-07-27 Story 11-1 후속리뷰 defer, 🟡 조건부)
 - **위치:** `supabase/migrations/0020_listings_view_count.sql`의 `grant update (...) on public.listings to authenticated` 목록 중 `id`·`embedding` 항목.
@@ -1659,11 +1660,12 @@
 - **왜 지금 안 고치나:** `check_migrations.py`는 게이트 인프라이고, 여기에 2회차 적용 패스를 넣는 것은 조회수 스토리의 범위 밖이다(A3). 넣으면 20개 마이그 전부가 새 계약(멱등)을 지게 되므로, 먼저 전량이 실제로 재적용 가능한지 실측해야 한다.
 - **트리거:** 게이트 구조 자체를 손대는 다음 작업(#22~24가 예약한 Epic 13 게이트 정비) — 그때 `run_dynamic_checks`에 "같은 컨테이너에 전량을 한 번 더 적용하고 exit 0을 요구"하는 2차 패스를 추가한다. 오늘 돌리면 초록이어야 하며, 그렇지 않은 파일이 나오면 그 자체가 발견이다.
 
-### 144. 인기 정렬을 위해 만든 `view_count`에 정렬용 인덱스가 없다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
+### 144. ✅ 해소 — 인기 정렬을 위해 만든 `view_count`에 정렬용 인덱스가 없다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
 - **위치:** `supabase/migrations/0020_listings_view_count.sql` 1번 블록(컬럼만 추가, 인덱스 없음). 실측(0020까지 적용): `listings`의 인덱스는 `listings_pkey` **하나뿐**이다.
 - **내용:** 0020 파일 첫머리가 이 컬럼의 존재 이유를 "인기 매물 정렬(Story 11.4)"이라고 명시하는데, 그 정렬을 지탱할 인덱스가 없다. 11.4가 `order by view_count desc limit N`을 쓰면 매물 전량 seq scan + sort가 **랜딩 페이지 모든 요청마다** 돈다. 지금 데이터 규모(103행)에선 무해하다.
 - **왜 지금 안 고치나:** 이 스토리의 AC는 "증가"만 요구하고 노출·정렬은 11.4 몫이다(intent의 Never가 명시). 인덱스 형태(부분 인덱스로 `where status = 'on_sale'`을 걸지 여부)는 11.4의 실제 쿼리 모양을 보고 정해야 추측성 확장이 안 된다(A2).
 - **트리거:** **Story 11.4(인기 매물 그리드) 착수 시 — 그 스토리의 인수조건으로 심을 것**(B5). #134(anon SELECT 화이트리스트)와 **같은 마이그레이션에서 함께** 처리한다: `grant select (view_count) ... to anon` + `create index if not exists listings_view_count_idx on public.listings (view_count desc) where status = 'on_sale';`.
+- **✅ 해소 (Story 11.4, `supabase/migrations/0021_listings_view_count_anon_grant.sql`):** 예고된 그대로 `create index if not exists listings_view_count_idx on public.listings (view_count desc) where status = 'on_sale';`를 #134와 같은 마이그레이션에 넣었다. 인기 그리드가 실제로 쓰는 쿼리 모양(`buyerListingsQuery`=`status='on_sale'` + `order by view_count desc`)과 인덱스 조건·방향을 맞췄다(A2 — 추측성 확장 없이 실제 쿼리 모양만 반영).
 
 ### 145. `view_count`가 `int`라 21억에서 오버플로하고, 그 뒤 해당 매물의 상세 진입은 매번 조용히 실패한다 (2026-07-28 Story 11-1 후속리뷰 3차 defer, 🟢 품질)
 - **위치:** `supabase/migrations/0020_listings_view_count.sql` 1번 블록 `view_count int not null default 0` + 2번 블록 `view_count = view_count + 1`.
@@ -1790,3 +1792,15 @@
 - **내용:** 11-3 코드리뷰 3개 레이어(adversarial·edge-case-hunter·verification-gap)가 독립적으로 같은 지점을 짚었다 — `authed` 분기로 `/ai` 자동실행 vs 로그인 게이트를 가르고, "재실행 방지"(새로고침 시 재과금 금지)를 보장하는 이 로직 전체가 `useEffect`/이벤트 핸들러 안에 있어 순수함수 단위테스트로 못 잡는다. `heroSearchHandoff.test.ts`는 저장소 자체(읽고-쓰고-지우는 함수)만 잠갔을 뿐, "누가 이 값을 소비하는가"를 가르는 이 두 컴포넌트의 분기 로직은 테스트가 0건이다. `web/src/**/*.test.*` 전수 검색 결과 `HeroSearch`·`ChatAssistant`를 마운트/렌더하는 테스트가 없고, 이 리포에는 아직 커밋된 Playwright E2E 스위트 자체가 없다(로컬 MCP 세션으로 수동 확인하는 것이 현재 유일한 검증 수단, 11-3 구현 시 실제로 그렇게 수행함).
 - **왜 지금 안 고치나:** `useEffect`는 SSR/`renderToStaticMarkup`에서 실행되지 않으므로(11-2가 `SiteNav.test.ts`에서 이미 문서화한 동일 한계) jsdom+React Testing Library 없이는 이 로직에 못 닿는다. 이 리포의 vitest 설정(`environment:'node'`, `.test.ts`만 포함, `.tsx` 제외)은 순수 함수만 단위테스트하고 나머지는 E2E로 미루는 프로젝트 관례(`vitest.config.ts` 주석)를 그대로 지킨 것이라, jsdom/RTL 도입이나 Playwright 스위트 신설은 "히어로+차종칩" 스토리 범위를 넘는 인프라 투자다.
 - **트리거:** **`#160`(11-2가 이미 심어 둔, `SiteNav`의 상호작용에 자동 회귀검사가 없다는 항목)과 같은 E2E 층을 세우는 Story 11.5(반응형 뷰포트 E2E 감사) 착수 시** — 그 자리에서 로그인 분기(게이트 vs 즉시실행)·마운트 시 핸드오프 복원(자동실행 없음)·`/ai` 자동실행 1회·새로고침 재실행 안 됨, 4가지를 함께 고정한다. `#160`과 같은 E2E 층이 필요한 이유가 같다(effect 기반 로직은 구조적으로 E2E 몫).
+
+### 166. 인기/최신 그리드의 빈 상태·단별 조회 실패·동률 tie-break·양단 중복 노출 4가지가 자동 검사 0건이다 (2026-07-28 Story 11-4 구현 시 Matrix Test Audit 지적, 🟡 조건부)
+- **위치:** `web/src/components/landing/PopularRecentGrid.tsx`(`ListingGridSection`의 `'error' in section`/`length === 0` 분기) · `web/src/lib/listings.ts`(`fetchSection`의 단별 독립 실패 처리, `.order('view_count'|'created_at', …).order('id', …)` tie-break).
+- **내용:** spec-11-4의 I/O & Edge-Case Matrix 6행 중 2행(비로그인·로그인 매물 존재)은 `normalizeAnonTrustColumns` 단위테스트 + 로컬 Supabase Playwright MCP 수동 확인으로 커버됐지만, 나머지 4행 — ① on_sale 매물 0건(빈 상태 문구), ② 인기 단만 조회 실패(다른 단은 정상 렌더), ③ view_count 동률 시 id desc tie-break로 결정적 순서, ④ 인기·최신 양단에 같은 매물이 중복 노출되는 것(허용된 동작) — 은 자동 검사도 수동 확인도 받지 못했다. ①·②는 JSX 조건부 렌더라 이 리포의 순수함수 전용 vitest(`environment:'node'`, `.tsx` 제외)로 못 닿고(`#165`와 동일 한계), ③·④는 실제 Supabase 쿼리 체인·데이터 상태가 필요해 로컬 DB에 동률/중복 데이터를 인위로 심어야 하는데 공유 개발 DB를 훼손할 위험이 있어 이번 구현·검증 패스에서 보류했다. **코드리뷰 추가 확인(adversarial 지적):** ①·②의 미검증 범위는 JSX 렌더뿐 아니라 그 렌더가 참조하는 `fetchSection`의 `{error:true}` 반환 로직 자체(쿼리 실패 시 분기)에도 그대로 적용된다 — Supabase client를 mock한 단위테스트가 없어 이 분기가 리팩터로 조용히 깨져도 vitest는 계속 초록이다. jsdom/RTL 없이도 mock 가능한 부분이라 원칙적으론 분리해 고칠 수 있지만, 이 스토리에서 함께 보류하고 같은 트리거로 이관한다(범위를 넓히면 A2 위반).
+- **왜 지금 안 고치나:** ①·②는 `#165`·`#160`과 같은 이유로 jsdom/RTL 도입이 필요한 인프라 투자다. ③·④는 로컬 스택에 전용 시드 데이터(동률 view_count 쌍, 인기이면서 최신인 매물)를 별도로 준비해야 안전하게 재현되는데, 이 스토리 범위(그리드 자체 구현)를 넘는 시드 작업이다.
+- **트리거:** Story 11.5(반응형 뷰포트 E2E 감사) 착수 시 — 그 자리가 이미 `#160`·`#165`로 effect/DOM 기반 로직의 E2E 계약을 세우기로 예정돼 있으므로, 랜딩 그리드의 빈 상태·단별 실패 격리 2가지를 같은 층에서 함께 고정한다. tie-break·중복 노출 2가지는 그 E2E 착수 시 전용 시드 데이터(동률 view_count 쌍 포함)를 함께 준비해 커버한다.
+
+### 167. 마이그레이션 게이트가 `anon`의 `view_count` SELECT 권한(#134 해소분)을 구체적으로 확인하지 않는다 (2026-07-28 Story 11-4 코드리뷰 defer, 🟡 조건부)
+- **위치:** `scripts/check_migrations.py`의 anon 컬럼 권한 프로브(`#134`·`#144` 관련 코드리뷰가 실측) · `supabase/migrations/0021_listings_view_count_anon_grant.sql`의 `grant select (view_count) on public.listings to anon;`.
+- **내용:** verification-gap·adversarial 두 레이어가 독립적으로 같은 지점을 짚었다 — 이 게이트의 anon 컬럼 권한 프로브는 "anon이 `listings`의 아무 컬럼이나 하나라도 SELECT할 수 있는가"만 확인하는 범용 검사다. `0011`이 이미 `created_at`·`id` 등 여러 컬럼을 anon에게 열어뒀으므로, 이 프로브는 `view_count` 권한의 유무와 무관하게 항상 통과(`'t'`)한다. 즉 `0021`의 `grant select (view_count) ...`이 다음 마이그레이션에서 실수로 되돌려져도(예: 컬럼 권한을 재구성하는 리팩터가 이 줄을 빠뜨림), 이 게이트도 vitest(`normalizeAnonTrustColumns`만 순수 함수 검증, 실제 DB 왕복은 범위 밖)도 그 회귀를 못 잡는다. 소비 지점은 `web/src/app/page.tsx`의 비로그인 분기 → `fetchSection(authed=false, orderColumn='view_count')` — 권한이 없으면 42501로 `{error:true}`가 되어 "지금 인기" 단이 조용히 에러 문구로 렌더된다. `authenticated`는 테이블 SELECT를 그대로 가지고 있어 영향받지 않는 비대칭이라(`#134`가 이미 경고한 것과 동일한 함정), 로그인 상태로만 확인하면 이 회귀를 절대 못 본다.
+- **왜 지금 안 고치나:** `check_migrations.py`는 여러 스토리가 공유하는 게이트 인프라라, 이번 스토리 범위에서 손대면 그 파일을 소유한 다른 검사들에까지 영향이 번질 수 있다(A3). `embedding` 차단을 확인하는 기존 프로브와 대칭되는 `view_count` 전용 프로브를 추가하는 형태가 유력하지만, 게이트 구조 자체를 손대는 결정은 이 스토리(그리드 구현)의 권한 밖이다.
+- **트리거:** 게이트 구조를 정비하는 다음 작업(`#143`이 이미 예약한 Epic 13 게이트 정비와 같은 축) 또는 Story 11.5(E2E 감사) 착수 시 — 어느 쪽이든 `embedding`(차단, `'f'` 기대)과 대칭되는 `view_count`(허용, `'t'` 기대) 프로브를 `check_migrations.py`의 PROBES에 추가하거나, anon 역할로 `fetchPopularAndRecentListings(supabase, null)`을 실제 로컬 스택에 돌려 `popular`가 `{error:true}`가 아님을 단언하는 통합 테스트를 신설한다.
