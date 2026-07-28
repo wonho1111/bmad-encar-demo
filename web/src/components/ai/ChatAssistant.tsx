@@ -15,9 +15,10 @@
 // 왜 클라이언트 컴포넌트인가:
 //   대화 상태(messages)·입력값·로딩·에러를 브라우저에서 쥐고 있어야 하고, Supabase 세션 토큰을 꺼내
 //   인증 헤더로 보내야 하므로 'use client'가 필요하다(서버 컴포넌트는 상태·이벤트를 못 가진다).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { searchAi, type ConversationTurn } from '@/lib/api/aiSearch';
+import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import Button from '@/components/ui/Button';
 
@@ -61,9 +62,10 @@ export default function ChatAssistant() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const query = input.trim();
+  // 실제 검색 실행 — handleSubmit(폼 제출)과 아래 마운트 핸드오프 소비(히어로에서 넘어온 자동
+  // 실행) 둘 다 여기로 합류한다(spec-11-3 Code Map). 분리 전엔 handleSubmit 안에 있던 로직 그대로다
+  // — 동작은 바뀌지 않고 호출 경로만 하나 더 생겼다.
+  async function runSearch(query: string) {
     if (query === '' || loading) return; // 빈 질의·중복 전송 차단(클라 1차 검증).
 
     // 질의가 서버 상한(1000자)을 넘으면, 그대로 보내봐야 422가 떠 "질문 형식이 올바르지 않습니다"라는
@@ -111,6 +113,34 @@ export default function ChatAssistant() {
       setLoading(false);
     }
   }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await runSearch(input.trim());
+  }
+
+  // 마운트 1회: 랜딩 히어로에서 로그인 사용자가 제출한 핸드오프를 소비한다(읽고 즉시 삭제 —
+  // heroSearchHandoff.ts 단일 출처). autoRun===true일 때만 1회 자동 실행한다.
+  //   왜 마운트에서만 읽고 지우나: 이 화면은 무상태(FR18, 새로고침=대화 초기화)라, 여기서 지우지
+  //   않으면 사용자가 자동 실행 직후 새로고침할 때 같은 질의가 다시 자동 실행돼 AI 검색 비용이
+  //   중복 과금된다(에픽이 명시적으로 경고한 위험) — consumeHeroSearchHandoff의 "읽는 즉시 삭제"가
+  //   이걸 막는다.
+  //   queueMicrotask + cleanup 없음(WishButton.tsx와 동일 관례, HeroSearch.tsx 마운트 effect 참고):
+  //   setTimeout으로 지연시키면 React Strict Mode의 (실행→cleanup→실행) 왕복에서 cleanup이 예약을
+  //   취소해 자동 실행이 영영 안 일어나는 조용한 버그가 난다. queueMicrotask는 취소 수단이 없어
+  //   2회차 호출은 이미 비워진 storage를 보고 그냥 return하고, 1회차가 예약한 microtask만 실행된다.
+  //   runSearch를 deps에서 뺀 이유: 이 effect는 마운트 시 1회만 실행돼야 하고, sessionStorage 자체가
+  //   1회용(consume이 지움)이라 이후 재실행돼도 handoff가 없어 아무 일도 안 한다 — 의도적 생략.
+  useEffect(() => {
+    // autoRun:true만 내 몫이다 — autoRun:false(비로그인 게이트 복원용)는 HeroSearch(랜딩) 몫이라
+    // 여기선 손대지 않고 그대로 둔다(11-3 코드리뷰 지적: 무조건 소비하면 랜딩이 나중에 못 읽는다).
+    const handoff = consumeHeroSearchHandoff(true);
+    if (!handoff) return;
+    queueMicrotask(() => {
+      void runSearch(handoff.query);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -174,7 +204,18 @@ export default function ChatAssistant() {
           placeholder="찾으시는 차를 자연어로 입력하세요"
           aria-label="AI 검색 질의 입력"
           disabled={loading}
-          className="flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
+          // #84 수정 — 390px에서 실측해 확정(원래 가설이었던 min-w-0 단독으로는 재현이 그대로였다.
+          // 실제 원인: <main>이 이 페이지에서 max-w-3xl + mx-auto인데, mx-auto(좌우 auto 마진)는
+          // 부모(<body class="flex flex-col">)의 stretch를 깨고 자기 content의 "선호 폭"만큼만
+          // 차지한다(centering) — 그 선호 폭 계산(max-content)은 flex-basis:0%(=flex-1)로 렌더될
+          // 실제 폭과 무관하게 <input>의 **기본 size=20** 힌트를 그대로 반영해 폼 행이 354px로
+          // 잡히고 main이 402px(354+p-6 48)까지 넓어졌다. min-w-0(flex-shrink 하한 해제)는 "실제
+          // 배치된 뒤" 줄어드는 것만 도와줄 뿐 이 max-content 계산엔 관여하지 않아 효과가 없었다.
+          // size={1}로 그 기본 힌트 자체를 줄이면 main의 선호 폭이 390 밑으로 내려가 오버플로가
+          // 사라진다(실측: main 402px→390px). flex-1이 이미 실제 렌더 폭을 결정하므로 size는
+          // 화면에 보이는 입력창 크기에 영향이 없다(글자 수 제한도 아님 — maxLength와 무관).
+          size={1}
+          className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
         />
         <Button type="submit" variant="primary" loading={loading} loadingText="검색 중…">
           전송

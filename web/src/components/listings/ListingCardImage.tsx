@@ -70,6 +70,10 @@ export default function ListingCardImage({
           loading="lazy"
           decoding="async"
           onError={() => setFailed(true)}
+          // data-testid: E2E(web/e2e/image-fallback.spec.ts)가 스타일 클래스(object-cover)가 아니라
+          // 이 안정적인 훅으로 매물 사진 <img>를 찾는다 — 클래스가 리팩터돼도 검사가 조용히
+          // 0건 매칭(거짓 통과)하지 않게 하기 위함(코드리뷰 patch).
+          data-testid="listing-photo"
           className="h-full w-full object-cover"
         />
       ) : (

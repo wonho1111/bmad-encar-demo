@@ -23,9 +23,26 @@
 \set ON_ERROR_STOP on
 
 -- ── 1) listings ───────────────────────────────────────────────────────
+-- ⚠️ `select *`가 아니라 명시적 컬럼 목록(0020 이전 25개 컬럼, view_count 제외)을 쓴다.
+--   jsonb_populate_recordset은 JSON에 없는 키를 명시적 NULL로 채우는데(위 embedding 설명과
+--   동일 원리), listings.view_count(0020)는 not null default 0이라 명시적 NULL이 그대로
+--   제약 위반이 된다 — `select *`는 view_count까지 선택해 그 NULL을 그대로 insert에 넘기므로
+--   시드 전체가 여기서 멈춘다(뒤따르는 listing_images·chat·guide_documents까지 함께 막힘,
+--   ON_ERROR_STOP 때문). 아래처럼 view_count를 목록에서 아예 빼면 INSERT가 그 컬럼을 언급하지
+--   않은 것과 같아 컬럼 기본값(0)이 대신 적용된다.
 \set listings_json `cat data/listings.json`
-insert into public.listings
-select * from jsonb_populate_recordset(null::public.listings, :'listings_json'::jsonb)
+insert into public.listings (
+  id, seller_id, status, embedding, created_at, updated_at,
+  manufacturer, model, body_type, year, price, mileage, color, fuel, transmission,
+  displacement, seats, region, accident_free, options, description, seller_name,
+  accident_status, is_single_owner, is_non_smoker
+)
+select
+  id, seller_id, status, embedding, created_at, updated_at,
+  manufacturer, model, body_type, year, price, mileage, color, fuel, transmission,
+  displacement, seats, region, accident_free, options, description, seller_name,
+  accident_status, is_single_owner, is_non_smoker
+from jsonb_populate_recordset(null::public.listings, :'listings_json'::jsonb)
 on conflict (id) do nothing;
 
 -- ── 2) listing_images ────────────────────────────────────────────────

@@ -75,8 +75,12 @@ export default function ListingCard({
               ⚠️ fuel은 `isValidListing`(aiSearch.ts)의 필수 7필드 검사 대상이 아니라서 /ai/search가
               비-string을 보내도 그대로 통과한다 — `typeof` 가드 없이 배열에 넣으면 `[object Object]`가
               렌더될 수 있다(app `listing.dart`는 fromMap에서 이미 이렇게 방어한다). string일 때만 표시.
-              pr-14: 찜 버튼이 이 줄까지 내려오므로 차량명과 같은 여백을 둔다. */}
-          <p className="truncate whitespace-nowrap pr-14 text-meta font-medium text-ink-muted">
+              pr-14: 찜 버튼이 이 줄까지 내려오므로 차량명과 같은 여백을 둔다.
+              data-testid: E2E(web/e2e/viewport-audit.spec.ts)가 스타일 클래스(whitespace-nowrap)가
+              아니라 이 안정적인 훅으로 이 줄을 찾는다 — D5(한 줄 유지) 검사 대상인 클래스 자체가
+              리팩터로 사라지면 셀렉터가 0건 매칭해 검사가 조용히 통과(거짓 양성)해 버리기 때문
+              (코드리뷰 patch, listing-photo와 동일 취지). */}
+          <p data-testid="listing-meta" className="truncate whitespace-nowrap pr-14 text-meta font-medium text-ink-muted">
             {[
               `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`,
               typeof listing.fuel === 'string' ? listing.fuel : null,

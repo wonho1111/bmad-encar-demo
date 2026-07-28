@@ -106,18 +106,46 @@ def test_other_on_sale_counted_current_excluded(seeded):
 
 
 def test_anon_can_read_joined_at_despite_profiles_rls(seeded):
-    """④ profiles RLS(본인·admin만)를 anon이 직접 못 읽어도, SECURITY DEFINER 경유로는 읽힌다."""
+    """④ profiles RLS(본인·admin만)를 anon이 직접 못 읽어도, SECURITY DEFINER 경유로는 읽힌다.
+
+    ── 2026-07-28 갱신(대장 #138) ──────────────────────────────────────────
+    이 테스트는 원래 "anon이 profiles를 직접 읽으면 InsufficientPrivilege가 난다"고
+    단언했다 — 즉 막는 층이 GRANT(권한)라는 가정이었다. 그 가정이 틀렸다는 게 운영 DB
+    직접 실측(Supabase MCP)으로 드러났다:
+        has_table_privilege('anon','public.profiles','SELECT')  = true   ← 권한은 있다
+        has_table_privilege('anon','public.listings','SELECT')  = false  ← listings는 0011이
+                                                                              회수해서 없다(대조군)
+        profiles: rls_enabled = true, 정책 4개
+        set local role anon; select count(*) from public.profiles  →  0  ← 0행. RLS가 거른다
+    즉 막히는 건 맞는데 막는 층이 다르다 — 권한이 아니라 RLS(행 수준 정책)다. 보안 노출은
+    없다. `scripts/migration-check-prelude.sql`의
+    `alter default privileges ... grant all on tables to anon, authenticated`는 운영을 정확히
+    재현하고 있었다(위 실측이 증명) — 프렐류드가 아니라 이 테스트의 가정이 틀렸었다. 그래서
+    단언을 실제 방어층(RLS가 0행으로 거른다)에 맞게 고쳤다. RPC가 여전히 가입월을 돌려준다는
+    이 테스트의 핵심 목적은 그대로 유지한다.
+    """
     cur, seller_id, current_id = seeded
 
-    # 대조군: anon이 profiles를 직접 조회하면 막힌다(0001 RLS/기본 GRANT 부재로 거부) —
-    # RPC가 아니라 여기가 원래 강제 지점이었다면 이 SELECT도 통과해야 하는데 실제로는 막힌다.
+    # profiles: anon은 테이블 SELECT 권한 자체는 있다(플랫폼 기본 GRANT, alter default
+    # privileges) — 그런데 RLS(0001, 본인·admin만)가 조용히 0행으로 거른다. 에러가 아니라
+    # "빈 결과"로 막힌다는 게 위 실측의 핵심이고, 이 단언이 그것을 고정한다.
+    cur.execute("set local role anon")
+    cur.execute("select created_at from public.profiles where id = %s", (seller_id,))
+    row = cur.fetchone()
+    cur.execute("reset role")
+    assert row is None, "anon의 profiles 직접 SELECT는 RLS가 0행으로 걸러야 한다(권한 오류가 아니다)"
+
+    # 대조군: listings.embedding(RAG 코퍼스, 0011이 anon 컬럼 화이트리스트 밖으로 뺀 컬럼)은
+    # 반대로 GRANT 층에서 막힌다 — 같은 anon 롤인데 테이블마다 막는 층이 다르다는 것을
+    # 나란히 보여준다("권한으로 막힘"과 "정책으로 막힘"이 이 레포에 둘 다 존재한다).
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         with cur.connection.transaction():
             cur.execute("set local role anon")
-            cur.execute("select created_at from public.profiles where id = %s", (seller_id,))
+            cur.execute("select embedding from public.listings where id = %s", (current_id,))
     cur.execute("reset role")
 
-    # RPC 경유는 anon도 읽는다 — 상세는 비로그인도 열람 가능해야 하므로(FR58).
+    # RPC 경유는 anon도 읽는다 — 상세는 비로그인도 열람 가능해야 하므로(FR58). 이게 이 테스트의
+    # 원래이자 핵심 목적: SECURITY DEFINER RPC가 RLS를 우회해 가입월을 돌려준다는 것.
     joined_at, _count = _call(cur, seller_id, current_id)
     assert joined_at is not None
 
