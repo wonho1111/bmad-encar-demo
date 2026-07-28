@@ -156,7 +156,7 @@ development_status:
   11-0-pretendard-self-host-전환: done
   11-1-view-count-스키마-increment-rpc-하드닝: done
   11-2-상단-내비-재구성: done
-  11-3-ai-히어로-랜딩-히어로-차종-칩: backlog
+  11-3-ai-히어로-랜딩-히어로-차종-칩: done
   11-4-인기-최신-매물-그리드: backlog
   11-5-반응형-뷰포트-e2e-감사-sm-b: backlog
   epic-11-retrospective: optional

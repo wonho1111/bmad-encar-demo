@@ -15,9 +15,10 @@
 // 왜 클라이언트 컴포넌트인가:
 //   대화 상태(messages)·입력값·로딩·에러를 브라우저에서 쥐고 있어야 하고, Supabase 세션 토큰을 꺼내
 //   인증 헤더로 보내야 하므로 'use client'가 필요하다(서버 컴포넌트는 상태·이벤트를 못 가진다).
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { searchAi, type ConversationTurn } from '@/lib/api/aiSearch';
+import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import Button from '@/components/ui/Button';
 
@@ -61,9 +62,10 @@ export default function ChatAssistant() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const query = input.trim();
+  // 실제 검색 실행 — handleSubmit(폼 제출)과 아래 마운트 핸드오프 소비(히어로에서 넘어온 자동
+  // 실행) 둘 다 여기로 합류한다(spec-11-3 Code Map). 분리 전엔 handleSubmit 안에 있던 로직 그대로다
+  // — 동작은 바뀌지 않고 호출 경로만 하나 더 생겼다.
+  async function runSearch(query: string) {
     if (query === '' || loading) return; // 빈 질의·중복 전송 차단(클라 1차 검증).
 
     // 질의가 서버 상한(1000자)을 넘으면, 그대로 보내봐야 422가 떠 "질문 형식이 올바르지 않습니다"라는
@@ -111,6 +113,34 @@ export default function ChatAssistant() {
       setLoading(false);
     }
   }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await runSearch(input.trim());
+  }
+
+  // 마운트 1회: 랜딩 히어로에서 로그인 사용자가 제출한 핸드오프를 소비한다(읽고 즉시 삭제 —
+  // heroSearchHandoff.ts 단일 출처). autoRun===true일 때만 1회 자동 실행한다.
+  //   왜 마운트에서만 읽고 지우나: 이 화면은 무상태(FR18, 새로고침=대화 초기화)라, 여기서 지우지
+  //   않으면 사용자가 자동 실행 직후 새로고침할 때 같은 질의가 다시 자동 실행돼 AI 검색 비용이
+  //   중복 과금된다(에픽이 명시적으로 경고한 위험) — consumeHeroSearchHandoff의 "읽는 즉시 삭제"가
+  //   이걸 막는다.
+  //   queueMicrotask + cleanup 없음(WishButton.tsx와 동일 관례, HeroSearch.tsx 마운트 effect 참고):
+  //   setTimeout으로 지연시키면 React Strict Mode의 (실행→cleanup→실행) 왕복에서 cleanup이 예약을
+  //   취소해 자동 실행이 영영 안 일어나는 조용한 버그가 난다. queueMicrotask는 취소 수단이 없어
+  //   2회차 호출은 이미 비워진 storage를 보고 그냥 return하고, 1회차가 예약한 microtask만 실행된다.
+  //   runSearch를 deps에서 뺀 이유: 이 effect는 마운트 시 1회만 실행돼야 하고, sessionStorage 자체가
+  //   1회용(consume이 지움)이라 이후 재실행돼도 handoff가 없어 아무 일도 안 한다 — 의도적 생략.
+  useEffect(() => {
+    // autoRun:true만 내 몫이다 — autoRun:false(비로그인 게이트 복원용)는 HeroSearch(랜딩) 몫이라
+    // 여기선 손대지 않고 그대로 둔다(11-3 코드리뷰 지적: 무조건 소비하면 랜딩이 나중에 못 읽는다).
+    const handoff = consumeHeroSearchHandoff(true);
+    if (!handoff) return;
+    queueMicrotask(() => {
+      void runSearch(handoff.query);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">

@@ -19,7 +19,8 @@ import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import ResponsiveGrid from '@/components/ui/ResponsiveGrid';
-import { buttonClasses } from '@/components/ui/Button';
+import HeroSearch from '@/components/landing/HeroSearch';
+import CategoryChips from '@/components/landing/CategoryChips';
 
 // 홈도 매 요청 최신 DB를 반영해야 한다(미리보기에 sold가 잔존하지 않게). 정적화 방지(search·상세와 동일).
 export const dynamic = 'force-dynamic';
@@ -105,6 +106,11 @@ export default async function Home() {
     return (
       <>
         <AppHeader roleLabel={roleLabel} email={user.email} currentPath="/" />
+        {/* 히어로(AI 자연어 검색 진입점) + 차종 빠른 진입 칩 (Story 11.3, FR33/FR35) — 헤더 바로
+            아래, 기존 본인정보/미리보기 섹션보다 먼저 배치해 "이 서비스가 뭘 하는지" 첫 화면에서
+            바로 체감하게 한다. 로그인 사용자도 동일 히어로를 보되 제출 시 게이트 없이 /ai로 직행. */}
+        <HeroSearch authed />
+        <CategoryChips />
         {/* 폭을 max-w-2xl(672px)에서 넓힌다 — 그래야 미리보기 4장이 넓은 화면에서 실제로 4열이 된다
             (D5 브레이크포인트는 뷰포트 기준이라 본문이 좁으면 열만 늘고 칸이 찌그러진다, AC6). */}
         <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
@@ -175,21 +181,16 @@ export default async function Home() {
     );
   }
 
-  // 비로그인 상태: 로그인/회원가입 링크를 중앙에 (상단바·로그아웃 없음).
+  // 비로그인 상태 (Story 11.3, #152 해소): 이제 /search와 동일한 상단 내비를 보여준다 —
+  //   이전엔 이 분기가 상단바 없이 "로그인/회원가입" 카드만 중앙에 띄웠는데(로그인·내 차 등록
+  //   진입로가 여기 하나뿐이었음), SiteNav가 같은 링크(로그인·내 차 등록)를 헤더 우측에 이미
+  //   제공하므로 중복 CTA 카드는 걷어내고 그 자리에 히어로+차종칩을 놓는다. 히어로 입력창은
+  //   로그인 여부와 무관하게 항상 활성 — 제출 시점에만 로그인 게이트로 분기한다(Always 규칙).
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">중고차 직거래</h1>
-      <div className="flex flex-col gap-3">
-        <p className="text-sm text-zinc-500">로그인하고 서비스를 이용해보세요.</p>
-        <div className="flex gap-3">
-          <Link href="/login" className={buttonClasses({ variant: 'primary' })}>
-            로그인
-          </Link>
-          <Link href="/signup" className={buttonClasses({ variant: 'secondary' })}>
-            회원가입
-          </Link>
-        </div>
-      </div>
-    </main>
+    <>
+      <AppHeader roleLabel={null} email={null} currentPath="/" />
+      <HeroSearch authed={false} />
+      <CategoryChips />
+    </>
   );
 }
