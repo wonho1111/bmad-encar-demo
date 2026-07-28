@@ -97,3 +97,34 @@ export async function openOrCreateRoom(
   console.error('[chat] 채팅방 생성 실패:', error);
   return { error: '채팅방을 여는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' };
 }
+
+/**
+ * 방 진입 시 본인의 "마지막으로 읽은 시각"을 지금 시각으로 기록한다(FR57, Story 12.5).
+ *
+ * 안읽음 배지(chat_unread_count RPC)는 이 값보다 늦은 상대방 메시지 수로 계산되므로,
+ * 방을 열 때마다 이 함수를 호출해야 다음 조회부터 그 방의 과거 메시지가 배지 집계에서 빠진다.
+ * 방이 열려 있는 동안 실시간으로 도착하는 메시지에는 다시 호출하지 않는다(진입 1회로 한정 — 스펙
+ * Never 절, `ChatRoomMessages.tsx`의 구독·큐 상태기계에는 손대지 않는다).
+ *
+ * 실패해도 화면을 막지 않는다(배지는 부가 정보) — 콘솔 로그만 남기고 호출부는 결과를 기다리지 않아도 된다.
+ *
+ * @param supabase 서버 컴포넌트 Supabase 클라이언트(@/lib/supabase/server). RLS(당사자 검사)를 경유.
+ * @param roomId   진입한 방 id.
+ * @param userId   현재 로그인 사용자 id.
+ */
+export async function markChatRoomRead(
+  supabase: SupabaseClient,
+  roomId: string,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('chat_room_reads')
+    .upsert(
+      { user_id: userId, room_id: roomId, last_read_at: new Date().toISOString() },
+      { onConflict: 'user_id,room_id' },
+    );
+
+  if (error) {
+    console.error('[chat] 읽음 상태 갱신 실패:', error);
+  }
+}

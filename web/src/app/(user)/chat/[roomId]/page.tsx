@@ -13,6 +13,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
+import { markChatRoomRead } from '@/lib/chat';
 import AppHeader from '@/components/layout/AppHeader';
 import ChatRoomMessages from './ChatRoomMessages';
 
@@ -120,6 +121,19 @@ export default async function ChatRoomPage({
         </main>
       </>
     );
+  }
+
+  // 본인의 마지막 열람 시각을 지금으로 갱신(FR57, Story 12.5).
+  //   ⚠️ 여기까지 온 것은 방이 RLS상 **보인다**는 뜻일 뿐 "당사자다"라는 뜻이 아니다 —
+  //   0005의 `chat_rooms_select_admin (using is_admin())`이 참여자 정책과 OR로 합쳐지므로
+  //   관리자에게는 남의 방도 보인다(0025가 chat_unread_count()에서 되돌린 것과 **같은 축**이다).
+  //   그래서 buyer_id/seller_id로 실제 당사자를 직접 확인한 뒤에만 기록한다 — 가드가 없으면
+  //   관리자가 방을 열 때마다 chat_room_reads의 참여자 RLS가 42501로 거부하고, 그 실패는
+  //   markChatRoomRead가 삼켜 콘솔 에러만 조용히 쌓인다.
+  //   실패해도 화면은 막지 않는다(markChatRoomRead 내부에서 콘솔 로그만).
+  const iAmParticipant = user?.id === room.buyer_id || user?.id === room.seller_id;
+  if (user?.id && iAmParticipant) {
+    await markChatRoomRead(supabase, room.id, user.id);
   }
 
   // 당사자 — 매물 요약·상대 헤더 + 메시지 빈 골격.

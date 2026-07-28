@@ -57,13 +57,14 @@ export default async function ChatListPage() {
   }
 
   // 내 채팅방 목록 — RLS가 참여자 방만 통과시키므로 별도 필터 불필요. 매물 요약은 임베디드 조회로 함께.
-  //   최신순(created_at desc) + id 2차정렬(같은 시각 행의 순서 안정화 — search 페이지와 동일 정신).
+  //   최신 문의 순(last_message_at desc, FR57·Story 12.5 — 방 생성순이 아니라 마지막 메시지 시각순)
+  //   + id 2차정렬(같은 시각 행의 순서 안정화 — search 페이지와 동일 정신).
   const { data: rooms, error } = await supabase
     .from('chat_rooms')
     .select(
       'id, listing_id, buyer_id, seller_id, buyer_name, seller_name, created_at, listings(manufacturer, model, year, price, status)',
     )
-    .order('created_at', { ascending: false })
+    .order('last_message_at', { ascending: false })
     .order('id', { ascending: false })
     .returns<ChatRoomRow[]>();
 

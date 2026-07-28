@@ -624,3 +624,64 @@ Story 12.3이 폴링을 걷어내며 남긴 구멍 — "연결이 끊기면 새�
 - 이 절이 확장하는 파일: `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`(배너·큐·갭보정
   배선)·`web/src/lib/messages.ts`(`QueuedMessage` 타입·`flushMessageQueue` 순수 함수). Epic 16.4가
   Flutter로 미러링할 때 이 절 전체(§12.5)를 그대로 따른다.
+
+## 12.6 안읽음 배지 + 방 목록 정렬 계약 (Story 12.5, FR57)
+
+Epic 16 Story 16.4(Flutter 안읽음 미러링, §12.5의 실시간 구독 미러링과 같은 선례)가 참조할
+단일 출처다. 값이 바뀌면 이 문서를 먼저 고치고 web·app 양쪽에 반영한다.
+
+- **테이블**: `chat_room_reads(user_id, room_id, last_read_at)` — 복합 PK `(user_id, room_id)`,
+  둘 다 `on delete cascade`(`supabase/migrations/0024_chat_room_reads.sql`). "이 사용자가 이
+  방을 마지막으로 언제 열었나"만 담는다 — 집계·비정규화 컬럼 없음(A2, 0018 wishlists와 동일한
+  "본인 소유 관계 테이블 + 단순 RLS" 패턴).
+- **정렬 기준**: `chat_rooms.last_message_at`(신설 컬럼) — 방 생성 시각(`created_at`)이 아니라
+  **그 방의 마지막 메시지 시각**. `chat_messages` AFTER INSERT 트리거 `chat_messages_touch_room_last_message`
+  (실행 함수는 `chat_rooms_touch_last_message()`, SECURITY DEFINER — `chat_rooms`는 UPDATE 정책이
+  없어 authenticated 권한으로는 이 갱신이 불가능하다)가 매 INSERT마다 `greatest(기존값, 새 시각)`로
+  단조증가만 허용하며 갱신한다(코드리뷰 patch — 동시 전송 등으로 커밋 순서가 시각순과 어긋나도
+  정렬 기준이 되돌아가지 않는다). 방 목록(`web/src/app/(user)/chat/page.tsx`)은
+  `.order('last_message_at', { ascending: false }).order('id', { ascending: false })`로 정렬한다
+  (동시각 안정화용 id 2차정렬은 기존 관례 유지).
+- **안읽음 집계 공식**: 내가 당사자인 방의 `chat_messages` 중 `sender_id <> auth.uid()`이고
+  `created_at > coalesce(그 방의 내 chat_room_reads.last_read_at, '-infinity')`인 행의 개수.
+  이 공식을 구현하는 자리는 `chat_unread_count()` RPC(인자 없음, SECURITY INVOKER) **하나뿐**이다
+  — 화면·다른 쿼리가 이 계산을 다시 구현하지 않는다. INVOKER인 이유: 호출자 자신의 기존
+  RLS(`chat_messages_select_participant`·`chat_room_reads_select_own`)로 자기 읽음행만 보이므로
+  정의자 권한으로 승격할 이유가 없다(A2 최소 권한). `authenticated`에만 EXECUTE가 있다
+  (anon 회수 — 비로그인은 배지가 없다).
+  - ⚠️ **"내가 당사자인 방" 조건은 RLS에 맡기지 않고 함수 안에 `chat_rooms` 조인으로 명시한다**
+    (`0025_chat_unread_participant_scope.sql`). 0024는 "INVOKER라 RLS가 이미 방 경계를 긋는다"고
+    보고 이 조인을 생략했는데, **관리자에게는 그 전제가 깨진다** — `0005_admin_policies.sql`의
+    `chat_messages_select_admin (using is_admin())`이 참여자 정책과 **OR로** 합쳐지므로 관리자에겐
+    전체 메시지가 보인다. 그 결과 관리자가 소비자 화면을 열면 배지가 "플랫폼 전체 메시지 수"가
+    됐다(로컬 실측: 참여 방 0개인 관리자에게 10 = 전체 메시지 수). Flutter(Epic 16.4)도 이 RPC를
+    그대로 호출하면 되므로 앱 쪽에서 따로 방 필터를 걸 필요는 없다.
+- **갱신 시점**: 방 진입(`web/src/app/(user)/chat/[roomId]/page.tsx`, 당사자 확인이 끝난 지점)
+  **1회**만 `chat_room_reads.last_read_at`을 지금 시각으로 upsert한다 —
+  - ⚠️ **여기서 말하는 "당사자 확인"은 방 조회가 0건이 아니라는 것이 아니라 `buyer_id`/`seller_id`
+    직접 대조다.** 위 RPC와 **같은 축**의 함정이다 — `0005_admin_policies.sql`의
+    `chat_rooms_select_admin (using is_admin())`도 참여자 정책과 OR로 합쳐지므로 관리자에게는
+    남의 방도 조회된다. 대조 없이 호출하면 `chat_room_reads`의 참여자 RLS가 42501로 거부하고,
+    `markChatRoomRead`가 그 실패를 콘솔로만 삼켜 관리자 열람마다 조용히 에러만 쌓인다
+    (후속 코드리뷰 patch — 호출 위치·`await`·인자 순서는
+    `web/src/app/(user)/chat/__tests__/unreadWiringContract.test.ts`가 고정한다).
+  `web/src/lib/chat.ts`의 `markChatRoomRead(supabase, roomId, userId)`가 유일한 갱신 통로다.
+  방이 열려 있는 동안 실시간으로 도착하는 메시지마다 다시 갱신하지 않는다(§12.5의 실시간 구독
+  콜백·큐 상태기계에는 손대지 않는다 — 과설계 방지, A3). 그래서 방을 오래 열어둔 채 여러 건을
+  라이브로 본 뒤 재진입 없이 나가면 그 메시지들은 다음 진입 전까지 안읽음으로 남는다(알려진 범위
+  밖 edge case, `docs/tech-debt.md` #210).
+- **배지 표기**: 내비 채팅🔔(`web/src/components/layout/SiteNav.tsx`)에 점(색 배지) 안에 숫자를
+  넣어 "점+숫자"를 한 요소로 표기하고, `aria-label`에도 건수를 반영한다(예: "채팅, 안읽음 메시지
+  3건" — 비색 신호 중복, UX-DR22). 0이면 배지를 렌더하지 않는다. **보이는 배지는 99 초과를
+  "99+"로 누르지만 `aria-label`은 정확한 건수를 유지한다** — 상한을 둔 이유가 작은 원형 배지의
+  레이아웃 사정이라 화면 낭독에는 해당되지 않는다(후속 코드리뷰 patch). 방 목록 각 행에는 방별 개별
+  안읽음 표시를 두지 않는다(FR57 AC가 요구하는 건 내비 총합과 정렬뿐 — Never, 과설계 금지).
+  배지 색은 **`bg-red-600`(#DC2626)** 이다 — 10px 소형 텍스트라 흰 글자 대비가 WCAG AA(4.5:1)를
+  넘어야 하고, `bg-red-500`(#EF4444)은 3.76:1로 미달이다(후속 코드리뷰 patch, 실측). 라이트·다크
+  양쪽에서 같은 값을 쓴다. **RPC가 실패하면 배지를 렌더하지 않는다**(0과 구분 표시하지 않음) —
+  배지는 부가 정보라 헤더·페이지 렌더 자체를 막지 않는다(콘솔 로그만). Flutter(16.4)도 이 두 가지를
+  그대로 따른다.
+  카운트 계산은 `web/src/components/layout/AppHeader.tsx`가 **consumer 분기·로그인 상태일 때만**
+  `chat_unread_count()`를 호출해 맡는다(admin 분기·비로그인은 호출하지 않음) — 이 때문에
+  `AppHeader`가 비동기 컴포넌트로 바뀌었다(대장 #209, `#183` getUser 증폭 층에 RPC 호출이
+  하나 더 얹힘).

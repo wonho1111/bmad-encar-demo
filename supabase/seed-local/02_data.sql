@@ -54,9 +54,16 @@ on conflict (id) do nothing;
 -- ── 3) chat_rooms ────────────────────────────────────────────────────
 --   BEFORE INSERT 트리거 enforce_chat_room_seller가 listings.seller_id로 seller_id를 강제 재계산한다
 --   (1단계에서 listings가 먼저 들어와 있어야 한다 — 파일 순서가 곧 실행 순서).
+--   ⚠️ `select *`가 아니라 명시적 컬럼 목록(last_message_at 제외, Story 12.5)을 쓴다 — 위 1번
+--   listings.view_count와 동일한 이유: 스냅샷 JSON엔 이 컬럼이 없어 jsonb_populate_recordset이
+--   명시적 NULL로 채우는데, last_message_at은 not null이라 그 NULL이 그대로 제약 위반이 된다
+--   (실측: "null value in column last_message_at ... violates not-null constraint"로 시드 전체가
+--   멈춤). 컬럼을 목록에서 빼면 기본값(now())이 대신 적용되고, 아래 4번 다음의 백필 UPDATE가
+--   실제 마지막 메시지 시각으로 다시 정확히 맞춘다.
 \set chat_rooms_json `cat data/chat_rooms.json`
-insert into public.chat_rooms
-select * from jsonb_populate_recordset(null::public.chat_rooms, :'chat_rooms_json'::jsonb)
+insert into public.chat_rooms (id, listing_id, buyer_id, seller_id, created_at, buyer_name, seller_name)
+select id, listing_id, buyer_id, seller_id, created_at, buyer_name, seller_name
+from jsonb_populate_recordset(null::public.chat_rooms, :'chat_rooms_json'::jsonb)
 on conflict (id) do nothing;
 
 -- ── 4) chat_messages ─────────────────────────────────────────────────
@@ -64,6 +71,18 @@ on conflict (id) do nothing;
 insert into public.chat_messages
 select * from jsonb_populate_recordset(null::public.chat_messages, :'chat_messages_json'::jsonb)
 on conflict (id) do nothing;
+
+-- 4b) chat_rooms.last_message_at 재백필(Story 12.5) — chat_messages_touch_room_last_message
+--   트리거가 위 대량 INSERT의 각 행마다 발화해 last_message_at을 그 행의 created_at으로 덮어쓰지만,
+--   스냅샷 JSON의 행 순서가 시간순이라는 보장이 없어(실측: 한 방 안에서도 뒤 행이 앞 행보다 이른
+--   시각인 경우가 있었다) 트리거만으로는 "마지막으로 처리된 행"이 "가장 늦은 메시지"와 다를 수
+--   있다. 그래서 0024 마이그레이션의 백필과 동일한 공식으로 한 번 더 정확히 맞춘다(멱등 — 여러 번
+--   실행해도 항상 같은 결과로 수렴).
+update public.chat_rooms r
+set last_message_at = coalesce(
+  (select max(m.created_at) from public.chat_messages m where m.room_id = r.id),
+  r.created_at
+);
 
 -- ── 5) guide_documents ───────────────────────────────────────────────
 \set guide_documents_json `cat data/guide_documents.json`

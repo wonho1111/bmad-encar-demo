@@ -42,15 +42,40 @@
 // SiteNav 자체는 admin 분기에서 아예 호출되지 않으므로 그런 경로는 애초에 없다. ATTR_VALUE는
 // `{...}` 중첩을 한 겹까지만 따라가므로, prop 값 안에 객체 리터럴이 두 겹 이상 중첩되면 태그
 // 매치가 실패할 수 있다 — 이 리포의 실제 호출부엔 그런 패턴이 없어 범위 밖으로 둔다.
+//
+// ✎ Story 12.5(FR57) 추가 — AppHeader는 consumer 분기·로그인 시 `chat_unread_count()` RPC를
+// 호출하려고 비동기 컴포넌트로 바뀌었다. 그래서 이 파일의 직접 호출 기법도 `await AppHeader(...)`
+// 로 바뀐다(함수 자체 호출은 그대로 — 훅이 없으므로 여전히 React 렌더러 없이 안전하다). 실제
+// `@/lib/supabase/server`(next/headers `cookies()` 사용 — 요청 스코프 밖인 vitest에서는 호출
+// 자체가 실패한다)는 `vi.mock`으로 가짜 클라이언트로 치환해 RPC 호출 여부·반환값만 확인한다.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Link from 'next/link';
-import AppHeader from './AppHeader';
 import SiteNav from './SiteNav';
 import Logo from '@/components/ui/Logo';
 import LogoutButton from '@/components/auth/LogoutButton';
+
+// hoisting 때문에 vi.mock 팩토리 안에서 바깥 변수를 쓸 수 없어(photo-sync.test.ts와 동일 관례),
+// 기록·조작은 vi.hoisted로 만든 객체에 둔다.
+const h = vi.hoisted(() => ({
+  rpcCalls: [] as string[],
+  rpcResult: { data: 0 as unknown, error: null as unknown },
+}));
+
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: async () => ({
+    rpc: async (fn: string) => {
+      h.rpcCalls.push(fn);
+      return h.rpcResult;
+    },
+  }),
+}));
+
+// vi.mock 호출은 Vitest가 파일 최상단으로 끌어올리므로(hoisting), 아래 정적 import보다 소스상
+// 뒤에 있어도 AppHeader는 항상 위 가짜 createClient를 물게 된다(photo-sync.test.ts와 동일 관례).
+import AppHeader from './AppHeader';
 
 type ElementNode = { type: unknown; props?: { children?: unknown; [key: string]: unknown } };
 
@@ -108,14 +133,23 @@ function collectSourceFiles(dir: string, excludeDirs: string[] = []): string[] {
 }
 
 describe('AppHeader — admin/consumer 분기', () => {
-  it('consumer(기본값): SiteNav에 email·currentPath가 그대로 전달되고, href="/"인 Link 안에 Logo가 있다', () => {
-    const tree = AppHeader({ email: 'a@b.c', currentPath: '/search' });
+  beforeEach(() => {
+    h.rpcCalls.length = 0;
+    h.rpcResult = { data: 0, error: null };
+  });
+
+  it('consumer(기본값): SiteNav에 email·currentPath·unreadCount가 그대로 전달되고, href="/"인 Link 안에 Logo가 있다', async () => {
+    h.rpcResult = { data: 5, error: null };
+    const tree = await AppHeader({ email: 'a@b.c', currentPath: '/search' });
     const nodes = collectNodes(tree);
 
     const siteNavNodes = nodes.filter((n) => n.type === SiteNav);
     expect(siteNavNodes).toHaveLength(1);
     expect(siteNavNodes[0].props?.email).toBe('a@b.c');
     expect(siteNavNodes[0].props?.currentPath).toBe('/search');
+    // 안읽음 총합(FR57, Story 12.5) — consumer·로그인이면 chat_unread_count() RPC 결과를 그대로 넘긴다.
+    expect(siteNavNodes[0].props?.unreadCount).toBe(5);
+    expect(h.rpcCalls).toEqual(['chat_unread_count']);
 
     const homeLinks = nodes.filter((n) => n.type === Link && (n.props as { href?: string })?.href === '/');
     expect(homeLinks).toHaveLength(1);
@@ -123,8 +157,40 @@ describe('AppHeader — admin/consumer 분기', () => {
     expect(logoInsideLink).toBe(true);
   });
 
-  it('admin: SiteNav도 Logo도 없고, roleLabel·email 문자열은 들어 있고, LogoutButton은 반드시 있다', () => {
-    const tree = AppHeader({ variant: 'admin', email: 'a@b.c', roleLabel: '관리자' });
+  it('consumer + 비로그인(email 없음): chat_unread_count()를 호출하지 않고 unreadCount는 undefined다', async () => {
+    const tree = await AppHeader({ currentPath: '/search' });
+    const nodes = collectNodes(tree);
+
+    const siteNavNodes = nodes.filter((n) => n.type === SiteNav);
+    // 렌더 여부부터 단언한다 — 없으면 siteNavNodes[0]가 undefined라 아래 unreadCount 단언이
+    // "내비가 통째로 사라져도 통과"하는 검사가 된다(후속 코드리뷰 patch).
+    expect(siteNavNodes).toHaveLength(1);
+    expect(siteNavNodes[0].props?.unreadCount).toBeUndefined();
+    expect(h.rpcCalls).toEqual([]);
+  });
+
+  it('RPC가 실패해도 헤더는 렌더되고 배지만 빠진다(비차단 폴백)', async () => {
+    // 배지는 부가 정보다 — 이 폴백이 깨져 예외가 위로 던져지면 AppHeader를 쓰는 소비자 페이지가
+    // 통째로 500이 된다. 하네스에 error 필드는 있었지만 이 분기를 실행하는 테스트가 없었다
+    // (후속 코드리뷰 patch — verification-gap 지적).
+    h.rpcResult = { data: null, error: { message: 'boom' } };
+    // 폴백 경로가 남기는 진단 로그는 이 테스트에서 의도된 출력이라 삼킨다(테스트 출력 오염 방지).
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const tree = await AppHeader({ email: 'a@b.c', currentPath: '/search' });
+    const nodes = collectNodes(tree);
+
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+
+    const siteNavNodes = nodes.filter((n) => n.type === SiteNav);
+    expect(siteNavNodes).toHaveLength(1);
+    expect(siteNavNodes[0].props?.unreadCount).toBeUndefined();
+    expect(h.rpcCalls).toEqual(['chat_unread_count']);
+  });
+
+  it('admin: SiteNav도 Logo도 없고, roleLabel·email 문자열은 들어 있고, LogoutButton은 반드시 있다 — chat_unread_count()도 호출하지 않는다', async () => {
+    const tree = await AppHeader({ variant: 'admin', email: 'a@b.c', roleLabel: '관리자' });
     const nodes = collectNodes(tree);
 
     expect(nodes.some((n) => n.type === SiteNav)).toBe(false);
@@ -132,6 +198,8 @@ describe('AppHeader — admin/consumer 분기', () => {
     // 3차 리뷰 지적 P2 — admin은 requireAdmin()을 통과해야만 도달하므로 이 버튼이 로그아웃의
     // 유일한 수단이다. 이게 빠지면 관리자가 관리자 콘솔에서 못 나가는데 lint/tsc/vitest는 몰랐다.
     expect(nodes.some((n) => n.type === LogoutButton)).toBe(true);
+    // admin 분기는 email이 있어도 RPC를 호출하지 않는다(스펙: "admin 분기·비로그인은 호출 안 함").
+    expect(h.rpcCalls).toEqual([]);
 
     const text = collectText(tree).join(' ');
     expect(text).toContain('관리자');

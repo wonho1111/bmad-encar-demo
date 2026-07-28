@@ -3,14 +3,18 @@
 //     그대로. 관리자는 운영 허브 전용 역할이라 소비자 내비(내 차 사기 등)가 의미 없다(nav-ia-rules.md §1).
 //   · 'consumer'(기본값, 나머지 9개 호출부 — account/page.tsx 포함) — 로고(홈 링크) + SiteNav(데스크톱 3링크·모바일 햄버거·
 //     로그인상태별 찜/채팅/프로필▾ 또는 로그인/내 차 등록).
-// 서버 컴포넌트(상태 없음) — 로그인 상태 판별·상호작용은 각 갈래(LogoutButton·SiteNav)의
+// 서버 컴포넌트 — 로그인 상태 판별·상호작용은 각 갈래(LogoutButton·SiteNav)의
 // 클라이언트 컴포넌트에 위임한다.
+// consumer 분기·로그인 상태일 때만 안읽음 총합(FR57, Story 12.5)을 계산하려고 비동기 컴포넌트로
+// 전환했다(admin 분기·비로그인은 호출하지 않는다). 대장 #183(getUser 증폭) 층에 RPC 호출이
+// 하나 더 얹히는 것은 알려진 tech-debt로 등재해 둔다.
 import Link from 'next/link';
 import LogoutButton from '@/components/auth/LogoutButton';
 import Logo from '@/components/ui/Logo';
+import { createClient } from '@/lib/supabase/server';
 import SiteNav from './SiteNav';
 
-export default function AppHeader({
+export default async function AppHeader({
   roleLabel,
   email,
   currentPath,
@@ -49,6 +53,20 @@ export default function AppHeader({
     );
   }
 
+  // 안읽음 총합(FR57, Story 12.5) — consumer 분기·로그인 상태일 때만 계산한다(admin 분기·비로그인은
+  // 이 지점에 도달하지 않거나 email이 없어 호출을 건너뛴다). RPC 실패는 배지 없음으로 폴백한다 —
+  // 배지는 부가 정보라 헤더 렌더 자체를 막지 않는다(콘솔 로그만).
+  let unreadCount: number | undefined;
+  if (email) {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc('chat_unread_count');
+    if (error) {
+      console.error('[AppHeader] 안읽음 카운트 조회 실패:', error);
+    } else if (typeof data === 'number') {
+      unreadCount = data;
+    }
+  }
+
   return (
     // relative — 모바일 햄버거 패널(SiteNav.tsx, absolute inset-x-0 top-full)의 포지션 기준.
     // SiteNav 루트 div가 아니라 여기 둬야 패널이 로고를 지나 header 왼쪽 끝(0)부터 시작한다
@@ -61,7 +79,7 @@ export default function AppHeader({
         <Link href="/" aria-label="홈으로 이동" className="shrink-0">
           <Logo size="sm" />
         </Link>
-        <SiteNav email={email} currentPath={currentPath} />
+        <SiteNav email={email} currentPath={currentPath} unreadCount={unreadCount} />
       </div>
     </header>
   );

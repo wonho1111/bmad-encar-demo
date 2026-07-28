@@ -58,6 +58,54 @@ describe('SiteNav — 초기 렌더 계약', () => {
   });
 });
 
+describe('SiteNav — 안읽음 배지(FR57, Story 12.5)', () => {
+  it('unreadCount > 0이면 점 안에 숫자가 표시되고 aria-label에 건수가 반영된다', () => {
+    const html = renderToStaticMarkup(
+      createElement(SiteNav, { email: 'a@b.c', currentPath: '/search', unreadCount: 3 }),
+    );
+
+    expect(html).toContain('aria-label="채팅, 안읽음 메시지 3건"');
+    // 배지 텍스트(숫자) 자체가 마크업에 있어야 "점+숫자"를 한 요소로 충족한 것이 된다(비색 신호 중복).
+    expect(html).toContain('>3</span>');
+  });
+
+  it('unreadCount가 0이면 배지를 렌더하지 않고 aria-label은 기본값("채팅")이다', () => {
+    const html = renderToStaticMarkup(
+      createElement(SiteNav, { email: 'a@b.c', currentPath: '/search', unreadCount: 0 }),
+    );
+
+    expect(html).toContain('aria-label="채팅"');
+    expect(html).not.toContain('안읽음 메시지');
+  });
+
+  it('unreadCount가 없으면(undefined, 예: RPC 실패 폴백) 배지 없이 기본값과 동일하다', () => {
+    const html = renderToStaticMarkup(createElement(SiteNav, { email: 'a@b.c', currentPath: '/search' }));
+
+    expect(html).toContain('aria-label="채팅"');
+    expect(html).not.toContain('안읽음 메시지');
+  });
+
+  it('unreadCount가 99를 넘으면 보이는 배지만 "99+"로 눌리고 aria-label은 정확한 건수를 유지한다', () => {
+    // 상한을 둔 이유는 "작은 원형 배지가 깨진다"는 레이아웃 사정이다 — 화면 낭독에는 그 제약이
+    // 없으므로 스크린리더에는 정확한 수를 준다(후속 코드리뷰 patch, UX-DR22 비색 신호 중복).
+    const html = renderToStaticMarkup(
+      createElement(SiteNav, { email: 'a@b.c', currentPath: '/search', unreadCount: 137 }),
+    );
+
+    expect(html).toContain('aria-label="채팅, 안읽음 메시지 137건"');
+    expect(html).toContain('>99+</span>');
+  });
+
+  it('unreadCount가 정확히 99면 그대로 "99"가 표시된다(상한의 경계값)', () => {
+    const html = renderToStaticMarkup(
+      createElement(SiteNav, { email: 'a@b.c', currentPath: '/search', unreadCount: 99 }),
+    );
+
+    expect(html).toContain('aria-label="채팅, 안읽음 메시지 99건"');
+    expect(html).toContain('>99</span>');
+  });
+});
+
 describe('SiteNav — 측정값 고정(760px 브레이크포인트·44px 히트영역)', () => {
   it('소스 스캔(3차 코드리뷰 지적 P5) — 760px과 44px(h-11 w-11)은 mockups 실측치라 값 자체를 고정한다', () => {
     // 이 검사는 **값**만 고정한다 — 760이 750으로, 44px이 다른 값으로 바뀌면 lint·tsc·vitest·

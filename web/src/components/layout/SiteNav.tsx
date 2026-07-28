@@ -38,12 +38,26 @@ const ICON_BUTTON_CLASS =
 const TEXT_LINK_CLASS = 'text-sm font-medium text-ink-secondary hover:text-ink-primary';
 const PANEL_LINK_CLASS = 'rounded px-3 py-3 text-sm font-medium text-ink-primary hover:bg-surface-base';
 
+// 안읽음 배지 표기 상한(코드리뷰 patch, FR57) — 99 초과는 "99+"로 눌러 작은 원형 배지가 깨지지
+// 않게 한다. 롤아웃 시점(스펙 I/O 매트릭스)엔 과거 메시지 전부가 1회성으로 잡혀 두 자리를 넘길 수 있다.
+// ⚠️ **이 상한은 눈에 보이는 배지에만 적용한다.** aria-label에는 정확한 건수를 넣는다 — 상한을
+//    둔 이유가 "작은 원이 깨진다"는 레이아웃 사정이라 화면 낭독에는 해당되지 않고, 스크린리더
+//    사용자만 "99+건"이라는 뭉갠 값을 받는 것은 비색 신호 중복(UX-DR22)의 취지에 어긋난다
+//    (후속 코드리뷰 patch).
+function formatUnreadBadge(count: number): string {
+  return count > 99 ? '99+' : String(count);
+}
+
 export default function SiteNav({
   email,
   currentPath,
+  unreadCount,
 }: {
   email?: string | null;
   currentPath?: string;
+  // 안읽음 문의 총합(FR57, Story 12.5) — AppHeader가 로그인 시에만 chat_unread_count()로 계산해 넘긴다.
+  // 0 또는 undefined면 배지를 렌더하지 않는다.
+  unreadCount?: number;
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -129,8 +143,29 @@ export default function SiteNav({
             <Link href="/wishlist" aria-label="찜한 매물" className={ICON_BUTTON_CLASS}>
               <span aria-hidden>♡</span>
             </Link>
-            <Link href="/chat" aria-label="채팅" className={ICON_BUTTON_CLASS}>
+            {/* 안읽음 배지(FR57) — 점(색이 있는 작은 배지) 안에 숫자를 넣어 "점+숫자"를 한 요소로
+                충족하고, aria-label에도 건수를 반영해 비색 신호를 중복시킨다(UX-DR22). 0(또는
+                undefined)이면 배지를 렌더하지 않는다 — 방 목록에는 방별 개별 표시를 두지 않는다(Never).
+                99 초과는 "99+"로 표기(코드리뷰 patch) — 롤아웃 시점엔 과거 메시지 전부가 1회성으로
+                잡혀(스펙 I/O 매트릭스) 숫자가 커질 수 있는데, 상한 없이 그대로 넣으면 이 작은
+                원형 배지가 깨진다. */}
+            <Link
+              href="/chat"
+              aria-label={unreadCount ? `채팅, 안읽음 메시지 ${unreadCount}건` : '채팅'}
+              className={`relative ${ICON_BUTTON_CLASS}`}
+            >
               <span aria-hidden>🔔</span>
+              {/* bg-red-600 — red-500(#EF4444)은 흰 글자 대비 3.76:1로 AA(4.5:1) 미달이다.
+                  red-600(#DC2626)은 4.83:1로 통과하며 라이트·다크 양쪽 배경에서 같은 값을 쓴다
+                  (후속 코드리뷰 patch. 이 배지는 10px 소형 텍스트라 대비 여유가 없다). */}
+              {unreadCount ? (
+                <span
+                  aria-hidden
+                  className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white"
+                >
+                  {formatUnreadBadge(unreadCount)}
+                </span>
+              ) : null}
             </Link>
             <div ref={profileContainerRef} className="relative">
               <button
