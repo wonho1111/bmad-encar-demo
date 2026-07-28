@@ -204,7 +204,18 @@ export default function ChatAssistant() {
           placeholder="찾으시는 차를 자연어로 입력하세요"
           aria-label="AI 검색 질의 입력"
           disabled={loading}
-          className="flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
+          // #84 수정 — 390px에서 실측해 확정(원래 가설이었던 min-w-0 단독으로는 재현이 그대로였다.
+          // 실제 원인: <main>이 이 페이지에서 max-w-3xl + mx-auto인데, mx-auto(좌우 auto 마진)는
+          // 부모(<body class="flex flex-col">)의 stretch를 깨고 자기 content의 "선호 폭"만큼만
+          // 차지한다(centering) — 그 선호 폭 계산(max-content)은 flex-basis:0%(=flex-1)로 렌더될
+          // 실제 폭과 무관하게 <input>의 **기본 size=20** 힌트를 그대로 반영해 폼 행이 354px로
+          // 잡히고 main이 402px(354+p-6 48)까지 넓어졌다. min-w-0(flex-shrink 하한 해제)는 "실제
+          // 배치된 뒤" 줄어드는 것만 도와줄 뿐 이 max-content 계산엔 관여하지 않아 효과가 없었다.
+          // size={1}로 그 기본 힌트 자체를 줄이면 main의 선호 폭이 390 밑으로 내려가 오버플로가
+          // 사라진다(실측: main 402px→390px). flex-1이 이미 실제 렌더 폭을 결정하므로 size는
+          // 화면에 보이는 입력창 크기에 영향이 없다(글자 수 제한도 아님 — maxLength와 무관).
+          size={1}
+          className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
         />
         <Button type="submit" variant="primary" loading={loading} loadingText="검색 중…">
           전송

@@ -97,10 +97,10 @@ web·app·api·db 경계를 가로지르는 값은 **전부 거기 정의돼 있
 ### 12. 테스트 규칙 (층별 — 근거: 각 프레임워크 공식 문서 + 테스트 피라미드)
 하나로 뭉치지 않는다. 층마다 표준이 다르다:
 - **api (FastAPI+LangGraph):** LLM을 fake로 교체해 pytest **결정론적 단위테스트**(라우팅·SQL가드·파라미터 추출). 실제 LLM 품질은 별도 **eval/live-smoke 트랙**(회귀 게이트, 매 커밋마다 돌리지 않음).
-- **web (Next.js App Router):** **E2E(Playwright) 우선** — Next.js 공식이 async 서버 컴포넌트는 단위테스트 대신 E2E를 권장. 서버 컴포넌트 밖 순수 유틸(폼 검증 등)이 생기면 그것만 Vitest 단위테스트로 보강.
+- **web (Next.js App Router):** **E2E(Playwright) 우선** — Next.js 공식이 async 서버 컴포넌트는 단위테스트 대신 E2E를 권장. 서버 컴포넌트 밖 순수 유틸(폼 검증 등)이 생기면 그것만 Vitest 단위테스트로 보강. `web/e2e/*.spec.ts`(Story 11.5부터, `npm run test:e2e`)가 실제 Playwright 스위트다.
 - **app (Flutter):** 핵심 Riverpod 컨트롤러 로직(폴링 상태 전이·필터 조합 등)은 `ProviderContainer.test`로 **순수 Dart 단위테스트 추가를 고려**(Supabase는 리포지토리로 감싸 fake 주입). 단순 화면은 실폰 E2E 유지. **트리거 = 컨트롤러 로직이 복잡해질 때.**
 - **공통:** 구현 후 반드시 직접 실행·관찰. E2E-only는 표면이 작을 때의 **의도적 절충**이지 무기한 표준이 아님.
-- ⚠️ **알아둘 것: 이 규칙은 현재 CI가 강제하지 않는다.** 워크플로는 `migration-gate.yml` 하나뿐이고 `paths:` 필터가 마이그·스크립트라, **api/web/app 테스트는 로컬에서 직접 돌려야 한다**(`docs/tech-debt.md` #29).
+- ⚠️ **CI가 실제로 도는 것과 안 도는 것(2026-07-28 갱신, Story 11.5 — 이전 문구는 낡아 있었다, `docs/tech-debt.md` #87).** `.github/workflows/tests.yml`이 이미 있고 push/PR마다 자동으로 돈다: **api**(pytest, secrets 없어 실DB·live-smoke는 skip) · **api-db**(컨테이너 Postgres에 마이그레이션 전량 적용 후 `tests/integration` 실행) · **web**(`lint`+`vitest`) · **app**(`flutter test`). **여전히 CI에 안 도는 것**은 (a) web의 **E2E(Playwright)** — `web/e2e/*.spec.ts`는 로컬 `npm run test:e2e` 전용이고 CI job이 없다(의도적 결정, `docs/tech-debt.md` #168 — 헤드리스 브라우저 설치·로컬 Supabase 컨테이너 기동·시크릿 관리가 추가로 필요해 별도 작업), (b) `test_readonly`·`test_live_smoke`(secrets 미설정으로 자동 skip, 의도된 안전장치).
 
 ### 13. 반응형 UI 무결성 (D5 — 전 UI governing, web·app·관리자 공통)
 가로폭이 줄면 **그리드 열 수로만 흡수**(4→2→1). 개별 컴포넌트 **내부 가로 배치(신뢰속성 행·meta·옵션 칩·버튼 라벨·필터 버튼)를 세로로 접지 않는다** — 텍스트가 길거나 공간이 부족해도 **줄바꿈 찌그러짐·2줄로 밀리는 버튼·라벨 어긋남 = 금기**. 공간 부족은 `truncate`("…")·"외 N"·열 축소로만 처리. 가장자리 카드 부분 클리핑만 허용(모바일에서 살짝 가려지는 정도). **레이아웃 어긋남·깨짐 = 절대 금기.** 관리자 화면도 예외 없음.
@@ -132,4 +132,4 @@ web·app·api·db 경계를 가로지르는 값은 **전부 거기 정의돼 있
 - 이 파일은 lean하게 유지한다(에이전트 컨텍스트 효율). **여기에 계약 값을 다시 적지 않는다** — 사본은 반드시 늙는다.
 - 계약이 바뀌면 `docs/conventions.md`를 먼저 고친다. 이 파일은 스택·구현 규칙이 바뀔 때만.
 
-_Last Updated: 2026-07-15 (conventions 중복 요약 제거 — 요약이 원본보다 늙어 틀린 값이 주입되던 구조를 끊음)_
+_Last Updated: 2026-07-28 (§12 CI 커버리지 문구 갱신 — E2E는 로컬 전용, CI는 api/api-db/web/app 4개 잡, Story 11.5·`docs/tech-debt.md` #87)_

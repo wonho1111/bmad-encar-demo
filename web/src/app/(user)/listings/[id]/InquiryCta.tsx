@@ -79,7 +79,11 @@ export default function InquiryCta({
     if (mode === 'anon') {
       // 비로그인 — 버튼을 숨기지 않는다. 어포던스는 보이고 게이트는 클릭에만 걸린다(FR58, conventions §8).
       return (
-        <Link href={loginHref} className={buttonClasses({ className: 'w-full' })}>
+        // data-testid: E2E(web/e2e/viewport-audit.spec.ts)가 텍스트·클래스가 아니라 이 안정적인
+        // 훅으로 CTA를 찾는다(코드리뷰 patch, listing-photo와 동일 취지) — 데스크톱 aside·모바일
+        // 하단 바 두 인스턴스가 DOM에 항상 함께 있으므로(Tailwind가 display로만 전환) 실제로
+        // 보이는 쪽만 `:visible`로 골라 쓴다.
+        <Link href={loginHref} data-testid="inquiry-cta" className={buttonClasses({ className: 'w-full' })}>
           로그인하고 문의하기
         </Link>
       );

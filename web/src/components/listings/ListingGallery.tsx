@@ -146,6 +146,9 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
             loading="lazy"
             decoding="async"
             onError={() => markFailed(index)}
+            // data-testid: ListingCardImage.tsx와 동일한 이유(E2E가 스타일 클래스가 아니라
+            // 이 훅으로 매물 사진 <img>를 찾는다, 코드리뷰 patch).
+            data-testid="listing-photo"
             className="h-full w-full object-cover"
           />
         )}
@@ -215,6 +218,7 @@ export default function ListingGallery({ urls, title }: { urls: string[]; title:
                     loading="lazy"
                     decoding="async"
                     onError={() => markFailed(i)}
+                    data-testid="listing-photo"
                     className="h-full w-full object-cover"
                   />
                 )}
