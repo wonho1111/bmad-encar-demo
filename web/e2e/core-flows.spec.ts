@@ -37,12 +37,13 @@ test('C1 로그인 → 로그아웃 왕복, /account 보호', async ({ page }) =
   await expect(profileTrigger, '로그인 후 프로필▾ 트리거가 보여야 함').toBeVisible();
 
   // 로그아웃 — 프로필 드롭다운 안의 LogoutButton.
+  //   목적지는 **공개 랜딩(/)** 이다(대장 DW-547, 2026-07-29에 `/login`에서 바꿈) — FR58이
+  //   비로그인 열람을 허용하므로 로그아웃한 사용자를 아무것도 못 보는 화면에 두지 않는다.
   await profileTrigger.click();
   await page.getByRole('button', { name: '로그아웃' }).click();
-  await page.waitForURL((url) => url.pathname === '/login');
+  await page.waitForURL((url) => url.pathname === '/');
 
-  // 로그아웃 후 홈에서 "로그인" 링크가 다시 보이는지(비로그인 데스크톱 분기).
-  await page.goto('/');
+  // 로그아웃 후 (이미 도착한) 홈에서 "로그인" 링크가 다시 보이는지(비로그인 데스크톱 분기).
   await expect(
     page.getByRole('link', { name: '로그인' }).first(),
     '로그아웃 후 홈에 "로그인" 링크가 다시 보여야 함',

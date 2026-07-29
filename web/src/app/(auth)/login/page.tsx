@@ -77,7 +77,7 @@ function LoginForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-6">
       <h1 className="text-2xl font-semibold">로그인</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
@@ -142,7 +142,7 @@ export default function LoginPage() {
 // 크게 튀지 않게 같은 간격·크기를 유지한다.
 function LoginFormSkeleton() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6" aria-busy="true">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-6" aria-busy="true">
       <Skeleton className="h-8 w-24" />
       <div className="flex flex-col gap-4">
         <Skeleton className="h-16 w-full" />
