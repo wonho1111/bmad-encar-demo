@@ -12,6 +12,7 @@
 //
 // CM3(즉시 비노출): 이 페이지는 cookies() 기반 인증을 쓰므로 매 요청 DB를 다시 읽는 동적 렌더다.
 //   매물이 sold로 바뀌면 재조회 시 즉시 사라진다. 정적 캐시로 잔존하지 않도록 force-dynamic을 명시한다.
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
@@ -52,6 +53,23 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, '\\$&');
 }
 
+// 한 페이지에 보여줄 매물 수 (대장 DW-542 해소, 2026-07-29).
+// **왜 24인가:** D5 그리드가 ≥1100px에서 4열·640~1099px에서 2열이라, 4와 2의 공배수여야 마지막 줄이
+// 어중간하게 비지 않는다(24 = 4열×6줄 = 2열×12줄 = 1열×24개). 12는 한 화면에 너무 적고 48은
+// 사진 무게(장당 150~190KB, DW-541)를 그대로 되돌린다.
+//
+// **왜 페이지네이션이 필요했나(실측 2026-07-29):** 이 목록엔 `.limit()`이 없어 판매중 매물
+// **전량 93건**을 한 페이지에 그렸다 — HTML 압축 전 320KB + 사진 90장. 사진 캐시까지 꺼져 있어
+// (DW-541) 방문할 때마다 그 전부를 새로 받았다.
+const PAGE_SIZE = 24;
+
+// URL의 `page`를 1 이상 정수로 정규화한다. 없거나 이상한 값이면 1(첫 페이지)로 떨어진다 —
+// 필터 파싱과 같은 방침(계약 밖 값은 조용히 무시, 에러 화면으로 만들지 않는다).
+function asPage(v: string): number {
+  const n = asInt(v);
+  return n !== null && n >= 1 ? n : 1;
+}
+
 export default async function SearchPage({
   searchParams,
 }: {
@@ -77,6 +95,7 @@ export default async function SearchPage({
   }
 
   // ── URL 필터 파싱 ───────────────────────────────────────────────
+  const page = asPage(asStr(sp.page)); // 1-기반. 필터와 달리 항상 값이 있다(기본 1).
   const q = asStr(sp.q).trim();
   const bodyType = pickOption(asStr(sp.body_type), LISTING_OPTIONS.body_type);
   const color = pickOption(asStr(sp.color), LISTING_OPTIONS.color);
@@ -111,9 +130,11 @@ export default async function SearchPage({
   const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
   // options는 이미 0011에서 anon GRANT돼 있다(로그인 분기 불필요, conventions §11 — 10.1
   // 신뢰컬럼과 다른 점). 그래서 trustColumns와 달리 로그인 여부와 무관하게 항상 조회한다.
+  // count:'exact' — 총 건수를 **같은 응답**의 Content-Range로 받는다(왕복 증가 없음, DW-542).
   let query = buyerListingsQuery(
     supabase,
     `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`,
+    { count: 'exact' },
   );
 
   if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
@@ -134,7 +155,25 @@ export default async function SearchPage({
   // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
   query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
 
-  const { data: rows, error } = await query.returns<ListingCardData[]>();
+  // 이 페이지 몫만 잘라 온다(DW-542). range는 양끝 포함이라 끝값은 -1 한다.
+  //   ⚠️ **정렬을 건 뒤에 range를 건다** — 순서가 뒤바뀌면 "아무 24건"을 잘라 정렬하는 꼴이 된다.
+  //   범위를 벗어난 page(주소창 직접 편집 등)는 에러가 아니라 0행으로 돌아온다 — 아래 렌더가
+  //   그 경우를 "이 페이지엔 매물이 없다 + 첫 페이지로" 안내로 처리한다.
+  const from = (page - 1) * PAGE_SIZE;
+  const { data: rows, error, count } = await query
+    .range(from, from + PAGE_SIZE - 1)
+    .returns<ListingCardData[]>();
+
+  const totalCount = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // 범위를 벗어난 page는 **빈 결과가 아니라 에러로 온다** — 실측(2026-07-29, `?page=99`):
+  //   PGRST103 "Requested range not satisfiable / An offset of 2352 was requested, but there are
+  //   only 95 rows." 즉 착수 전 가정("0행으로 돌아온다")이 틀렸다. 이걸 일반 에러로 두면
+  //   주소창을 잘못 고친 사용자에게 "불러오지 못했습니다"라는 엉뚱한 안내가 뜬다(고칠 방법도 안 알려준다).
+  //   여기서만 따로 갈라 "이 페이지엔 없다 + 첫 페이지로"를 보여준다. 다시 조회하지 않는다 —
+  //   손으로 주소를 고친 경우에만 닿는 길이라 왕복을 한 번 더 쓸 이유가 없다.
+  const rangeOutOfBounds = error?.code === 'PGRST103';
 
   // anon 경로는 위 select에서 신뢰속성 3컬럼을 아예 안 물었으므로(trustColumns 참조) 그 값이
   // 행에 `undefined`(키 자체가 없음)로 온다. 계약(conventions §4)은 "값이 없으면 null"이지
@@ -159,8 +198,10 @@ export default async function SearchPage({
     ? await fetchWishedListingIds(supabase, user.id, listings.map((l) => l.id))
     : new Set<string>();
 
-  if (error) {
+  if (error && !rangeOutOfBounds) {
     // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC2).
+    // 범위 밖 page(PGRST103)는 사용자가 주소를 고친 결과지 장애가 아니므로 에러 로그를 남기지 않는다
+    // — 남기면 진짜 장애가 그 소음에 묻힌다.
     console.error('[search] 매물 목록 조회 실패:', error);
   }
 
@@ -177,6 +218,25 @@ export default async function SearchPage({
     year_min: yearMin !== null ? String(yearMin) : '',
     year_max: yearMax !== null ? String(yearMax) : '',
   };
+
+  // 페이지 이동 링크 — **정규화된 필터값**으로 쿼리를 다시 조립한다(원본 sp를 그대로 옮기지 않는다).
+  //   그래야 목록 밖 값·중복 키·모르는 파라미터가 페이지를 넘길 때마다 따라다니지 않는다
+  //   (위 pickOption/asInt가 이미 무시한 값을 URL에만 남겨두면 화면과 주소가 어긋난다).
+  //   page=1은 아예 안 붙인다 — 첫 페이지 주소를 지금과 똑같이 유지해 기존 링크·북마크가 안 깨진다.
+  //   ※ 필터를 다시 적용하면 SearchFilters가 자기 필드로만 URL을 새로 만들므로 page는 자연히
+  //     떨어져 1페이지로 돌아간다(별도 리셋 코드 불필요).
+  function pageHref(target: number): string {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(initialFilters)) {
+      if (value !== '') params.set(key, value);
+    }
+    if (target > 1) params.set('page', String(target));
+    const query = params.toString();
+    return query ? `/search?${query}` : '/search';
+  }
+
+  const pagerLinkClass =
+    'rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800';
 
   return (
     <>
@@ -197,7 +257,15 @@ export default async function SearchPage({
         <SearchFilters initial={initialFilters} />
 
         <section className="flex flex-col gap-3">
-          {error ? (
+          {rangeOutOfBounds ? (
+            // 범위 밖 page — 에러가 아니라 "돌아갈 길"을 준다(위 rangeOutOfBounds 주석 참조).
+            <p className="text-sm text-zinc-500">
+              이 페이지에는 매물이 없습니다.{' '}
+              <Link href={pageHref(1)} className="underline">
+                첫 페이지로
+              </Link>
+            </p>
+          ) : error ? (
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               매물 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
             </p>
@@ -207,7 +275,12 @@ export default async function SearchPage({
             </p>
           ) : (
             <>
-              <p className="text-sm text-zinc-500">{listings.length}건의 매물</p>
+              {/* 총 건수는 **전체**를 말한다(이 페이지에 그린 수가 아니라) — 페이지네이션 후에도
+                  "조건에 몇 건이 걸렸나"는 전체 기준이어야 필터를 조절할 근거가 된다. */}
+              <p className="text-sm text-zinc-500">
+                {totalCount}건의 매물
+                {totalPages > 1 && ` · ${page}/${totalPages} 페이지`}
+              </p>
               {/* D5: 가로폭은 **열 수로만** 흡수한다(≥1100px 4열 · 640~1099px 2열 · <640px 1열).
                   카드 내부 가로 배치는 어느 폭에서도 접히지 않는다 — 규칙은 ResponsiveGrid가 소유. */}
               <ResponsiveGrid>
@@ -215,6 +288,36 @@ export default async function SearchPage({
                   <ListingCard key={l.id} listing={l} wished={wishedIds.has(l.id)} authed={!!user} />
                 ))}
               </ResponsiveGrid>
+
+              {/* 페이지 이동 — 한 페이지뿐이면 아예 렌더하지 않는다(빈 잉크 금지, Story 8.2 AC1).
+                  링크(<a>)라서 자바스크립트 없이도 동작하고, 주소가 그대로 공유·북마크된다. */}
+              {totalPages > 1 && (
+                <nav aria-label="페이지 이동" className="flex items-center justify-center gap-3 pt-2">
+                  {page > 1 ? (
+                    <Link href={pageHref(page - 1)} rel="prev" className={pagerLinkClass}>
+                      ← 이전
+                    </Link>
+                  ) : (
+                    // 첫/끝 페이지에서 버튼을 지우지 않고 비활성으로 남긴다 — 자리가 사라지면
+                    // 옆 버튼이 움직여 연속 클릭이 어긋난다(터치에서 특히).
+                    <span aria-disabled className={`${pagerLinkClass} opacity-40`}>
+                      ← 이전
+                    </span>
+                  )}
+                  <span aria-current="page" className="text-sm text-zinc-500">
+                    {page} / {totalPages}
+                  </span>
+                  {page < totalPages ? (
+                    <Link href={pageHref(page + 1)} rel="next" className={pagerLinkClass}>
+                      다음 →
+                    </Link>
+                  ) : (
+                    <span aria-disabled className={`${pagerLinkClass} opacity-40`}>
+                      다음 →
+                    </span>
+                  )}
+                </nav>
+              )}
             </>
           )}
         </section>

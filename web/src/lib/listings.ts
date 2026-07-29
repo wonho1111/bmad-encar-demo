@@ -27,11 +27,19 @@ export const BUYER_VISIBLE_STATUS = LISTING_STATUS.ON_SALE;
  *
  * @param supabase  서버 Supabase 클라이언트(@/lib/supabase/server의 createClient 결과)
  * @param columns   select할 컬럼 문자열(경로마다 다르므로 인자로 받는다 — 목록은 요약 7필드, 상세는 15필드+status)
+ * @param options   PostgREST select 옵션. 지금 쓰는 건 `{ count: 'exact' }` 하나뿐이다 —
+ *                  `/search` 페이지네이션이 "총 몇 건인지"를 알아야 하는데, PostgREST는 그 값을
+ *                  **같은 응답의 Content-Range 헤더**로 돌려주므로 **왕복이 늘지 않는다**
+ *                  (별도 count 쿼리를 한 번 더 쏘는 것과 다르다). 안 넘기면 기존과 완전히 동일.
  */
-export function buyerListingsQuery(supabase: SupabaseClient, columns: string) {
+export function buyerListingsQuery(
+  supabase: SupabaseClient,
+  columns: string,
+  options?: { count?: 'exact' | 'planned' | 'estimated' },
+) {
   return supabase
     .from('listings')
-    .select(columns)
+    .select(columns, options)
     .eq('status', BUYER_VISIBLE_STATUS);
 }
 
