@@ -1,89 +1,86 @@
 #!/usr/bin/env python3
-"""동결된 장부 파일에 대한 쓰기를 차단한다 (PreToolUse 훅).
+"""동결된 문서에 대한 쓰기를 차단한다 (PreToolUse 훅).
 
 ## 왜 이게 있나
 
-`_bmad-output/implementation-artifacts/deferred-work.md`는 2026-07-15에 **동결**됐다.
-열린 일 장부는 `docs/tech-debt.md` 하나다(CLAUDE.md B8). 장부가 2개였을 때 #18(테이블 GRANT)이
-한쪽은 "dev 자율", 다른 쪽은 "사용자 승인 필수"로 **정반대 판정**을 들고 1일간 공존했고,
-Epic 9의 첫 마이그레이션이 하필 그 축을 건드리기 직전이었다.
+**열린 일 장부는 `_bmad-output/implementation-artifacts/deferred-work.md` 하나다**
+(2026-07-29 통합, CLAUDE.md B8). 장부가 2개였을 때 #18(테이블 GRANT)이 한쪽은 "dev 자율",
+다른 쪽은 "사용자 승인 필수"로 **정반대 판정**을 들고 1일간 공존했고, Epic 9의 첫
+마이그레이션이 하필 그 축을 건드리기 직전이었다.
 
-그런데 동결 후에도 **여러 스킬이 여전히 그 파일을 가리킨다**(실측 2026-07-22, BMAD @next
-업그레이드 후 재측정 — `grep -rln deferred-work .claude/skills/` → 10개 파일 / 5개 스킬):
-    bmad-code-review    steps/step-04-present.md
-    bmad-dev-auto       step-01-clarify-and-route.md, step-02-plan.md, step-04-review.md
-    bmad-loop-setup     assets/module-help.csv, assets/module.yaml
-    bmad-loop-sweep     SKILL.md, deferred-work-format.md, migration-mode.md
-    bmad-quick-dev      render.py
-(2026-07-19 최초 실측 때는 5개 파일이었다. bmad-loop 계열이 들어오며 늘었다.)
+## ⚠️ 2026-07-29에 차단 방향이 **뒤집혔다**
 
-문서는 "적지 마라", 절차는 "여기 적어라" — **성실할수록 어기는 구조**다. 실제로 2026-07-19
-코드리뷰에서 그 일이 일어났다(defer 4건이 동결 파일에 들어갔다가 되돌려짐).
+2026-07-15~29 사이엔 이 훅이 정확히 반대로 동작했다 — `deferred-work.md`를 막고
+`docs/tech-debt.md`로 보냈다. 그 방향은 **도구와 싸우는 방향이었고, 졌다**:
 
-**bmad-loop 도입으로 위험이 커졌다(2026-07-22).** bmad-dev-auto는 무인 루프가 돌리는
-스킬이라 사람이 옆에서 지적할 수 없다. 2026-07-19에는 사용자가 발견해 되돌렸지만,
-무인 실행에서는 그 교정이 일어나지 않는다. 이 훅이 유일한 방어선이 된다.
+- BMAD·bmad-loop 상류가 `deferred-work.md`를 유일한 ledger로 규정한다(bmad-loop README:231).
+  로컬 `.claude/skills/bmad-*` 전체와 양쪽 상류 README에서 `tech-debt`는 **0건**이다.
+- 그래서 vendor 스킬 14개 파일이 전부 `deferred-work.md`에 쓰라고 지시했고, 이 훅과
+  `_bmad/custom/*.toml`의 프롬프트 주입은 그 지시를 **막는 데** 쓰였다.
+- 그런데 **bmad-loop 엔진에는 둘 다 안 닿는다.** 엔진은 Claude 세션이 아니라 오케스트레이터
+  파이썬 프로세스라 PreToolUse 훅이 **호출조차 되지 않고**, 프롬프트도 읽지 않는다.
+  실제로 `DW-1`~`DW-9`가 "⛔ 여기 쓰지 마라"라고 적힌 파일에 그대로 쌓였다.
+- 결정타: 통합 직전 `bmad-loop sweep --dry-run` 실측에서 `deferred-work.md`의 경위 산문이
+  **"옛 형식으로 적힌 열린 일 61건"으로 오독**됐다. 사람이 sweep을 치는 순간 그 파일이
+  통째로 재작성될 상태였다.
+
+방향을 뒤집으니 vendor 스킬 14개의 지시가 **저절로 맞는 지시**가 됐다. 막을 것이 없어져
+`_bmad/custom/*.toml`의 장부 관련 주입도 함께 걷어냈다. 남은 것은 반대 방향 — 습관이나 옛
+참조(리포에 600여 곳) 때문에 **동결 문서에 새로 쓰는 것**을 막는 일이다.
 
 주석과 문서는 계약이 아니다. 지켜야 하는 규칙이면 실행되는 검사로 바꾼다(CLAUDE.md B9).
 그게 이 파일이다.
 
 ## 무엇을 하나
 
-Write·Edit·NotebookEdit이 동결 파일을 대상으로 하면 **차단**하고, 어디에 적어야 하는지 알려준다.
-읽기는 막지 않는다 — 경위를 찾아보는 것은 이 파일의 정당한 용도다.
+Write·Edit·NotebookEdit·MultiEdit이 동결 문서를 대상으로 하면 **차단**하고, 어디에 적어야
+하는지 알려준다. 읽기는 막지 않는다 — 경위를 찾아보는 것은 이 문서들의 정당한 용도다.
 
 ## 이 검사가 보지 못하는 것 (추측 아니라 실측)
 
-- **셸을 통한 쓰기는 못 막는다.** `Bash(echo ... >> deferred-work.md)`는 이 훅의 matcher
-  (Write|Edit|NotebookEdit) 밖이다. 실측 확인함 — 아래 "검증" 참조.
-  Bash까지 막으려면 명령 문자열을 파싱해야 하는데, 오탐(파일명을 단순 언급하는 grep 등)이
-  많아 지금은 넣지 않는다. 이 훅은 **에이전트가 스킬 지시를 따르다 실수하는 경로**를 막는 것이
-  목적이고, 그 경로는 전부 Write/Edit이다.
-- **다른 문서가 늙는 것은 못 막는다.** tech-debt.md에 등재했는지 여부는 검사하지 않는다.
-- **bmad-loop 엔진의 직접 쓰기는 못 막는다 — 실측(2026-07-27).** 이 훅은 *Claude 세션이 도구를
-  부를 때* 발동한다. bmad-loop 엔진은 Claude 세션이 아니라 **오케스트레이터 파이썬 프로세스**라
-  훅이 **호출조차 되지 않는다.** `bmad_loop/deferredwork.py:append_entry()`가 마지막 줄에서
-  `path.write_text(...)`로 동결 파일을 직접 연다. 같은 이유로 `_bmad/custom/*.toml`의
-  `persistent_facts`(프롬프트 주입)도 엔진에는 닿지 않는다 — 엔진은 프롬프트를 읽지 않는다.
-  **실제로 일어났다**: Story 11-0의 리뷰 예산 소진 시 엔진이 `DW-1`을 동결 파일에 append 했다
-  (`runs/20260727-203454-d410/journal.jsonl`의 `"refiled": "DW-1"`). 같은 스토리의 **리뷰
-  세션들은 방어대로 tech-debt.md에 #124~#128을 넣었다** — 즉 이 훅은 뚫린 게 아니라
-  사정거리 밖이었다. 경위·트리거는 `docs/tech-debt.md` #129.
+- **셸을 통한 쓰기는 못 막는다.** `Bash(echo ... >> tech-debt.md)`는 이 훅의 matcher
+  (Write|Edit|MultiEdit|NotebookEdit) 밖이다. 명령 문자열을 파싱하면 오탐(파일명을 단순
+  언급하는 grep 등)이 많아 넣지 않았다. 이 훅의 목적은 **에이전트가 옛 참조를 따라가다
+  실수하는 경로**를 막는 것이고, 그 경로는 전부 Write/Edit이다.
+- **다른 문서가 늙는 것은 못 막는다.** `deferred-work.md`에 등재했는지는 검사하지 않는다.
+- **bmad-loop 엔진의 직접 쓰기는 여전히 못 막는다.** 다만 통합 후에는 **엔진이 쓰는 파일이
+  맞는 파일**이라 이제 문제가 아니다 — 이것이 방향을 뒤집은 이유 그 자체다.
 
-## 검증 (2026-07-19, B4 — "만들었다"가 아니라 "잡는다"가 완료)
+## 검증 (2026-07-29, B4 — "만들었다"가 아니라 "잡는다"가 완료)
 
-- red: deferred-work.md에 Write 시도 → exit 2로 차단, 안내 메시지 출력됨
-- green: docs/tech-debt.md에 Write 시도 → 통과(exit 0)
-- green: deferred-work.md **읽기** → 통과(훅이 Read를 보지 않음)
-- 실측: Bash 리다이렉트는 차단되지 않음(위 "보지 못하는 것"에 기록)
-
-## 재검증 (2026-07-22, bmad-loop 도입 시 안내 문구 변경 후)
-
-- red: Write → deferred-work.md → **exit 2**, 갱신된 안내 출력됨
-- red: Edit → deferred-work.md(상대경로) → **exit 2**
-- green: Write → docs/tech-debt.md → **exit 0**
-- green: Read → deferred-work.md → **exit 0** (쓰기 도구가 아니므로 통과)
+아래 red/green을 실제로 돌려 확인한 결과는 커밋 메시지에 있다.
+- red:   Write → docs/tech-debt.md → exit 2
+- red:   Write → docs/decisions-archive.md → exit 2
+- green: Write → deferred-work.md → exit 0  (이제 여기가 정상 경로다)
+- green: Read  → docs/tech-debt.md → exit 0  (쓰기 도구가 아니므로 통과)
 """
 
 import json
 import sys
 
-# 동결된 파일들(경로 조각으로 매칭 — 절대/상대 경로 어느 쪽이든 잡힌다).
+_LEDGER = "_bmad-output/implementation-artifacts/deferred-work.md"
+
+_WHERE = (
+    "  · 열린 일(부채·이월·defer·회고 액션)\n"
+    f"      → {_LEDGER} 에 `### DW-<번호>`로 등재\n"
+    "      형식: origin / location / severity / reason / **trigger** / status\n"
+    "      트리거를 빼지 마세요 — '이월'만 적힌 항목은 다음 작업에서 조용히 또 밀립니다.\n"
+    "  · 지켜야 하는 계약 → docs/conventions.md · _bmad-output/project-context.md\n"
+    "  · 왜 그렇게 정했나 → docs/decisions-archive.md (이것도 append 금지, 경위 보관용)"
+)
+
+# 동결된 문서들(경로 조각으로 매칭 — 절대/상대 경로 어느 쪽이든 잡힌다).
 FROZEN = {
-    "_bmad-output/implementation-artifacts/deferred-work.md": (
-        "이 파일은 2026-07-15에 동결됐습니다 — 열린 일을 담지 않습니다.\n"
-        "  · 열린 일(부채·이월·defer)  → docs/tech-debt.md 에 #N 번호로 등재\n"
-        "  · 왜 그렇게 결정했나(경위) → 이 파일은 '읽기 전용 보관소'입니다\n"
-        "\n"
-        "스킬 절차가 이 파일을 가리키더라도 따르지 마세요 — bmad-code-review(step-04),\n"
-        "bmad-quick-dev, bmad-dev-auto(step-01/02/04), bmad-loop-sweep 전부 해당합니다.\n"
-        "그 지시는 동결 이전에 쓰였거나 이 프로젝트 사정을 모르는 것이고, 프로젝트\n"
-        "규칙(CLAUDE.md B8)이 우선합니다. 장부가 2개였을 때 같은 항목이 정반대 판정으로\n"
-        "공존한 사고가 있었습니다.\n"
-        "\n"
-        "등재 형식은 docs/tech-debt.md의 기존 항목을 따르세요 —\n"
-        "  ### N. 제목 (날짜, 우선순위)  +  위치 / 무엇 / 실측 / **트리거(재판단 시점)**\n"
-        "트리거를 빼지 마세요: '이월'만 적힌 항목은 다음 작업에서 조용히 또 밀립니다."
+    "docs/tech-debt.md": (
+        "이 문서는 2026-07-29에 **전방 동결**됐습니다 — 새 항목을 받지 않습니다.\n"
+        "열린 항목 177건은 전부 장부로 이관됐고, 여기 남은 것은 닫힌 부채의 경위와\n"
+        "옛 번호(`#N` → `DW-(N+300)`)를 찾아가는 이관 색인뿐입니다.\n\n"
+        + _WHERE
+        + "\n\n옛 참조를 보고 여기 적으려던 것이라면, 그 참조는 이관 색인이 받아줍니다."
+    ),
+    "docs/decisions-archive.md": (
+        "이 문서는 **경위 보관용**입니다 — '왜 그렇게 정했나'만 담고 열린 일을 갖지 않습니다.\n"
+        "규칙처럼 읽히는 문장을 여기 새로 적으면 다음 사람이 정본과 헷갈립니다.\n\n" + _WHERE
     ),
 }
 

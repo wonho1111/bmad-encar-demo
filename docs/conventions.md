@@ -685,3 +685,25 @@ Epic 16 Story 16.4(Flutter 안읽음 미러링, §12.5의 실시간 구독 미�
   `chat_unread_count()`를 호출해 맡는다(admin 분기·비로그인은 호출하지 않음) — 이 때문에
   `AppHeader`가 비동기 컴포넌트로 바뀌었다(대장 #209, `#183` getUser 증폭 층에 RPC 호출이
   하나 더 얹힘).
+
+---
+
+## 13. 모달·팝업 ARIA 규약 (Story 8.2 코드리뷰, 사용자 확정)
+
+`FocusTrap`(`web/src/components/ui/FocusTrap.tsx`)은 **포커스 동작만** 책임진다 — 포커스 이동,
+Tab 순환, Esc 닫힘, 트리거 복귀. **시맨틱은 강제하지 않는다.** 그래서 소비처가 붙여야 한다.
+
+- **모달·바텀시트·로그인 게이트** — FocusTrap 컨테이너에 `role="dialog"` + `aria-modal="true"`
+  + `aria-labelledby`를 **반드시 부착한다**(UX-DR22 접근성 바닥).
+- **드롭다운·리스트박스** — `menu` / `listbox` role을 사용한다.
+
+FocusTrap은 8.2 코드리뷰에서 `...rest`를 컨테이너 `div`로 전달하도록 patch돼 부착이 가능하다
+(그 전엔 통로 자체가 없었다).
+
+> **왜 규약으로 두나:** 프리미티브가 시맨틱을 강제하면 드롭다운·팝오버까지 `dialog`가 되어
+> 낭독이 틀린다. 반대로 규약이 없으면 소비처가 매번 잊는다 — 그래서 프리미티브가 아니라
+> **여기**에 박는다.
+>
+> **현재 미준수 1건**: `SiteNav`의 드롭다운·햄버거 패널이 `menu`/`listbox` role 없이
+> `aria-label`만 쓴다(장부 `DW-454`, 구 `#154`). `SellForm`의 이탈 확인 모달은 규약대로
+> 3종을 다 붙였다(`role="dialog"` + `aria-modal` + `aria-labelledby`) — 2026-07-29 실측.

@@ -1,12 +1,15 @@
 # Team override for bmad-quick-dev.
 # 레포에 커밋됨. 병합 규칙·위치 선정 이유는 `bmad-agent-dev.toml` 헤더 참조.
 #
-# 왜 이 파일이 필요한가: bmad-quick-dev의 step-01/02/04/oneshot 네 파일이
-# `deferred-work.md`(2026-07-15 동결)를 가리킨다. code-review 스킬과 **같은 함정**이라
-# 같은 사실을 여기에도 주입한다. (실측: `grep -rln deferred-work .claude/skills/` → 5개 파일)
+# ✎ 2026-07-29 장부 통합 — 이 파일이 담던 persistent_facts 2건을 **삭제했다.**
+#
+#   이 파일은 원래 "bmad-quick-dev의 step-01/02/04/oneshot 네 파일이 `deferred-work.md`를
+#   가리키는데 그 파일이 동결됐으니 따르지 마라"를 주입하고 있었다. 2026-07-29에 장부를
+#   `deferred-work.md`로 되돌렸으므로 **스킬의 원래 지시가 이제 맞는 지시다.**
+#   막을 것이 없으니 주입할 사실도 없다 — 파일을 지우지 않고 이 경위만 남긴다
+#   (되살리려는 다음 사람이 왜 비었는지 알아야 한다).
+#
+#   경위: `docs/decisions-archive.md` · `docs/tech-debt.md` 서문
 
 [workflow]
-persistent_facts = [
-  "열린 일 장부(open-items ledger)는 `docs/tech-debt.md` **하나뿐**이다(CLAUDE.md B8). 미룬 항목·이월은 전부 거기에 번호(#N)를 붙여 등재한다.",
-  "`_bmad-output/implementation-artifacts/deferred-work.md`는 **2026-07-15에 동결됐다.** '왜 그렇게 결정했나'(경위)만 보관하며 열린 일을 담지 않는다. **새 항목을 절대 추가하지 않는다.** 스킬 절차가 이 파일을 가리키더라도 따르지 않는다 — 프로젝트 규칙이 우선한다. 쓰기를 시도하면 PreToolUse 훅이 차단한다.",
-]
+persistent_facts = []

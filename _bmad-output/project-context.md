@@ -25,7 +25,10 @@ _이 파일은 이 프로젝트에서 코드를 구현할 때 AI 에이전트가
 **규칙 2~8·10은 계약이라 값을 여기 복사하지 않는다 — `conventions.md`를 가리키기만 한다.**
 이전엔 여기에 요약본을 뒀는데 **요약이 원본보다 늙어** 틀린 값이 에이전트에 주입됐다(3건 실측 확인). 값을 한 군데만 두면 어긋날 자리가 없다. 경위는 커밋 `17b1976`. (2026-07-15 정리)
 
-> **열린 일 장부는 `docs/tech-debt.md` 하나다** — "지금 뭐가 열려 있나"는 거기서 답한다.
+> **열린 일 장부는 `_bmad-output/implementation-artifacts/deferred-work.md` 하나다**
+> — "지금 뭐가 열려 있나"는 거기서 답한다. 항목은 `### DW-<번호>` 형식이고
+> `trigger:`(언제 다시 볼지)를 반드시 함께 적는다. (2026-07-29 통합 — 그 전엔
+> `docs/tech-debt.md`였고, 그 문서는 이제 닫힌 부채의 경위와 옛 번호 이관 색인만 갖는다.)
 
 ---
 
@@ -113,8 +116,9 @@ web·app·api·db 경계를 가로지르는 값은 **전부 거기 정의돼 있
 | 질문 | 파일 |
 |---|---|
 | 지켜야 하는 **계약**(경계 값)은? | `docs/conventions.md` ← **정본** |
-| 지금 뭐가 **열려 있나**? | `docs/tech-debt.md` ← **유일한 대장** |
-| **왜** 그렇게 정했나? | 각 에픽 회고 · `_bmad-output/implementation-artifacts/deferred-work.md`(동결·경위 전용) |
+| 지금 뭐가 **열려 있나**? | `_bmad-output/implementation-artifacts/deferred-work.md` ← **유일한 장부** |
+| **왜** 그렇게 정했나? | 각 에픽 회고 · `docs/decisions-archive.md`(경위 전용) |
+| 옛 `#N` 부채 번호가 어디로 갔나? | `docs/tech-debt.md`의 **이관 색인**(`#N` → `DW-(N+300)`) |
 | **배포**·마이그 적용·롤백은? | `docs/deployment-runbook.md` |
 | 역할별 **내비/IA** 규칙은? | `_bmad-output/planning-artifacts/nav-ia-rules.md` |
 | 현재 **스펙**(증분)은? | `_bmad-output/planning-artifacts/`의 `*-increment-2026-07-12.md` · `prds/prd-*-2026-07-11/` |
