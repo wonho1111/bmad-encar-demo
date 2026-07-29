@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import ChatListBfcacheRefresh from "./(user)/chat/ChatListBfcacheRefresh";
+import BackNavRefresh from "@/components/layout/BackNavRefresh";
 
 // Pretendard(한글+라틴) self-host. Google Fonts에 없어 next/font/google 불가 — next/font/local로
 // 저장소 내 .woff2를 직접 로드한다(fonts/PretendardVariable.woff2, 라이선스는 fonts/LICENSE.txt).
@@ -43,11 +43,11 @@ export default function RootLayout({
           주입해 생기는 하이드레이션 경고를 억제한다. body 한 단계 속성만 해당되며, 내부 컴포넌트의
           실제 불일치는 그대로 감지된다. (Next.js 공식 권장 — 확장 프로그램 주입 케이스) */}
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        {/* /chat 뒤로가기 배지 새로고침(대장 #215 최소 수정) — 루트 레이아웃에 두는 이유는
-            web/src/app/(user)/chat/ChatListBfcacheRefresh.tsx 파일 상단 주석 참조(요약: /chat과
-            /chat/[roomId] 사이를 오갈 때 이 자리만 언마운트되지 않는다). 화면엔 아무것도 렌더하지
-            않는다(null) — /chat이 아닌 페이지의 뒤로가기에는 그 컴포넌트 내부 가드가 반응하지 않는다. */}
-        <ChatListBfcacheRefresh />
+        {/* 뒤로가기 복귀 시 서버 상태 재조회(찜 하트·안읽음 배지가 옛값으로 되살아나는 문제 —
+            대장 DW-525·DW-515). 루트 레이아웃에 두는 이유는 components/layout/BackNavRefresh.tsx
+            상단 주석 참조(요약: 페이지 자신에 두면 자신을 되살리는 그 이벤트를 놓친다 — 그 시점엔
+            아직 마운트 전이다). 화면엔 아무것도 렌더하지 않는다(null). */}
+        <BackNavRefresh />
         {children}
       </body>
     </html>
