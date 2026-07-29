@@ -61,24 +61,30 @@ function collectText(node: unknown): string[] {
   return [];
 }
 
-// "옵션칩 컨테이너"를 className이 아니라 **구조**로 찾는다: children이 전부 'span' 타입인
-// non-empty 배열을 가진 노드 — 그래야 클래스명을 리팩터해도(스타일 변경) 테스트가 안 깨지고,
+// children을 한 겹 펴서 실제 자식 노드만 남긴다. 컨테이너의 children은 `[칩 배열, "+N" 칩 또는
+// false]` 같은 중첩·조건부 모양으로 오는데(2026-07-29 "+N" 칩 추가 이후), 그건 JSX 작성 방식일 뿐
+// 조립의 의미가 아니다 — 검사는 "칩 span들을 한 컨테이너에 묶어 렌더하는가"를 봐야 한다.
+function flattenChildren(children: unknown): unknown[] {
+  const list = Array.isArray(children) ? children : [children];
+  return list
+    .flatMap((child) => (Array.isArray(child) ? child : [child]))
+    .filter((child) => child != null && typeof child !== 'boolean');
+}
+
+// "옵션칩 컨테이너"를 className이 아니라 **구조**로 찾는다: 펼친 자식이 전부 'span' 타입인
+// non-empty 노드 — 그래야 클래스명을 리팩터해도(스타일 변경) 테스트가 안 깨지고,
 // 대신 "칩들을 별개 컨테이너로 묶어 렌더하는가"라는 조립 자체를 검사한다.
 function findChipContainer(root: unknown): ElementNode | undefined {
   return collectNodes(root).find((node) => {
-    const children = node.props?.children;
+    const children = flattenChildren(node.props?.children);
     return (
-      Array.isArray(children) &&
-      children.length > 0 &&
-      children.every((child) => isElementNode(child) && child.type === 'span')
+      children.length > 0 && children.every((child) => isElementNode(child) && child.type === 'span')
     );
   });
 }
 
 function chipTexts(container: ElementNode): string[] {
-  const children = container.props?.children;
-  const list = Array.isArray(children) ? children : [children];
-  return list.map((child) => collectText(child).join(''));
+  return flattenChildren(container.props?.children).map((child) => collectText(child).join(''));
 }
 
 const BASE_LISTING: ListingCardData = {
@@ -92,14 +98,14 @@ const BASE_LISTING: ListingCardData = {
 };
 
 describe('ListingCard 조립 — SM-C(카드에서 신뢰속성과 옵션이 구분·희소우선 노출)', () => {
-  it('대표 매물(신뢰 풀세트+희소 옵션): TrustAttributes(card) 노드와 옵션칩 컨테이너가 별개로 존재하고, 칩 순서가 topOptions(options,4)와 일치한다(희소 우선)', () => {
+  it('대표 매물(신뢰 풀세트+희소 옵션): TrustAttributes(card) 노드와 옵션칩 컨테이너가 별개로 존재하고, 칩 순서가 topOptions(options,3)와 일치하며 나머지는 "+N"으로 알린다(희소 우선)', () => {
     const listing: ListingCardData = {
       ...BASE_LISTING,
       accident_status: '무사고',
       is_single_owner: true,
       is_non_smoker: true,
       // 5개 중 '파노라마선루프' 1개만 HIGH 티어 — topOptions가 그것만 맨 앞으로 올리고
-      // 나머지는 입력 순서를 유지한 채 상위 4개만 남기는지(5번째 '라디오'는 잘림)를 함께 본다.
+      // 나머지는 입력 순서를 유지한 채 상위 3개만 남기는지(4·5번째는 "+2"로 접힘)를 함께 본다.
       options: ['블루투스', '파노라마선루프', '스마트키', '에어컨', '라디오'],
     };
 
@@ -113,18 +119,21 @@ describe('ListingCard 조립 — SM-C(카드에서 신뢰속성과 옵션이 구
     expect(trustNodes[0].props?.variant).toBe('card');
     expect(trustNodes[0].props?.listing).toBe(listing); // 같은 listing 객체를 그대로 전달
 
-    // ② 옵션칩 컨테이너가 별도 노드로 존재하고, 순서가 topOptions(options,4)와 일치 —
-    //    topOptions 호출을 지우거나(칩이 원본 순서 그대로 렌더) 앞 4개만 자르는 slice를
+    // ② 옵션칩 컨테이너가 별도 노드로 존재하고, 순서가 topOptions(options,3)와 일치 —
+    //    topOptions 호출을 지우거나(칩이 원본 순서 그대로 렌더) 앞 3개만 자르는 slice를
     //    지우면 이 단언이 red가 된다(회귀 대상 2). 신뢰블록과 옵션칩이 트리에서 서로 다른
     //    노드로 잡히는 것 자체가 "별개로 조립됨"의 증거다(TrustAttributes는 self-closing이라
     //    children 부재는 자명해 따로 단언하지 않는다 — 코드리뷰 2026-07-22).
-    const expectedChips = topOptions(listing.options, 4);
+    const expectedChips = topOptions(listing.options, 3);
     expect(expectedChips[0]).toBe('파노라마선루프'); // 희소 옵션이 실제로 맨 앞인지(스펙 전제 확인)
-    expect(expectedChips).toHaveLength(4); // 5개 중 4개만(희소 1 + 보편 3), '라디오'는 잘림
+    expect(expectedChips).toHaveLength(3); // 5개 중 3개만(희소 1 + 보편 2)
 
     const container = findChipContainer(tree);
     expect(container).toBeDefined();
-    expect(chipTexts(container!)).toEqual(expectedChips);
+    // ③ 마지막 칩은 "+2" — 못 보여준 2개를 **개수로** 알린다(conventions §11.2, 2026-07-29).
+    //    이 단언이 red가 되는 회귀: "+N" 칩을 지우거나(안 보여준 옵션이 아예 없는 것처럼 보임),
+    //    상한을 다시 4로 올리는 경우(그때는 남는 게 1개라 "+1"이 되어 값이 어긋난다).
+    expect(chipTexts(container!)).toEqual([...expectedChips, '+2']);
     expect(chipTexts(container!)[0]).toBe('파노라마선루프'); // 희소 옵션 최상단(SM-C)
   });
 
@@ -168,7 +177,9 @@ describe('ListingCard 조립 — SM-C(카드에서 신뢰속성과 옵션이 구
       is_non_smoker: null,
     });
 
-    const expectedChips = topOptions(listing.options, 4);
+    // 옵션이 상한(3) 이하면 전부 보이고 "+N" 칩은 아예 렌더되지 않는다 — 남은 게 없는데
+    // "+0"을 그리면 거짓 신호가 된다.
+    const expectedChips = topOptions(listing.options, 3);
     const container = findChipContainer(tree);
     expect(container).toBeDefined();
     expect(chipTexts(container!)).toEqual(expectedChips);

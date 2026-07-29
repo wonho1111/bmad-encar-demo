@@ -12,8 +12,12 @@ import ListingCardImage from './ListingCardImage';
 import TrustAttributes from './TrustAttributes';
 import WishButton from './WishButton';
 
-// 카드에 노출할 옵션 칩 최대 개수(conventions §11.2 "카드=상위 3~4").
-const CARD_OPTION_COUNT = 4;
+// 카드에 노출할 옵션 칩 최대 개수(conventions §11.2).
+// **4→3 (사용자 결정 2026-07-29).** 4개는 카드 폭(가장 좁은 데스크톱 4열에서 내용 폭 ≈328px)에
+// 안 들어가 칩이 전부 `truncate`로 잘려 "통…", "파노…"만 보였다 — 칩이 4개 있다는 사실만 알리고
+// 정작 **무슨 옵션인지는 하나도 못 읽는** 상태였다. 몇 개를 못 보여주더라도 보이는 것은 온전히
+// 읽히는 편이 낫다는 판단(§11.2 "3~4개"의 하한을 택함).
+const CARD_OPTION_COUNT = 3;
 
 // ListingCard 필드 계약(conventions §4) — 목록·AI결과 카드가 공유하는 최소 요약 필드.
 export type ListingCardData = {
@@ -51,6 +55,9 @@ export default function ListingCard({
   const title = `[${listing.manufacturer}] ${listing.model} · ${listing.year}년`;
   // 희소 옵션 우선(topOptions), 상위 CARD_OPTION_COUNT개만 카드에 노출(conventions §11.2).
   const cardOptions = topOptions(listing.options, CARD_OPTION_COUNT);
+  // 못 보여준 나머지 옵션 수 — "+N" 칩으로 알린다. 안 보여주는 것과 **없는 것**은 다르므로,
+  // 잘린 글자 대신 개수로 정직하게 말한다(옵션 전량은 상세 페이지가 카테고리별로 보여준다).
+  const hiddenOptionCount = (listing.options?.length ?? 0) - cardOptions.length;
 
   return (
     // 루트가 <article>인 이유(AC4): 찜 버튼이 카드 안에 있어야 하는데 `<a>` 안의 `<button>`은
@@ -97,20 +104,36 @@ export default function ListingCard({
             {UNITS.price}
           </p>
 
-          {/* ⑥ 옵션 칩 — 우선순위 상위 3~4개(희소 우선, 보편은 topOptions의 자연 fallback로
-              채워짐, conventions §11.2). 값이 없으면 슬롯 자체를 렌더하지 않는다(AC1, 빈 잉크
-              없음). 폭이 좁아지면 각 칩이 `shrink`+`truncate`로 줄어들 뿐 세로로 접히거나
-              2줄로 밀리지 않는다(D5) — `flex-nowrap`이라 줄바꿈 자체가 없다. */}
+          {/* ⑥ 옵션 칩 — 우선순위 상위 3개(희소 우선, 보편은 topOptions의 자연 fallback로
+              채워짐, conventions §11.2) + 나머지 개수를 알리는 "+N". 값이 없으면 슬롯 자체를
+              렌더하지 않는다(AC1, 빈 잉크 없음). 세로로 접히거나 2줄로 밀지 않는다(D5) —
+              `flex-nowrap`이라 줄바꿈 자체가 없다.
+              ⚠️ **`shrink`+`truncate`에서 `shrink-0`으로 바꿨다(2026-07-29).** 예전엔 폭이
+              모자라면 칩들이 나란히 쪼그라들며 전부 `…`로 잘려 **하나도 못 읽는** 상태가 됐다.
+              이제 칩은 제 글자 폭을 지키고, 그래도 넘치는 만큼만 `overflow-hidden`이 잘라낸다 —
+              "일부만 보이되 보이는 건 온전히 읽힌다"로 실패 방향을 뒤집었다.
+              **남는 한계(추측 아니라 실측, 2026-07-29 로컬 시드 93건):** 390px 뷰포트(카드 내용
+              폭 304px)에서 **93건 중 2건**이 17px 넘쳐 잘린다 — 잘리는 건 맨 끝 "+N" 칩이고
+              옵션 이름 3개는 전부 온전히 읽힌다. 가로 페이지 스크롤은 생기지 않는다(D5 유지).
+              800px 이상(카드 내용 폭 328px)에서는 93건 전부 넘침 0건. */}
           {cardOptions.length > 0 && (
             <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
               {cardOptions.map((opt) => (
                 <span
                   key={opt}
-                  className="min-w-0 shrink truncate whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary"
+                  className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary"
                 >
                   {opt}
                 </span>
               ))}
+              {hiddenOptionCount > 0 && (
+                <span
+                  aria-label={`옵션 ${hiddenOptionCount}개 더 있음`}
+                  className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-muted"
+                >
+                  +{hiddenOptionCount}
+                </span>
+              )}
             </div>
           )}
         </div>
