@@ -2306,3 +2306,19 @@
 - **남는 조건:** 파티션 생성 주체가 **DB 안이 아니라 Realtime 서비스**다(`realtime` 스키마에 파티션 유지 함수가 없고 `pg_cron`도 없음 — 실측). 따라서 **테넌트가 오래 무활동이면 다시 비어 같은 무음 실패가 재발할 수 있다.** 이 레포에는 그걸 알아챌 관측 수단이 없다.
 - **왜 지금 안 고치나:** 마이그레이션으로 파티션을 만드는 건 플랫폼 소유 객체를 우리가 관리하겠다는 뜻이라 과설계이고(A2), 실사용 중에는 서비스가 유지한다. 감시를 붙이는 것도 `#99`(측정 인프라 부재)와 같은 축이라 별도 판단이다.
 - **트리거:** **① 운영에서 "채팅 메시지는 저장되는데 상대가 못 본다"가 보고되면 제일 먼저 이걸 본다** — `select count(*) from pg_inherits i join pg_class c on c.oid=i.inhparent join pg_namespace n on n.oid=c.relnamespace where n.nspname='realtime' and c.relname='messages'` 가 0이면 이 항목이다(복구는 클라이언트 1회 구독). **② Epic 13(성능·게이트 정비)에서 관측 수단을 논할 때 같이 판단**한다.
+
+### 233. 무인 루프의 verify 게이트는 `tests/integration`을 **구조적으로 못 돌린다** — Epic 12의 실DB 테스트가 CI에 닿아서야 red가 났다 (2026-07-29 develop 병합 직후 실측, 🔴 필수)
+- **위치:** `.bmad-loop/policy.toml` `[verify].commands`의 `cd api && .venv/bin/python -m pytest -q` vs `api/tests/integration/conftest.py:33-35`(`TEST_DATABASE_URL`이 없으면 모듈 전체 skip) vs `.github/workflows/tests.yml`의 `api (실DB 통합)` 잡.
+- **무슨 일이 있었나:** Epic 12를 `develop`에 병합하자 CI `api (실DB 통합)` 잡이 즉시 red가 됐다 — `test_chat_unread_real_db.py` **4건**이 `InsufficientPrivilege: permission denied for schema auth`로 죽었다. 원인은 프렐류드에 `grant usage on schema auth`가 없던 것(→ 같은 커밋에서 고침, red→green 실측). **문제는 결함 자체가 아니라 그것이 여기까지 온 경로다.**
+- **왜 루프가 못 잡았나(구조적):** 루프의 verify는 `TEST_DATABASE_URL` 없이 pytest를 돌린다 → `tests/integration`은 **전부 skip**된다(실측: 그 파일만 돌리면 `10 skipped`). 즉 **12-5가 새로 만든 실DB 테스트는 루프가 한 번도 실행한 적이 없다.** 스토리는 6개 다 `done`으로 닫혔고 리뷰도 2회씩 돌았지만, 이 층은 아무도 안 밟았다. dev 세션이 자기 로컬에서 손으로 돌린 기록은 있으나(#211 문단) **게이트가 아니라 사람의 습관**이었다.
+- **왜 🔴인가:** `#181`이 *"검사층 전체가 관측 안 됨"* 으로 잡았던 것과 같은 축인데, 그때 고친 건 "CI가 red인 걸 아무도 안 봤다"였고 **"루프가 CI가 보는 것을 안 본다"는 그대로 남아 있었다.** 그래서 에픽 전체가 끝난 뒤에야 red가 드러났다 — 되돌리기 비싼 시점이다. 이번엔 원인이 프렐류드 두 줄이라 싸게 끝났지만, 같은 구조면 다음엔 스토리 코드일 수 있다.
+- **왜 지금 안 고치나:** verify에 실DB 층을 넣으려면 일회용 postgres 컨테이너를 띄우고 프렐류드+마이그를 붓는 준비 단계가 필요하다(로컬 재현은 `#233` 이 항목의 실측 절차 그대로 — 약 10초). 그런데 그건 `check_migrations.py`·E2E를 verify에서 뺀 것과 **같은 결합**(도커 의존)을 다시 들이는 일이라, 넣을지/`#168`(E2E를 CI에)과 함께 CI 쪽으로 몰지는 별개 판단이다.
+- **트리거:** **Epic 13 착수 전** — `#168`과 **같은 자리에서 함께 판단**한다(둘 다 "루프가 안 보는 층을 어디서 볼 것인가"라는 한 질문의 두 갈래다). 그 전까지의 임시 방편: **에픽 마감 시 `develop` 병합 전에** 일회용 컨테이너로 `tests/integration` 전량을 한 번 돌린다(이번에 실제로 그렇게 잡았다).
+
+### 234. 원격 DB가 레포의 마이그레이션과 같은지 **확인하는 수단이 없다** — 손으로 옮기다 실제로 한 줄이 달라졌다 (2026-07-29 0022~0025 원격 적용 중 실측, 🟡 조건부)
+- **위치:** `supabase/migrations/0024_chat_room_reads.sql:90-106`(`chat_rooms_touch_last_message`) · 원격 프로젝트 `psrnsasxpkpwqdukjdmt` · `docs/deployment-runbook.md`(원격 적용 절차).
+- **무슨 일이 있었나:** 0022~0025를 원격에 적용하면서 0024 본문을 **손으로 옮겼는데**, 파일은 `set last_message_at = greatest(last_message_at, new.created_at)`(단조증가만 허용 — 코드리뷰가 일부러 넣은 것)인데 적용된 것은 `set last_message_at = new.created_at`(무조건 덮어쓰기)였다. **동작이 다른 코드가 운영에 올라갔다.** 곧바로 파일 원본으로 재적용해 바로잡았고, 로컬과 원격의 함수 3종을 **주석을 뺀 로직 해시로 대조**해 일치를 확인했다(`chat_messages_broadcast`·`chat_rooms_touch_last_message`·`chat_unread_count` 3/3 동일).
+- **무엇이 잡았나 / 무엇이 못 잡았나:** 잡은 건 **사후 대조 한 번**뿐이다. 마이그레이션 게이트(`check_migrations.py`)는 빈 컨테이너에 파일을 붓는 검사라 **원격이 그 파일과 같은지는 보지 않는다**(그 파일 헤더가 스스로 "원격 매니지드 DB엔 절대 적용하지 않는다"고 못박고 있다). `migration-gate.yml`도 같다. 즉 **레포↔원격 드리프트를 잡는 자리가 레포 어디에도 없다** — 이번엔 내가 대조했으니 안 것이지, 안 했으면 조용히 남았다.
+- **왜 이게 조용한가:** 두 정의 모두 문법이 맞고 트리거도 정상 발화한다. 차이는 **동시 전송처럼 시각 역전이 일어날 때만** 드러난다(방 목록 정렬이 뒤로 되돌아감). 재현 조건이 좁아 눈으로 발견될 가능성이 낮다.
+- **왜 지금 안 고치나:** 자동 대조를 붙이려면 CI가 원격에 붙어야 하는데 이 레포는 `service_role` 키를 두지 않는다(`conventions.md` §5) — 권한 축을 새로 열어야 하는 결정이라 별개 판단이다. 당장의 값싼 대안은 **적용을 손으로 옮기지 않는 것**(파일 내용을 그대로 전달)과 **적용 직후 로직 해시 대조**이며, 이번에 실제로 쓴 절차가 그것이다.
+- **트리거:** **다음번 원격 마이그레이션 적용 직전** — 그 자리에서 (a) 파일 원문을 그대로 적용하고 (b) 적용 후 이번과 같은 로직 해시 대조를 돌린다. 절차를 `deployment-runbook.md`에 못박을지는 그때 판단한다(지금 적으면 문서만 늘고 실행되지 않는다 — B9).

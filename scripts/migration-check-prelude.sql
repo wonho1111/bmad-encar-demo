@@ -63,6 +63,25 @@ end $$;
 alter default privileges in schema public
   grant all on tables to anon, authenticated, service_role;
 
+-- auth 스키마 USAGE GRANT (2026-07-29 원격·로컬 동시 실측으로 추가 — Story 12.5의 CI red가 드러냄)
+--   실측: 원격 psrnsasxpkpwqdukjdmt · 로컬 스택 둘 다
+--     has_schema_privilege('authenticated','auth','USAGE') = t (anon도 t)
+--     has_function_privilege('authenticated','auth.uid()','EXECUTE') = t
+--   그런데 이 프렐류드에는 없었다 → **스텁의 결함이지 마이그의 결함이 아니다**(위 :7-9의
+--   "정당한 확장" 기준을 그대로 충족 — 플랫폼에 있는데 여기 빠져 red가 나는 경우).
+--
+--   왜 지금까지 안 터졌나(이게 이 GRANT가 없어도 그동안 초록이던 이유다):
+--     RLS 정책 안의 `auth.uid()`는 정책 평가 경로라 호출자의 스키마 USAGE를 요구하지 않았다.
+--     0024/0025의 `chat_unread_count()`는 **authenticated가 직접 호출하는 SQL 함수**이고
+--     `set search_path = ''`라 `auth.uid()`를 스키마 한정으로 부른다 — 이 경로가 USAGE를 요구한다.
+--     즉 "authenticated가 auth 스키마를 직접 밟는" 첫 마이그레이션이 0024였다.
+--   red→green 확인(2026-07-29): CI와 같은 재료로 일회용 pgvector 컨테이너를 띄워 재현했더니
+--     추가 전 `tests/integration/test_chat_unread_real_db.py` **4 failed**
+--     (`InsufficientPrivilege: permission denied for schema auth`),
+--     이 두 줄 추가 후 같은 컨테이너에서 **10 passed**.
+grant usage on schema auth to anon, authenticated, service_role;
+grant execute on function auth.uid() to anon, authenticated, service_role;
+
 -- ── storage 스키마 최소 스텁 (0012_listing_images가 참조 — 2026-07-16 원격 실측 기반, Story 9.1) ──
 --   실측 근거: information_schema.columns(storage.buckets/objects 전체 컬럼) + pg_class.relrowsecurity를
 --   원격에서 직접 조회(Story 9.1 Task 1). 이 레포 최초의 storage 마이그라 스텁이 아예 없었다.
