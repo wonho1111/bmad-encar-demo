@@ -30,10 +30,16 @@ export default function WishButton({
   listingId,
   initialWished,
   authed,
+  variant = 'card',
 }: {
   listingId: string;
   initialWished: boolean;
   authed: boolean;
+  // 배치만 다르고 **동작은 완전히 같다**(토글·게이트·복귀 반영·롤백·토스트 전부 공유).
+  //   'card'   = 매물 카드 안(사진 밖 우상단에 절대배치) — 원래 유일한 쓰임.
+  //   'inline' = 문서 흐름 안의 평범한 버튼(매물 상세 제목 줄) — Story 10.5가 카드만 배선하고
+  //              상세를 빠뜨려서(UX 목업엔 상세에도 하트가 있었다) 2026-07-29에 추가한 자리.
+  variant?: 'card' | 'inline';
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -161,29 +167,55 @@ export default function WishButton({
     void applyToggle(!wished);
   }
 
+  // 버튼 알맹이는 두 배치가 공유한다 — 히트영역 44×44(h-11 w-11)·aria-pressed·라벨 전환 모두 동일.
+  const button = (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={pending}
+      aria-pressed={wished}
+      aria-label={wished ? '찜 취소' : '찜하기'}
+      className={
+        variant === 'card'
+          ? 'pointer-events-auto absolute right-2 top-full mt-1 flex h-11 w-11 items-center justify-center rounded-full bg-surface-raised text-lg text-ink-primary shadow-card disabled:opacity-70'
+          : // inline: 문서 흐름 안에 서므로 절대배치·그림자 대신 테두리로 경계를 준다(카드 위가
+            // 아니라 배경 위에 놓여 그림자만으로는 형태가 안 읽힌다).
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border-hairline bg-surface-raised text-lg text-ink-primary disabled:opacity-70'
+      }
+    >
+      <span aria-hidden="true">{wished ? '♥' : '♡'}</span>
+    </button>
+  );
+
+  // 조용한 토스트 — role="status"로 스크린리더에 알리되 화면 흐름을 막지 않는다. 전역 인프라 없이
+  // 이 버튼 로컬 state로만 존재하다가 setTimeout으로 자동 소멸(A2).
+  const toastNode = toast ? (
+    <p
+      role="status"
+      className={
+        variant === 'card'
+          ? 'pointer-events-none absolute right-2 top-[calc(100%+56px)] w-max max-w-[180px] rounded-chip bg-ink-primary px-2 py-1 text-caption text-white shadow-card'
+          : 'pointer-events-none absolute right-0 top-full z-10 mt-1 w-max max-w-[180px] rounded-chip bg-ink-primary px-2 py-1 text-caption text-white shadow-card'
+      }
+    >
+      {toast}
+    </p>
+  ) : null;
+
+  if (variant === 'inline') {
+    return (
+      <div className="relative shrink-0">
+        {button}
+        {toastNode}
+      </div>
+    );
+  }
+
+  // card: 카드의 사진 영역(5:3)을 그대로 재현한 감싸개 안에서 top-full로 사진 바로 아래에 건다.
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[5/3]">
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={pending}
-        aria-pressed={wished}
-        aria-label={wished ? '찜 취소' : '찜하기'}
-        className="pointer-events-auto absolute right-2 top-full mt-1 flex h-11 w-11 items-center justify-center rounded-full bg-surface-raised text-lg text-ink-primary shadow-card disabled:opacity-70"
-      >
-        <span aria-hidden="true">{wished ? '♥' : '♡'}</span>
-      </button>
-
-      {/* 조용한 토스트 — role="status"로 스크린리더에 알리되 화면 흐름을 막지 않는다. 전역 인프라 없이
-          이 버튼 로컬 state로만 존재하다가 setTimeout으로 자동 소멸(A2). */}
-      {toast && (
-        <p
-          role="status"
-          className="pointer-events-none absolute right-2 top-[calc(100%+56px)] w-max max-w-[180px] rounded-chip bg-ink-primary px-2 py-1 text-caption text-white shadow-card"
-        >
-          {toast}
-        </p>
-      )}
+      {button}
+      {toastNode}
     </div>
   );
 }

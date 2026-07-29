@@ -21,8 +21,10 @@ import type { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, fetchListingGalleryUrls } from '@/lib/listings';
+import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingGallery from '@/components/listings/ListingGallery';
+import WishButton from '@/components/listings/WishButton';
 import EmptyState from '@/components/ui/EmptyState';
 import ErrorState from '@/components/ui/ErrorState';
 import { buttonClasses } from '@/components/ui/Button';
@@ -215,6 +217,10 @@ export default async function ListingDetailPage({
     console.error('[listings/detail] 조회수 증가 실패:', viewCountError);
   }
 
+  // 찜 여부(Story 10.5의 누락 보완, 2026-07-29) — 카드와 같은 오버레이 조회를 매물 1건에 대해 한다.
+  //   비로그인이면 조회하지 않는다(하트는 그대로 보이고 게이트는 클릭에만 걸린다, FR58·conventions §8).
+  const wished = user ? (await fetchWishedListingIds(supabase, user.id, [listing.id])).has(listing.id) : false;
+
   const title = `[${listing.manufacturer}] ${listing.model}`;
   const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
   const inquiryMode = computeInquiryMode(listing, user);
@@ -235,6 +241,13 @@ export default async function ListingDetailPage({
             <span className="shrink-0 whitespace-nowrap rounded-badge border border-brand-petrol px-2 py-0.5 text-caption font-semibold text-brand-petrol">
               판매중
             </span>
+            {/* 찜(♡) — UX 목업(mockups/detail-1.html)엔 상세에도 하트가 있었는데 Story 10.5가
+                카드·랜딩·/search만 배선하고 상세를 빠뜨렸다(사용자 지적으로 2026-07-29 보완).
+                ⚠️ **가격 옆(InquiryCta)이 아니라 제목 줄에 둔다.** InquiryCta는 데스크톱 aside와
+                모바일 하단 바 **두 블록을 동시에** 렌더하므로, 거기 넣으면 상태를 가진 하트가 두 번
+                마운트돼 한쪽만 채워지는 불일치가 생긴다 — 그게 정확히 이 파일이 #82로 한 번 겪고
+                InquiryCta를 하나로 합쳐 없앤 문제다. 제목 줄은 두 뷰포트 모두에서 한 번만 그려진다. */}
+            <WishButton listingId={listing.id} initialWished={wished} authed={!!user} variant="inline" />
           </div>
           <p className="truncate whitespace-nowrap text-meta font-medium text-ink-muted">
             {listing.year}년 · {listing.mileage.toLocaleString('ko-KR')}
