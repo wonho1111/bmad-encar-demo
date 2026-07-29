@@ -73,6 +73,22 @@ export default async function ChatListPage() {
     console.error('[chat/list] 채팅방 목록 조회 실패:', error);
   }
 
+  // 방별 안읽음 수(DW-548) — `chat_unread_by_room()`(0026)이 안읽음이 있는 방만 행으로 준다.
+  //   행이 없는 방 = 0건이므로 Map에서 못 찾으면 0으로 읽는다.
+  //   조회 실패는 배지 없음으로 폴백한다 — 배지는 부가 정보라 방 목록 렌더 자체를 막지 않는다
+  //   (AppHeader의 총합 배지와 같은 방침). 비로그인은 여기 도달하지 않지만(proxy 차단) 방어적으로 건너뛴다.
+  const unreadByRoom = new Map<string, number>();
+  if (user) {
+    const { data: unreadRows, error: unreadError } = await supabase.rpc('chat_unread_by_room');
+    if (unreadError) {
+      console.error('[chat/list] 방별 안읽음 조회 실패:', unreadError);
+    } else if (Array.isArray(unreadRows)) {
+      for (const row of unreadRows as { room_id: string; unread: number }[]) {
+        unreadByRoom.set(row.room_id, row.unread);
+      }
+    }
+  }
+
   return (
     <>
       <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/chat" />
@@ -117,6 +133,7 @@ export default async function ChatListPage() {
                 const summary = l
                   ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
                   : '판매 완료되었거나 조회할 수 없는 매물';
+                const unread = unreadByRoom.get(room.id) ?? 0;
                 return (
                   <li key={room.id}>
                     <Link
@@ -129,7 +146,22 @@ export default async function ChatListPage() {
                         </span>
                         <span className="text-xs text-zinc-500">{counterpart}</span>
                       </span>
-                      <span className="text-xs text-zinc-400">대화 열기 →</span>
+                      {/* 방별 안읽음 배지(DW-548) — 0이면 아무것도 그리지 않는다(빈 잉크 금지).
+                          내비 총합 배지(SiteNav)와 **같은 규칙**으로 만든다: 색만으로 알리지 않도록
+                          숫자를 함께 넣고, 눈에 보이는 숫자는 99에서 눌러 작은 원이 깨지지 않게 하되
+                          aria-label엔 정확한 건수를 넣는다(UX-DR22 비색 신호 중복 — 상한은 레이아웃
+                          사정이지 낭독 사정이 아니다). bg-red-600은 흰 글자 대비 4.83:1로 AA 통과. */}
+                      <span className="flex shrink-0 items-center gap-2">
+                        {unread > 0 && (
+                          <span
+                            aria-label={`안읽음 메시지 ${unread}건`}
+                            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-semibold leading-none text-white"
+                          >
+                            {unread > 99 ? '99+' : unread}
+                          </span>
+                        )}
+                        <span className="text-xs text-zinc-400">대화 열기 →</span>
+                      </span>
                     </Link>
                   </li>
                 );
