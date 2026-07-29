@@ -163,7 +163,8 @@ location: `web/.../chat/[roomId]/ChatRoomMessages.tsx` (handleSubmit catch)
 severity: low
 reason: 멱등키 도입은 `12-1-멱등키-마이그레이션`으로 backlog에 이미 예약된 계획된 작업이라 부채로 별도 처리하지 않는다.
 trigger: 불안정 네트워크에서 전송 중 끊김.
-status: open
+status: done 2026-07-30
+resolution: already resolved: supabase/migrations/0022_chat_idempotency_key.sql + web/src/lib/messages.ts:127 (insert carries client_message_id) — UNIQUE(room_id, client_message_id) now blocks the duplicate re-send
 
 - **위치:** `web/.../chat/[roomId]/ChatRoomMessages.tsx` (handleSubmit catch)
 - **내용:** INSERT가 DB엔 성공했으나 응답이 네트워크에서 끊기면 catch가 입력을 복원 → 사용자 재전송 → 서로 다른 id의 중복 메시지 영속(id 기준 dedupe로 못 막음).
@@ -178,7 +179,8 @@ location: 동상 (폴링 effect)
 severity: low
 reason: 재연결 배너 보정은 `12-4-재연결-배너-갭-보정`으로 backlog 예약돼 있고, Epic 12가 폴링을 Realtime으로 대체하면 이 항목의 형태 자체가 바뀐다.
 trigger: 장시간 방치 후 세션 만료, 관리자의 방 삭제.
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx:493 CHANNEL_ERROR/TIMED_OUT -> visible banner, :789 realtimeError render; polling removed entirely by Story 12.3 (commit b581b45)
 
 - **위치:** 동상 (폴링 effect)
 - **내용:** 첫 로드 실패는 한국어 에러로 표시(loud)하지만, 세션 만료·방 삭제로 폴링이 매 주기 영구 실패하면 아무 표시 없이 대화가 멈춘 것처럼 보임(silent). loud/silent 비대칭.
@@ -226,7 +228,8 @@ location: `web/.../sell/SellForm.tsx`
 severity: medium
 reason: 웹 SellForm의 쉼표 join/split은 옵션 값에 쉼표가 섞이면 라운드트립이 깨졌다. 웹은 줄바꿈 구분으로 고쳤으나 app `listing_form.dart`는 이 스토리 범위 밖이라 대장 #113(Epic 16)으로 트리거를 이관했다.
 trigger: 시드/가이드/임베딩에서 쉼표 포함 옵션 도입 시.
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/lib/options.ts (parseOptionsInput/serializeOptions, newline-delimited) + web/src/lib/__tests__/options.test.ts round-trip; SellForm.tsx no longer comma-joins. App-side listing_form.dart is a separate entry (DW-413)
 
 - **위치:** `web/.../sell/SellForm.tsx`
 - **내용:** 수정 폼이 options를 쉼표로 join/split. 폼 밖(시드·API)에서 한 배열원소에 쉼표를 넣으면 첫 수정 저장 시 둘로 쪼개짐(현재 폼 입력만으론 발생 안 함).
@@ -725,7 +728,8 @@ origin: 장부 통합 이관(구 docs/tech-debt.md #34) — 원출처: 8.5 리�
 location: `api/tests/test_auth.py:367-377` · `api/tests/test_ai_search.py:339-348`
 severity: medium
 reason: "인증 계약 테스트는 `test_auth.py` 소유"라는 파일 경계 결정이 선행돼야 해소할 수 있어 미뤘다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: commit 5bc6463 (Story 8.5) removed test_search_without_token_allowed_anon; grep -rn across api/tests/ now returns 0 hits — /ai/search reverted to always-401 without token, so the duplicated weak assertion no longer exists
 
 - **위치:** `api/tests/test_auth.py:367-377` · `api/tests/test_ai_search.py:339-348`
 - **내용:** `test_search_without_token_allowed_anon`가 동명·동일 monkeypatch로 양쪽에 있고, `test_ai_search.py` 사본은 `assert r.json()["listings"] == []` **본문 검증이 빠진 약한 버전**이라 응답 계약이 퇴행해도 초록으로 통과한다.
@@ -905,7 +909,8 @@ location: `supabase/migrations/0012_listing_images.sql:253-254` (`listing_images
 severity: medium
 reason: `sql_guard`의 `ALLOWED_COLUMNS`가 `listings` 단일 테이블이라 현재 `listing_images`를 JOIN할 수 없고, `ai_readonly`는 `nologin` 롤이라 사용자 대면 노출이 아니어서 오늘은 무해하다.
 trigger: **Story 9.6**(api가 `listing_images`에서 대표 사진 `storage_path`를 읽는 곳). 누군가 `sql_guard`에 테이블을 하나 더 허용하는 순간.
-status: open
+status: done 2026-07-30
+resolution: already resolved: api/tests/test_sql_guard.py:211 test_join_listing_images_rejected, :221 test_select_from_listing_images_rejected, :247 assert ALLOWED_TABLES == {'listings'} — the executable check the entry asked for now exists
 
 - **위치:** `supabase/migrations/0012_listing_images.sql:253-254` (`listing_images_ai_readonly_select ... using (true)`)
 - **내용:** 이 정책은 **sold 매물의 사진 메타도 전부 연다. 이건 의도된 것이다** — 아키텍처 CR2가 확정했고 재논의 대상이 아니다. FR11 강제는 **api가 on_sale id로 스코프를 좁히는 데서** 일어난다.
@@ -1293,7 +1298,8 @@ location: `web/src/components/ai/ChatAssistant.tsx:138` (`<ListingCard listing={
 severity: medium
 reason: 현재 AI 검색을 쓰는 사용자가 없어 실제 피해가 없고, 사진 경로를 붙이는 작업은 Story 9.6이 맡기로 이미 계획돼 있는데 9.7 시드가 9.6보다 먼저 실행되며 생긴 일시적인 공백이라 지금 고치지 않았다.
 trigger: Story 9.6 착수 시 자동 소멸. 그 전에 AI 검색을 시연·공개해야 할 일이 생기면 그때는 플레이스홀더만 억제한다(좁은 대화 컬럼에 5:3 박스가 생기는 시각적 영향도 함께 사라진다).
-status: open
+status: done 2026-07-30
+resolution: already resolved: api/app/schemas/ai.py:80 image_path field + api/app/graph/listing_cards.py:187 card.image_path = path; web/src/lib/api/aiSearch.ts resolveCardImage() converts it for ListingCard (Story 9.6)
 
 - **위치:** `web/src/components/ai/ChatAssistant.tsx:138` (`<ListingCard listing={l} />` — `attachCoverImages`를 거치지 않는다)
 - **내용:** AI 검색 결과는 api가 돌려주는데 `api/app/schemas/ai.py`의 `image_url`은 **항상 `None`**이다. 9.4가 `ListingCard`에 `ListingCardImage`를 넣으면서, 값이 없으면 5:3 "사진 준비중" 플레이스홀더가 그려진다. **시드(#68) 실행 전에는 모든 매물이 진짜로 0장이라 무해했으나, 지금은 사진 6장짜리 매물이 AI 답변에서만 0장이라고 말한다** — 화면이 사실과 다른 것을 단언한다.
@@ -1438,7 +1444,8 @@ location: `supabase/migrations/0012_listing_images.sql:21`(`storage_path text no
 severity: medium
 reason: 9.6이 만든 문제가 아니라 0012부터 있던 결함이고, 제대로 막으려면 DB CHECK 제약을 더하는 마이그레이션이 필요한데 9.6의 Dev Notes §0이 `supabase/migrations/**`를 범위 밖으로 못박아 두었다(A3).
 trigger: 사진 업로드 경로를 다시 손대는 스토리 — **Epic 16.2(앱 사진 업로더)** 가 새 쓰기 경로를 여는 자리다. 그 전에 `listing_images`에 마이그레이션을 걸 일이 생기면 같이 처리.
-status: open
+status: done 2026-07-30
+resolution: already resolved: supabase/migrations/0013_listing_images_path_integrity.sql:43-46 — trigger listing_images_enforce_storage_path rejects any path whose segment count != 3, whose [1] != seller uuid, [2] != listing_id, or [3] empty; fires BEFORE INSERT OR UPDATE OF listing_id, storage_path (0013 predates this entry, which miscited only 0012)
 
 - **위치:** `supabase/migrations/0012_listing_images.sql:21`(`storage_path text not null unique` — CHECK 제약 없음) · RLS `listing_images_insert_own`(`:119`)은 **매물 소유권만** 확인하고 경로 모양은 안 본다 · `web/src/lib/storage/index.ts`의 `getPublicUrl`
 - **내용:** 계약(§10)은 `{user_id}/{listing_id}/{filename}` 3단 경로를 요구하지만 **강제하는 검사가 DB·api·web 어디에도 없다.** 판매자가 자기 매물에 `../../foo`나 선행 `/`가 든 경로를 넣으면 그대로 저장되고, `getPublicUrl`의 `encodeSegments`는 `/`로 쪼개 각 조각만 인코딩하는데 `encodeURIComponent('..') === '..'`라 **traversal 조각이 그대로 살아남는다.**
@@ -1532,7 +1539,8 @@ origin: 장부 통합 이관(구 docs/tech-debt.md #103) — 원출처: #101 조
 location: 원격 마이그 원장 `20260619210838 / 0002b_listings_created_at_immutable` · `public.listings`
 severity: high
 reason: created_at을 못 고치게 막는 장치가 언제·왜 사라졌는지 확인할 수 없고(0002b 마이그레이션 원문이 레포에 없음) 지금은 정렬에 영향받는 기능이 없어 위험이 실현되지 않으므로, 정렬·노출 순서를 다루는 스토리에서 재판단하기로 미뤘다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: supabase/migrations/0020_listings_view_count.sql — listings_set_timestamps() begins 'new.created_at := old.created_at;' unconditionally; confirmed live on remote project via pg_trigger/pg_proc query
 
 - **위치:** 원격 마이그 원장 `20260619210838 / 0002b_listings_created_at_immutable` · `public.listings`
 - **실측 (2026-07-21, 원격 DB 직접 조회):** 이름이 말하는 "등록일시(`created_at`)를 나중에 못 고치게 막는" 장치를 **세 경로 모두에서 찾지 못했다.**
@@ -1807,7 +1815,8 @@ location: `web/src/components/ui/Logo.tsx` — 정의만 있고 import 0건(`gre
 severity: medium
 reason: 11-0의 Never가 `Logo.tsx` 수정을 금지했고, 배선(어느 화면에 어떤 크기로 넣을지)은 폰트 로딩이 아니라 UI 구성 결정이다.
 trigger: Epic 11의 헤더·브랜딩을 손대는 스토리(11.3 히어로 또는 내비 재구성) — 그때 `<Logo>`를 실제 배선하거나, 안 쓸 거면 컴포넌트를 정리한다. 어느 쪽이든 그 시점에 800 weight 렌더를 실경로로 한 번 확인한다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/components/layout/AppHeader.tsx:13 imports Logo and :80 renders <Logo size="sm" /> inside the consumer home link (commit 48427e3, Story 11.2) — the component is no longer orphaned
 
 - **위치:** `web/src/components/ui/Logo.tsx` — 정의만 있고 import 0건(`grep -rn "ui/Logo\|<Logo" web/src` 실측: 히트는 정의 파일 자신뿐, `AppHeader.tsx`의 히트는 무관한 `<LogoutButton />`).
 - **내용:** Story 8.1이 만든 브랜드 로고 컴포넌트가 **어느 화면에도 배선돼 있지 않다.** 실제 굵은-weight 렌더 경로는 `web/src/components/layout/AppHeader.tsx`의 `font-semibold` 링크뿐이다. 11-0이 폰트 전환의 회귀 카나리아로 `<Logo>`("차" 800 weight)를 지정했으나, 렌더되지 않는 컴포넌트라 확인은 동일 마크업을 DOM에 주입하는 방식으로 대체됐다 — 클래스가 폰트를 잘 받는다는 것은 확인되지만, **컴포넌트를 관찰한 것은 아니다.** B4의 "'존재 확인'은 '작동 확인'이 아니다"에 정확히 걸린다.
@@ -2072,7 +2081,8 @@ location: `web/src/app/page.tsx:178-194`(비로그인 분기, 주석 "비로그�
 severity: high
 reason: intent-contract의 Never가 `app/page.tsx`를 명시적으로 울타리 쳐서(랜딩 히어로·인기/최신 그리드는 Story 11.3/11.4 몫, 헤더 렌더 호출부만 유지) 손대지 않았다. 비로그인 홈은 Story 11.3(랜딩 히어로)이 통째로 다시 그릴 화면이라, 여기서 헤더만 얹으면 11.3이 곧 덮어쓴다.
 trigger: Story 11.3(랜딩 히어로)의 인수조건으로 심는다(B5). "Given 비로그인 사용자가 홈(`/`)을 열면, when 상단을 보면, then 로고·내 차 사기·AI로 찾기·내 차 팔기·로그인·내 차 등록이 `/search`와 동일하게 보인다."
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/app/page.tsx:119 <AppHeader roleLabel={null} email={null} currentPath="/" /> in the logged-out branch, matching :78 in the logged-in branch (Story 11.3)
 
 - **위치:** `web/src/app/page.tsx:178-194`(비로그인 분기, 주석 "비로그인 상태: 로그인/회원가입 링크를 중앙에 (상단바·로그아웃 없음)") — 로그인 분기(`:107`)는 `<AppHeader ... currentPath="/" />`를 렌더하지만 비로그인 분기는 `<main>`만 반환한다.
 - **내용:** spec-11-2의 AC1은 "비로그인 사용자가 데스크톱에서 **아무 공개 페이지**를 열면 로고·내 차 사기·AI로 찾기·내 차 팔기·로그인·내 차 등록이 보인다"인데, 공개 페이지 중 홈(`/`)만 헤더 호출부 자체가 없어 이 AC가 홈에서 미충족이다(실측: `AppHeader` 호출부 10곳 전수 확인, 홈은 로그인 분기에만 있음). `/search`·`/listings/[id]`에서는 정상 노출된다. 즉 비로그인 방문자가 가장 먼저 닿는 화면에서만 신규 내비가 안 보인다.
@@ -2226,7 +2236,8 @@ location: `web/src/components/landing/HeroSearch.tsx`(마운트 시 핸드오프
 severity: high
 reason: `useEffect`는 SSR/`renderToStaticMarkup`에서 실행되지 않으므로(11-2가 `SiteNav.test.ts`에서 이미 문서화한 동일 한계) jsdom+React Testing Library 없이는 이 로직에 못 닿는다. 이 리포의 vitest 설정(`environment:'node'`, `.test.ts`만 포함, `.tsx` 제외)은 순수 함수만 단위테스트하고 나머지는 E2E로 미루는 프로젝트 관례(`vitest.config.ts` 주석)를 그대로 지킨 것이라, jsdom/RTL 도입이나 Playwright 스위트 신설은 "히어로+차종칩" 스토리 범위를 넘는 인프라 투자다.
 trigger: **`#160`(11-2가 이미 심어 둔, `SiteNav`의 상호작용에 자동 회귀검사가 없다는 항목)과 같은 E2E 층을 세우는 Story 11.5(반응형 뷰포트 E2E 감사) 착수 시** — 그 자리에서 로그인 분기(게이트 vs 즉시실행)·마운트 시 핸드오프 복원(자동실행 없음)·`/ai` 자동실행 1회·새로고침 재실행 안 됨, 4가지를 함께 고정한다. `#160`과 같은 E2E 층이 필요한 이유가 같다(effect 기반 로직은 구조적으로 E2E 몫).
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/e2e/nav-and-hero.spec.ts:168 B9 (anon submit gated, requestCount 0), :185 B10 (login return restores query, no auto-run), :207 B11 (auto-run exactly once, still 1 after reload) — all four behaviours now asserted (commit eaa4833)
 
 - **위치:** `web/src/components/landing/HeroSearch.tsx`(마운트 시 핸드오프 복원 effect, `submit()`의 로그인 분기) · `web/src/components/ai/ChatAssistant.tsx`(마운트 시 핸드오프 소비 + 1회 자동실행 effect).
 - **내용:** 11-3 코드리뷰 3개 레이어(adversarial·edge-case-hunter·verification-gap)가 독립적으로 같은 지점을 짚었다 — `authed` 분기로 `/ai` 자동실행 vs 로그인 게이트를 가르고, "재실행 방지"(새로고침 시 재과금 금지)를 보장하는 이 로직 전체가 `useEffect`/이벤트 핸들러 안에 있어 순수함수 단위테스트로 못 잡는다. `heroSearchHandoff.test.ts`는 저장소 자체(읽고-쓰고-지우는 함수)만 잠갔을 뿐, "누가 이 값을 소비하는가"를 가르는 이 두 컴포넌트의 분기 로직은 테스트가 0건이다. `web/src/**/*.test.*` 전수 검색 결과 `HeroSearch`·`ChatAssistant`를 마운트/렌더하는 테스트가 없고, 이 리포에는 아직 커밋된 Playwright E2E 스위트 자체가 없다(로컬 MCP 세션으로 수동 확인하는 것이 현재 유일한 검증 수단, 11-3 구현 시 실제로 그렇게 수행함).
@@ -2292,7 +2303,8 @@ location: `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx:174`(입력창 
 severity: medium
 reason: Story 11.5의 스펙(Never 항목)은 이 스토리가 손대는 프로덕션 코드를 `#84`(`ChatAssistant.tsx`) 1건으로 못박았다 — 채팅방 화면은 이 스토리가 감사하기로 정한 4개 화면(랜딩·목록·상세·`/ai`)에 들어있지 않아 범위 밖이다(A3). `#84`의 수정(`size={1}` + `min-w-0`)이 그대로 통할 가능성이 높지만(원인이 동일), 별도 화면에 적용해 재실측하는 일은 이 스토리의 권한 밖이다.
 trigger: 채팅 화면(`web/src/app/(user)/chat/**`)을 다음에 손대는 스토리 착수 시 — 또는 반응형 감사 범위를 채팅까지 넓히는 결정이 내려질 때. 그 자리에서 `#84`와 동일한 수정(`size={1}`, `min-w-0`)을 적용하고 390px에서 재실측한 뒤, `web/e2e/viewport-audit.spec.ts`에 채팅방 화면을 감사 대상으로 추가한다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx:867 size={1} on the message input with min-w-0 flex-1 (commit b581b45) — the 390px horizontal overflow fix the entry asked for
 
 - **위치:** `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx:174`(입력창 `<input>` — `flex-1` + 기본 `size` 힌트, 컨테이너는 `max-w-2xl`+`mx-auto`인 `<main>`).
 - **내용:** `#84`가 `/ai`에서 잡은 것과 형태가 완전히 같은 결함이다 — `<main>`이 `mx-auto`라 부모 stretch 대신 자기 content 기준 "선호 폭"(fit-content)만 차지하는데, 그 계산이 `flex-1`(flex-basis:0%)로 실제 렌더될 폭과 무관하게 `<input>`의 기본 `size` 힌트를 그대로 반영해 main이 뷰포트보다 넓어진다. Story 11.5 코드리뷰(verification-gap 레이어)가 로컬 스택에서 실제로 로그인해 실측했다: 390×844 뷰포트, 시드 채팅방(`buyer@test.com`)에서 `document.documentElement.scrollWidth=402` vs `clientWidth=390` — `#84`가 고치기 전 `/ai`에서 쟀던 것과 같은 402px다.
@@ -2465,7 +2477,8 @@ location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`의 Sto
 severity: high
 reason: 12.1의 Never 절이 클라이언트 배선을 명시적으로 12.3 범위로 잘랐다. 여기서 `messages.ts`를 고치면 그 경계를 넘고, 12.2(브로드캐스트)가 아직 없어 ③의 확정 경로를 지금 설계해도 검증할 대상이 없다.
 trigger: **Story 12.3 스펙 작성 시** — 그 자리에서 인수조건 3개를 심는다: (a) 전송 시 `crypto.randomUUID()`로 메시지 1건당 1회 키를 만들어 실어 보낸다(web·app 양쪽), (b) 중복 전송이 0행을 돌려줄 때 `(room_id, client_message_id)`로 기존 행을 조회해 낙관적 말풍선을 확정한다, (c) 재전송이 행 1개로 수렴함을 실제 전송 경로(PostgREST)로 확인한다. 12.4 스펙 작성 시엔 dedup 키를 "멱등키, 없으면 행 id"로 못 박는다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/lib/messages.ts:127 .insert({... client_message_id}) and :135-145 catches 23505 then re-queries the existing row to resolve the optimistic bubble; ChatRoomMessages.tsx:642,657 generate/reuse the key
 
 - **위치:** `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`의 Story 12.3 인수조건(멱등키를 "낙관적 전송(멱등키로 중복 차단)"이라고만 언급, 컬럼명·생성 주체·생성 시점 없음) + 실제 전송 경로 `web/src/lib/messages.ts`의 `sendMessage`, `app/lib/features/chat/chat_repository.dart`.
 - **내용:** 세 갈래가 한 덩어리다. ① **의무가 안 심겼다** — 12.1은 컬럼과 제약만 놓고 "클라이언트가 채우는 건 12.3"이라고 범위를 그었는데, 12.3의 인수조건엔 그 요구가 없다. 12.3이 그대로 끝나면 모든 행의 `client_message_id`가 NULL이고, NULL끼리는 유니크 제약이 충돌하지 않으므로 FR41(중복 방지)이 **조용히 미구현**으로 남는다(이 사실은 이제 `test_null_client_message_id_is_not_deduplicated_by_on_conflict`가 검사로 고정하고 있다). ② **문법이 안 맞는다** — 12.1의 스펙·마이그 주석·테스트가 전부 `INSERT ... ON CONFLICT DO NOTHING` 원시 SQL을 전제하는데, 실제 전송은 supabase-js/PostgREST를 통과한다. supabase-js `.insert()`엔 그 옵션이 없고 대응물은 `.upsert(..., { onConflict: 'room_id,client_message_id', ignoreDuplicates: true })`인데, 이건 무시된 행에 대해 **표현을 안 돌려준다** — 현재 호출부가 쓰는 `.select().single()`은 0행을 받아 PGRST116으로 던진다. ③ **확정 신호가 없다** — 재전송은 정의상 클라이언트가 확정을 못 받은 상황인데, 무시된 INSERT는 반환 행도 없고 (12.2가 붙일) DB 브로드캐스트도 발화하지 않는다. 낙관적 말풍선이 pending에서 못 벗어난다. 12.4의 갭 보정도 같은 축이다 — "멱등키로 중복 제거"라고 규정했는데 키가 nullable이라 NULL 구간 행은 dedup 신원이 없다(`client_message_id ?? row.id`처럼 서버 id로 떨어지는 규칙이 필요).
@@ -2522,7 +2535,8 @@ location: CI `api-db` 잡 재현(일회용 `pgvector/pgvector:pg17` + `scripts/m
 severity: high
 reason: CI 재현 컨테이너에서는 `tests/integration` 53건이 이미 전부 통과하고, 로컬에서만 나던 실패는 CI 상태가 아니라 로컬 스택에만 있는 `profiles` 테이블 anon 권한 공백(로컬 db reset이 플랫폼 기본 GRANT를 남기지 않음) 때문이었다.
 trigger: **`test/bmad-loop`을 `develop`에 병합하기 직전**(`#181`의 ②단계) — 병합 후 CI가 실제로 초록인지 확인한다. 초록이면 `#138`·`#180`을 닫고, 아니면 여기서 다시 본다. 로컬 스택으로 `api-db`를 대신 검증하는 것은 이 실측 이후로 금지한다(결과가 다르다는 것이 증명됐다).
-status: open
+status: done 2026-07-30
+resolution: already resolved: git rev-parse: develop == test/bmad-loop == f9d9637 (already merged); gh run list --branch develop: Tests conclusion=success on headSha f9d9637 (2026-07-29T15:33:15Z) — the entry's verification step is done and green
 
 - **위치:** CI `api-db` 잡 재현(일회용 `pgvector/pgvector:pg17` + `scripts/migration-check-prelude.sql` + 마이그 0001~0022 전량) vs 로컬 Supabase Docker 스택(포트 55322).
 - **내용(추측 아니라 실측):** CI 재현 컨테이너에서 `pytest tests/integration` → **53 passed, 0 failed**. 두 축 모두 이미 해소돼 있다 — `#180`의 테스트는 `test_anon_can_select_whitelisted_columns_including_view_count`로 **이미 교정돼 있고**(0021 이후 사양에 맞춰진 이름), `#138`의 `test_anon_can_read_joined_at_despite_profiles_rls`도 **통과한다**. 반면 **로컬 스택에서는 후자가 `InsufficientPrivilege: permission denied for table profiles`로 실패**한다. 원인은 권한 차이다: `has_table_privilege('anon','public.profiles','SELECT')`가 CI 재현 컨테이너에서는 **t**, 로컬 스택에서는 **f**(대장 `#120`과 같은 축 — 로컬 `db reset`이 플랫폼 기본 GRANT를 남기지 않는다).
@@ -2538,7 +2552,8 @@ location: `api/.venv`(레포 밖 산출물이지만 `[verify]` 게이트의 첫 
 severity: critical
 reason: 환경 자체는 즉시 복구했다(`websockets 15.0.1`, `pip check` 충돌 0). 남은 것은 **재발 방지**인데, 두 가지 축 중 무엇을 택할지 판단이 필요하다: (a) 규칙 축 — CLAUDE.md/스킬 프롬프트에 "환경도 원복" 조항을 넣는다(주석·문서는 계약이 아니다, B9 — 약함) · (b) 구조 축 — verify 게이트 앞에 **환경 무결성 검사**(`pip check` + 핵심 import 스모크)를 넣어 **깨진 환경을 코드 실패로 오인하지 않게** 한다(B9에 맞음, 다만 게이트가 느려지고 "환경 실패"와 "코드 실패"를 엔진이 구분해 주지 않으면 이월 처리가 여전히 잘못된다).
 trigger: **Epic 12 재개 직전**(같은 일이 남은 4스토리에서 반복될 수 있다) — 최소한 (b)의 값싼 판본, 즉 `[verify] commands` 맨 앞에 `bash -lc 'cd api && .venv/bin/pip check'`를 넣는 것부터 검토한다. 그리고 **Epic 12 회고에서 (a)/(b) 중 어느 축으로 못박을지 결정**한다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: scripts/check_env_integrity.sh exists and is wired as the first verify command at .bmad-loop/policy.toml:82 (commit a50465d) — the structural fix the entry proposed
 
 - **위치:** `api/.venv`(레포 밖 산출물이지만 `[verify]` 게이트의 첫 명령 `cd api && .venv/bin/python -m pytest -q`가 여기에 의존) · `.bmad-loop/policy.toml`의 `[verify] commands`.
 - **무슨 일이 있었나(로그 원문):** Epic 12 Story 12-2의 **리뷰 세션(review-1)** 이 이렇게 실행했다.
