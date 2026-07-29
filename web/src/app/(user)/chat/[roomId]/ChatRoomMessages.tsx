@@ -163,6 +163,13 @@ export default function ChatRoomMessages({
   // 별도 effect가 messages state에서 미러링한다(구독 콜백의 stale closure를 피하는 같은 패턴).
   const lastMessageAtRef = useRef<string | null>(null);
 
+  // 미전송 안내 옆 "다시 보내기" 버튼이 호출할 최신 flushQueue를 담는 ref(대장 #206 재현 후 최소
+  // 수정, Story 12.6) — flushQueue는 아래 effect 안에서 roomId가 바뀔 때마다 새로 정의되는 지역
+  // 함수라 렌더(버튼 onClick)에서 직접 참조할 수 없다. 재연결 트리거 하나뿐이던 것에 "사용자가
+  // 직접 다시 시도"라는 두 번째 트리거를 더하는 것뿐이고, flushQueue 자체의 순차 flush·멱등·큐
+  // 보존 규칙은 그대로 재사용한다(새 전송 경로를 만들지 않음).
+  const flushQueueRef = useRef<() => void>(() => {});
+
   // 직전에 실패한 전송의 (키, 본문) — 실패 후 사용자가 "입력값을 바꾸지 않고" 다시 제출하면 같은
   // client_message_id를 재사용해야 멱등 보호(FR41)가 실제로 발동한다(코드리뷰 patch, high). 이 앱엔
   // 자동 재전송이 없고 유일한 재전송 경로가 "실패 → 입력 복원 → 사용자가 다시 전송 클릭"이므로, 매번
@@ -225,6 +232,10 @@ export default function ChatRoomMessages({
       disconnectedRef.current = false;
       lastMessageAtRef.current = null;
       onlineInFlightKeyRef.current = null;
+      // flushQueueRef도 함께 초기화한다(코드리뷰 patch) — 아래에서 이 이펙트가 곧 새 flushQueue를
+      // 다시 배선하므로 실질적 위험은 없었지만, 형제 ref들과 같은 자리에서 같이 리셋해 "roomId가
+      // 바뀌면 이 블록의 ref들은 전부 초기화된다"는 불변식을 명시적으로 지킨다(방어적 일관성).
+      flushQueueRef.current = () => {};
 
       setLoading(true);
       const res = await fetchMessages(supabase, roomId);
@@ -360,18 +371,26 @@ export default function ChatRoomMessages({
         //
         // 안내는 error가 아니라 전용 칸(queueStuckNotice)에 쓴다(3차 후속 리뷰 patch, medium) —
         // error는 다음 제출마다 지워지는 칸이라, 큐가 막힌 사용자가 메시지를 한 번 더 치는 순간
-        // 유일한 신호가 사라진다. 문구도 실제 동작대로 적는다: 재시도 트리거는 아래 SUBSCRIBED
-        // 분기 하나뿐이라 "연결이 회복되면"이 아니라 **다시 끊겼다 붙어야** 돌아간다 — 연결이 계속
-        // 정상이면 영영 재시도되지 않으므로, 그렇게 약속하면 안내 자체가 거짓말이 된다.
+        // 유일한 신호가 사라진다. 문구도 실제 동작대로 적는다: 자동 재시도 트리거는 아래 SUBSCRIBED
+        // 분기 하나뿐이라 "연결이 회복되면"이 아니라 **다시 끊겼다 붙어야** 돌아간다는 사실은 여전히
+        // 남기되(그렇게 약속하면 안내 자체가 거짓말이 된다), 이제는 바로 옆 "다시 보내기" 버튼으로
+        // 지금 당장 재시도할 수도 있다는 점을 함께 적는다(코드리뷰 patch, Story 12.6 후속) — 버튼이
+        // 생긴 뒤로 "그때까지는 전송되지 않는다"는 더 이상 사실이 아니다.
+        //
+        // 단, 이 state에는 **"몇 건이 남았나"라는 사실만** 담는다(후속 리뷰 patch) — "어떻게 다시
+        // 보내나"는 render에서 isDisconnected로 갈라 쓴다. 여기 문장으로 박아두면 flush 시점(항상
+        // 재연결 직후 = 연결된 상태)의 안내가 그대로 굳어버려서, 그 뒤 다시 끊겨 재시도 버튼이
+        // disabled로 잠긴 화면에서도 "버튼을 누르면 지금 다시 시도한다"고 말하는 거짓 안내가 된다
+        // (스펙이 지정한 #206 재현 절차 — 재연결 → 부분 실패 → 재차단 — 이 정확히 그 상태다).
+        // 주석을 아래 if 블록 **밖**에 두는 이유: roomTopicContract.test.ts가 "if (remaining.length
+        // > 0) { ... setQueueStuckNotice(" 사이 400자를 창으로 잡아 실패 경로 배선을 고정한다.
         if (remaining.length > 0) {
           console.error(
             '[chat/room] 오프라인 큐 일부 전송 실패, 다음 재연결에 재시도:',
             remaining.length,
             '건 남음',
           );
-          setQueueStuckNotice(
-            `메시지 ${remaining.length}건을 아직 보내지 못했습니다. 연결이 다시 끊겼다 회복될 때 재시도하며, 그때까지는 전송되지 않습니다.`,
-          );
+          setQueueStuckNotice(`메시지 ${remaining.length}건을 아직 보내지 못했습니다.`);
         } else {
           // 큐를 끝까지 비웠으면 앞선 미전송 안내를 거둔다 — 안 지우면 이미 다 보낸 뒤에도 "N건
           // 미전송"이 화면에 박제된다(loadError에서 R1이 고친 것과 같은 방향의 실패).
@@ -407,6 +426,9 @@ export default function ChatRoomMessages({
         }
       }
     }
+    // 렌더(버튼 onClick)가 이 회차의 flushQueue를 부를 수 있게 ref에 담아 둔다(대장 #206 최소 수정) —
+    // 재연결 자동 트리거와 똑같이 flushQueue()를 그대로 호출할 뿐, 새 전송 경로는 아니다.
+    flushQueueRef.current = () => void flushQueue();
 
     // 갭보정(AC-CHAT-2, CR6) — 재연결마다 "마지막으로 반영한 메시지의 created_at"을 커서로 항상
     // fetchMessages를 다시 부른다(Broadcast Replay와 별개로 병행, Design Notes). 커서가 없으면(아직
@@ -770,9 +792,45 @@ export default function ChatRoomMessages({
         </p>
       )}
       {queueStuckNotice && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {queueStuckNotice}
-        </p>
+        <div className="flex items-center justify-between gap-3 text-sm text-red-600 dark:text-red-400">
+          {/* role="alert"는 텍스트에만 건다(코드리뷰 patch) — alert 리전은 스크린리더가 "읽기 전용
+              알림"으로 다루는 자리라, 그 안에 포커스 가능한 버튼을 넣으면 상태 변화마다 버튼까지
+              재announce되는 접근성 안티패턴이 된다. 버튼은 alert 리전의 형제로 바깥에 둔다(시각적
+              레이아웃은 그대로). min-w-0(코드리뷰 patch, D5) — 좁은 화면에서 문장이 버튼이 아니라
+              먼저 줄어들게 한다(project-context.md 규칙13, 버튼 2줄 밀림 금지). */}
+          {/* 안내 문구의 뒷문장("어떻게 다시 보내나")은 render에서 현재 연결 상태로 갈라 쓴다
+              (후속 리뷰 patch) — 바로 옆 버튼이 disabled={isDisconnected}로 잠기는데 문구만
+              "누르면 지금 다시 시도한다"고 박혀 있으면, 스펙이 지정한 #206 재현 절차(재연결 →
+              부분 실패 → 재차단)가 정확히 그 모순 상태를 만든다. 앞문장(몇 건 남았나)은 flush가
+              센 값이라 state에 그대로 둔다. */}
+          <span role="alert" className="min-w-0">
+            {queueStuckNotice}{' '}
+            {isDisconnected
+              ? '연결이 끊겨 지금은 다시 보낼 수 없습니다. 연결이 회복되면 자동으로 재시도합니다.'
+              : '옆의 "다시 보내기"를 누르면 지금 다시 시도하고, 누르지 않으면 연결이 다시 끊겼다 회복될 때 재시도합니다.'}
+          </span>
+          {/* 재시도 버튼(대장 #206 최소 수정, Story 12.6) — 유일한 재시도 트리거가 "다음 끊김→재연결"
+              뿐이었던 것에, 사용자가 직접 지금 다시 시도할 수 있는 수단을 더한다. flushQueue()를
+              그대로 호출하므로 순차 flush·멱등(client_message_id 재사용)·큐 보존 규칙은 그대로다 —
+              새 전송 경로가 아니다. disabled={isDisconnected}(코드리뷰 patch 후속) — 끊긴 동안엔
+              눌러도 onClick 가드가 그대로 no-op이라 예전엔 버튼이 멀쩡해 보이는데 눌러도 아무 반응이
+              없었다(피드백 없는 조용한 실패). 이제 그 상태를 시각적으로도 비활성으로 드러낸다.
+              onClick의 disconnectedRef 가드는 그대로 남긴다 — 안내가 뜬 뒤(render) 클릭 사이에
+              연결이 다시 끊기는 경합에서 disabled prop(렌더 시점 값)만으로는 못 막는 순간을 막는
+              최후 방어선이다(disconnectedRef 재사용, 새 state 없음). */}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={isDisconnected}
+            className="shrink-0 whitespace-nowrap" // D5 — 버튼은 줄바꿈·줄어들기 없이 항상 한 줄을 지킨다.
+            onClick={() => {
+              if (!disconnectedRef.current) flushQueueRef.current();
+            }}
+          >
+            다시 보내기
+          </Button>
+        </div>
       )}
       {loadError && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">

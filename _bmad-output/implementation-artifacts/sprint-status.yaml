@@ -171,7 +171,7 @@ development_status:
   12-3-실시간-송수신-전환-폴링-제거: done
   12-4-재연결-배너-갭-보정: done
   12-5-안읽음-배지-방-목록-정렬: done
-  12-6-실시간-채팅-검증-sm-e: backlog
+  12-6-실시간-채팅-검증-sm-e: done
   epic-12-retrospective: optional
 
   # --- Epic 13: AI 검색 RAG 고도화 ---
