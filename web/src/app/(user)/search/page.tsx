@@ -13,6 +13,7 @@
 // CM3(즉시 비노출): 이 페이지는 cookies() 기반 인증을 쓰므로 매 요청 DB를 다시 읽는 동적 렌더다.
 //   매물이 sold로 바뀌면 재조회 시 즉시 사라진다. 정적 캐시로 잔존하지 않도록 force-dynamic을 명시한다.
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
@@ -130,35 +131,77 @@ export default async function SearchPage({
   const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
   // options는 이미 0011에서 anon GRANT돼 있다(로그인 분기 불필요, conventions §11 — 10.1
   // 신뢰컬럼과 다른 점). 그래서 trustColumns와 달리 로그인 여부와 무관하게 항상 조회한다.
+  // SearchFilters에 넘길 초기값(현재 URL 그대로 폼에 반영 → 새로고침해도 유지).
+  //   조회보다 **먼저** 만든다 — 아래 "마지막 페이지로 되돌리기"가 pageHref를 쓰는데, 그게 이 값을 읽는다.
+  const initialFilters: SearchFilterValues = {
+    q,
+    body_type: bodyType ?? '',
+    color: color ?? '',
+    fuel: fuel ?? '',
+    transmission: transmission ?? '',
+    region: region ?? '',
+    price_min: priceMin !== null ? String(priceMin) : '',
+    price_max: priceMax !== null ? String(priceMax) : '',
+    year_min: yearMin !== null ? String(yearMin) : '',
+    year_max: yearMax !== null ? String(yearMax) : '',
+  };
+
+  // 페이지 이동 링크 — **정규화된 필터값**으로 쿼리를 다시 조립한다(원본 sp를 그대로 옮기지 않는다).
+  //   그래야 목록 밖 값·중복 키·모르는 파라미터가 페이지를 넘길 때마다 따라다니지 않는다
+  //   (위 pickOption/asInt가 이미 무시한 값을 URL에만 남겨두면 화면과 주소가 어긋난다).
+  //   page=1은 아예 안 붙인다 — 첫 페이지 주소를 지금과 똑같이 유지해 기존 링크·북마크가 안 깨진다.
+  //   ※ 필터를 다시 적용하면 SearchFilters가 자기 필드로만 URL을 새로 만들므로 page는 자연히
+  //     떨어져 1페이지로 돌아간다(별도 리셋 코드 불필요).
+  function pageHref(target: number): string {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(initialFilters)) {
+      if (value !== '') params.set(key, value);
+    }
+    if (target > 1) params.set('page', String(target));
+    const query = params.toString();
+    return query ? `/search?${query}` : '/search';
+  }
+
+  // 필터 체이닝을 함수로 뽑는다 — 범위 밖 page를 마지막 페이지로 되돌릴 때(아래) **같은 조건**으로
+  // 총 건수를 다시 물어야 하는데, 조건을 두 번 적으면 한쪽만 고쳐져 갈린다(단일 출처).
+  // 제네릭 대신 넘겨받은 빌더를 그대로 돌려주는 얇은 함수다 — 타입은 호출부에서 추론된다.
+  function applyFilters<T extends {
+    ilike: (c: string, p: string) => T;
+    eq: (c: string, v: string) => T;
+    gte: (c: string, v: number) => T;
+    lte: (c: string, v: number) => T;
+  }>(builder: T): T {
+    let b = builder;
+    if (q) b = b.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
+    if (bodyType) b = b.eq('body_type', bodyType);
+    if (color) b = b.eq('color', color);
+    if (fuel) b = b.eq('fuel', fuel);
+    if (transmission) b = b.eq('transmission', transmission);
+    if (region) b = b.eq('region', region);
+    // 가격·연식 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로 여기선 그대로 적용한다.
+    // 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
+    if (priceMin !== null) b = b.gte('price', priceMin);
+    if (priceMax !== null) b = b.lte('price', priceMax);
+    if (yearMin !== null) b = b.gte('year', yearMin);
+    if (yearMax !== null) b = b.lte('year', yearMax);
+    return b;
+  }
+
   // count:'exact' — 총 건수를 **같은 응답**의 Content-Range로 받는다(왕복 증가 없음, DW-542).
-  let query = buyerListingsQuery(
-    supabase,
-    `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`,
-    { count: 'exact' },
-  );
-
-  if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
-  if (bodyType) query = query.eq('body_type', bodyType);
-  if (color) query = query.eq('color', color);
-  if (fuel) query = query.eq('fuel', fuel);
-  if (transmission) query = query.eq('transmission', transmission);
-  if (region) query = query.eq('region', region);
-
-  // 가격·연식 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로 여기선 그대로 적용한다.
-  // 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
-  if (priceMin !== null) query = query.gte('price', priceMin);
-  if (priceMax !== null) query = query.lte('price', priceMax);
-  if (yearMin !== null) query = query.gte('year', yearMin);
-  if (yearMax !== null) query = query.lte('year', yearMax);
-
-  // created_at 내림차순. 시드처럼 created_at이 같은 행들의 순서가 새로고침마다 뒤집히지 않도록
-  // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
-  query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
+  const query = applyFilters(
+    buyerListingsQuery(
+      supabase,
+      `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`,
+      { count: 'exact' },
+    ),
+  )
+    // created_at 내림차순. 시드처럼 created_at이 같은 행들의 순서가 새로고침마다 뒤집히지 않도록
+    // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
 
   // 이 페이지 몫만 잘라 온다(DW-542). range는 양끝 포함이라 끝값은 -1 한다.
   //   ⚠️ **정렬을 건 뒤에 range를 건다** — 순서가 뒤바뀌면 "아무 24건"을 잘라 정렬하는 꼴이 된다.
-  //   범위를 벗어난 page(주소창 직접 편집 등)는 에러가 아니라 0행으로 돌아온다 — 아래 렌더가
-  //   그 경우를 "이 페이지엔 매물이 없다 + 첫 페이지로" 안내로 처리한다.
   const from = (page - 1) * PAGE_SIZE;
   const { data: rows, error, count } = await query
     .range(from, from + PAGE_SIZE - 1)
@@ -169,11 +212,26 @@ export default async function SearchPage({
 
   // 범위를 벗어난 page는 **빈 결과가 아니라 에러로 온다** — 실측(2026-07-29, `?page=99`):
   //   PGRST103 "Requested range not satisfiable / An offset of 2352 was requested, but there are
-  //   only 95 rows." 즉 착수 전 가정("0행으로 돌아온다")이 틀렸다. 이걸 일반 에러로 두면
-  //   주소창을 잘못 고친 사용자에게 "불러오지 못했습니다"라는 엉뚱한 안내가 뜬다(고칠 방법도 안 알려준다).
-  //   여기서만 따로 갈라 "이 페이지엔 없다 + 첫 페이지로"를 보여준다. 다시 조회하지 않는다 —
-  //   손으로 주소를 고친 경우에만 닿는 길이라 왕복을 한 번 더 쓸 이유가 없다.
+  //   only 95 rows." 즉 착수 전 가정("0행으로 돌아온다")이 틀렸다.
+  //
+  // **마지막 페이지로 보낸다**(사용자 요청 2026-07-29 — 안내문을 읽히는 것보다 원하던 곳에 데려다
+  // 놓는 게 낫다). 총 건수는 이 응답에 없으므로(에러라 count가 null) **같은 필터로 개수만** 다시
+  // 묻는다 — `head: true`라 행은 안 받아 가볍고, 손으로 주소를 고친 드문 길에서만 도는 왕복이다.
+  // 정상 경로엔 아무 비용도 붙지 않는다.
+  //
+  // ⚠️ `last < page`일 때만 보낸다 — 두 조회 사이에 매물이 늘어 last가 page 이상이 되는 경합에서
+  //   같은 자리로 무한히 되돌려 보내지 않게 하는 정지 조건이다(엄격히 작아지므로 반드시 끝난다).
+  //   그 경합에 걸리면 리다이렉트 없이 아래 안내문으로 떨어진다(막다른 길은 안 만든다).
   const rangeOutOfBounds = error?.code === 'PGRST103';
+  if (rangeOutOfBounds) {
+    const { count: totalOnly } = await applyFilters(
+      buyerListingsQuery(supabase, 'id', { count: 'exact', head: true }),
+    );
+    const lastPage = Math.max(1, Math.ceil((totalOnly ?? 0) / PAGE_SIZE));
+    if (lastPage < page) {
+      redirect(pageHref(lastPage)); // redirect()는 throw하므로 아래로 진행되지 않는다.
+    }
+  }
 
   // anon 경로는 위 select에서 신뢰속성 3컬럼을 아예 안 물었으므로(trustColumns 참조) 그 값이
   // 행에 `undefined`(키 자체가 없음)로 온다. 계약(conventions §4)은 "값이 없으면 null"이지
@@ -203,36 +261,6 @@ export default async function SearchPage({
     // 범위 밖 page(PGRST103)는 사용자가 주소를 고친 결과지 장애가 아니므로 에러 로그를 남기지 않는다
     // — 남기면 진짜 장애가 그 소음에 묻힌다.
     console.error('[search] 매물 목록 조회 실패:', error);
-  }
-
-  // SearchFilters에 넘길 초기값(현재 URL 그대로 폼에 반영 → 새로고침해도 유지).
-  const initialFilters: SearchFilterValues = {
-    q,
-    body_type: bodyType ?? '',
-    color: color ?? '',
-    fuel: fuel ?? '',
-    transmission: transmission ?? '',
-    region: region ?? '',
-    price_min: priceMin !== null ? String(priceMin) : '',
-    price_max: priceMax !== null ? String(priceMax) : '',
-    year_min: yearMin !== null ? String(yearMin) : '',
-    year_max: yearMax !== null ? String(yearMax) : '',
-  };
-
-  // 페이지 이동 링크 — **정규화된 필터값**으로 쿼리를 다시 조립한다(원본 sp를 그대로 옮기지 않는다).
-  //   그래야 목록 밖 값·중복 키·모르는 파라미터가 페이지를 넘길 때마다 따라다니지 않는다
-  //   (위 pickOption/asInt가 이미 무시한 값을 URL에만 남겨두면 화면과 주소가 어긋난다).
-  //   page=1은 아예 안 붙인다 — 첫 페이지 주소를 지금과 똑같이 유지해 기존 링크·북마크가 안 깨진다.
-  //   ※ 필터를 다시 적용하면 SearchFilters가 자기 필드로만 URL을 새로 만들므로 page는 자연히
-  //     떨어져 1페이지로 돌아간다(별도 리셋 코드 불필요).
-  function pageHref(target: number): string {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(initialFilters)) {
-      if (value !== '') params.set(key, value);
-    }
-    if (target > 1) params.set('page', String(target));
-    const query = params.toString();
-    return query ? `/search?${query}` : '/search';
   }
 
   const pagerLinkClass =
