@@ -3103,7 +3103,7 @@ status: open
 - **왜 지금 안 고치나:** 자동 대조를 붙이려면 CI가 원격에 붙어야 하는데 이 레포는 `service_role` 키를 두지 않는다(`conventions.md` §5) — 권한 축을 새로 열어야 하는 결정이라 별개 판단이다. 당장의 값싼 대안은 **적용을 손으로 옮기지 않는 것**(파일 내용을 그대로 전달)과 **적용 직후 로직 해시 대조**이며, 이번에 실제로 쓴 절차가 그것이다.
 - **트리거:** **다음번 원격 마이그레이션 적용 직전** — 그 자리에서 (a) 파일 원문을 그대로 적용하고 (b) 적용 후 이번과 같은 로직 해시 대조를 돌린다. 절차를 `deployment-runbook.md`에 못박을지는 그때 판단한다(지금 적으면 문서만 늘고 실행되지 않는다 — B9).
 
-### DW-535: [구 📅] `RowSkeleton`(행 조합) 부재 — 8.2 AC3가 요구한 두 형태 중 카드형만 있다
+### DW-535: `RowSkeleton`(행 조합) 부재 — 8.2 AC3가 요구한 두 형태 중 카드형만 있다
 
 origin: 장부 통합 이관(구 docs/tech-debt.md 📅 스토리로 예약됨 절) — 원출처: Story 8.2 AC3, 사용자 이월 결정
 location: web/src/components/ui/Skeleton.tsx
@@ -3117,7 +3117,7 @@ status: open
 - **이월 사유(사용자):** 소비처 생길 때 화면 기준으로 — 지금 임의로 만들면 재작업 위험.
 - **트리거:** Epic 15(관리자 테이블)에서 그 화면 기준으로 추가.
 
-### DW-536: [구 📅] `db-schema-guide.md` 스키마 표가 실제 마이그레이션보다 늙었다
+### DW-536: `db-schema-guide.md` 스키마 표가 실제 마이그레이션보다 늙었다
 
 origin: 장부 통합 이관(구 docs/tech-debt.md 📅 스토리로 예약됨 절) — 원출처: architecture-increment-2026-07-12.md:327이 갱신 대상으로 지목
 location: docs/db-schema-guide.md
@@ -3131,7 +3131,7 @@ status: open
 - **주의:** 이 문서는 시연·발표용 스키마 설명서이고 **스키마 정본은 `supabase/migrations/`** 다.
 - **트리거:** 증분 종료 후 한 번에.
 
-### DW-537: [구 ⚪] 찜 기반 "인기 매물" 신호 — 보류(제품 결정, 설계는 박제됨)
+### DW-537: 찜 기반 "인기 매물" 신호 — 보류(제품 결정, 설계는 박제됨)
 
 origin: 장부 통합 이관(구 docs/tech-debt.md ⚪ 의도적 보류 절) — 원출처: 2026-07-13 party-mode(John·Amelia·Mary·Sally), 사용자 결정
 location: n/a (랜딩 "인기 매물" 정렬 로직)
@@ -3145,7 +3145,7 @@ status: open
 - **이미 된 대비:** `wishlists(user_id, listing_id)`가 증분(FR55·마이그 0015)에 생기므로 찜 수는 `COUNT(*) GROUP BY listing_id`로 **언제든 파생 가능** — 스키마 재작업 불필요.
 - **이어받을 때:** (a) 인덱스 `wishlists(listing_id)` 1줄 additive (b) 집계 쿼리 권장(트리거 카운터는 정합성 부채 — 원천이 있으니 COUNT) (c) **임계값 게이팅**(5명↑만 노출, "0명 찜" 낙인 방지) + 카드 하단 중립 회색 메타(초록/앰버 안 씀) (d) 봇 방어(view dedup) 없으면 조회수 오염 → 찜 가중치 크게.
 
-### DW-538: [구 ⚪] 문서 기반 차량 상태 관리(성능점검표·보험이력) — 보류(제품 결정, 설계는 박제됨)
+### DW-538: 문서 기반 차량 상태 관리(성능점검표·보험이력) — 보류(제품 결정, 설계는 박제됨)
 
 origin: 장부 통합 이관(구 docs/tech-debt.md ⚪ 의도적 보류 절) — 원출처: 2026-07-13 party-mode(John·Amelia·Mary·Sally), 사용자 결정
 location: n/a (신규 `listing_documents` 테이블 + 등록 폼)
