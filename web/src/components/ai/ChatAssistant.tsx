@@ -29,6 +29,11 @@ const MAX_CONTEXT_TURNS = 12; // 최근 12턴만 동봉(초과분 잘라냄)
 const MAX_CONTENT_LENGTH = 2000; // 각 턴 content 최대 2000자(초과 시 절단)
 const MAX_QUERY_LENGTH = 1000; // 질의 최대 1000자(서버 SearchRequest.query 상한과 동일 — 초과 시 클라에서 미리 차단)
 
+// 이 시간을 넘기면 "서버를 깨우는 중"으로 문구를 바꾼다(대장 DW-543).
+// 2.5초인 이유: 깨어 있는 서버의 실측 응답이 0.065초라 정상 검색은 여기 도달하지 못하고,
+// 콜드스타트 실측 4.4초보다는 충분히 짧아 기다리는 사람이 이유를 일찍 안다.
+const SLOW_SEARCH_NOTICE_MS = 2500;
+
 // 화면에 쌓이는 대화 한 줄. assistant 턴만 매물카드(listings)를 가질 수 있다.
 type ChatMessage = {
   role: 'user' | 'assistant';
@@ -68,6 +73,8 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
   //   브라우저 Supabase 클라이언트로 한 번 더 구한다(조회 실패는 "찜 0건"과 같게 처리 — 오버레이
   //   실패로 답변 렌더 전체를 막지 않는다, @/lib/wishlist의 house 방침과 동일).
   const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
+  // 검색이 SLOW_SEARCH_NOTICE_MS를 넘겼는지 — 로딩 문구를 "서버를 깨우는 중"으로 바꾼다(DW-543).
+  const [slowNotice, setSlowNotice] = useState(false);
 
   // 실제 검색 실행 — handleSubmit(폼 제출)과 아래 마운트 핸드오프 소비(히어로에서 넘어온 자동
   // 실행) 둘 다 여기로 합류한다(spec-11-3 Code Map). 분리 전엔 handleSubmit 안에 있던 로직 그대로다
@@ -89,6 +96,12 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
     setMessages((prev) => [...prev, { role: 'user', content: query }]);
     setInput('');
     setLoading(true);
+
+    // "서버를 깨우는 중" 문구 타이머(DW-543). **effect가 아니라 여기서 건다** — effect에 두면
+    // 콜백 안의 setState가 `react-hooks/set-state-in-effect`에 걸린다(실측: lint 에러 1건).
+    // 이벤트 핸들러에서 거는 건 규칙이 다루는 대상이 아니고, 위 조기 반환(빈 질의·길이 초과)은
+    // 전부 이 줄보다 **앞에** 있으므로 "걸어놓고 안 지우는" 경로가 생기지 않는다.
+    const slowTimer = setTimeout(() => setSlowNotice(true), SLOW_SEARCH_NOTICE_MS);
 
     try {
       // Supabase 세션에서 access_token을 꺼내 인증 헤더로 보낸다(매 요청 getSession으로 최신 토큰 확보 — 만료 자동 갱신).
@@ -137,6 +150,9 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
       setMessages((prev) => prev.slice(0, -1));
       setInput(query);
     } finally {
+      // finally는 성공·에러 어느 경로에서도 돈다 — 타이머 해제와 문구 초기화를 여기 한 곳에 둔다.
+      clearTimeout(slowTimer);
+      setSlowNotice(false);
       setLoading(false);
     }
   }
@@ -211,10 +227,18 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           ))
         )}
 
-        {/* 로딩 표시 — 요청 중인 동안 어시스턴트 자리에 placeholder. */}
+        {/* 로딩 표시 — 요청 중인 동안 어시스턴트 자리에 placeholder.
+            오래 걸리면(SLOW_SEARCH_NOTICE_MS) 문구를 바꿔 **왜** 기다리는지 알린다(대장 DW-543).
+            근거는 추측이 아니라 실측이다: AI 서버(Cloud Run)가 쉬고 있으면 깨어나는 데 4.4초,
+            깨어난 뒤엔 0.065초다. 즉 첫 검색만 느리고 그 뒤론 빠른데, 화면이 "검색 중…"만 계속
+            보여주면 사용자는 서비스가 느린 줄 안다. 고치는 대신 정직하게 말하는 쪽을 먼저 한다
+            — 상시 대기(최소 인스턴스 1)는 상시 비용이라 제품 결정이다. */}
         {loading && (
-          <div className="self-start rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-800">
-            검색 중…
+          <div
+            role="status"
+            className="self-start rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-800"
+          >
+            {slowNotice ? 'AI 서버를 깨우는 중이에요. 첫 검색은 몇 초 걸릴 수 있어요…' : '검색 중…'}
           </div>
         )}
       </section>
