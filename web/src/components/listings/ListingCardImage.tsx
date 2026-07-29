@@ -10,6 +10,7 @@
 // 플레이스홀더가 됐다. 지금 쓰는 `getPublicUrl`은 **파일이 없어도 문자열을 돌려준다**(존재를
 // 확인하지 않는다). 그래서 깨진 이미지 아이콘을 막는 장치는 이제 `onError` 하나뿐이다.
 import { useState } from 'react';
+import Image from 'next/image';
 
 export default function ListingCardImage({
   url,
@@ -50,31 +51,42 @@ export default function ListingCardImage({
     <div className="relative aspect-[5/3] w-full overflow-hidden rounded-t-card bg-placeholder-bg">
       {showPhoto ? (
         /*
-          평범한 <img>를 쓴다(next/image 아님) — 이유:
-            · 저장본이 이미 작다(9.3이 업로드 전 긴 변 ≤1600px·WebP·q0.82로 줄인다)
-              ⚠️ 여기 적혀 있던 "실측 196~205KB"는 **틀린 숫자였다**(대장 #80). 2026-07-21 전량
-                 시딩 후 대표사진 **90장 전부**를 실측: 최소 50KB · 중앙값 197KB · 평균 229KB ·
-                 최대 615KB. 그 범위에 드는 건 90장 중 1장뿐이고 편차가 12배다.
-                 즉 "작다"는 결론 자체는 중앙값 기준으로 유지되지만, **좁은 범위로 단언할 근거는
-                 없다** — 목록 한 화면(12장) 환산 약 2.7MB.
-            · next.config.ts에 images.remotePatterns가 없어 next/image는 설정 추가가 선행이다
-            · 공개 URL이 고정이라 브라우저·CDN 캐시가 그대로 먹는다
-          크롭은 저장본을 다시 만들지 않고 클라 렌더 크롭으로만 한다(object-cover 중앙, I14).
+          next/image를 쓴다 (2026-07-29 전환, 대장 DW-541). **여기 적혀 있던 "평범한 <img>를 쓰는
+          이유" 3가지 중 2가지가 실측으로 거짓임이 밝혀져 결정을 뒤집었다** — 근거가 무너진 결정을
+          주석만 남긴 채 유지하면 다음 사람이 그 주석을 믿는다:
+            ✗ "저장본이 이미 작다" — 90장 전수 실측(2026-07-21) 최소 50KB·중앙값 197KB·평균 229KB·
+              최대 615KB. 게다가 2026-07-29 측정: 저장본이 **1600×1067px인데 카드 표시 폭은 364px**
+              (픽셀 수로 약 20배). "작다"의 근거가 없다.
+            ✗ "공개 URL이 고정이라 브라우저·CDN 캐시가 그대로 먹는다" — 먹지 않았다. Storage 오브젝트
+              181개 중 **180개가 `cache-control: no-cache`**(응답 실측 `cf-cache-status: MISS`)라
+              방문할 때마다 전부 다시 받고 있었다.
+            ○ "remotePatterns 설정이 선행" — 이건 사실이었고, 이번에 next.config.ts에 추가했다
+              (호스트는 NEXT_PUBLIC_SUPABASE_URL에서 끌어온다 — 로컬/운영 호스트가 다르므로).
+          next/image가 표시 크기에 맞춰 줄여 주고 최적화 결과를 오래 캐시하므로 두 축이 함께 풀린다.
+          원본(Storage)은 건드리지 않는다 — 캐시 헤더를 원본에서 고치려면 180장 재업로드가 필요한데,
+          그건 운영 데이터 조작이라 별건이다(측정 근거는 next.config.ts 주석 참조).
+
+          fill + sizes: 감싸개가 aspect-[5/3]로 자리를 잡고 있으므로 폭·높이를 숫자로 줄 수 없다.
+          sizes는 D5 그리드 실제 폭을 그대로 적는다 — ≥1100px 4열(본문 max-w-6xl 기준 약 264px) ·
+          640~1099px 2열(약 47vw) · <640px 1열(100vw). 이 값이 틀리면 브라우저가 필요보다 큰 변환본을
+          고르므로, 그리드 규칙(ResponsiveGrid)이 바뀌면 여기도 같이 봐야 한다.
+          크롭은 저장본을 다시 만들지 않고 렌더 크롭으로만 한다(object-cover 중앙, I14).
           aspect-[5/3]가 자리를 미리 잡아 지연 로드에도 레이아웃이 밀리지 않는다(NFR7).
         */
-        /* eslint-disable-next-line @next/next/no-img-element -- 위 주석의 결정(저장본이 이미 최적화됨) */
-        <img
+        <Image
           ref={detectAlreadyFailed}
           src={url as string}
           alt={alt}
+          fill
+          sizes="(min-width: 1100px) 264px, (min-width: 640px) 47vw, 100vw"
           loading="lazy"
-          decoding="async"
           onError={() => setFailed(true)}
           // data-testid: E2E(web/e2e/image-fallback.spec.ts)가 스타일 클래스(object-cover)가 아니라
           // 이 안정적인 훅으로 매물 사진 <img>를 찾는다 — 클래스가 리팩터돼도 검사가 조용히
-          // 0건 매칭(거짓 통과)하지 않게 하기 위함(코드리뷰 patch).
+          // 0건 매칭(거짓 통과)하지 않게 하기 위함(코드리뷰 patch). next/image도 최종적으로 <img>를
+          // 그리고 모르는 prop을 그대로 내려보내므로 이 훅은 그대로 유효하다.
           data-testid="listing-photo"
-          className="h-full w-full object-cover"
+          className="object-cover"
         />
       ) : (
         /*
