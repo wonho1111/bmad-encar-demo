@@ -41,7 +41,7 @@ function ListingGridSection({
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           매물을 불러오지 못했습니다.{' '}
           <Link href="/search" className="underline">
-            매물 탐색으로 이동
+            매물 전체 보기
           </Link>
         </p>
       ) : section.listings.length === 0 ? (

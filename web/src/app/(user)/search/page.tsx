@@ -185,7 +185,10 @@ export default async function SearchPage({
           D5의 4열을 실제로 보이게 하려면 본문 폭도 함께 열어야 한다(Story 9.4 AC6). */}
       <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">매물 탐색</h1>
+          {/* 제목은 이 화면에 들어오는 내비 링크("내 차 사기")와 같은 말을 쓴다 — EXPERIENCE.md
+              Anti-patterns가 **"매물 탐색"·"탐색"을 개발용어 라벨로 명시 금지**하는데(소비자
+              자연어로 치환), 내비만 고치고 도착 화면 제목이 옛 라벨로 남아 있었다. */}
+          <h1 className="text-2xl font-semibold">내 차 사기</h1>
           <p className="text-sm text-zinc-500">
             원하는 조건으로 판매 중인 매물을 검색하세요.
           </p>

@@ -154,7 +154,11 @@ export default function SiteNav({
               aria-label={unreadCount ? `채팅, 안읽음 메시지 ${unreadCount}건` : '채팅'}
               className={`relative ${ICON_BUTTON_CLASS}`}
             >
-              <span aria-hidden>🔔</span>
+              {/* 💬 — UX-DR16 원문은 "채팅🔔"이었으나 종 모양이 "알림함"으로 읽혀
+                  실제로 문의 채팅으로 이동하는 동작과 어긋난다는 사용자 지적으로 말풍선으로
+                  교체했다(사용자 결정 2026-07-29). 이 앱엔 알림함 기능 자체가 없다(푸시는
+                  PRD에서 "다음 증분"으로 범위 밖). 링크·배지·aria-label은 그대로다. */}
+              <span aria-hidden>💬</span>
               {/* bg-red-600 — red-500(#EF4444)은 흰 글자 대비 3.76:1로 AA(4.5:1) 미달이다.
                   red-600(#DC2626)은 4.83:1로 통과하며 라이트·다크 양쪽 배경에서 같은 값을 쓴다
                   (후속 코드리뷰 patch. 이 배지는 10px 소형 텍스트라 대비 여유가 없다). */}
