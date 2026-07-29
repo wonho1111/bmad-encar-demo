@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { searchAi, type ConversationTurn } from '@/lib/api/aiSearch';
 import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
+import { buildWishedIdSet } from '@/lib/wishlist';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import Button from '@/components/ui/Button';
 
@@ -55,12 +56,18 @@ export function buildContext(messages: ChatMessage[]): ConversationTurn[] {
     }));
 }
 
-export default function ChatAssistant() {
+export default function ChatAssistant({ authed }: { authed: boolean }) {
   // 대화 기록 — 클라이언트 상태에만 존재(무상태). 새로고침/이탈 시 사라진다(FR18 의도된 동작).
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 이 대화에 등장한 매물 중 "내가 이미 찜한" id 집합 — 카드 하트의 초기 상태로만 쓴다.
+  //   /search·랜딩은 **서버**가 fetchWishedListingIds로 같은 값을 구해 카드에 주입하지만,
+  //   AI 결과 매물은 브라우저가 /ai/search 응답으로 받으므로 그 자리가 없다. 그래서 여기서
+  //   브라우저 Supabase 클라이언트로 한 번 더 구한다(조회 실패는 "찜 0건"과 같게 처리 — 오버레이
+  //   실패로 답변 렌더 전체를 막지 않는다, @/lib/wishlist의 house 방침과 동일).
+  const [wishedIds, setWishedIds] = useState<Set<string>>(new Set());
 
   // 실제 검색 실행 — handleSubmit(폼 제출)과 아래 마운트 핸드오프 소비(히어로에서 넘어온 자동
   // 실행) 둘 다 여기로 합류한다(spec-11-3 Code Map). 분리 전엔 handleSubmit 안에 있던 로직 그대로다
@@ -95,6 +102,26 @@ export default function ChatAssistant() {
         context: context.length > 0 ? context : undefined,
         accessToken: session?.access_token,
       });
+
+      // 찜 오버레이 — 카드가 **마운트되기 전에** 구한다. WishButton은 initialWished를 마운트
+      // 시점에 한 번만 읽으므로(이후 prop 변화는 무시), 카드를 먼저 그리고 나중에 채우면 이미
+      // 찜한 매물이 계속 빈 하트로 남는다.
+      if (session?.user && result.listings.length > 0) {
+        const { data, error: wishError } = await supabase
+          .from('wishlists')
+          .select('listing_id')
+          .eq('user_id', session.user.id)
+          .in(
+            'listing_id',
+            result.listings.map((l) => l.id),
+          );
+        if (wishError || !data) {
+          console.error('[ai] 찜 오버레이 조회 실패:', wishError);
+        } else {
+          const found = buildWishedIdSet(data);
+          setWishedIds((prev) => new Set([...prev, ...found]));
+        }
+      }
 
       // 어시스턴트 답변(텍스트 + 매물카드)을 대화에 추가.
       setMessages((prev) => [
@@ -168,8 +195,12 @@ export default function ChatAssistant() {
                     <ul className="flex flex-col gap-2">
                       {m.listings.map((l) => (
                         <li key={l.id}>
-                          {/* 매물카드 재사용 — 클릭하면 /listings/[id] 상세로 이동(ListingCard 내장 Link). */}
-                          <ListingCard listing={l} />
+                          {/* 매물카드 재사용 — 클릭하면 /listings/[id] 상세로 이동(ListingCard 내장 Link).
+                              ⚠️ `authed`·`wished`를 반드시 넘긴다(2026-07-29 버그 수정): 안 넘기면
+                              ListingCard 기본값 `authed=false`가 걸려, **로그인 상태인데도** 하트를
+                              누르면 찜이 저장되는 대신 로그인 화면으로 튕겼다(/search·랜딩은 넘기고
+                              AI 결과만 빠져 있었다). */}
+                          <ListingCard listing={l} authed={authed} wished={wishedIds.has(l.id)} />
                         </li>
                       ))}
                     </ul>

@@ -46,8 +46,11 @@ export default async function AiSearchPage() {
           </p>
         </section>
 
-        {/* 대화·API 호출·멀티턴 맥락 보관은 모두 클라이언트 컴포넌트가 담당. */}
-        <ChatAssistant />
+        {/* 대화·API 호출·멀티턴 맥락 보관은 모두 클라이언트 컴포넌트가 담당.
+            authed: 답변에 딸린 매물카드의 찜 하트가 로그인 여부를 알아야 한다(안 넘기면 카드가
+            비로그인으로 판단해 로그인 게이트로 보낸다 — 2026-07-29 버그 수정). proxy가 /ai
+            비로그인을 1차 차단하므로 사실상 항상 true지만, 값을 지어내지 않고 실제 세션에서 받는다. */}
+        <ChatAssistant authed={!!user} />
       </main>
     </>
   );
