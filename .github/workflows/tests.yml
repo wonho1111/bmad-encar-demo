@@ -30,6 +30,13 @@ name: Tests
 #   마이그 파일만 건드리면(api/** 밖) 이전엔 이 게이트가 아예 안 돌았다. migration-gate.yml이
 #   "레포만으로 DB가 서는가"를 보는 동안, 이 게이트는 "선 DB가 규칙대로 동작하는가"를 본다 —
 #   같은 경로를 보되 서로 다른 것을 검증하므로 경로가 겹쳐도 중복이 아니다.
+#
+# ⚠️ paths에 `scripts/migration-check-prelude.sql`이 있는 이유 (✎ 2026-07-29 추가, 실측으로 드러남):
+#   api-db 잡이 **그 파일을 실제로 실행한다**(아래 "마이그레이션 적용" 스텝의 `psql -f`). 그런데
+#   paths에 없어서, 그 파일만 고친 push는 **이 워크플로를 아예 띄우지 않았다.** 하필 그날 고친 것이
+#   이 잡을 red에서 green으로 되돌리는 수정(auth 스키마 GRANT 누락)이었는데, CI는 그걸 확인할
+#   기회조차 갖지 못했다 — 초록이어서 초록이 아니라 **안 돌아서 초록**이었다.
+#   위 supabase/migrations 문단과 같은 종류의 구멍이다: **잡이 읽는 입력은 전부 트리거에 있어야 한다.**
 
 on:
   push:
@@ -39,6 +46,7 @@ on:
       - "web/**"
       - "app/**"
       - "supabase/migrations/**"
+      - "scripts/migration-check-prelude.sql"
       - ".github/workflows/tests.yml"
   pull_request:
     paths:
@@ -46,6 +54,7 @@ on:
       - "web/**"
       - "app/**"
       - "supabase/migrations/**"
+      - "scripts/migration-check-prelude.sql"
       - ".github/workflows/tests.yml"
 
 jobs:
