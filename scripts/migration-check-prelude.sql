@@ -113,6 +113,21 @@ alter table storage.objects enable row level security;
 --   그 실패 모드가 **구조적으로 발생할 수 없어**, 방송 행 개수를 세는 테스트들이 여기선 항상 초록이다.
 --   즉 "파티션 유지가 자동인가"는 이 프렐류드가 답할 수 없는 질문이고, 원격 확인 항목으로 열려 있다
 --   (`docs/tech-debt.md` #195 ②). 스텁을 파티션 테이블로 바꾸려는 다음 사람은 이 문단부터 읽을 것.
+--
+--   ✅ 2026-07-29 원격 실측으로 갱신(#196·#197의 확인 항목 — 위 :7-9 "원격에서 확인한 뒤 주석에 남긴다" 충족).
+--      대상: 원격 프로젝트 psrnsasxpkpwqdukjdmt(운영), MCP execute_sql로 조회. 넣어본 행은 전부 rollback 했다.
+--     ⓐ Realtime 가용: `pg_publication` supabase_realtime 1건, `realtime.broadcast_changes()` 존재,
+--        anon 키로 실제 채널 구독 → `SUBSCRIBED`. → 0023 적용이 chat_messages INSERT를 죽이지 않는다.
+--     ⓑ `realtime.send` 정의가 이 스텁과 동일하고 **`private boolean DEFAULT true`** 다(실측).
+--        → 트리거가 인자 3개만 넘겨도 방송은 private 채널로 나가고, 0023의 RLS가 실제 관문이다.
+--     ⓒ `realtime.messages`는 원격도 range 파티션(`relkind='p'`). **파티션 유지는 "자동"이 아니라
+--        "Realtime 테넌트가 활성일 때 자동"이다** — 확인 시작 시점엔 자식 파티션이 **0개**였고, 그 상태에서
+--        INSERT는 `23514 no partition of relation "messages" found for row`로 실패했다(실측). anon 클라이언트가
+--        한 번 구독하자 Realtime 서비스가 5일치(07-28~08-01)를 만들었고, 그 뒤 같은 INSERT는 1행 성공했다
+--        (`private=t` 확인). → 이 프로젝트는 Realtime을 쓴 적이 없어 비어 있었던 것이며, 실사용이 시작되면
+--        유지된다. 다만 **무활동이 길면 다시 비어 방송만 조용히 사라질 수 있다**(`docs/tech-debt.md` #232).
+--     ⓓ 적용 롤 `postgres`의 `rolbypassrls=t`(rolsuper=f). → 0023의 "INSERT 정책 불필요" 전제가 원격에서도
+--        성립한다(#197의 ⓓ). 이 값이 f로 바뀌면 방송만 조용히 사라지므로, 롤이 바뀌면 다시 확인할 것.
 create schema if not exists realtime;
 
 -- 스키마 USAGE GRANT — 실측: `has_schema_privilege('authenticated', 'realtime'::regnamespace, 'USAGE')`

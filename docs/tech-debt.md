@@ -2058,6 +2058,7 @@
 - **왜 지금 안 고치나:** 셋 다 원격 프로젝트에 물어야 답이 나오고, 그 접근은 사용자 몫이다(이 레포는 `service_role` 키를 두지 않는다 — `conventions.md` §5). 스텁을 파티션 테이블로 바꾸는 것도 지금은 과설계다 — 이 레포의 마이그·테스트 어느 것도 파티셔닝에 의존하지 않고, 스텁의 목적은 게이트가 적용 실패로 죽지 않게 하는 것이지 플랫폼 장애를 재현하는 게 아니다.
 - **왜 기존 항목(`#195`)을 안 고쳤나:** 이번 실행 지시가 기존 대장 항목의 수정·재개봉·재작성을 금지했다. `#195`의 트리거(12.3 착수 시)를 고치지 않고, ③의 시점 정정을 여기 신규로 남긴다 — 둘 중 **먼저 오는 것은 이 항목의 트리거**다.
 - **트리거:** **이 브랜치를 원격(개발 또는 운영) Supabase 프로젝트에 적용하기 직전.** 그 자리에서 사용자가 셋을 한 번에 확인한다 — ⓐ 프로젝트에 Realtime/Broadcast가 켜져 있는가(안 켜져 있으면 적용 즉시 채팅 저장이 죽는다), ⓑ 원격의 `pg_get_functiondef('realtime.send'::regproc)`가 프렐류드 스텁과 같은가(특히 `private` 기본값), ⓒ `realtime.messages`의 파티션 유지가 자동인가. 확인 결과는 프렐류드 헤더 주석에 원격 실측으로 갱신한다(:7-9 규칙 충족).
+- **✅ 해소 (2026-07-29, 원격 실측 — 프렐류드 헤더에 갱신 완료):** 셋 다 물었다. **ⓐ 통과** — `pg_publication` supabase_realtime 1건 + `realtime.broadcast_changes()` 존재 + anon 키로 실제 채널 구독이 `SUBSCRIBED`. 따라서 ③의 최악(0023 적용 즉시 `chat_messages` 저장이 죽는다)은 **발생하지 않는다.** **ⓑ 통과** — 원격 `realtime.send`가 스텁과 동일하고 `private boolean DEFAULT true`다. ①이 우려한 "기본값이 다르면 공개 채널로 새어 RLS가 관문이 아니게 된다"는 **기각**. **ⓒ 부분 통과 → `#232`로 승계** — 원격도 range 파티션(`relkind='p'`)이 맞고 유지도 자동이지만 **"Realtime 테넌트가 활성일 때만"** 이다. 확인 시작 시점엔 파티션이 **0개**여서 ②가 말한 무음 실패가 **원격에서 실제로 재현됐다**(`23514 no partition ... found for row`, 롤백함). 클라이언트 1회 구독으로 5일치가 생성돼 지금은 정상이나, 그 조건부 위험은 `#232`가 갖는다.
 
 ### 197. 0023의 "INSERT 정책 불필요" 전제가 기대는 **BYPASSRLS는 원격에서 확인된 적이 없다** — `#196`의 원격 확인 목록에 이 항목이 빠져 있다 (2026-07-28 Story 12-2 3차 코드리뷰 실측, 🟡 기능, 기존 항목 무수정·신규 등재)
 - **위치:** `supabase/migrations/0023_chat_realtime_broadcast.sql` 헤더(⚠️ "INSERT 정책이 필요 없는 이유") + `api/tests/integration/test_chat_realtime_broadcast_real_db.py` ⑧(`test_broadcast_function_is_security_definer_owned_by_bypassrls_role`).
@@ -2067,6 +2068,7 @@
 - **왜 지금 안 고치나:** 원격 프로젝트에 물어야만 답이 나온다(이 레포는 `service_role` 키를 두지 않는다 — `conventions.md` §5). 코드로 미리 막으려면 `realtime.messages`에 INSERT 정책을 하나 얹어야 하는데, 그건 스펙 Never 절이 명시적으로 금지한 것이고 필요 없을 가능성이 높은 상태에서 쓰기 표면을 넓히는 일이다(A2).
 - **`#196`와의 관계:** 같은 축(원격에서만 답할 수 있는 0023의 전제)이고 **확인 시점도 같다.** `#196`의 목록이 ⓐ Realtime 활성화 · ⓑ `realtime.send` 정의 · ⓒ 파티션 유지 셋뿐이라 이 항목이 빠져 있는데, 기존 항목은 수정하지 않는 규칙이라 여기 신규로 남긴다. 원격 확인 때 **`#196`와 함께 한 번에 처리**할 것.
 - **트리거:** **`#196`와 동일 — 이 브랜치를 원격 Supabase 프로젝트에 적용하기 직전.** 그 자리에서 ⓓ를 하나 더 확인한다: 마이그레이션을 적용하는 롤로 `select rolbypassrls from pg_roles where rolname = current_user` → `t`인가(또는 적용 후 `public.chat_messages_broadcast()`의 소유자를 같은 질의로 확인). `f`라면 적용 전에 사용자와 상의한다 — 그 경우에만 INSERT 정책 추가를 재검토한다.
+- **✅ 해소 (2026-07-29, 원격 실측):** 원격에서 `select current_user, rolbypassrls, rolsuper from pg_roles where rolname = current_user` → **`postgres` / `rolbypassrls=t` / `rolsuper=f`**. 즉 적용 롤이 슈퍼유저는 아니지만 BYPASSRLS는 갖고 있어, 0023이 `realtime.messages`에 INSERT 정책을 두지 않는 전제가 **원격에서도 성립한다.** 스펙 Never 절(INSERT 정책 추가 금지)을 어길 이유가 없다. **다만 이 속성은 적용 롤에 딸린 것이라 롤이 바뀌면 다시 물어야 하고**, 실패해도 조용하다는 성질은 그대로다 — 그 재확인 지점을 프렐류드 헤더 ⓓ에 남겼다.
 
 ### 198. Story 12.3 — 실시간 구독·전송을 웹만 채우고 앱(`app/lib/features/chat/**`)은 손대지 않기로 판단 (2026-07-29 Story 12-3, 🟢 품질, 기존 항목 무수정)
 - **위치:** `_bmad-output/implementation-artifacts/spec-12-3-실시간-송수신-전환-폴링-제거.md`의 Design Notes 첫 문단("왜 웹 한정인가") vs `docs/tech-debt.md` #186 본문("Story 12.3·12.4의 인수조건이 client_message_id를 요구하지 않는다"는 제목 아래 "web·app 양쪽"이라는 언급) vs 에픽 문서의 Epic 16 Story 16.4 소개.
@@ -2295,3 +2297,12 @@
 - **왜 지금 안 고치나:** 이관(등재)은 이 커밋에서 하지만, **절차 자체를 고치는 것**(에픽 마감 절차에 "마지막 DW 이관"을 넣을지, 아니면 엔진이 동결 파일에 쓰는 구조 `#129` 자체를 손댈지)은 별개 판단이다.
 - **12-6의 후속 리뷰 권고가 실체다:** 12-6은 리뷰 3패스(1차 + 독립후속 2회)를 돌고도 마지막까지 "독립 후속이 더 필요하다"고 했다. 그 과정에서 **자기가 1차에 만든 계약 테스트가 거짓 초록**(가드 `!`를 지워도 3/3 통과)임을 2차가 뮤테이션으로 잡아냈고, 3차는 `'use client'` 지시자에 아무 검사가 없어 CI 초록인 채 배포 빌드에서만 터지는 축을 찾았다(`#229`). 즉 **볼 게 남았다는 말이 매번 사실이었다.**
 - **트리거:** **Epic 13 착수 시** — 첫 스토리(13-1)의 DW 점검에서 이 항목이 이미 대장에 있음을 확인하고 넘어가면 된다(이 커밋으로 이관은 끝났다). **절차 수정 여부는 Epic 13 회고에서 판단**한다 — 그때는 `DW-10`(13-x 마지막)이 또 같은 자리에 남아 있을 것이므로 같은 증상을 두 번 관측한 상태가 된다.
+
+### 232. `realtime.messages` 파티션 유지는 "자동"이 아니라 **"Realtime 테넌트가 활성일 때 자동"** — 원격은 확인 직전까지 파티션이 0개였고 그 상태에선 방송이 조용히 사라진다 (2026-07-29 원격 실측, 🟡 조건부)
+- **위치:** 원격 프로젝트 `psrnsasxpkpwqdukjdmt`의 `realtime.messages` / `supabase/migrations/0023_chat_realtime_broadcast.sql` / `scripts/migration-check-prelude.sql` realtime 스텁 문단.
+- **어떻게 나왔나:** `#196` ⓒ("파티션 유지가 자동인가")를 확인하다 나왔다. 확인 시작 시점의 원격에는 `realtime.messages`의 **자식 파티션이 0개**였고, 그 상태에서 INSERT는 `23514 no partition of relation "messages" found for row`로 실패했다(실측, 롤백함). anon 키로 **클라이언트를 한 번 구독시키자**(`SUBSCRIBED`) Realtime 서비스가 곧바로 5일치(`messages_2026_07_28`~`08_01`)를 만들었고, 그 뒤 같은 경로가 1행 성공했다(`private=t`).
+- **왜 위험한가:** 파티션이 없을 때 나는 실패는 **플랫폼 `realtime.send()`의 `exception when others then raise warning`이 삼킨다.** 그래서 `chat_messages` INSERT는 성공하고 **방송만 사라진다** — 12.3이 폴링을 제거했으므로 받는 쪽은 **새로고침 전까지 아무것도 못 본다.** 앱은 정상으로 보이고 에러도 안 난다(`#194`①·`#195`①·`#197`과 같은 무음 실패 계열).
+- **지금은 왜 무해한가:** 이 프로젝트가 Realtime을 **한 번도 쓴 적이 없어서** 비어 있었던 것이고, 실사용이 시작되면 서비스가 유지한다(로컬 스택은 6일치를 갖고 있다 — 실측). 즉 "처음 한 번" 문제이며 지금은 채워져 있다.
+- **남는 조건:** 파티션 생성 주체가 **DB 안이 아니라 Realtime 서비스**다(`realtime` 스키마에 파티션 유지 함수가 없고 `pg_cron`도 없음 — 실측). 따라서 **테넌트가 오래 무활동이면 다시 비어 같은 무음 실패가 재발할 수 있다.** 이 레포에는 그걸 알아챌 관측 수단이 없다.
+- **왜 지금 안 고치나:** 마이그레이션으로 파티션을 만드는 건 플랫폼 소유 객체를 우리가 관리하겠다는 뜻이라 과설계이고(A2), 실사용 중에는 서비스가 유지한다. 감시를 붙이는 것도 `#99`(측정 인프라 부재)와 같은 축이라 별도 판단이다.
+- **트리거:** **① 운영에서 "채팅 메시지는 저장되는데 상대가 못 본다"가 보고되면 제일 먼저 이걸 본다** — `select count(*) from pg_inherits i join pg_class c on c.oid=i.inhparent join pg_namespace n on n.oid=c.relnamespace where n.nspname='realtime' and c.relname='messages'` 가 0이면 이 항목이다(복구는 클라이언트 1회 구독). **② Epic 13(성능·게이트 정비)에서 관측 수단을 논할 때 같이 판단**한다.
