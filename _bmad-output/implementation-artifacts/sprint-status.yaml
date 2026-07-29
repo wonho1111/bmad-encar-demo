@@ -165,14 +165,14 @@ development_status:
   epic-11-retrospective: done
 
   # --- Epic 12: 실시간 문의 채팅 ---
-  epic-12: in-progress
+  epic-12: done
   12-1-멱등키-마이그레이션: done
   12-2-realtime-broadcast-참가자-인가-rls: done
   12-3-실시간-송수신-전환-폴링-제거: done
   12-4-재연결-배너-갭-보정: done
   12-5-안읽음-배지-방-목록-정렬: done
   12-6-실시간-채팅-검증-sm-e: done
-  epic-12-retrospective: optional
+  epic-12-retrospective: done
 
   # --- Epic 13: AI 검색 RAG 고도화 ---
   epic-13: backlog
@@ -230,15 +230,16 @@ action_items:
   - epic: 11
     action: "A1 낡은 테스트 교정 — test_anon_can_select_whitelisted_columns_but_view_count_still_denied를 0021 이후 사양에 맞춤"
     owner: "orchestrator"
-    status: open # 대장 #180 · Epic 12 착수 전 선행
+    status: done # 커밋 95e9232로 고침, CI 4잡 초록 확인. 대장 #180 ✅(2026-07-29 회고에서 뒤늦게 닫음 — 패턴 D)
   - epic: 11
     action: "A2 대장 #138 단언을 실제 방어층(권한 vs 정책)에 맞춤 — 원격 anon profiles 권한 실측 선행"
     owner: "orchestrator"
-    status: open # 대장 #138 · Epic 12 착수 전 선행
+    status: done # 원격 실측(anon profiles SELECT=true, RLS가 0행) 후 같은 커밋 95e9232로 교정. 대장 #138 ✅
   - epic: 11
     action: "A3 test/bmad-loop(14커밋)을 develop에 병합해 Epic 11이 CI를 처음 지나게 한다"
     owner: "user"
-    status: open # 대장 #181 · 사용자 승인 필요(B3)
+    status: done # 사용자 승인 후 0b5c371로 병합, CI 4잡 초록 + 배포 비로그인 실측까지 확인. 대장 #181 ✅(핵심)
+                 # ⚠️ 구조는 그대로다 — Epic 12 12커밋이 또 CI 밖에 있다(Epic 12 회고 B7)
   - epic: 11
     action: "A4 대장 정리 — 닫힌 6건 제목줄 ✅ 표기, #168 트리거 확정, #174 거짓문장 각주"
     owner: "orchestrator"
@@ -246,7 +247,8 @@ action_items:
   - epic: 11
     action: "A5 #179 (d)하이브리드 첫 적용 — 12-1 멱등키 마이그레이션 런을 review trigger=always로 띄운다"
     owner: "orchestrator"
-    status: open # 대장 #179 · 12-1 착수 시점
+    status: done # policy.toml trigger=always로 Epic 12 전체를 돌렸고 12-2의 교차-방 유출을 그 덕에 잡았다.
+                 # Epic 13은 마이그레이션이 없어 recommended로 되돌림(Epic 12 회고 B1)
   - epic: 11
     action: "A6 2026-07-28 감사에서 만든 E2E 31건 중 상시 승격 후보 결정"
     owner: "user"
@@ -254,7 +256,40 @@ action_items:
   - epic: 11
     action: "A7 Epic 11 비용 실측치를 남겨 Epic 10 베이스라인과 대조 (Epic 10 액션 2 이월)"
     owner: "orchestrator"
-    status: open
+    status: done # Epic 12 회고 §3에서 대조 완료 — Epic 10 41.7M weighted/7스토리 vs Epic 12 약 82M/6스토리
+                 # (스토리당 2.3배, 원인은 always 리뷰). wall-clock은 17h→5h로 줄었다(한도 대기가 사라져서)
+  - epic: 12
+    action: "B1 리뷰 정책을 recommended로 되돌린다 — Epic 13엔 마이그레이션이 없다"
+    owner: "orchestrator"
+    status: done # 이번 회고에서 실행. #179 (d)하이브리드 유지 — 안 되돌리면 상시 always가 되어 비용이 2.3배로 고정된다
+  - epic: 12
+    action: "B2 epic-12를 done으로 전이 — 스토리 6건 전량 done인데 in-progress로 남아 있었다(Epic 11과 같은 누락 반복)"
+    owner: "orchestrator"
+    status: done # 이번 회고에서 실행
+  - epic: 12
+    action: "B3 '환경도 원복' 규칙을 못 어기는 자리에 박는다 — (a)규칙 문서 vs (b)verify 앞단 환경 무결성 검사"
+    owner: "user"
+    status: open # 대장 #191·#211 · Epic 13 착수 전. 같은 사고가 이번 에픽에 두 번 났다(venv 오염 / 로컬 GRANT 전면 상실)
+  - epic: 12
+    action: "B4 max_review_cycles=2 재검토 — Epic 12 스토리 6/6이 예산 소진 상태로 닫혔고 DW가 5건 쌓였다"
+    owner: "user"
+    status: open # 대장 #192 · Epic 13 착수 전
+  - epic: 12
+    action: "B5 에픽 마지막 스토리의 DW가 구조적으로 안 옮겨진다 — 이관이 '다음 스토리'에 의존하는데 마지막엔 그게 없다"
+    owner: "orchestrator"
+    status: open # 대장 #231 등재 완료, 절차 수정 여부는 Epic 13 회고에서 판단
+  - epic: 12
+    action: "B6 원격 전제 확인 — 0023(Realtime RLS)이 기대는 3가지를 원격에서 실제로 물어본다"
+    owner: "orchestrator"
+    status: open # 대장 #196·#197 · 원격 적용 직전 필수. 로컬 스텁으로만 확인된 상태 — 원격이 다르면 남의 방이 보일 수 있다
+  - epic: 12
+    action: "B7 test/bmad-loop -> develop 병합 — Epic 12 12커밋이 또 CI 밖에 있다"
+    owner: "user"
+    status: open # #181이 닫혔어도 구조는 그대로다(브랜치가 CI 사정거리 밖)
+  - epic: 12
+    action: "B8 web CI에 next build 추가 검토 — RSC 경계 위반이 CI 초록으로 통과한다"
+    owner: "orchestrator"
+    status: open # 대장 #229 · #168(E2E CI 배선)과 함께 판단
   - epic: 11
     action: "A8 대장 #121 트리거 재지정 — 'E2E 첫 도입 시'는 11-5로 소진됐는데 조치 안 됨"
     owner: "orchestrator"

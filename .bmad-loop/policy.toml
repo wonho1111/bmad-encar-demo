@@ -93,7 +93,22 @@ enabled = true
 #
 #   ⚠️ **Epic 12가 끝나면 "recommended"로 되돌린다.** 안 되돌리면 (d)안이 아니라 (b)안
 #   (상시 always)이 되어 비용이 계속 3배로 든다. 되돌림 여부는 Epic 12 회고에서 확인한다.
-trigger = "always"
+#
+# ✎ 2026-07-29 "always" → "recommended" **되돌림 완료**(Epic 12 회고 B1). 위 약속대로다.
+#   Epic 13(AI 검색 RAG 고도화)은 **마이그레이션이 없다**(에픽 절 전체 grep 0건) — (d)하이브리드의
+#   조건("마이그레이션이 예정된 런만 always")에 해당하지 않는다.
+#
+#   **always로 돌린 값은 실측으로 확인됐다(회고 §1a·§3):** 12-2 후속 리뷰가 `realtime.messages`
+#   SELECT 정책이 **행의 topic을 안 봐서 아무 방 당사자면 모든 방의 방송 본문이 보이는** 결함을
+#   찾아 로컬에서 재현했다(방1 구매자가 방2 메시지 읽음). 그 스토리의 1차 dev는 그 결함을 안고
+#   `done`으로 냈으므로, `recommended`였다면 못 잡았을 가능성이 크다.
+#
+#   **대가도 쟀다:** 스토리당 weighted 토큰이 Epic 10의 5.96M → Epic 12의 13.7M으로 **2.3배**가
+#   됐다(모든 스토리가 리뷰 2사이클을 다 씀). 그래서 상시로 두지 않고 **마이그레이션 런에만** 켠다.
+#
+#   ⚠️ **다음에 켤 자리:** Epic 14(계정 역할 통합 — role CHECK 완화 마이그레이션) 착수 시.
+#   Epic 13 스토리 8개엔 마이그레이션이 없으므로 그 사이엔 계속 "recommended"다.
+trigger = "recommended"
 
 [adapter]
 name = "claude"              # claude | codex | gemini | <custom .bmad-loop/profiles/*.toml>

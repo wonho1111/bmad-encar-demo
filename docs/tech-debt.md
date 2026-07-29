@@ -1634,7 +1634,7 @@
 - **왜 지금 안 고치나:** 이 스토리가 만든 드리프트가 아니라 누적된 것이고(0017·0012~0019 구간), 인접 문서를 "개선"하지 않는다는 A3에 걸린다. 요약표 📅 행에 이미 "`db-schema-guide` 표 갱신(증분 후)"으로 잡혀 있으나 번호가 없어 추적되지 않았다 — 이 항목이 그 번호다.
 - **트리거:** Epic 11 종료 시점(증분 스키마 변경이 멎는 자리) 또는 발표·시연 자료를 만들 때 — 그때 표를 실제 `information_schema`에서 다시 뽑아 한 번에 맞춘다.
 
-### 138. `pytest tests/integration` 전체를 게이트 프렐류드 환경에서 돌리면 1건이 실패한다 — 이 스토리와 무관한 기존 red (2026-07-28 Story 11-1 후속리뷰 2차 defer, 🟡 조건부)
+### 138. ✅ 해소 — `pytest tests/integration` 전체를 게이트 프렐류드 환경에서 돌리면 1건이 실패한다 — 이 스토리와 무관한 기존 red (2026-07-28 Story 11-1 후속리뷰 2차 defer, 🟡 조건부)
 - **위치:** `api/tests/integration/test_seller_summary_real_db.py::test_anon_can_read_joined_at_despite_profiles_rls` vs `scripts/migration-check-prelude.sql`의 `alter default privileges … grant all on tables to anon, …`.
 - **내용:** 이 테스트는 anon이 `profiles`를 직접 읽으면 `InsufficientPrivilege`가 나야 한다고 단언하는데, 프렐류드가 anon에게 테이블 SELECT를 주기 때문에 에러 대신 **0행**이 돌아온다(RLS가 거른다) → `DID NOT RAISE`. 즉 "권한으로 막힌다"는 단언이 실제로는 "정책으로 막힌다"인 환경이다. 리뷰어가 **0019까지만 적용한 DB**로 대조해 이 스토리(0020)와 무관한 기존 실패임을 확정했다(전체 결과: 1 failed, 240 passed, 5 skipped — 0020 유무와 무관하게 동일).
 - **왜 지금 안 고치나:** 11-1이 만든 결함이 아니고, 고치려면 "프렐류드가 원격 Supabase를 정확히 재현하는가"(원격에선 anon이 `profiles` SELECT 권한을 갖는가)를 원격 실측으로 먼저 답해야 한다 — 그 조사는 조회수 스토리 범위 밖이다.
@@ -1913,7 +1913,7 @@
 - **✅ 결정됨 (2026-07-28, 사용자): (d) 하이브리드.** 평소는 `trigger = "recommended"` 유지, **마이그레이션이 예정된 런만 `always`로 시작**한다. (c)(diff 조건부 강제)는 **엔진이 지원하지 않음이 확정** — `REVIEW_TRIGGER_MODES = {"always","recommended"}` 둘뿐이다(`bmad_loop/policy.py` 실측). 첫 적용 지점 = **Epic 12**(`12-1 멱등키 마이그레이션`으로 시작하므로 그 런을 `always`로 띄운다).
 - **트리거(잔여):** Epic 12 착수 시 그 런을 `always`로 띄웠는지 확인하고, 끝나면 "마이그 스토리에 독립 리뷰가 실제로 붙었는지"를 로그로 확인해 이 항목을 닫는다. 선택지: (a) 현행 유지(토큰 절약 우선) (b) `trigger = "always"`로 복귀 (c) **조건부** — `supabase/migrations/**`가 diff에 있으면 `recommended`와 무관하게 독립 리뷰 강제. (c)가 이 프로젝트 규칙과 가장 정합적이다 — CLAUDE.md B3이 *"DB는 되돌리기가 없다"* 로 마이그레이션을 가장 무거운 축으로 다루는데, 정작 그 축에서 검토를 아끼는 것은 앞뒤가 안 맞는다. 다만 bmad-loop이 diff 조건부 트리거를 지원하는지는 **미확인**(추측 금지 — 착수 시 실측할 것).
 
-### 180. `0021`이 사양을 바꿨는데 그 사양을 고정하던 실DB 테스트를 아무도 갱신하지 않았다 — CI가 red다 (2026-07-28 Epic 11 회고 직전 전수감사 실측, 🔴 필수)
+### 180. ✅ 해소 — `0021`이 사양을 바꿨는데 그 사양을 고정하던 실DB 테스트를 아무도 갱신하지 않았다 — CI가 red다 (2026-07-28 Epic 11 회고 직전 전수감사 실측, 🔴 필수)
 - **위치:** `api/tests/integration/test_view_count_rpc_real_db.py::test_anon_can_select_whitelisted_columns_but_view_count_still_denied` vs `supabase/migrations/0021_listings_view_count_anon_grant.sql`.
 - **내용:** Story 11-1이 *"anon은 `view_count`를 못 읽는다"* 를 **고정하는 테스트**를 심었다(당시 사실이었고, 그 사실 자체가 문제라 `#134`로 등재됨). 그리고 Story 11-4가 `0021`로 `grant select (view_count) on public.listings to anon;` 을 실행해 **의도적으로 그 사양을 바꿨다**(`#134` 해소). **그 변경이 위 테스트를 무효화했는데 아무도 갱신하지 않았다.** 실측(2026-07-28, CI `api-db` 잡을 일회용 `pgvector/pgvector:pg17` 컨테이너로 재현, 마이그 21개 전량 적용): `2 failed, 37 passed`. 실패 원문 — `with pytest.raises(psycopg.errors.InsufficientPrivilege): Failed: DID NOT RAISE InsufficientPrivilege`.
 - **제품 결함이 아니다 — 테스트가 제 일을 한 것이다.** 그 테스트의 docstring 자체가 *"지금 여기서 바뀌면 이 테스트가 즉시 알려야 한다"* 고 예고해 뒀고, 정확히 그대로 작동했다. **문제는 알려줬는데 아무도 듣지 않은 것이다**(→ `#181`).
@@ -1921,7 +1921,7 @@
 - **고치는 법:** 단언을 `0021` **이후** 사양으로 교정한다 — anon은 `view_count`를 **읽을 수 있고**, `embedding`·`seller_id` 등 화이트리스트 밖 컬럼은 **여전히 못 읽는다**. 화이트리스트를 실시간 스키마에서 도출하는 기존 관례(`test_grant_completeness_*`)를 따라, 컬럼이 또 늘어도 자동으로 따라가게 한다. 고친 뒤 **일부러 깨서 red 확인 → 원복해 green 확인**(B4).
 - **트리거:** **Epic 12 착수 전 선행.** Epic 12는 마이그레이션 3개(12-1·12-2·12-5)짜리 에픽이고, `api-db` 잡이 바로 *"마이그레이션이 만든 DB 제약이 실제로 거르는가"* 를 보는 층이다 — 그 게이트가 red인 채 시작하면 새 red와 기존 red가 섞여 **아무도 못 읽는다.** `#138`(같은 잡의 다른 red)과 **한 자리에서 함께** 처리한다.
 
-### 181. 검사층 전체가 관측되지 않는다 — `develop` CI가 6일째 red였고, Epic 11은 CI를 한 번도 지나지 않았다 (2026-07-28 Epic 11 회고 실측, 🔴 필수)
+### 181. ✅ 해소(핵심) — 검사층 전체가 관측되지 않는다 — `develop` CI가 6일째 red였고, Epic 11은 CI를 한 번도 지나지 않았다 (2026-07-28 Epic 11 회고 실측, 🔴 필수)
 - **위치:** `.github/workflows/tests.yml`의 `on.push.branches: [develop, main]` · 브랜치 `test/bmad-loop`(origin보다 **14커밋 앞섬**, 미push).
 - **내용(추측 아니라 GitHub Actions 로그 실측):**
   - **(a) `develop`이 red다.** run `29934287931`(2026-07-22 push, "docs(epic-10): 회고 작성" 커밋) → `Tests` 워크플로 **failure**. 실패 잡 = `api (실DB 통합 — tests/integration 전체)`, 로그 원문 `FAILED tests/integration/test_seller_summary_real_db.py::test_anon_can_read_joined_at_despite_profiles_rls - Failed: DID NOT RAISE InsufficientPrivilege` / `1 failed, 16 passed`. **그 뒤 6일간 아무도 보지 않았다.**
@@ -2288,3 +2288,10 @@
 - **이번에 한 것:** 검사가 이 축을 못 본다는 사실을 `queueRetryWiringContract.test.ts` 헤더 주석에 실측과 함께 명시했다(CLAUDE.md B4 — "그 검사가 안 보는 것을 검사 옆에 적는다"). 고정은 하지 않았다.
 - **왜 지금 안 고치나:** 제대로 고치는 방법은 두 갈래인데 둘 다 이번 범위 밖이다 — ① 리셋을 async IIFE 밖(effect 바디, 배선 바로 위)으로 옮겨 **어휘 순서 = 실행 순서**로 만든다(동작하는 12.4 상태기계의 초기화 위치 변경이라 A3). ② "리셋이 첫 `await`보다 앞에 있다"를 정적 단언으로 추가한다(창 경계를 또 하나 늘리는 취약한 검사라 이득이 불분명하다).
 - **트리거:** `#220`(`isFlushing` state 승격)으로 이 effect를 다시 손댈 때 — 어차피 초기화·배선 자리를 다시 그리므로, 그 자리에서 ①(순서를 구조로 보장)을 함께 적용한다.
+
+### 231. `deferred-work.md`의 `DW-9`(12-6 review-budget-followup)가 대장에 등재돼 있지 않다 — **이관 절차가 마지막 한 건은 구조적으로 놓친다** (2026-07-29 Epic 12 회고, 🟢 품질)
+- **위치:** `_bmad-output/implementation-artifacts/deferred-work.md`의 `DW-9`(status: open, origin `review-budget-followup`, source_spec `spec-12-6-실시간-채팅-검증-sm-e.md`, bmad-loop run `20260729-003659-be13`이 작성).
+- **내용:** `#148`·`#149`·`#164`·`#184`·`#192`·`#203`·`#208`·`#219`와 같은 종류(짝)다. 그런데 이번엔 **개별 누락이 아니라 절차의 구조적 한계**가 드러났다: DW 이관은 *"다음 스토리 착수 시 dev가 `deferred-work.md`를 읽어 대장으로 옮긴다"* 로 돌아가는데(실제로 DW-5→`#191`/`#192`, DW-6→`#203`, DW-7→`#208`, DW-8→`#219`로 매번 작동했다), **에픽의 마지막 스토리가 만든 DW는 옮겨 줄 "다음 스토리"가 없다.** 그래서 `DW-4`(11-5, Epic 11 마지막)도 Epic 12의 첫 스토리(12-1)가 와서야 옮겨졌고, `DW-9`(12-6, Epic 12 마지막)는 지금 열린 채 남아 있다.
+- **왜 지금 안 고치나:** 이관(등재)은 이 커밋에서 하지만, **절차 자체를 고치는 것**(에픽 마감 절차에 "마지막 DW 이관"을 넣을지, 아니면 엔진이 동결 파일에 쓰는 구조 `#129` 자체를 손댈지)은 별개 판단이다.
+- **12-6의 후속 리뷰 권고가 실체다:** 12-6은 리뷰 3패스(1차 + 독립후속 2회)를 돌고도 마지막까지 "독립 후속이 더 필요하다"고 했다. 그 과정에서 **자기가 1차에 만든 계약 테스트가 거짓 초록**(가드 `!`를 지워도 3/3 통과)임을 2차가 뮤테이션으로 잡아냈고, 3차는 `'use client'` 지시자에 아무 검사가 없어 CI 초록인 채 배포 빌드에서만 터지는 축을 찾았다(`#229`). 즉 **볼 게 남았다는 말이 매번 사실이었다.**
+- **트리거:** **Epic 13 착수 시** — 첫 스토리(13-1)의 DW 점검에서 이 항목이 이미 대장에 있음을 확인하고 넘어가면 된다(이 커밋으로 이관은 끝났다). **절차 수정 여부는 Epic 13 회고에서 판단**한다 — 그때는 `DW-10`(13-x 마지막)이 또 같은 자리에 남아 있을 것이므로 같은 증상을 두 번 관측한 상태가 된다.
