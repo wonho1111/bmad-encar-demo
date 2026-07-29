@@ -3259,3 +3259,62 @@ status: open
 - **실측(2026-07-29, 로컬 시드 93건):** 390px 뷰포트(카드 내용 폭 304px) — **2건이 17px 넘침**, 넘치는 부분은 "+1" 칩. 가로 페이지 스크롤은 생기지 않는다(D5 유지). 800px 이상(카드 내용 폭 328px) — 93건 **전부 넘침 0건**.
 - **넘치는 예:** `부메스터사운드 · 앰비언트라이트 · 파노라마선루프 · +1`, `오토파일럿 · 파노라마글래스루프 · 프리미엄오디오 · +1` — 희소 옵션 이름이 셋 다 긴 경우에만 발생한다.
 - **이 사실은 코드 주석에도 적어 두었다**(`ListingCard.tsx` 옵션 칩 블록) — 다음 사람이 "왜 가끔 +N이 잘리지?"를 추측하지 않게.
+
+### DW-546: 소비자 화면 8개가 아직 신규 디자인 시스템으로 리스킨되지 않았다 — FR37 "전 화면"인데 실행 스토리가 없다
+
+origin: 2026-07-29 사용자 지적 #2 (Discord, 로그인 페이지 UI 일관성) → 전 화면 실측으로 범위 확장
+location: `web/src/app/(auth)/login/page.tsx` · `(auth)/signup/page.tsx` · `(user)/chat/page.tsx` · `(user)/chat/[roomId]/page.tsx`·`ChatRoomMessages.tsx` · `(user)/search/SearchFilters.tsx` · `(user)/sell/page.tsx`·`SellForm.tsx`·`PhotoUploader.tsx`·`[id]/edit/page.tsx` · `app/page.tsx`(일부 잔존)
+severity: medium
+reason: Epic 8은 **토큰과 프리미티브를 만드는** 에픽이고(8.1 토큰·8.2 프리미티브·8.3 카드 계약), 화면별 적용은 각 에픽이 자기 화면을 건드릴 때 따라왔다 — Epic 9=카드·상세, Epic 11=랜딩·내비, Epic 15=관리자 6화면. 그런데 **로그인·회원가입·채팅·검색필터·판매 폼은 어느 에픽의 화면 목록에도 없다.** 즉 미룬 게 아니라 애초에 아무 스토리도 이 화면들을 자기 것으로 안 가졌다.
+trigger: 제출·시연 전 UI 통일 시점. Epic 15(관리자 리스킨)와 성격이 같으므로 **그 에픽에 소비자 잔여 화면을 붙이는 것이 가장 싸다** — 같은 작업(토큰 치환 + D5 반응형 확인)을 두 번 세팅하지 않게 된다. 붙일 때 Story 15.1의 인수조건에 화면 목록을 명시할 것(B5).
+status: open
+
+- **실측(2026-07-29, `zinc-*` 원시 클래스 vs `@theme` 토큰 사용 수):**
+
+  | 화면 | zinc | 토큰 |
+  |---|---|---|
+  | `search/SearchFilters.tsx` | 24 | 0 |
+  | `sell/PhotoUploader.tsx` | 22 | 0 |
+  | `chat/[roomId]/ChatRoomMessages.tsx` | 20 | 0 |
+  | `chat/[roomId]/page.tsx` | 16 | 0 |
+  | `sell/[id]/edit/page.tsx` | 9 | 0 |
+  | `chat/page.tsx` | 9 | 0 |
+  | `(auth)/signup/page.tsx` | 9 | 0 |
+  | `(auth)/login/page.tsx` | 9 | 0 |
+  | `sell/page.tsx` | 8 | 0 |
+  | (참고 — 이미 리스킨된 쪽) `listings/[id]`·`wishlist`·`account`·`OptionPicker` | 0 | 5~26 |
+
+- **왜 눈에 띄나:** 리스킨된 화면(상세·찜목록·내 정보)과 안 된 화면(로그인·채팅)이 **한 세션 안에서 번갈아 나온다.** 로그인은 서비스의 첫 화면이라 첫인상에 그대로 꽂힌다.
+- **범위 성격:** 신규 기능 0 — 색·테두리·radius·타이포 토큰 치환과 D5(가로 유지) 확인뿐이다. Epic 15가 관리자에게 하기로 한 것과 정확히 같은 작업이다.
+- **함께 볼 것:** `DW-547`(인증 화면에 상단바가 없어 랜딩으로 돌아갈 길이 없다) — 로그인 화면을 손대는 그 자리에서 같이 해결된다.
+
+### DW-547: 로그아웃하면 랜딩이 아니라 `/login`으로 가고, 그 화면엔 빠져나올 길이 없다
+
+origin: 2026-07-29 사용자 지적 #4 (Discord)
+location: `web/src/components/auth/LogoutButton.tsx`의 `router.push('/login')` · `web/src/app/(auth)/login/page.tsx`·`signup/page.tsx`(둘 다 `AppHeader`를 렌더하지 않는다)
+severity: medium
+reason: 이 동작은 Story 1.3(2026-06, FR2)이 쓴 것이고 **그때는 옳았다** — 당시엔 비로그인 사용자가 볼 수 있는 화면이 없었으므로 로그아웃 후 갈 곳이 로그인 화면뿐이었다. 그 전제를 FR58(비로그인 열람 허용, Epic 8.5)이 뒤집었는데 이 두 줄이 함께 갱신되지 않았다. UX 문서 어디에도 "로그아웃 후 목적지"를 명시한 문장은 없다(grep 확인) — 그래서 아무도 어긋남을 못 봤다.
+trigger: `DW-546`(로그인·회원가입 리스킨)을 처리하는 그 자리 — 어차피 그 두 파일을 열게 된다. 그 전이라도 `LogoutButton` 한 줄만 먼저 고칠 수 있다.
+status: open
+
+- **증상(사용자 실측):** 로그아웃 → `/login`. 거기서 랜딩으로 가려면 **주소창에서 `/login`을 직접 지우는 수밖에 없다.**
+- **왜 FR58과 어긋나나:** FR58과 UX 결정이 세운 규칙은 *"비로그인도 랜딩·탐색·상세를 열람할 수 있고, 로그인 게이트는 **행동**(문의·등록·찜)에만 건다"* 이다. 그 규칙대로면 로그아웃한 사용자의 자연스러운 목적지는 **공개 랜딩(`/`)** 이다. 지금은 로그아웃이 사용자를 "아무것도 못 보는 화면"에 가둔다.
+- **선례가 이미 있다:** Story 11.3이 같은 부류를 한 번 고쳤다(구 `#152`) — 비로그인 홈에 상단바가 없어 *"로그인·내 차 등록 진입로가 거기 하나뿐"* 이던 문제. 인증 화면 2개만 같은 처리에서 빠졌다.
+- **해소(작다):** ⓐ `LogoutButton`의 `router.push('/login')` → `router.push('/')` ⓑ `/login`·`/signup`에 `AppHeader`(또는 최소한 홈으로 가는 로고 링크)를 붙인다. ⓑ는 `DW-546`의 리스킨과 같은 파일이라 함께 하는 게 싸다.
+- **⚠️ 확인할 것:** `redirectedFrom` 복귀 흐름은 건드리지 말 것 — 로그인 **성공** 후 원래 가려던 경로로 돌아가는 로직(`resolveSafeRedirect`)은 정상이고 이 항목과 무관하다.
+
+### DW-548: 채팅방 목록에 방별 안읽음 표시가 없다 — Story 12.5가 의도적으로 뺐고, 사용자가 다시 요청
+
+origin: 2026-07-29 사용자 지적 #3 (Discord) ↔ Story 12.5 스펙의 명시적 Never
+location: `web/src/app/(user)/chat/page.tsx`(방 목록 렌더) · `supabase/migrations/0025_chat_unread_participant_scope.sql`의 `chat_unread_count()`(총합만 계산)
+severity: low
+reason: Story 12.5 스펙이 **Never로 명시**했다 — *"방 목록 각 행에 개별 안읽음 점(per-room indicator)을 추가하지 않는다 — FR57 AC가 요구하는 건 내비 배지(총합)와 정렬뿐이다(과설계 금지, A2)."* 그때는 옳은 판단이었다(FR57이 요구한 건 "판매자가 문의를 놓치지 않는다"이고 총합 배지+최신순 정렬로 충족된다). 코드리뷰에서 같은 제안이 올라왔을 때도 이 Never를 근거로 기각했다. 지금 다시 열린 이유는 **사용 경험 근거**다: 총합 배지를 보고 목록에 들어가면 어느 방이 새 메시지인지 알 수 없다.
+trigger: 사용자 결정 대기. 하기로 하면 비용은 아래 산정대로 작다.
+status: open
+
+- **비용 산정(코드를 읽고 낸 값, 추측 아님):**
+  - **DB:** 마이그레이션 1장 — 기존 `chat_unread_count()`와 **같은 쿼리에 `group by m.room_id`만 붙인** `chat_unread_by_room()` 신설(returns table(room_id uuid, unread int)). 새 테이블·새 컬럼·백필 **전부 불필요** — `chat_room_reads`(0024)와 참여자 조인 가드(0025)가 이미 있다. 기존 함수는 건드리지 않는다(additive, B3).
+  - **웹:** `chat/page.tsx`에 `.rpc()` 호출 1줄 + 행마다 배지 렌더 ~10줄. 방 목록은 이미 서버 컴포넌트라 구조 변경 없음.
+  - **권한:** 0024·0025와 동일한 `revoke all → grant execute to authenticated` 패턴 복사.
+- **대가(정직하게):** `/chat` 진입마다 DB 왕복 1회 추가. 지금은 함수가 미국에서 돌고 DB가 서울이라 왕복 하나가 비싸다(`DW-540`) — 그래서 **`DW-540`을 먼저 하면 이 비용이 저절로 싸진다.**
+- **범위 밖(명시):** 카카오톡처럼 **실시간으로** 방별 숫자가 줄어드는 동작. 지금 총합 배지도 페이지 로드 기준이라(스펙 I/O 매트릭스: "다음 페이지 로드부터"), 방별만 실시간으로 만들면 두 배지가 서로 다른 시점을 말하게 된다. 실시간까지 원하면 별건으로 다뤄야 한다.
