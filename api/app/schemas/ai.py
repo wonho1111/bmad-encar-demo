@@ -90,9 +90,22 @@ class ListingCard(BaseModel):
     options: list[str] | None = None  # 장비 통제어휘 배열(text[]) — Story 10.3, docs/conventions.md §11
 
 
+class ClarifyPayload(BaseModel):
+    """CLARIFY 경로(FR46)의 되묻기 페이로드 — 고정 질문 1개 + 고정 칩 배열.
+
+    route=CLARIFY이고 되묻기 상한 이내일 때만 채워진다(clarify_node.py). 상한 초과 시
+    서버가 doc_rag_node로 강제 폴백하며 이 필드는 None이 된다(칩 없음 = 더 안 묻는다는 신호).
+    """
+
+    question: str
+    chips: list[str]
+
+
 class SearchResponse(BaseModel):
     answer: str
     listings: list[ListingCard] = []
+    # CLARIFY 되묻기 페이로드(FR46, CR5) — additive 필드라 기존 소비처 회귀 없음.
+    clarify: ClarifyPayload | None = None
 
 
 class ErrorBody(BaseModel):

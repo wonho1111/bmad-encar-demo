@@ -43,6 +43,14 @@ def _patch_route(monkeypatch, route, *, sql_cards=None, doc_cards=None, hybrid_c
         gmod, "hybrid_rag_node",
         lambda q: {"answer": "조합 조건에 맞는 매물이에요.", "listings": list(hybrid_cards)},
     )
+    # CLARIFY(Story 13.4부터 clarify_node로 실배선) — 고정 템플릿이라 카드 대신 clarify 페이로드를
+    # 준다. 이 파일은 run_search를 context 없이 부르므로 clarify_turns가 0으로 계산돼(상한 이내)
+    # 언제나 clarify_node가 불린다 — 강제 폴백 분기는 여기서 검증하지 않는다(test_graph.py 소관).
+    monkeypatch.setattr(gmod, "clarify_node", lambda q: {
+        "answer": "조건을 조금만 좁혀볼게요.",
+        "listings": [],
+        "clarify": {"question": "조건을 조금만 좁혀볼게요.", "chips": ["a", "b", "c"]},
+    })
     # guard_node는 실제 함수를 그대로 둔다(거절 문구·빈 목록 검증을 위해).
 
 
@@ -60,21 +68,31 @@ def test_sm3_pathA_returns_listings(monkeypatch, query):
 
 @pytest.mark.parametrize("query", SEMANTIC_B)
 def test_sm3_pathB_returns_listings(monkeypatch, query):
-    """② 질적·의미형 질의 → 경로 CLARIFY(구 B)가 추천 매물(listings 비어있지 않음)을 돌려준다."""
+    """② 질적·의미형 질의 → 경로 CLARIFY가 매물 대신 되묻기(clarify 페이로드)를 돌려준다.
+
+    ✎ 13.4: CLARIFY는 더는 doc_rag_node 임시 배선(구 B 그대로 매물 반환)이 아니다 — 되묻기
+    상한 이내(이 헬퍼는 단일턴 가정)이면 clarify_node가 고정 질문+칩을 반환하고 listings는
+    항상 []다. "빈손이 SM3 불합격"이라는 옛 기준은 clarify가 없는 진짜 빈손(dead-end)에만
+    해당한다 — clarify 칩은 "누를 수 있는 다음 행동"이라 dead-end가 아니므로, SM3 판정
+    기준을 listings 비어있지 않음에서 clarify 페이로드가 채워짐으로 옮긴다.
+    """
     _patch_route(monkeypatch, "CLARIFY")
     out = gmod.run_search(query)
-    assert out["listings"], f"경로 CLARIFY가 빈손이면 SM3 불합격: {query!r}"
+    assert out["listings"] == []
+    assert out["clarify"] is not None, f"경로 CLARIFY가 clarify 없이 빈손이면 SM3 불합격: {query!r}"
+    assert out["clarify"]["chips"]
     assert out["answer"].strip()
 
 
 @pytest.mark.parametrize("query", GRAY_AB)
 @pytest.mark.parametrize("route", ["SQL", "HYBRID", "CLARIFY"])
 def test_sm3_gray_zone_returns_listings_either_route(monkeypatch, query, route):
-    """③ 회색지대 — SQL로 가든 CLARIFY로 가든 매물/추천을 주면 합격(거절·빈손만 아니면 됨).
+    """③ 회색지대 — SQL/HYBRID는 매물을, CLARIFY는 되묻기 칩을 주면 합격(거절·빈손만 아니면 됨).
 
     ai-demo-queries.md ③: "둘 중 어디로 가도 매물 카드/추천을 돌려주면 데모 합격"(구 A/B 라벨을
     13.2 신버전 어휘로 옮김 — 회색지대 판정 자체는 변경 없음).
-    경로를 한쪽으로 단정하지 않고 모든 경우 빈손이 아님을 확인한다(과잉 단정 금지).
+    ✎ 13.4: CLARIFY의 "빈손 아님"은 listings가 아니라 clarify 칩으로 판정한다(되묻기 칩=
+    누를 수 있는 다음 행동이라 dead-end가 아니다, EXPERIENCE.md 칩=타이핑과 동등 경로).
 
     HYBRID는 13.2가 신설한 라우트인데 이 데모 인수 파일에 한 번도 등장하지 않아,
     HYBRID 배선이 깨져도 데모 게이트가 전부 초록이었다(review-4 실측: 파일 내
@@ -82,7 +100,11 @@ def test_sm3_gray_zone_returns_listings_either_route(monkeypatch, query, route):
     """
     _patch_route(monkeypatch, route)
     out = gmod.run_search(query)
-    assert out["listings"], f"회색지대 {query!r}가 route={route}에서 빈손이면 불합격"
+    if route == "CLARIFY":
+        assert out["clarify"] is not None, f"회색지대 {query!r}가 CLARIFY에서 clarify 없이 빈손이면 불합격"
+        assert out["clarify"]["chips"]
+    else:
+        assert out["listings"], f"회색지대 {query!r}가 route={route}에서 빈손이면 불합격"
 
 
 def test_sm3_pathA_real_guard_passes_generated_sql(monkeypatch):

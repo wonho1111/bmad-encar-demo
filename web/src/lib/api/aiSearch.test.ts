@@ -3,9 +3,9 @@
 // 왜 단위테스트인가: 순수 함수이고(서버 컴포넌트 밖) 여기가 **api와 카드 사이의 유일한 접합부**다.
 // 한 글자만 틀려도 모든 AI 카드가 조용히 "사진 준비중"으로 떨어지는데, 화면상으로는 진짜
 // "사진 없는 매물"과 구별되지 않는다(docs/tech-debt.md #73). 선례: images/coverImages.test.ts.
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { resolveCardImage } from './aiSearch';
+import { resolveCardImage, searchAi } from './aiSearch';
 
 const BASE = 'https://example.supabase.co';
 
@@ -85,5 +85,64 @@ describe('resolveCardImage', () => {
     expect(resolveCardImage({ ...BASE_CARD, image_count: 5 }).image_count).toBe(0);
     // 반대로 경로가 있으면 장수는 그대로 살아 있어야 한다(과잉 차단 금지).
     expect(resolveCardImage({ ...BASE_CARD, image_path: 'u/l/a.webp', image_count: 5 }).image_count).toBe(5);
+  });
+});
+
+// searchAi — 응답 매핑 (Story 13.4 후속 코드리뷰)
+//
+// 왜 이 테스트가 필요한가: `SearchResult` 타입에 `clarify`를 선언해 두고 실제 매핑에서
+// 빠뜨리면, 타입은 "필드가 있다"고 말하는데 값은 영원히 undefined다. 그러면 나중에 칩 UI를
+// 만드는 사람이 `if (result.clarify)`로 분기해도 서버가 칩을 보내는 상황에서조차 아무 일도
+// 일어나지 않고, 아무 데서도 오류가 나지 않는다(조용한 실패). 실제로 그 상태였다.
+describe('searchAi 응답 매핑', () => {
+  const originalFetch = globalThis.fetch;
+
+  function mockJsonResponse(payload: unknown) {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof globalThis.fetch;
+  }
+
+  beforeAll(() => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.test';
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('서버가 clarify를 보내면 그대로 실어 돌려준다', async () => {
+    const clarify = { question: '조건을 조금만 좁혀볼게요', chips: ['3천만원 이하', 'SUV', '전기차'] };
+    mockJsonResponse({ answer: '조건을 조금만 좁혀볼게요', listings: [], clarify });
+
+    const result = await searchAi({ query: '패밀리카로 무난한 거', accessToken: 'token' });
+
+    expect(result.clarify).toEqual(clarify);
+  });
+
+  it('clarify가 없으면(다른 라우트·상한 초과) null로 정규화한다 — undefined로 새지 않는다', async () => {
+    mockJsonResponse({ answer: '조건에 맞는 매물 1건을 찾았어요.', listings: [] });
+
+    const result = await searchAi({ query: '3천만원 이하 SUV', accessToken: 'token' });
+
+    expect(result.clarify).toBeNull();
+  });
+
+  // 형태가 깨진 clarify는 버린다 — listings에 isValidListing이 있는 이유와 같다.
+  // 통과시키면 칩 UI가 `clarify.chips.map(...)`에서 터지고, 그 오류는 try/catch 밖이라
+  // 대화 화면 전체가 날아간다(이 파일 상단 주석의 listings 사례와 동일한 실패 형태).
+  it.each([
+    ['chips가 배열이 아님', { question: '좁혀볼게요', chips: 'SUV' }],
+    ['chips 원소가 문자열이 아님', { question: '좁혀볼게요', chips: ['SUV', 3000] }],
+    ['question이 없음', { chips: ['SUV'] }],
+    ['객체가 아님', '좁혀볼게요'],
+  ])('계약을 어긴 clarify(%s)는 null로 떨군다', async (_label, broken) => {
+    mockJsonResponse({ answer: '조건을 조금만 좁혀볼게요', listings: [], clarify: broken });
+
+    const result = await searchAi({ query: '패밀리카로 무난한 거', accessToken: 'token' });
+
+    expect(result.clarify).toBeNull();
   });
 });

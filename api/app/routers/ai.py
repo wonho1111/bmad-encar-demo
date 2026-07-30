@@ -2,11 +2,12 @@
 
 4.5: 라우터+그래프를 앞단에 꽂는다. 더는 모든 질의를 경로 A로 직행시키지 않고,
   run_search(그래프)가 질의를 라우터로 A/B/C 분류 → 경로 노드 → answer_node로 흘려
-  공통 계약 {answer, listings[]}로 돌려준다.
+  공통 계약 {answer, listings[]}로 돌려준다(13.4부터 되묻기 필드 `clarify`가 추가됐다 — 계약
+  정본은 docs/conventions.md §4).
   (4.3까지는 sql_rag_node를 직접 호출했다. 그 한 줄을 그래프 호출로 교체한 것이 4.5의 핵심.)
 
-인증(get_current_user — 로그인 필수)·응답 계약({answer, listings[]})·에러 포맷은 4.1 확정값
-그대로 유지한다.
+인증(get_current_user — 로그인 필수)·응답 계약·에러 포맷은 4.1 확정값 그대로 유지한다
+(응답 계약은 additive로만 자라났다: 4.1 {answer, listings[]} → 13.4 + clarify).
 8.5(FR58): 열람(매물 목록·상세)은 anon에 열었으나 **이 엔드포인트는 로그인 필수로 남긴다**.
   검색 1회 = Gemini 호출 3회 내외 = 실제 과금이므로 "열람"이 아니라 "행동"이고, JWT가 호출자를
   식별하는 유일한 수단(= 유일한 과금 울타리)이기 때문이다. ai_readonly·sql_guard는 DB 권한을
@@ -76,4 +77,4 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
             status_code=500,
             detail={"error": {"code": "internal_error", "message": "서버 내부 오류가 발생했습니다."}},
         )
-    return SearchResponse(answer=result["answer"], listings=result["listings"])
+    return SearchResponse(answer=result["answer"], listings=result["listings"], clarify=result.get("clarify"))

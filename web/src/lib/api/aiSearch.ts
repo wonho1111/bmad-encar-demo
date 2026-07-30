@@ -8,7 +8,8 @@
 //   POST {NEXT_PUBLIC_API_BASE_URL}/ai/search
 //   headers: Authorization: Bearer <supabase access_token>(필수), Content-Type: application/json
 //   body:    { query, context? }    // context = 직전 대화(멀티턴, 최대 12턴)
-//   200:     { answer, listings[] } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
+//   200:     { answer, listings[], clarify } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
+//                                            // clarify = 되묻기 페이로드 또는 null(13.4, conventions.md §4)
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
 //   FR58(8.5): 열람(매물 목록·상세)은 anon에 열렸지만 **AI 검색은 로그인 필수**다 —
 //     검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "열람"이 아니라 "행동"(docs/conventions.md §8).
@@ -27,7 +28,27 @@ export type ConversationTurn = {
 export type SearchResult = {
   answer: string;
   listings: ListingCardData[];
+  // 되묻기 페이로드(FR46, Story 13.4) — 서버가 되묻는 중일 때만 채워지고, 그 외(다른 라우트이거나
+  // 상한 초과로 서버가 결과를 강제 제시한 경우)엔 null이다. 웹은 아직 **렌더**하지 않는다 —
+  // 칩 UI를 만들 웹 스토리가 없다(DW-587). 단, searchAi()가 값은 그대로 실어 보낸다(아래 매핑).
+  // (`?`를 붙이지 않는다 — searchAi()가 항상 값을 채우므로 소비처가 다뤄야 할 상태는
+  //  "페이로드 있음 / null" 두 가지뿐이다. undefined까지 세 가지로 만들 이유가 없다.)
+  clarify: ClarifyPayload | null;
 };
+
+/** 되묻기 페이로드(FR46) — 서버가 CLARIFY 경로에서 상한 이내일 때만 채워 보낸다. */
+export type ClarifyPayload = { question: string; chips: string[] };
+
+/** wire의 clarify가 실제로 계약 형태인지 확인한다(문자열 question + 문자열 배열 chips). */
+function isValidClarify(value: unknown): value is ClarifyPayload {
+  if (!value || typeof value !== 'object') return false;
+  const c = value as Partial<ClarifyPayload>;
+  return (
+    typeof c.question === 'string' &&
+    Array.isArray(c.chips) &&
+    c.chips.every((chip) => typeof chip === 'string')
+  );
+}
 
 export type SearchAiParams = {
   query: string;
@@ -103,6 +124,12 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
     listings: Array.isArray(result.listings)
       ? result.listings.filter(isValidListing).map(resolveCardImage)
       : [],
+    // 되묻기 페이로드(Story 13.4) — listings와 같은 규칙으로 형태를 검사한 뒤에만 통과시키고,
+    // 없거나 형태가 깨졌으면 null로 정규화한다.
+    // 왜 검사하나: 타입만 선언하고 값을 그대로 흘리면, 칩 UI를 만드는 사람이 타입을 믿고
+    // `clarify.chips.map(...)`을 쓰는데 서버가 chips를 문자열로 보내면 렌더 도중 터진다 —
+    // listings에 isValidListing이 있는 이유와 똑같다(이 파일이 wire 값의 유일한 방어선).
+    clarify: isValidClarify(result.clarify) ? result.clarify : null,
   };
 }
 

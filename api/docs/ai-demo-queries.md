@@ -98,8 +98,8 @@
 | 판정 | 대상 질의 | 기대 | 검증 테스트(`api/tests/`) |
 |---|---|---|---|
 | SM3 | ① 구조형(A) | 경로 A가 매물 카드 반환(빈손 아님) | `test_demo_acceptance.py::test_sm3_pathA_returns_listings` |
-| SM3 | ② 의미형(B) | 경로 B가 추천 매물 반환 | `test_demo_acceptance.py::test_sm3_pathB_returns_listings` |
-| SM3 | ③ 회색지대 | A/B 어느 쪽이든 빈손·거절 아님 | `test_demo_acceptance.py::test_sm3_gray_zone_returns_listings_either_route` |
+| SM3 | ② 의미형(B/CLARIFY) | 경로 CLARIFY가 되묻기(clarify 페이로드) 반환(13.4 — 매물 아님) | `test_demo_acceptance.py::test_sm3_pathB_returns_listings` |
+| SM3 | ③ 회색지대 | SQL/HYBRID는 매물, CLARIFY는 되묻기 칩 — 어느 쪽이든 빈손·거절 아님 | `test_demo_acceptance.py::test_sm3_gray_zone_returns_listings_either_route` |
 | SM3 | 경로 A 가드 통과 | 세단 IN-매핑 SQL이 sql_guard를 실제 통과 | `test_demo_acceptance.py::test_sm3_pathA_real_guard_passes_generated_sql` |
 | CM1 | ④ 무관(C) | 전부 빈 목록 + 정중한 거절 문구 | `test_demo_acceptance.py::test_cm1_unrelated_rejected_via_graph`, `test_cm1_count_all_unrelated_rejected` |
 | CM2 | 위반 SQL 코퍼스 | 범위밖 SQL 0건 통과(전부 실행 전 차단) | `test_demo_acceptance.py::test_cm2_violating_sql_is_blocked`, `test_cm2_zero_violations_pass_through` |

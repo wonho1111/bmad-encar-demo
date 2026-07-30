@@ -50,11 +50,42 @@ def test_live_smoke_pathA():
 
 
 def test_live_smoke_pathB():
-    """경로 B 대표 1건 — 의미형 추천이 매물(또는 안내)을 돌려주는지(SM3)."""
+    """경로 B 대표 1건 — CLARIFY가 실제로 되묻기 페이로드를 돌려주는지(13.4, SM3).
+
+    route만 보고 통과하면 13.3의 DW-577류 공백(라벨은 맞는데 실제 실행 경로를 못 구분)을
+    되풀이하므로, clarify 페이로드 자체를 직접 단언한다.
+    """
     out = _run_or_skip("패밀리카로 무난한 거")
     assert isinstance(out["answer"], str) and out["answer"]
     assert isinstance(out["listings"], list)
     assert out["route"] == "CLARIFY"
+    assert out["listings"] == []
+    assert out["clarify"] is not None
+    assert out["clarify"]["chips"]
+
+
+def test_live_smoke_clarify_cap_forces_results():
+    """되묻기 상한 초과 시 서버가 실제로 clarify 없이 결과를 강제 제시하는지(13.4 DW-563, B4).
+
+    6턴(12개 항목)짜리 더미 context를 실어 같은 CLARIFY 대표 질의를 재호출한다 — 상한 강제가
+    라이브로 실제 동작하는지 확인한다(단위테스트의 모킹된 doc_rag_node가 아니라 실물).
+    """
+    dummy_context = [
+        {"role": "user", "content": "그냥 무난한 차"},
+        {"role": "assistant", "content": "조건을 조금만 좁혀볼게요"},
+    ] * 6  # 6턴 = clarify_turns 6 >= _CLARIFY_TURN_CAP(3)
+    out = _run_or_skip("패밀리카로 무난한 거", dummy_context)
+    # route 단언이 없으면 이 테스트는 상한 강제를 전혀 증명하지 못한다 — clarify가 None인 것은
+    # SQL·HYBRID·REJECT 어느 라우트에서나 참이라, 상한 분기를 통째로 지워도 초록으로 남는다.
+    # (context가 실제 contextualize_query를 거치며 질의가 재작성되므로 라우트가 바뀔 수 있다.)
+    assert out["route"] == "CLARIFY"
+    assert out["clarify"] is None
+    assert isinstance(out["listings"], list)
+    if out["listings"]:
+        # 강제 폴백이 실제로 doc_rag_node를 탔다는 라이브 증거 — 매물이 나왔으면 고정 안내가 붙는다.
+        from app.graph.graph import _CLARIFY_CAP_NOTICE
+
+        assert _CLARIFY_CAP_NOTICE in out["answer"]
 
 
 def test_live_smoke_pathC():

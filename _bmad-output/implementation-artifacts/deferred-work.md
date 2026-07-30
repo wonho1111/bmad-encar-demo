@@ -3547,7 +3547,8 @@ location: `_bmad-output/implementation-artifacts/epic-13-context.md`(CLARIFY 턴
 severity: medium
 reason: 같은 문서가 한쪽에서는 "CLARIFY는 최대 2~3턴까지만 허용, **클라이언트가 횟수를 추적해 강제**"라 쓰고, 다른 쪽에서는 JWT 게이트를 "AI 검색은 실제 유료 API 호출을 발생시키는 행동이라 신원이 곧 과금 방어선(질의당 최대 4회 호출)"이라 정당화한다. 클라이언트만 세는 상한은 상한이 아니다 — 유효한 JWT 하나로 `/ai/search`에 CLARIFY 루프를 직접 반복하면 질의당 4회 유료 호출이 무제한 반복된다. CLAUDE.md B9("클라이언트가 보낸 값은 참고지 신뢰가 아니다") 위반.
 trigger: Story 13.4(CLARIFY) 스펙 작성 직전 — 턴 상한을 서버가 검증하는 값으로 바꿀지(예: 서버가 검증하는 `clarify_depth`) 결정하고 계획문서에 그 결정을 박는다.
-status: open
+status: done 2026-07-31
+resolution: Story 13.4가 서버 강제로 결정했다 — 새 필드(`clarify_depth` 등)를 만들지 않고, 서버가 이미 매 요청마다 받는 `context`(FR18, 새 인프라 아님)의 길이로 `clarify_turns = len(context or []) // 2`를 직접 계산한다(`api/app/graph/graph.py`의 `run_search`). `_CLARIFY_TURN_CAP = 3` 이상이면 `_clarify_step`이 `clarify_node` 대신 `doc_rag_node`를 직접 호출해 클라이언트 협조 여부와 무관하게 실제 매물을 강제 제시한다. 근거 정리(스펙 Design Notes): (a) `/ai/search`의 실제 과금 방어선은 JWT 인증이고 라우트와 무관하게 이미 모든 요청에 적용되므로 CLARIFY 반복 자체가 추가 비용 취약점은 아니다 — 되묻기 상한의 진짜 목적은 비용 방어가 아니라 "질문만 반복하고 결과를 못 보여주는 막다른 루프"를 막는 UX 보장이다. (b) 그 UX 보장이 순전히 클라이언트 판단(칩 숨김)에만 맡겨져 있던 것이 CLAUDE.md B9 위반이었고, 이번 변경으로 서버가 스스로 결정한다. 잔여 한계(신규 등재하지 않고 그대로 문서화): 클라이언트가 매번 `context: []`로 위장하면 이 계산도 무력화되는데, 이는 무상태 아키텍처의 근본 한계이지 CLARIFY 특유의 결함이 아니며 진짜 세션 저장소 도입은 스토리 범위를 넘는다(13.4 Never 절). 이 잔여 gap과 "애초에 `/ai/search`에 요청 빈도 제한이 전혀 없다"는 더 넓은 사실은 DW-586으로 별도 등재한다.
 
 ### DW-564: `lexicographic_winner()`가 커버리지가 다른 두 요약의 절대 개수를 비교한다
 
@@ -3782,4 +3783,101 @@ severity: low
 summary: 13-3은 리뷰 1차가 `done`으로 끝나 결과가 커밋(`final_revision: 2118001`)됐고, 2차는 **선택적 후속 검토**였다. 그 2차 세션이 2026-07-31 02:09 세션 한도로 중단됐다가 03:26에 깨어났으나 끝맺음 단계를 완수하지 못해, 세션이 시작 시 `in-review`로 바꿔둔 스펙 status를 `done`으로 되돌리지 못했다. 오케스트레이터는 그 순간의 작업 파일만 보고 "리뷰 미수렴"으로 판정해 스토리를 이월 처리하고 커밋 4개를 되돌렸다(run 20260730-205944-48e1, journal `review-result cycle=2 status=in-review` → `story-deferred`).
 evidence: 되돌려진 커밋은 엔진이 `attempt-preserve/20260730-205944-48e1-e2e62a24`로 보존해 뒀고, 사람이 그 ref에서 4개 커밋을 그대로 복원했다. 복원 후 정책의 검증 명령 전량을 실제로 실행해 초록을 확인했다 — 환경 무결성 통과, api pytest 337 passed/83 skipped, web lint 무경고, web test 291 passed, flutter analyze 이슈 0. 후속 검토가 실제로 찾아낸 지적은 유실되지 않고 DW-579~584로 이미 등재돼 있다.
 trigger: 13-3 코드(`hybrid_rag_node`·`sql_guard` 벡터절)를 다음에 손댈 때, 또는 에픽 13 회고 시 — 그때 독립 리뷰 1회를 의도적으로 돌린다. DW-583(임베딩 NULL 필터)·DW-584(거부되는 정상 SQL 표현 목록)와 같은 파일을 보므로 함께 처리하면 된다.
+status: open
+
+### DW-586: `/ai/search`에 사용자당 요청 빈도 제한이 전혀 없다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` DW-563 해결 과정에서 드러난 더 넓은 잔여 gap(스토리 범위 밖이라 코드 변경 없이 등재만)
+location: `api/app/routers/ai.py`(`/ai/search` — `get_current_user`로 신원만 확인, 호출 빈도는 어디서도 세지 않음)
+severity: medium
+reason: DW-563은 CLARIFY 되묻기 상한을 서버가 `context` 길이로 직접 계산해 막았지만, 그건 "되묻기 루프가 결과 없이 반복되는 것"만 막을 뿐이다. 유효한 JWT 하나로 `/ai/search`를 (CLARIFY든 SQL이든 어떤 라우트든) 초당·분당 무제한 반복 호출하는 것 자체를 막는 장치는 이 프로젝트 어디에도 없다 — 인증은 "누가 불렀는지"는 알려주지만 "얼마나 자주 불렀는지"는 제한하지 않는다. 이 gap은 CLARIFY만의 결함이 아니라 `/ai/search` 전체에 해당하며, 진짜 세션/카운터 저장소 도입은 13.4 Never 절이 범위 밖으로 명시했다. `docs/conventions.md` §8도 "계정당 쿼터가 필요해지면 JWT의 사용자 ID로 Postgres 카운트를 걸면 된다"고 방법만 적어두고 실제로 걸려 있지는 않다(존재 확인≠작동 확인 — 아직 아무 정책도 실행되지 않는다).
+trigger: 실사용에서 남용/과금 급증 신고가 들어오거나, 에픽 13 회고에서 이 gap을 우선순위로 올릴 때 — 그때 JWT 사용자 ID 기준 Postgres 카운트(예: 분당 N회)로 레이트리밋을 구현하고, 이 항목을 그 구현으로 닫는다.
+status: open
+
+### DW-587: `clarify` wire 필드를 소비할 웹 스토리가 없다 — 앱(16.5)만 있고 웹은 필드조차 안 보인다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 후속 코드리뷰(intent-alignment 렌즈) — 스펙 Never 절이 "Story 16.5/웹 대응 스토리 소관"이라 적었으나 실제 에픽 카탈로그 확인 결과 웹 스토리는 존재하지 않았다
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(16.5는 Flutter/앱 전용, 매칭되는 웹 스토리 없음) · `web/src/lib/api/aiSearch.ts`(`SearchResult` 타입에 `clarify` 필드 자체가 없었다)
+severity: medium
+reason: api는 이번 스토리(13.4)로 `/ai/search` 응답에 `clarify: {question, chips[]} | null`을 실제로 채워 보내기 시작했다. Flutter 앱은 Story 16.5가 이 필드를 렌더할 예정이지만, 웹은 그 필드를 소비할 스토리가 애초에 카탈로그에 없어 계획조차 안 돼 있었다 — 게다가 `aiSearch.ts`의 `SearchResult` 타입에 그 필드가 아예 없어서, 다음에 이 파일을 여는 사람은 서버가 그런 필드를 보낸다는 사실 자체를 알 방법이 없었다(칩 UI 미구현이 아니라 필드의 존재 자체가 안 보이는 문제). 이번 리뷰에서 `SearchResult`에 `clarify?: { question: string; chips: string[] } | null`을 추가해 최소 가시성만 확보했다(파싱·렌더링 로직은 없음, 범위 밖).
+trigger: 다음 스프린트 플래닝이 웹 AI 검색 UI를 다시 열 때, 또는 에픽 13/16을 완전히 닫힌 것으로 판단하기 전 — 그때 웹 쪽 되묻기 칩 렌더링 스토리를 신설하고 이 항목을 그 스토리로 닫는다.
+status: open
+
+### DW-588: `score_ab.py`의 `doc_hit` 지표가 CLARIFY 항목에 대해 조용히 항상 false가 된다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 리뷰(verification-gap 렌즈 발견) — 이번 스토리의 라우팅 변경이 원인이지만 오프라인 분석 스크립트 조정은 범위 밖이라 defer(13.1~13.3의 `score_ab.py` 드리프트 이월 관례 승계)
+location: `api/scripts/score_ab.py`(`doc_hit()` — CLARIFY/"B" 라벨 항목의 answer 문구에 `(참고: <가이드 제목>)` 인용이 있는지로 판정) · `api/app/graph/clarify_node.py`(고정 템플릿 답변이라 그 인용 문구를 절대 포함하지 않음)
+severity: medium
+reason: `doc_hit`는 원래 CLARIFY가 `doc_rag_node`(실제 의미 RAG, 가이드 문서를 인용할 수 있음)로 임시 배선돼 있던 13.2~13.3 시절의 신호였다. 13.4가 CLARIFY를 상한 이내에서 고정 템플릿(`clarify_node`)으로 재배선하면서, 이제 CLARIFY 항목의 answer는 그 인용 형식을 낼 수 있는 경로 자체를 안 타므로 `doc_hit`가 구조적으로 항상 false가 된다. `score_model()`의 반환 요약에서 `doc_hit`는 `gate_pass`/`result_mean` 등 어떤 판정에도 반영되지 않는 항목별 부가 필드일 뿐이라 지금 당장 어떤 게이트도 무너뜨리지 않지만, 다음에 이 스크립트로 모델 비교나 에픽 13 회고 분석을 돌리는 사람이 "CLARIFY 항목이 가이드 인용을 멈췄다"로 오독할 수 있다.
+trigger: `score_ab.py`를 다음에 손댈 때(예: 13.8 모델 A/B 채택 판단, 또는 DW-580/581/582 처리 시) — 그때 `doc_hit`를 CLARIFY 항목에서 아예 스킵하도록 고치거나, 이 지표 자체가 이제 SQL/HYBRID/doc-폴백 항목에만 의미 있다는 사실을 스크립트 주석에 명시한다.
+status: open
+
+### DW-589: 아키텍처 불변식 I12가 아직 "되묻기 cap = 클라 강제"라, 다음 스토리가 두 번째 상한을 또 만들 수 있다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 후속 코드리뷰(adversarial 렌즈) — 13.4가 DW-563을 서버 강제로 뒤집었는데 그 결정이 상위 계획문서에는 반영되지 않았다
+location: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md:390`(I12: "무상태이므로 **클라 강제** — 클라가 소유한 멀티턴 상태에서 clarify 횟수(≤2~3) 추적해 초과 시 칩 숨김/일반 검색")
+severity: medium
+reason: 13.4는 이 불변식을 의도적으로 뒤집었다 — 서버가 `context` 길이로 `clarify_turns`를 직접 계산해 상한을 강제한다(`api/app/graph/graph.py`의 `run_search`·`_clarify_step`, DW-563 resolution). 그런데 I12 본문은 그대로라, 이 불변식을 정본으로 읽는 다음 담당자(웹 칩 렌더링 스토리 DW-587, 또는 앱 Story 16.5)가 클라이언트에도 상한을 구현하면 **서버(3턴)와 클라(2~3턴)가 각자 세는 두 개의 상한**이 생긴다. 그러면 사용자는 자기가 몇 번 더 물을 수 있는지 알 수 없는 시점에 칩이 사라지고, 어느 쪽이 끊었는지 디버깅도 어렵다. 13.4 리뷰 1차에서 "구현 위치가 I12와 어긋난다"는 지적은 "이미 재검토된 결정"으로 reject됐는데, 결정이 바뀐 사실 자체가 상위 문서에 반영되지 않은 것은 그 reject가 다루지 않은 별개 사안이다(project-context.md 규칙 1의 정신 — 어긋나면 한쪽만 정본이어야 한다).
+trigger: 웹 칩 렌더링 스토리(DW-587)나 앱 Story 16.5를 착수할 때 **그 스토리 스펙을 쓰기 전에** — 그때 I12 본문을 "서버 강제(+ 클라는 서버가 준 `clarify`가 null이면 칩을 그리지 않는다)"로 정정하고 이 항목을 닫는다. 에픽 13 회고가 먼저 오면 거기서 해도 된다.
+status: open
+
+### DW-590: SM3(데모 인수) 판정이 이제 벡터 검색 장애를 못 잡고, PRD·epics의 "두 경로 시연" 문구와도 어긋난다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 후속 코드리뷰(edge-case·intent-alignment 렌즈 합류) — 13.4가 CLARIFY를 `doc_rag_node`에서 고정 템플릿으로 재배선하면서 생긴 상위 문서·게이트 정합 문제(코드는 의도대로이나 판정 기준이 여러 문서에 흩어져 어긋났다)
+location: `_bmad-output/planning-artifacts/prds/prd-bmad-encar-demo-2026-06-17/prd.md:141`(SM3 "두 경로(SQL 기반·문서 기반 RAG)를 모두 시연") · `_bmad-output/planning-artifacts/epics.md:568`("SQL 경로·문서 RAG 경로가 모두 적절한 매물카드를 반환한다") · `api/tests/test_demo_acceptance.py`(`test_sm3_pathB_returns_listings` — 이름은 listings인데 이제 `listings == []`를 단언) · `api/docs/ai-demo-queries.md`(②·③ 행만 13.4에 맞춰 갱신됨)
+severity: medium
+reason: 13.4 이후 단일턴 질의가 `doc_rag_node`(벡터 검색)에 도달하는 경로는 두 가지뿐이다 — (a) HYBRID에서 구조조건이 안 뽑혔을 때의 폴백, (b) CLARIFY 상한 초과 강제 폴백. 그래서 "의미형 질의를 던지면 문서 RAG가 매물을 준다"는 SM3 ②의 원래 시연 각본이 더는 성립하지 않는다. 세 가지가 함께 어긋나 있다: (1) PRD·epics는 여전히 옛 문구이고 갱신된 것은 `api/docs/ai-demo-queries.md`뿐이다(하위 문서만 고치면 상위가 정본 행세를 한다 — CLAUDE.md B8), (2) `test_sm3_pathB_returns_listings`는 함수 이름과 단언이 정반대라 이름만 보고 "의미형이 매물을 준다"고 오독하기 쉽다(이름 변경은 이 항목과 함께 처리한다 — 기존 열린 항목 DW-576이 같은 함수명을 참조하고 있어 지금 단독으로 바꾸면 그 참조가 끊긴다), (3) 데모 게이트가 `clarify_node`를 모킹하므로, 임베딩이 전부 NULL이 되거나 pgvector 쿼리가 깨져도 SM3는 초록이다(존재 확인≠작동 확인 — 벡터 경로의 실동작을 보는 결정론 검사가 SM3에서 사라졌다). 라이브 스모크에는 남아 있다(2026-07-31 실측: 상한 초과 강제 폴백이 실제로 매물 5건 + 가이드 문서 인용 "(참고: 패밀리카로 무난한 차종 고르기)"를 반환 — 벡터 경로 자체는 살아 있음을 확인했다). 즉 지금 깨진 것은 기능이 아니라 **판정 체계**다.
+trigger: 데모 시연 각본을 확정하기 전, 또는 DW-573/DW-576(같은 `ai-demo-queries.md`·`test_demo_acceptance.py`를 손대는 항목)를 처리하는 같은 작업에서 함께 — 그때 (1) SM3의 "문서 RAG 경로" 시연을 어느 질의로 할지(HYBRID 폴백인지 상한 초과 경로인지) 정해 PRD·epics 문구를 그에 맞추고, (2) 테스트 함수명을 실제 단언에 맞게 바꾸고 참조 3곳을 함께 옮기고, (3) 벡터 경로가 실제로 매물을 돌려주는지 보는 결정론 검사를 SM3에 되살린다.
+status: open
+
+### DW-591: 되묻기 상한의 잔여 우회(`context` 위장)를 다시 꺼내볼 트리거가 어느 열린 항목에도 없다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 후속 코드리뷰(adversarial 렌즈) — DW-563을 닫으며 잔여 한계를 닫힌 항목 본문에만 적어 열린 장부에서 사라졌다
+location: `_bmad-output/implementation-artifacts/deferred-work.md`(DW-563 resolution 본문 · DW-586) · `api/app/graph/graph.py`(`run_search`의 `clarify_turns = len(context or []) // 2`)
+severity: low
+reason: 13.4는 되묻기 상한을 서버 강제로 옮겼지만, 클라이언트가 매 요청 `context: []`로 보내면(또는 자기 질의만 담아 홀수 길이로 보내면) 서버 계산이 그대로 무력화된다. 이 사실은 DW-563의 resolution 본문과 13.4 스펙 Design Notes에 정확히 적혀 있지만, DW-563은 이제 done이라 `bmad-loop-sweep`이 훑는 열린 항목이 아니다. 대신 등재된 DW-586의 trigger는 "남용/과금 급증 신고가 들어올 때"인데, 이 우회는 과금 급증으로 나타나지 않는다 — 질의 1회는 라우트와 무관하게 정상 1회 호출이라 사용량 그래프에 아무 신호도 남기지 않는다. 결과적으로 이 잔여 gap을 다시 트리아지할 열린 항목이 하나도 없다(CLAUDE.md B8: "미룬 항목엔 언제·어디서 고칠지를 대장에 함께 적는다" 위반 형태). 지금 당장의 피해는 없다 — 서버가 결과를 강제하지 못할 뿐 사용자가 스스로 되묻기를 반복하는 것은 정상 사용이고, 무상태 아키텍처에서 이보다 강한 강제는 세션 저장소를 요구한다(13.4 Never 절).
+trigger: 세션/대화 상태를 서버가 실제로 보관하기로 결정하는 시점(진짜 세션 저장소·체크포인터 도입 논의가 열릴 때), 또는 DW-586(요청 빈도 제한)을 구현할 때 — 둘 중 먼저 오는 쪽에서 이 우회를 함께 막고 이 항목을 닫는다. 그전까지는 "알고 수용한 한계"로 열어 둔다.
+status: open
+
+### DW-592: 출시된 Flutter 앱이 `clarify`를 파싱하지 않아, 되묻기 응답이 앱에서 "빈 텍스트"로 퇴행한다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 3차 코드리뷰(verification-gap·adversarial 렌즈 합류) — 13.4는 api 계약까지가 범위라 클라이언트를 손대지 않았는데, 그 결과가 **이미 배포된 앱의 사용자 눈에 보이는 퇴행**이라는 점이 이번에 처음 지적됐다
+location: `app/lib/features/ai_search/ai_search_api.dart`(`SearchResult`에 `clarify` 필드 없음, `parseSearchResult`가 읽지도 않음) · `app/lib/features/ai_search/ai_chat_screen.dart`(`_MessageBubble` — content + listings만 렌더) · `_bmad-output/implementation-artifacts/sprint-status.yaml`(`16-5-4분기-ai-응답-되묻기-칩-앱: backlog`)
+severity: medium
+reason: 13.4 이전에는 CLARIFY가 `doc_rag_node`로 임시 배선돼 있어서, 앱에서 "패밀리카로 무난한 거" 같은 애매한 질의를 던지면 **실제 매물 카드**가 돌아왔다. 13.4가 CLARIFY를 고정 템플릿 되묻기로 재배선하면서 그 응답은 `listings: []` + `clarify: {question, chips}`가 됐다. 그런데 앱은 `clarify`를 파싱조차 하지 않으므로(repo 전체 `*.dart`에서 `clarify` 검색 결과 0건), 사용자에게는 **질문 한 줄만 뜨고 카드도 칩도 없는 화면**이 된다 — FR46의 상한이 막으려던 바로 그 막다른 느낌이 앱에서 먼저 나타난다. 웹은 이번 스토리 리뷰에서 최소한 값을 실어 나르도록 고쳤지만(DW-587), 앱은 필드 자체가 없다. DW-587은 "앱은 Story 16.5가 맡는다"는 근거로 웹만 다뤘는데, 16.5는 `backlog`라 착수 일정이 없다. 즉 api를 운영에 반영하는 순간부터 16.5가 끝날 때까지 앱 사용자에게 이 상태가 노출된다. 지금은 api가 운영에 반영되지 않아 실피해가 없다(로컬/개발만).
+trigger: **api(`encar-ai-api` 운영)에 13.4를 반영하기 직전** — 그 배포 판단과 같은 자리에서 (a) 앱에 `clarify` 파싱+칩 렌더를 먼저 넣을지, (b) 16.5를 backlog에서 끌어올릴지, (c) 앱이 따라올 때까지 api 운영 반영을 미룰지 중 하나를 고르고 이 항목을 그 결정으로 닫는다. 16.5 착수가 먼저 오면 거기서 닫아도 된다.
+status: open
+
+### DW-593: `/ai/search` 응답 객체 생성이 try/except **밖**이라, 응답 스키마 검증 오류는 CORS 헤더 없는 500이 된다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 3차 코드리뷰(adversarial·edge-case 렌즈 합류) — 13.4가 `clarify`(중첩 모델)를 추가하면서 이 기존 구조의 노출면이 넓어져 드러났다
+location: `api/app/routers/ai.py`(`search()` — 마지막 `return SearchResponse(...)` 줄이 `try/except Exception` 블록 바깥에 있다)
+severity: medium
+reason: 이 파일의 `except Exception` 주석은 왜 이 핸들러가 필요한지를 스스로 길게 설명한다 — 라우트 밖(main.py 전역 핸들러)에서 잡힌 500은 `CORSMiddleware` 바깥에서 만들어져 `Access-Control-Allow-Origin`이 빠지고, 브라우저가 진짜 500을 "CORS 차단/연결 실패"로 오인해 원인을 은폐한다. 그런데 정작 응답 객체를 만드는 마지막 줄은 그 try 밖에 있어서, `SearchResponse`(또는 이제 그 안의 `ClarifyPayload`) 검증이 실패하면 그 실패는 **정확히 그 은폐 경로로** 나간다. 지금은 도달 불가에 가깝다 — `clarify`를 만드는 곳이 고정 상수 노드 하나뿐이고 단위테스트가 그 형태를 고정한다. 도달 가능해지는 시점이 예측되는 것이 이 항목의 요점이다: 13.5/13.6이 `route`·`narrowed_by`를 추가하거나, 되묻기 문구를 LLM이 만들게 바뀌면 그 순간 wire 검증이 실패할 수 있는 값이 생긴다. `listings`도 같은 노출면을 13.4 이전부터 갖고 있었으므로 이 스토리가 만든 결함은 아니다(그래서 이번에 고치지 않았다 — 범위 밖 구조 변경).
+trigger: `/ai/search` 응답 스키마에 필드를 다음에 추가할 때(13.5 `route`·13.6 `narrowed_by`가 유력) — 그 스토리에서 `return SearchResponse(...)`를 try 안으로 옮기거나 응답 조립 전에 검증을 한 번 태우고, 일부러 깨진 값을 넣어 500 응답에 CORS 헤더가 붙는지 실측한 뒤 이 항목을 닫는다.
+status: open
+
+### DW-594: 되묻기 칩의 세 축이 UX 정본의 데모 워크스루(인원·예산·연료 / "7인승")와 하나 어긋난다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 3차 코드리뷰(adversarial 렌즈) — 되묻기 문구는 EXPERIENCE.md Voice 표와 글자 그대로 일치시켰는데, 칩 값은 대조되지 않은 채 정해졌다
+location: `api/app/graph/clarify_node.py`(`_CLARIFY_CHIPS = ["3천만원 이하", "SUV", "전기차"]` — 가격·차종·연료) · `_bmad-output/planning-artifacts/ux-designs/ux-bmad-encar-demo-2026-07-12/EXPERIENCE.md:130`("되묻기 칩(**인원**·예산·연료) — 지수가 "**7인승**" 칩 탭 → petrol 선택 상태 → 좁혀진 결과")
+severity: low
+reason: 세 축 중 둘(예산≈가격, 연료)은 맞고 하나(인원 → 차종)가 다르다. 기능 결함은 아니다 — 칩은 눌러도 "그 문자열을 다음 질의로 보내는" 것이 전부라 어느 축이든 동작은 같고, 13.4 스펙 Tasks가 이 세 값을 명시적으로 지정했으므로 구현은 스펙대로다. 문제는 **정본이 둘로 갈렸다**는 것이다: EXPERIENCE.md의 데모 워크스루는 "7인승" 칩을 누르는 장면을 각본으로 갖고 있는데 실제 서버는 그 칩을 절대 보내지 않는다. 칩 UI를 만들 사람(웹=DW-587, 앱=Story 16.5)이 UX 문서를 읽고 인원 칩을 전제로 화면을 짜거나, 데모 시연자가 각본대로 눌러보려다 없는 칩을 찾게 된다. 어느 쪽이 옳은지는 제품 판단이라 이번 리뷰가 정하지 않았다(단위테스트도 의도적으로 칩 **내용**은 고정하지 않는다 — `test_clarify_node.py` 주석 참조).
+trigger: 데모 시연 각본을 확정할 때, 또는 칩 렌더링 스토리(DW-587 / Story 16.5)의 스펙을 쓸 때 — 둘 중 먼저 오는 쪽에서 "인원 축을 넣을지, EXPERIENCE.md를 차종으로 고칠지"를 정하고 한쪽으로 통일한 뒤 이 항목을 닫는다. DW-590(데모 판정 정합)과 같은 자리에서 처리하면 문서를 한 번만 열어도 된다.
+status: open
+
+### DW-595: 오프라인 A/B 러너의 멀티턴 항목이 되묻기 상한과 딱 1턴 차이라, 4턴짜리 항목을 추가하면 조용히 거동이 바뀐다
+
+origin: `spec-13-4-조건-좁혀-되묻기-clarify.md` 3차 코드리뷰(edge-case 렌즈) — 13.4가 도입한 상한이 오프라인 평가 스크립트의 기존 데이터와 맞닿는 지점
+location: `api/scripts/run_phase_b.py`(`_run_multiturn` — 턴마다 user+assistant 2개를 무조건 누적, 클라이언트들과 달리 12항목 절단도 없음) · `api/docs/ai-ab-test-queryset.json`(가장 긴 멀티턴 항목 M1·M2 = 3턴) · `api/app/graph/graph.py`(`_CLARIFY_TURN_CAP = 3`)
+severity: low
+reason: 3턴짜리 항목의 마지막 턴에서 `clarify_turns`는 2다 — 상한 3에 정확히 1 모자란다. 즉 지금은 멀티턴 항목 전부가 상한에 걸리지 않아 13.4 이전과 같은 경로를 탄다. 하지만 (a) queryset에 4턴짜리 항목을 하나 추가하거나, (b) 상한을 2로 낮추면(FR46 문구 "최대 2~3턴"이 2도 허용한다), 그 항목의 마지막 턴은 되묻기 대신 `doc_rag_node` 강제 폴백을 타게 된다 — **queryset을 바꾼 사람은 라우팅을 바꾼 줄 모르고**, 이전 baseline과의 비교는 겉보기에 그대로 성립한다. 어떤 게이트도 이 여유를 검사하지 않고 어디에도 적혀 있지 않다. 지금 깨진 것은 없고, 다음에 이 데이터를 늘릴 때 밟는 함정이다.
+trigger: `ai-ab-test-queryset.json`에 멀티턴 항목을 추가·수정할 때, 또는 다음 Phase B 실행(13.8 모델 A/B 채택 판단이 유력) — 그때 `run_phase_b.py`에 "멀티턴 항목의 턴 수가 `_CLARIFY_TURN_CAP` 미만인지" 확인하는 단언이나 주석을 넣고 이 항목을 닫는다. DW-588(같은 A/B 도구의 `doc_hit` 드리프트)과 같은 파일군이라 함께 처리하면 된다.
+status: open
+
+### DW-596: Follow-up review still recommended for 13-4-조건-좁혀-되묻기-clarify after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-4-조건-좁혀-되묻기-clarify.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-034209-7126; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
