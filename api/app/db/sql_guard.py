@@ -34,6 +34,10 @@ ALLOWED_TABLES = {"listings"}
 # accident_status·is_single_owner·is_non_smoker는 0017_listings_trust_attributes.sql(Story 10.1)
 # 이 추가한 신뢰속성 3컬럼 — listings 밖 컬럼(예: storage_path)은 여기 넣지 않는다
 # (conventions.md §4.1 경고 — FR11이 그 경로에서 무너진다).
+# 하이브리드(SQL+벡터) 검색의 `embedding`·`vector`도 여기 넣지 않는다 — 위치와 무관하게
+# 어디서나 통과해 버리기 때문이다. 그 둘은 validate_select_sql() 안의 벡터절 정규식이
+# `ORDER BY embedding <=> %s::vector` 라는 정확한 모양·위치에서만 통과시킨다(13.3이 참고할
+# 자리는 그 정규식 옆의 주석이다 — Story 13.1).
 ALLOWED_COLUMNS = {
     "id", "manufacturer", "model", "year", "price", "mileage", "region",
     "body_type", "color", "fuel", "transmission", "displacement", "seats",
@@ -93,7 +97,56 @@ def validate_select_sql(sql: str) -> str:
     # 수행한다 — 'DROP'·'update' 같은 정상 값(model·description 자유텍스트)이 위험 키워드로
     # 오탐돼 차단되지 않게 하기 위함(코드리뷰 4.3). status='on_sale' 검사만은 리터럴이
     # 필요하므로 원본(cleaned)을 그대로 쓴다.
+    # 달러 인용($$...$$·$tag$...$tag$)은 Postgres의 또 다른 문자열 리터럴 문법이다. 아래
+    # no_strings는 작은따옴표만 지우므로, 달러 인용을 허용하면 그 안의 내용이 "리터럴이 아닌
+    # 본문"으로 남아 LIMIT·OFFSET 숫자 매처를 가로챈다(실측: `description = $$limit 3$$ LIMIT 100`
+    # → 리터럴의 3이 먼저 매치돼 MAX_LIMIT 우회, `description = $$limit 3$$` → LIMIT 절이
+    # 아예 없는 무제한 SELECT). 작은따옴표 리터럴에 대해 3차 리뷰 패스가 막은 것과 같은
+    # 구멍이다. psycopg 자리표시자는 %s 스타일이라 정상 경로에 '$'가 등장할 이유가 없으므로,
+    # 파싱 규칙을 늘리는 대신 '$' 자체를 fail-closed로 거부한다(review pass 5).
+    if "$" in cleaned:
+        raise SqlGuardError(
+            "dollar_quote_not_allowed",
+            "달러 인용($$) 문법은 허용되지 않습니다. 문자열은 작은따옴표로 작성해 주세요.",
+        )
+
     no_strings = re.sub(r"'[^']*'", " ", cleaned)
+
+    # 하이브리드 벡터 절 — 위치-스코프 통째 제거(13.1, 1차 리뷰 패스 수정. Spec Change Log 참조).
+    #   `ORDER BY embedding <=> <자리표시자>::vector` 절은 **코드가 붙인다, LLM이 아니다**(I4) —
+    #   13.3(하이브리드 노드)이 이 자리를 참고한다. 정확히 이 모양·이 위치에서만 embedding·
+    #   vector·%s/%(name)s 자리표시자를 통째로 소비해 지운다(문자열 리터럴 제거와 같은 자리·
+    #   같은 스타일). `embedding`/`vector`는 ALLOWED_COLUMNS/_SQL_KEYWORDS에 넣지 않는다 —
+    #   그러면 위치와 무관하게 어디서나 통과해 rows_to_cards()의 무방비 숫자 슬롯에서 크래시
+    #   표면을 새로 연다(1차 구현이 이렇게 했다가 리뷰에서 되돌려짐). 이 매치 밖의 embedding·
+    #   vector(예: SELECT 목록)는 여전히 미화이트리스트 식별자로 forbidden_column 거부된다.
+    # 자리표시자(%s·%(name)s)는 위 정규식이 벡터절 "안"에서만 소비한다 — 벡터절 밖의 자리
+    # 표시자를 별도로 지우는 "방어적 이중 스트립" 스텝은 두지 않는다(3차 리뷰 패스 수정).
+    # 그런 스텝은 방어가 아니라 가드를 여는 스텝이었다: 식별자 스캔이 보는 본문에서 자리
+    # 표시자를 지우면 그 자리표시자가 미화이트리스트 식별자로 안 잡히고 통과해 버린다.
+    # 벡터절 밖의 `%s`/`%(name)s`(예: `WHERE model = %s`)는 여전히 forbidden_column으로
+    # 거부돼야 한다 — run_select()가 params 없이 호출되므로, 통과시키면 psycopg 문법
+    # 오류로 400이 500이 된다(Spec Change Log 3차 패스, Design Notes 참조).
+    # 식별자(order by embedding·vector)는 대소문자 무관하게 인식하되, 자리표시자(%s·%(name)s)는
+    # 대소문자를 구분한다(review pass 4 수정) — 전역 IGNORECASE였을 때 `%S`(대문자)도 매치돼
+    # 벡터절이 통째로 지워졌는데, `%S`는 psycopg가 인식하는 자리표시자가 아니라 절대 바인딩되지
+    # 않는다. (?i:...) 로컬 플래그로 식별자 부분만 대소문자 무시를 유지한다.
+    # 절의 "끝"도 고정한다(review pass 5). 끝을 안 잠그면 매치 뒤에 뭐가 붙든 그 절이 통째로
+    # 지워져, 절 모양이 아니라 "접두사"만 검사하는 셈이 된다 — 실측으로 세 형태가 통과했다:
+    #   `... <=> %s::vector DESC`        → <=>는 거리 연산자라 DESC는 "가장 안 닮은 순"이 된다
+    #                                      (가드는 통과시키고 결과만 조용히 뒤집힌다)
+    #   `... <=> %s::vector, price`      → 검증된 적 없는 2차 정렬키가 딸려 들어온다
+    #   같은 절 2번 반복                  → ORDER BY가 둘인 실행 불가 SQL이 통과해 psycopg
+    #                                      문법 오류 → 400이 500이 된다
+    # 그래서 벡터절 뒤에는 문장 끝·LIMIT·OFFSET만 올 수 있게 lookahead로 못박는다. 여기 안
+    # 걸리는 변형(괄호·복합 정렬키 등)은 지워지지 않으므로 embedding/vector가 미화이트리스트
+    # 식별자로 남아 forbidden_column으로 거부된다 — 넓히는 쪽이 아니라 막는 쪽으로 실패한다.
+    no_vector = re.sub(
+        r"(?i:order\s+by\s+embedding)\s*<=>\s*(?:%s|%\(\w+\)s)\s*::\s*(?i:vector)"
+        r"(?=\s*$|\s+(?i:limit|offset)\b)",
+        " ",
+        no_strings,
+    )
 
     # ── 2) 주석 금지(리터럴 제거 후 — 값 안의 '--' 등 오탐 방지) ────
     if "--" in no_strings or "/*" in no_strings or "*/" in no_strings:
@@ -143,8 +196,9 @@ def validate_select_sql(sql: str) -> str:
         if table.lower() not in ALLOWED_TABLES:
             raise SqlGuardError("forbidden_table", "허용되지 않는 테이블을 조회하고 있습니다.")
 
-    # 영문 식별자만 추출해 컬럼 화이트리스트 검사.
-    words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", no_strings.lower()))
+    # 영문 식별자만 추출해 컬럼 화이트리스트 검사. 하이브리드 벡터절이 이미 지워진 no_vector를
+    # 써서, 그 절 안의 embedding/vector/자리표시자만 위치-스코프로 통과시킨다(위 주석 참조).
+    words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", no_vector.lower()))
     unknown = words - _SQL_KEYWORDS - ALLOWED_TABLES - ALLOWED_COLUMNS
     if unknown:
         # 화이트리스트에 없는 식별자(환각 컬럼·함수 등) → 거부(fail-closed).
@@ -165,7 +219,12 @@ def validate_select_sql(sql: str) -> str:
     # ── 5) OFFSET 상한 검사 ────────────────────────────────────────
     # OFFSET은 "앞에서 N건 건너뛰기". 상한이 없으면 OFFSET 999999처럼 DB를 통째로 훑는
     # 우회 조회가 통과한다. 부호([-+]?)까지 잡아 음수/과도한 값을 모두 거부한다(MAX_LIMIT와 동일 정책).
-    offset_match = re.search(r"\boffset\s+([-+]?\d+)", cleaned, re.IGNORECASE)
+    # no_strings(리터럴 제거본)로 검사한다 — cleaned로 검사하면 description 등 자유텍스트
+    # 리터럴 안의 우연한 "offset 999999" 같은 숫자가 실제 OFFSET절보다 먼저 매치돼 이
+    # 검사를 우회시킨다(3차 리뷰 패스 수정 — limit_malformed 분기에만 적용됐던 규칙을
+    # 짝이 되는 숫자 매처에도 동일 적용). 반환값(normalized)은 계속 cleaned 기반이다
+    # (리터럴이 지워진 SQL을 실행하면 안 되므로).
+    offset_match = re.search(r"\boffset\s+([-+]?\d+)", no_strings, re.IGNORECASE)
     if offset_match:
         off = int(offset_match.group(1))
         if off < 0 or off > MAX_OFFSET:
@@ -177,7 +236,9 @@ def validate_select_sql(sql: str) -> str:
     # ── 6) LIMIT 검사·주입 ─────────────────────────────────────────
     # 부호([-+]?)까지 함께 잡는다. 안 그러면 `LIMIT -1`이 "LIMIT 없음"으로 오인돼
     #   `LIMIT -1 LIMIT 5`라는 실행 불가 SQL이 만들어진다(코드리뷰 후속 버그). 음수·0은 거부.
-    limit_match = re.search(r"\blimit\s+([-+]?\d+)", cleaned, re.IGNORECASE)
+    # no_strings로 검사 — 위 OFFSET과 동일 이유(리터럴 속 "limit 3" 같은 숫자가 먼저 매치돼
+    # MAX_LIMIT 상한 검사를 우회하는 것을 막는다, 3차 리뷰 패스 수정).
+    limit_match = re.search(r"\blimit\s+([-+]?\d+)", no_strings, re.IGNORECASE)
     if limit_match:
         n = int(limit_match.group(1))
         if n <= 0:
@@ -191,6 +252,18 @@ def validate_select_sql(sql: str) -> str:
                 f"한 번에 조회할 수 있는 매물은 최대 {MAX_LIMIT}건입니다.",
             )
         normalized = cleaned
+    elif re.search(r"\blimit\b", no_strings, re.IGNORECASE):
+        # no_strings(문자열 리터럴 이미 제거됨)로 검사 — cleaned로 검사하면 description 등
+        # 자유텍스트 리터럴 안의 우연한 "limit" 단어(예: 'no limit here')가 이 분기를 잘못
+        # 태워 정상 쿼리를 limit_malformed로 오탐 거부한다(코드리뷰 패치).
+        # LIMIT 키워드는 있는데 위 숫자 패턴에 안 걸리는 형태(예: `LIMIT (10)`) — 조용히
+        # 뒤에 LIMIT 5를 이어붙이면 `LIMIT (10) LIMIT 5`라는 이중 LIMIT의 깨진 SQL이 실행
+        # 단계에서야 터진다(DW-315). 형식 오류로 명시 거부한다("값은 잡았는데 0 이하"인
+        # limit_invalid와는 원인이 달라 코드를 분리한다 — Design Notes 참조).
+        raise SqlGuardError(
+            "limit_malformed",
+            "LIMIT 형식을 인식할 수 없습니다. 정수 리터럴(예: LIMIT 10)로 작성해 주세요.",
+        )
     else:
         # LIMIT 없으면 끝에 append — append는 결정론적으로 안전(WHERE 변형 위험 없음).
         normalized = f"{cleaned} LIMIT {DEFAULT_LIMIT}"

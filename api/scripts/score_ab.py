@@ -10,10 +10,17 @@
 순수 함수(build_golden_sql·jaccard·f1·score_path_a·lexicographic_winner)는 test_ab_scoring.py가
   라이브 API 없이 단위 검증한다. DB 조회(골든 실행)는 app.db.readonly.run_select(ai_readonly)를 쓴다.
 
-실행:  api/ 에서  .venv/Scripts/python.exe scripts/score_ab.py \
+실행(2파일 — A/B 비교, 사전식 승부·회귀 게이트 포함):
+  api/ 에서  .venv/Scripts/python.exe scripts/score_ab.py \
           --queryset docs/ai-ab-test-queryset.json \
           --raw docs/ab-eval-raw-gemini-3.1-flash-lite.json docs/ab-eval-raw-gemini-2.5-flash-lite.json \
           --out docs/ab-eval-report.json
+
+실행(1파일 — baseline 단독 기록, A/B 비교·회귀 게이트 없음. G2 baseline·13.1):
+  api/ 에서  .venv/Scripts/python.exe scripts/score_ab.py \
+          --queryset docs/ai-ab-test-queryset.json \
+          --raw docs/g2-baseline-partial.json \
+          --out docs/g2-baseline-report.json
 """
 
 from __future__ import annotations
@@ -245,6 +252,10 @@ def lexicographic_winner(sa: dict, sb: dict) -> dict:
 
     입력 summary 키: name, result_mean, routing_correct, flaky_n, cost_usd, latency_ms_mean,
       gate_pass(bool). 게이트 탈락 모델은 자동 패배. 동률(임계 미만)이면 다음 기준으로.
+    선택 키(review pass 4): flaky_measured·tokens_measured(bool, 기본 True) — False면 그
+      축(③flaky·④비용)을 승부에서 아예 건너뛴다. 측정 안 한 축을 동률·승리로 잘못 읽지
+      않기 위함(예: run_phase_b.py의 N=1 러너는 flaky_n이 구조적으로 항상 0, tokens는
+      하드코딩 0이라 두 값 다 "측정"이 아니라 "안 잼"이다).
     """
     a, b = sa["name"], sb["name"]
     # 0) 게이트
@@ -266,12 +277,20 @@ def lexicographic_winner(sa: dict, sb: dict) -> dict:
         return {"winner": a if dr > 0 else b,
                 "reason": f"라우팅 정답 {sa['routing_correct']} vs {sb['routing_correct']}",
                 "tier": "routing"}
-    # ③ flaky (낮을수록 좋음)
-    if sa["flaky_n"] != sb["flaky_n"]:
+    # ③ flaky (낮을수록 좋음) — 양쪽 다 실제로 N>1 반복 실행돼 측정됐을 때만 이 축으로 승부한다.
+    # run_phase_b.py(G2 baseline 러너)는 N=1이라 flaky_n이 구조적으로 항상 0이다 — 측정 안 한
+    # 축을 "완벽하다"로 읽으면 그 baseline이 진짜 N=3으로 측정된 상대를 자동으로 이긴다
+    # (review pass 4). flaky_measured 키가 없는 구(旧) summary는 기본 True(기존 2파일 모드
+    # 회귀 없음 — 그쪽은 실제로 N회 반복 측정한 raw를 쓴다는 전제).
+    flaky_measured = sa.get("flaky_measured", True) and sb.get("flaky_measured", True)
+    if flaky_measured and sa["flaky_n"] != sb["flaky_n"]:
         return {"winner": a if sa["flaky_n"] < sb["flaky_n"] else b,
                 "reason": f"flaky {sa['flaky_n']} vs {sb['flaky_n']}", "tier": "flaky"}
-    # ④ 비용 (낮을수록 좋음)
-    if abs(sa["cost_usd"] - sb["cost_usd"]) > 1e-9:
+    # ④ 비용 (낮을수록 좋음) — 토큰이 실측이 아니면(run_phase_b.py의 하드코딩 0) 이 축도 건너뛴다.
+    # 0.0 비용은 "가장 쌈"으로 항상 이기거나, 반대로 우연히 상대도 0이면 조용히 묻힌다 —
+    # 둘 다 조작된 결과다(review pass 4).
+    tokens_measured = sa.get("tokens_measured", True) and sb.get("tokens_measured", True)
+    if tokens_measured and abs(sa["cost_usd"] - sb["cost_usd"]) > 1e-9:
         return {"winner": a if sa["cost_usd"] < sb["cost_usd"] else b,
                 "reason": f"비용 ${sa['cost_usd']:.4f} vs ${sb['cost_usd']:.4f}", "tier": "cost"}
     # ⑤ 지연 (낮을수록 좋음)
@@ -295,6 +314,8 @@ def score_model(queryset: dict, raw: dict) -> dict:
     routing_correct = 0
     routing_total = 0
     flaky_n = 0
+    flaky_measured = False  # N>1로 실제 반복 실행된 item이 하나라도 있어야 True(review pass 4)
+    errored_n = 0
     contamination = 0
     soft_obs = 0
     deadend = 0
@@ -306,13 +327,29 @@ def score_model(queryset: dict, raw: dict) -> dict:
         if not item:
             continue
         gray = item.get("category") == "gray"
-        # N회 실행 중 대표(첫 실행) + flaky 판정
-        rep = runs[0]
-        sigs = {(r["route_last"], tuple(r["ids_last"])) for r in runs}
+
+        # 429 등 라이브 실패로 `{"error": ...}`만 남은 run은 채점에서 제외한다(review pass 4 —
+        # 이전엔 `r["route_last"]`를 무조건 인덱싱해 이 run이 하나만 섞여도 score_model 전체가
+        # KeyError로 죽어, 이미 정상 캡처된 다른 항목까지 채점 자체가 불가능했다. 이건 정확히
+        # DW-554가 우려하는 44개 전량 실행 중 일부 429 시나리오다).
+        usable_runs = [r for r in runs if "error" not in r]
+        if not usable_runs:
+            errored_n += 1
+            per_item.append({
+                "id": rid, "category": item.get("category"), "kind": item.get("kind"),
+                "error": (runs[0].get("error") if runs else "no runs recorded"),
+            })
+            continue
+
+        # N회 실행 중 대표(첫 실행) + flaky 판정 — usable_runs만 본다(에러 run은 서명에서 제외).
+        rep = usable_runs[0]
+        if len(usable_runs) > 1:
+            flaky_measured = True
+        sigs = {(r["route_last"], tuple(r["ids_last"])) for r in usable_runs}
         is_flaky = len(sigs) > 1
         if is_flaky:
             flaky_n += 1
-        for r in runs:
+        for r in usable_runs:
             total_in += r.get("tokens_in", 0)
             total_out += r.get("tokens_out", 0)
             latencies.append(r.get("latency_ms", 0.0))
@@ -398,6 +435,23 @@ def score_model(queryset: dict, raw: dict) -> dict:
     cost = total_in / 1e6 * pin + total_out / 1e6 * pout
     result_mean = sum(result_scores_clean_A) / len(result_scores_clean_A) if result_scores_clean_A else 0.0
 
+    # tokens_measured는 run 딕셔너리의 "tokens_measured" 키가 아니라 실측 합계에서 직접
+    # 도출한다(review pass 4 재수정). 커밋된 g2-baseline-partial.json은 이 플래그가 생기기
+    # 전에 캡처돼 그 키 자체가 없다 — 키 부재를 "True"로 기본 처리하면(구 버전) 바로 그
+    # 파일에서 $0.0000 비용이 실측처럼 cost 티어를 이겨버린다(코디네이터 실측 확인). 대신
+    # flaky_measured와 같은 방식으로 데이터에서 직접 판단한다: 채점된 run 전체의 토큰
+    # 합계가 0이면 "측정 안 함"이다 — 신규·구버전 raw 모두에 옳고, 앞으로 러너가 이 플래그를
+    # 깜빡 안 찍어도 깨지지 않는다.
+    tokens_measured = (total_in + total_out) > 0
+
+    # 커버리지(review pass 4) — "몇 건을 실제로 채점했나"가 summary에 안 남으면, 44개 중 3개만
+    # 캡처된 부분 결과가 완전한 baseline처럼 보인다(result_mean=1.0·gate PASS인데 41개는 아예
+    # 실행된 적이 없다는 사실이 어디에도 안 남는 것 — 실제로 커밋된 g2-baseline-partial.json이
+    # 이 상태였다). queryset 전체 대비 채점된/에러난/아예 캡처 안 된(raw에 없는) id를 명시한다.
+    queryset_total = len(items)
+    scored_n = len(per_item) - errored_n
+    missing_ids = sorted(set(items.keys()) - set(raw["results"].keys()))
+
     return {
         "name": model,
         "result_mean": result_mean,
@@ -405,14 +459,30 @@ def score_model(queryset: dict, raw: dict) -> dict:
         "routing_correct": routing_correct,
         "routing_total": routing_total,
         "flaky_n": flaky_n,
+        "flaky_measured": flaky_measured,
         "contamination": contamination,
         "soft_obs": soft_obs,
         "deadend": deadend,
-        "gate_pass": (contamination == 0 and deadend == 0),
+        # 게이트는 "위반이 없다"가 아니라 "위반 없이 실제로 측정됐다"여야 한다(review pass 5).
+        # 전엔 오염·데드엔드만 봤는데, 그 둘은 채점된 run이 하나도 없으면 구조적으로 0이다 —
+        # 실측: 44건 전부 429로 실패한 캡처(errored_n=44·scored_n=0)와 아예 빈 캡처가 둘 다
+        # gate_pass=True로 나왔다. 에픽 G2 게이트("baseline 이하면 에픽 미종료")가 그 값을
+        # 읽으므로, 측정이 없는 PASS는 게이트를 통째로 무력화한다.
+        "gate_pass": (contamination == 0 and deadend == 0 and errored_n == 0 and scored_n > 0),
         "tokens_in": total_in,
         "tokens_out": total_out,
+        "tokens_measured": tokens_measured,
         "cost_usd": cost,
         "latency_ms_mean": sum(latencies) / len(latencies) if latencies else 0.0,
+        "errored_n": errored_n,
+        "coverage": {
+            "queryset_total": queryset_total,
+            "scored_n": scored_n,
+            "errored_n": errored_n,
+            "missing_n": len(missing_ids),
+            "missing_ids": missing_ids,
+        },
+        "is_partial": scored_n < queryset_total,
         "per_item": per_item,
     }
 
@@ -425,13 +495,53 @@ def main() -> None:
         pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--queryset", default="docs/ai-ab-test-queryset.json")
-    ap.add_argument("--raw", nargs=2, required=True, help="raw JSON 2개 (베이스라인 먼저)")
+    ap.add_argument(
+        "--raw", nargs="+", required=True,
+        help="raw JSON 1개(베이스라인 단독, G2 baseline 기록용) 또는 2개(베이스라인 먼저 + 후보, A/B 비교)",
+    )
     ap.add_argument("--out", default="docs/ab-eval-report.json")
     args = ap.parse_args()
+
+    if len(args.raw) not in (1, 2):
+        ap.error("--raw는 1개(베이스라인 단독) 또는 2개(베이스라인 후보)만 허용합니다.")
 
     queryset = json.loads(Path(args.queryset).read_text(encoding="utf-8"))
     raws = [json.loads(Path(p).read_text(encoding="utf-8")) for p in args.raw]
     summaries = [score_model(queryset, r) for r in raws]
+
+    if len(summaries) == 1:
+        # 1개 모드 — A/B 비교(사전식 승부·회귀 게이트) 없이 그 raw 1개의 채점 요약만 기록한다.
+        # 키는 "baseline_summary"다. 2개 모드가 이미 "baseline"을 모델명 문자열로 쓰고 있어(아래),
+        # 같은 키를 요약 dict로 재사용하면 같은 필드명이 모드마다 타입이 바뀌는 API가 된다
+        # (13.8이 이 파일을 소비할 때 어느 모드인지 모르고 깨질 수 있음 — Spec Change Log 참조).
+        baseline_only = summaries[0]
+        report = {
+            "baseline_summary": {k: v for k, v in baseline_only.items() if k != "per_item"},
+            "detail": {baseline_only["name"]: baseline_only["per_item"]},
+        }
+        Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("=" * 70)
+        print(f"[{baseline_only['name']}] (baseline 단독 모드 — A/B 비교 없음)")
+        # 커버리지는 콘솔에도 찍는다(review pass 5). JSON에만 남기면 사람이 실제로 보는 화면엔
+        # "게이트: PASS"만 뜨고, 3/44짜리 부분 캡처가 완전한 baseline로 승격된다 — 커버리지를
+        # 기록한 이유 자체가 그걸 막는 것이었다.
+        cov = baseline_only["coverage"]
+        print(
+            f"  커버리지: {cov['scored_n']}/{cov['queryset_total']} 채점"
+            f"(실패 {cov['errored_n']} · 미캡처 {cov['missing_n']})"
+            f"{'  ⚠ 부분 캡처' if baseline_only['is_partial'] else ''}"
+        )
+        print(f"  결과집합정확도(clean A, n={baseline_only['result_n']}): {baseline_only['result_mean']:.3f}")
+        print(f"  라우팅: {baseline_only['routing_correct']}/{baseline_only['routing_total']}")
+        print(
+            f"  flaky: {baseline_only['flaky_n']} | 오염(하드): {baseline_only['contamination']} | "
+            f"소프트관찰: {baseline_only['soft_obs']} | dead-end: {baseline_only['deadend']} | "
+            f"게이트: {'PASS' if baseline_only['gate_pass'] else 'FAIL'}"
+        )
+        print(f"리포트: {args.out}")
+        print("=" * 70)
+        return
+
     baseline, candidate = summaries[0], summaries[1]
 
     verdict = lexicographic_winner(baseline, candidate)

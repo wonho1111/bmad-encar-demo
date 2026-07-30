@@ -41,6 +41,10 @@ def test_route_A_calls_sql_only(monkeypatch):
     out = gmod.run_search("3천만원 이하 SUV")
     assert calls["sql"] == 1 and calls["doc"] == 0 and calls["guard"] == 0
     assert out["answer"] == "SQL 결과" and out["listings"] == ["s1"]
+    # run_phase_b.py→score_ab.py가 routing_correct/gate_pass 채점에 그대로 쓰는 값이라
+    # 실제 그래프 배선을 타면서 "A"가 채워지는지 못박는다(코드리뷰 패치 — 이전엔 미검증이라
+    # route를 항상 빈 문자열로 망가뜨려도 이 테스트들이 전부 통과했었다).
+    assert out["route"] == "A"
 
 
 def test_route_B_calls_doc_only(monkeypatch):
@@ -48,6 +52,7 @@ def test_route_B_calls_doc_only(monkeypatch):
     out = gmod.run_search("패밀리카로 무난한 거")
     assert calls["doc"] == 1 and calls["sql"] == 0 and calls["guard"] == 0
     assert out["answer"] == "DOC 결과" and out["listings"] == ["d1"]
+    assert out["route"] == "B"
 
 
 def test_route_C_calls_guard_and_returns_empty_listings(monkeypatch):
@@ -56,6 +61,7 @@ def test_route_C_calls_guard_and_returns_empty_listings(monkeypatch):
     assert calls["guard"] == 1 and calls["sql"] == 0 and calls["doc"] == 0
     assert out["listings"] == []  # 매물 무관 → 빈 목록(FR16)
     assert "중고차" in out["answer"]  # 검색 유도 문구
+    assert out["route"] == "C"
 
 
 def test_unexpected_route_falls_back_to_guard(monkeypatch):
@@ -64,6 +70,11 @@ def test_unexpected_route_falls_back_to_guard(monkeypatch):
     out = gmod.run_search("뭐라도")
     assert calls["guard"] == 1
     assert out["listings"] == []
+    # ⚠️ 실제 동작 그대로 고정: _route_decision은 "어느 노드로 갈지"만 C로 보정하고
+    # state["route"] 자체는 원래 라우터 원시값("Z")을 그대로 들고 있다(정규화하지 않음).
+    # 즉 run_phase_b.py가 캡처하는 route는 이 raw 값이다 — routing_correct 채점 시
+    # 라우터가 A/B/C 밖의 값을 내면 "Z" 그대로 채점 대상이 된다는 뜻(별도 개선은 범위 밖).
+    assert out["route"] == "Z"
 
 
 def test_sql_guard_error_propagates_out_of_graph(monkeypatch):

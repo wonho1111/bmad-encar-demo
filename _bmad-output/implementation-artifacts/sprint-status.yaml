@@ -177,7 +177,7 @@ development_status:
 
   # --- Epic 13: AI 검색 RAG 고도화 ---
   epic-13: backlog
-  13-1-sql-guard-하이브리드-정비-g2-baseline: backlog
+  13-1-sql-guard-하이브리드-정비-g2-baseline: done
   13-2-4분기-라우팅: backlog
   13-3-하이브리드-검색-sql-벡터: backlog
   13-4-조건-좁혀-되묻기-clarify: backlog

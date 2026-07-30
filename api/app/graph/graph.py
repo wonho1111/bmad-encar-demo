@@ -113,13 +113,17 @@ COMPILED_GRAPH = _build_graph()
 
 
 def run_search(query: str, context: list | None = None) -> dict:
-    """그래프를 1회 실행해 {answer, listings[]}를 반환한다.
+    """그래프를 1회 실행해 {answer, listings[], route}를 반환한다.
 
     멀티턴(FR18): 그래프 호출 "앞단"에서 contextualize_query(query, context)로 직전 대화를
       흡수한 독립 질의를 만든 뒤, 그 질의를 그래프에 흘린다. 맥락이 없으면(None·[]) 원 질의가
       그대로 들어가 4.5까지와 동일하게 동작한다(회귀 0). 맥락은 인자로만 흐르고 저장하지 않는다(무상태).
     /ai/search가 sql_rag_node 직접 호출 대신 이 함수를 부른다.
     경로 A에서 SqlGuardError가 나면 여기서 잡지 않고 호출자(/ai/search)로 전파한다(함정 #1).
+
+    "route"는 13.1이 추가한 부가 키다(G2 baseline 러너 `scripts/run_phase_b.py`가 라우팅
+      채점에 씀) — 기존 소비처(/ai/search·test_graph.py 등)는 answer/listings만 꺼내 쓰므로
+      추가 키가 있어도 회귀 없다(additive).
     """
     effective_query = contextualize_query(query, context)  # 단일턴이면 query 그대로 반환
     # 방어선 — 재작성 결과가 (예기치 못하게) 공백이면 원 질의로 되돌린다. 공개 경로는
@@ -128,4 +132,8 @@ def run_search(query: str, context: list | None = None) -> dict:
     if not (effective_query or "").strip():
         effective_query = query
     final_state = COMPILED_GRAPH.invoke({"query": effective_query})
-    return {"answer": final_state["answer"], "listings": final_state["listings"]}
+    return {
+        "answer": final_state["answer"],
+        "listings": final_state["listings"],
+        "route": final_state.get("route", ""),
+    }

@@ -670,15 +670,32 @@ status: open
 ### DW-315: [구 #15] LIMIT 비정수형 처리 미흡
 
 origin: 장부 통합 이관(구 docs/tech-debt.md #15)
-location: `api/app/db/sql_guard.py:129`
+location: `api/app/db/sql_guard.py:196-224`(LIMIT 검사·주입 블록 — 벡터절 화이트리스트 스텝이
+  앞에 끼어들며 129행대에서 이 자리로 이동)
 severity: low
 reason: temp=0라 발생 가능성 낮고 대부분 fail-safe이다.
-status: open
+status: done 2026-07-30
 
-- **위치:** `api/app/db/sql_guard.py:129`
+- **위치:** `api/app/db/sql_guard.py:196-224`
 - **내용:** `\blimit\s+(\d+)`가 `LIMIT 0`(오해성 0건)·`LIMIT -5`·`LIMIT (10)`·`OFFSET`-only를 정상 인식 못 함. temp=0라 발생 가능성 낮고 대부분 fail-safe.
 - **해소:** LIMIT 정규화/하한 검증 강화.
 - 📅 **예약됨: `13-1-sql-guard-하이브리드-정비-g2-baseline`** (backlog).
+- **2026-07-30 갱신(`13-1-sql-guard-하이브리드-정비-g2-baseline` 구현) — 4증상 전부 확인 완료:**
+  - `LIMIT 0`·`LIMIT -5`(부호 포함 음수·0): 이미 이전 코드리뷰가 `\blimit\s+([-+]?\d+)`로 정규식에
+    부호를 넣어 해소해 뒀었다(`limit_invalid`, 이 DW가 그 갱신을 놓치고 있었다 — 지금 확인·기록).
+  - `LIMIT (10)`(숫자가 바로 안 붙는 형태): 이번에 `limit_malformed` 신설로 해소 — 조용히
+    `LIMIT (10) LIMIT 5`라는 이중 LIMIT을 만들지 않고 명시 거부한다(`api/tests/test_sql_guard.py`의
+    `test_parenthesized_limit_rejected_as_malformed`가 고정, red→green으로 실측 확인).
+  - `OFFSET`-only(LIMIT 없이 OFFSET만 있는 SQL — 예: `WHERE status='on_sale' OFFSET 10`):
+    **처음부터 문제가 없었다.** `\blimit\b` 자체가 없으면 else 분기(`LIMIT {DEFAULT_LIMIT}` 부착)로
+    빠지므로 OFFSET 유무와 무관하게 항상 안전하게 처리된다 — 직접 재실행해 확인:
+    `validate_select_sql("SELECT id FROM listings WHERE status='on_sale' OFFSET 10")`
+    → `"...OFFSET 10 LIMIT 5"` 정상 반환(코드리뷰 패스가 재보기 없이 "미해소"로 단정했던 이전
+    기록을 실측으로 정정 — CLAUDE.md B4 "재보기 전엔 선언하지 않는다").
+  - 4증상 전부 확인됨(2개는 이전에, 1개는 이번에 해소, 1개는 애초에 무해)에 따라 이 DW를 닫는다.
+resolution: `13-1-sql-guard-하이브리드-정비-g2-baseline` 구현 + 코드리뷰 패치 라운드에서 4증상
+  전부 재확인 완료(위 상세). `LIMIT (10)` 케이스는 `limit_malformed` 신설로 실제 코드 변경, 나머지
+  3개는 재확인만(기존 동작이 이미 안전).
 
 ### DW-316: [구 #16] 가이드 RAG 유사도 임계값(거리 컷오프) 없음
 
@@ -3394,4 +3411,148 @@ location: `web/playwright.config.ts` (커밋 `51c6154`)
 severity: low
 reason: 같은 파일의 다른 env 필드는 "값이 없으면 즉시 실패"로 통일돼 있는데 이 필드만 빈 문자열을 조용히 채택한다. CI나 셸에 빈 값이 떠 있으면 `.env.local`을 무시하고 빈 설정으로 E2E가 도는데, 실패 지점이 설정에서 멀어져 원인 추적이 어려워진다.
 trigger: E2E를 CI에 배선할 때(DW-468과 같은 자리) — 그때 빈 env가 실제로 흔해진다.
+status: open
+
+### DW-554: 44개 질의셋 전량(N=3 flaky 판정 포함) 라이브 캡처 미실행 — G2 baseline은 부분(3건)만 확보
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 구현(Tasks & Acceptance — Never 항목)
+location: `api/scripts/run_phase_b.py`(신규 러너) · `api/docs/g2-baseline-partial.json`(현재 산출물, A1/B1/C1 3건만)
+severity: low
+reason: 44개 질의 × N=3(flaky 판정)을 이 무인 실행 안에서 전량 돌리면 Gemini 무료 티어 일일 쿼터
+  (약 20 req/day, `api/tests/test_live_smoke.py` 주석 근거)를 한 번에 넘길 수 있다. 그래서 러너
+  자체는 만들어 대표 3개(A1·B1·C1, 경로 A/B/C 각 1건)로 실제 동작을 실측 확인했지만(직접 실행·
+  관찰, `api/docs/g2-baseline-partial.json`), 44개 전량 캡처는 **의도적으로 이번에 안 했다**
+  (B8 — 미루는 판단은 틀린 게 아니라 안 적는 게 틀린 것).
+trigger: 사용자가 Gemini 쿼터 여유를 확인하고 직접 실행할 때(또는 Story 13.8 착수 직전).
+status: open
+
+- **실행법:** `api/` 에서
+  `RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres
+  .venv/bin/python scripts/run_phase_b.py --out docs/g2-baseline-full.json`
+  (`--subset` 생략 = 44개 전량, 1회씩만 — N=3 flaky 판정까지 하려면 3회 반복 실행 후 병합이
+  추가로 필요하다. 이 스토리는 N=1 러너만 만들었다).
+- **채점:** `.venv/bin/python scripts/score_ab.py --queryset docs/ai-ab-test-queryset.json
+  --raw docs/g2-baseline-full.json --out docs/g2-baseline-report.json` (1파일 모드,
+  `baseline_summary` 키).
+
+### DW-555: 하이브리드 벡터절 정규식이 `ORDER BY embedding <=> ...::vector` 정확히 이 모양·이 위치만 인식
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 2(adversarial + edge-case-hunter 중복 확인) — 이번 라운드엔 defer로 triage, 코드 변경 없음
+location: `api/app/db/sql_guard.py`(96행대, `no_vector` 정규식: `order\s+by\s+embedding\s*<=>\s*(?:%s|%\(\w+\)s)\s*::\s*vector`)
+severity: low
+reason: 이 스토리의 I/O 매트릭스가 요구한 정확한 한 가지 모양(별칭 없음·단일 정렬 키)은 화이트리스트를 통과하고, 그 밖의 위치(SELECT 목록 등)는 여전히 `forbidden_column`으로 거부된다 — 의도한 동작. 다만 `ORDER BY (embedding <=> %s::vector)`(괄호로 감쌈)나 `ORDER BY category, embedding <=> %s::vector`(2차 정렬 키와 결합) 같은 변형은 이 정규식에 안 걸려 `embedding`/`vector`가 여전히 미화이트리스트 식별자로 거부된다(직접 재현 확인). I4 원칙상 이 절은 LLM이 아니라 코드(13.3)가 붙이므로, 13.3이 이 정확한 모양으로만 절을 생성하면 문제가 되지 않는다 — 하지만 13.3이 동점 처리 등으로 2차 정렬 키나 별칭을 붙이는 형태를 택하면 하이브리드 경로 전체가 `forbidden_column`으로 막힌다.
+trigger: Story 13.3(하이브리드 노드) 스펙 작성 시 — 벡터절에 별칭이나 2차 정렬 키가 필요한지 먼저 확인하고, 필요하면 이 정규식을 그 모양까지 포함하도록 확장한다.
+status: open
+
+### DW-556: `run_phase_b.py --model` 생략 시 캡처 시점의 baseline 모델명으로 항상 라벨링됨
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 2(adversarial 확인) — 이번 라운드엔 defer로 triage, 코드 변경 없음
+location: `api/scripts/run_phase_b.py`(`main()`, `model_name = args.model or settings.gemini_generation_model`)
+severity: low
+reason: 이 스토리는 baseline 단독 캡처만 다루므로 `--model` 생략이 지금은 안전하다(항상 현재 baseline 모델로 정확히 라벨링됨). 하지만 이 스크립트의 docstring이 이미 명시하듯 Story 13.8이 후보 모델 캡처에 이 스크립트를 재사용할 가능성이 있는데, 그때 `--model`을 깜빡하면 후보 결과가 baseline 모델명으로 조용히 오라벨링돼 A/B 비교 전체가 오염될 수 있다.
+trigger: Story 13.8이 후보 모델 캡처를 이 스크립트로 실행하기 직전 — 그 시점에 `--model`을 필수 인자로 바꿀지 검토한다.
+status: open
+
+### DW-557: `status='on_sale'` 강제가 "존재 확인"뿐이어서 `NOT status='on_sale'`로 판매완료 매물이 노출된다 (FR11 우회, 실측)
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(adversarial 발견, 오케스트레이터가 로컬 DB로 재현) — 선재 결함이라 defer, 이번 스토리는 코드 변경 없음
+location: `api/app/db/sql_guard.py`(status 필터 검사: `re.search(r"status\s*=\s*'on_sale'", cleaned)`)
+severity: high
+reason: 검사가 "`status='on_sale'`라는 문자열이 어딘가 있는가"만 본다. 부정 래퍼는 그 존재 조건을 만족시키면서 술어를 뒤집는다 — `not`·`is`·`true`는 모두 `_SQL_KEYWORDS`에 있어 식별자 스캔도 통과한다. 로컬 DB(판매완료 8건·판매중 95건)로 직접 실행해 확인:
+  `SELECT id, status FROM listings WHERE NOT status = 'on_sale' LIMIT 5` → 가드 통과 + 실행 성공 + **실제 `sold` 행 3건 반환**.
+  `SELECT id, status FROM listings WHERE status = 'on_sale' IS NOT TRUE LIMIT 5` → 동일하게 통과·같은 sold 행 반환.
+  `ai_readonly` 롤의 RLS는 `using(true)`라 2차 방어선이 없다(그 모듈 주석이 이미 그렇게 적고 있다). 베이스라인 `d654beb`에서도 동일하게 재현되므로 이번 변경이 만든 것은 아니지만, FR11("판매완료는 구매자의 모든 경로에서 비노출", `docs/conventions.md` §6)의 유일한 실패 모드가 실제로 열려 있다는 뜻이다. 이번 스토리의 intent는 "status 강제는 하이브리드 SQL에도 **그대로** 적용된다"(기존 동작 보존)여서 강화는 범위 밖이었다.
+trigger: Story 13.2(4분기 라우팅) 착수 시 — 라우팅이 SQL 경로를 넓히기 전에 먼저 막는다. 고칠 방향은 "문자열 존재"가 아니라 "최상위 AND 결합항으로서의 술어"를 요구하는 것이고(부정·`IS NOT TRUE`·`<>`·달러쿼팅 차단 포함), 세 형태 각각에 red-first 회귀 테스트를 붙인다.
+status: open
+
+### DW-558: LIMIT·OFFSET 절 파싱이 bare integer 이외 형태를 못 잡아 안전 상한이 우회된다 (4형태 실측)
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(adversarial + edge-case-hunter 중복 발견, 오케스트레이터가 재현) — 선재 결함이라 defer
+location: `api/app/db/sql_guard.py`(OFFSET 숫자 매처 · LIMIT 숫자 매처 · `limit_malformed` 분기)
+severity: high
+reason: 숫자 매처가 `\b(limit|offset)\s+([-+]?\d+)`로 **첫 정수만** 잡고 절 전체를 앵커링하지 않는다. `limit_malformed` 분기는 "정규식에 아예 안 걸릴 때"만 발사되므로, 정규식이 부분 매치하는 형태는 전부 검사를 통과한다. DW-315가 닫은 4증상(`LIMIT 0`·`LIMIT -5`·`LIMIT (10)`·OFFSET-only)과는 **다른 형태**이며 그 항목에 카탈로그된 적이 없다. 직접 실행해 확인(전부 베이스라인 `d654beb`에서도 동일):
+  - `... LIMIT 5+100` → 통과. `n=5`로 판정되고 SQL은 그대로 실행 → 로컬 DB에서 **95행 전량 반환**(MAX_LIMIT=50 우회, 무제한 과다조회).
+  - `... LIMIT 5 OFFSET (999999)` / `... OFFSET 500+600` → 통과. `offset_match`가 `None`이 되어 MAX_OFFSET=1000 검사가 **통째로 건너뛰어진다**(OFFSET에는 `offset_malformed` 짝 분기가 없다).
+  - `... LIMIT 10, 5`(MySQL 2인자 형태) → 통과 후 psycopg가 실행 단계에서 거부 → `/ai/search` 500.
+  - `... LIMIT 5 LIMIT 999`(이중 LIMIT) → 통과 후 실행 단계 문법 오류 → 500. `sql_rag_node`의 재시도 루프가 직전 SQL을 되먹이므로 재시도 산출물로 나올 수 있는 형태다.
+trigger: Story 13.3(하이브리드 노드) 착수 시 — 그 스토리가 벡터절에 `LIMIT k`를 붙이며 이 블록을 다시 만진다. 고칠 방향은 LIMIT/OFFSET 절을 "꼬리에 오는 bare integer" 형태로 **전체 앵커링**하고 그 밖의 모든 형태를 `limit_malformed`/신규 `offset_malformed`로 명시 거부하는 것이다.
+status: open
+
+### DW-559: 하이브리드 벡터절이 가드를 통과한 뒤 params 없이 실행돼 400이 500으로 바뀐다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(adversarial + edge-case-hunter + verification-gap 3중 확인) — intent의 Never("13.2·13.3의 실제 그래프 배선을 만들지 않는다")가 이 배선을 13.3으로 미루므로 defer
+location: `api/app/graph/sql_rag_node.py`(`run_select(safe_sql)` — params 없이 호출) · `api/app/db/sql_guard.py`(벡터절 화이트리스트) · `api/app/routers/ai.py`(광역 except → 500)
+severity: medium
+reason: 이번 스토리가 화이트리스트한 `ORDER BY embedding <=> %s::vector`는 **미바인드 자리표시자를 담은 SQL을 반환**한다. I4 원칙상 그 절은 코드가 붙이고 params도 코드가 넘기지만, 그 배선(13.3)이 아직 없어서 지금은 정당한 생산자가 없다. LLM이 환각·프롬프트 인젝션으로 그 모양을 뱉으면 가드는 통과시키고, `run_select`는 params 없이 실행해 psycopg 문법 오류가 나고, `sql_rag_node`의 `except SqlGuardError`가 못 잡아 500 `internal_error`가 된다 — 이 변경 전에는 `forbidden_column` 400(한국어 안내 + LLM 1회 자기수정)이었다. 데이터 노출은 없고 에러 품질만 나빠지는 회귀다. 테스트도 가드의 **판정**만 보고 **산출물이 실행 가능한지**는 아무도 안 본다.
+trigger: Story 13.3(하이브리드 노드) 구현 시 — 코드가 벡터절과 params를 함께 넘기는 경로를 만들 때 함께 정한다. (a) params를 받는 별도 진입점을 두거나 (b) `run_select`가 `%` 있는 쿼리를 params 없이 실행하지 않게 하거나 (c) 가드 통과 SQL을 실제로 실행해 보는 테스트를 붙인다.
+status: open
+
+### DW-560: 에픽·아키텍처 문서의 벡터절 바인드 형태(`$1::vector`·`LIMIT k`)가 psycopg `%s`와 어긋나 가드가 거부한다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(adversarial + edge-case-hunter + intent-alignment 3중 확인) — 선재 계획문서/드라이버 불일치라 defer
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(AC-SEC-1·FR45 서술) · `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md`(I4) · `_bmad-output/implementation-artifacts/epic-13-context.md`(위 두 문서에서 복사됨)
+severity: medium
+reason: 계획문서 3곳이 하이브리드 절을 `ORDER BY embedding <=> $1::vector LIMIT k`로 규정한다. `$1`은 asyncpg/raw 프로토콜 스타일이고 이 프로젝트의 드라이버는 psycopg(`%s`·`%(name)s`)다. 실측: `... ORDER BY embedding <=> $1::vector LIMIT 10` → `forbidden_column` 거부, `... ORDER BY embedding <=> %s::vector LIMIT %s`(문서가 말하는 "LIMIT k를 바인드 파라미터로") → `limit_malformed` 거부. 13.3은 이 문서를 보고 쓰이도록 설계돼 있으므로, 문서를 그대로 따르면 하이브리드 경로가 100% 막힌다. 아키텍처 문서의 "`embedding`/`vector` 식별자를 화이트리스트로 추가" 서술도 1차 리뷰에서 폐기된 접근(위치-무관 화이트리스트)을 가리킨다.
+trigger: Story 13.3 스펙 작성 직전 — 계획문서 3곳의 `$1::vector`를 `%s::vector`로, `LIMIT k` 바인드 서술을 코드가 정수로 붙이는 형태로 정정하고, 폐기된 화이트리스트 서술을 위치-스코프 방식으로 갱신한다.
+status: open
+
+### DW-561: `router_node`의 폴백이 일시적 429/timeout을 삼켜, G2 캡처가 폴백 라우트를 실측값으로 기록한다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(edge-case-hunter 발견) — 선재 라우터 동작이라 defer
+location: `api/app/graph/router_node.py`(`structured.invoke` 광역 except → `_fallback_route()`) · `api/scripts/run_phase_b.py`(item별 try/except가 이 예외를 볼 수 없다)
+severity: medium
+reason: `router_node`가 라우팅 LLM 호출 실패를 잡아 휴리스틱 라우트(매물 신호 있으면 `B`, 없으면 `C`)를 반환하고 **재던지지 않는다**. 그래서 러너의 item별 try/except는 라우터 단계의 429를 절대 못 본다 — 폴백 결과가 정상 측정값과 구별 없이 raw에 들어간다. 쿼터 압박이 가장 심한 상황(44건 전량 캡처, DW-554)이 바로 429가 잦은 상황이고, 폴백 `C`는 가드 안내 답변이라 dead-end로도 안 잡혀 `gate_pass`가 그대로 참이 된다. 그 수치가 이후 모든 RAG 스토리의 기준선이 된다.
+trigger: DW-554(44건 전량 라이브 캡처) 실행 직전 — `run_search()`가 폴백 여부를 노출하게 하고(예: `route_fallback` 플래그) 러너가 item별로 기록해, 폴백이 섞인 캡처를 baseline으로 승격하지 않도록 막는다.
+status: open
+
+### DW-562: 질의셋의 `primary_path` A/B/C와 13.2가 도입할 라우트 어휘(`REJECT|CLARIFY|SQL|HYBRID`)가 어긋난다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(adversarial 발견) — 선재 에픽 설계 긴장이라 defer
+location: `api/docs/ai-ab-test-queryset.json`(`primary_path`: A/B/C) · `api/scripts/score_ab.py`(`route_ok()` — 단순 문자열 비교) · `api/docs/g2-baseline-partial.json`(A/B/C로 캡처됨) · `_bmad-output/implementation-artifacts/epic-13-context.md`(13.2가 4분기 라우트 어휘를 도입한다고 규정)
+severity: medium
+reason: G2 라우팅 채점은 캡처된 `route_last`를 질의셋의 `primary_path`와 문자열로 비교한다. 13.2가 라우트 어휘를 4분기로 바꾸면 재실행은 전부 불일치가 되어 라우팅 정확도가 0/44로 떨어진다 — 실제 회귀가 아닌데 "전면 회귀"로 오판하거나, 질의셋을 다시 쓰면서 baseline이 무효가 된다. 어느 쪽이든 13.1이 baseline을 만든 이유가 사라진다.
+trigger: Story 13.2 스펙 작성 시 — 새 라우트 어휘와 질의셋 `primary_path` 사이의 매핑을 그 스펙에서 먼저 정하고 `score_ab.py`의 `route_ok()`에 반영한다(또는 baseline 전량 캡처를 13.2 이후로 미룬다).
+status: open
+
+### DW-563: CLARIFY 턴 상한이 클라이언트 강제로만 규정돼 있다 (유료 API 호출 상한이 상한이 아니다)
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 4(adversarial 발견) — 13.1 범위 밖의 선재 계획 결정이라 defer
+location: `_bmad-output/implementation-artifacts/epic-13-context.md`(CLARIFY 턴 상한 서술 · JWT 게이트 과금방어 근거) 및 그 원본 계획문서
+severity: medium
+reason: 같은 문서가 한쪽에서는 "CLARIFY는 최대 2~3턴까지만 허용, **클라이언트가 횟수를 추적해 강제**"라 쓰고, 다른 쪽에서는 JWT 게이트를 "AI 검색은 실제 유료 API 호출을 발생시키는 행동이라 신원이 곧 과금 방어선(질의당 최대 4회 호출)"이라 정당화한다. 클라이언트만 세는 상한은 상한이 아니다 — 유효한 JWT 하나로 `/ai/search`에 CLARIFY 루프를 직접 반복하면 질의당 4회 유료 호출이 무제한 반복된다. CLAUDE.md B9("클라이언트가 보낸 값은 참고지 신뢰가 아니다") 위반.
+trigger: Story 13.4(CLARIFY) 스펙 작성 직전 — 턴 상한을 서버가 검증하는 값으로 바꿀지(예: 서버가 검증하는 `clarify_depth`) 결정하고 계획문서에 그 결정을 박는다.
+status: open
+
+### DW-564: `lexicographic_winner()`가 커버리지가 다른 두 요약의 절대 개수를 비교한다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 5(adversarial + edge-case-hunter 중복 발견) — 13.8 비교 시점의 설계 결정이라 defer
+location: `api/scripts/score_ab.py`(`lexicographic_winner()` 1순위 `result_mean` · 2순위 `routing_correct` · `main()`의 2파일 모드 `regression` 계산)
+severity: medium
+reason: 사전식 승부는 `routing_correct`를 **절대 개수**로, `result_mean`을 **서로 다른 분모의 평균**으로 비교한다. 실측: 3/44 부분 baseline(라우팅 3/3 완벽)과 44/44 후보(라우팅 44/44 완벽)를 붙이면 "라우팅 정답 3 vs 44"로 후보가 이긴다 — 두 모델 다 완벽한데 승부가 커버리지 차이만으로 갈린다. `regression` 게이트도 같은 축에서 반대 방향으로 틀릴 수 있다. 리뷰 pass 4가 `coverage`/`is_partial`을 요약에 기록했지만 이 비교 함수는 그 값을 읽지 않는다. 정확히 DW-554(44건 전량 캡처 후 13.8이 후보와 비교)가 만드는 구도다.
+trigger: Story 13.8 스펙 작성 시(또는 DW-554 전량 캡처 직후 첫 A/B 비교 직전) — 두 요약의 채점된 id 집합이 다르면 비교를 거부할지, 교집합으로 재채점할지, 비율로 비교할지를 그 스펙에서 정하고 `lexicographic_winner()`에 반영한다.
+status: open
+
+### DW-565: 유일한 raw 캡처 러너가 구조적으로 N=1·토큰 0이라 사전식 3·4순위(flaky·비용)가 영구 미측정이다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 5(adversarial 발견) — 측정축 확장은 13.8 범위라 defer
+location: `api/scripts/run_phase_b.py`(`_run_single`/`_run_multiturn` — 1회 실행·`tokens_in`/`tokens_out` 하드코딩 0) · `api/scripts/score_ab.py`(`flaky_measured`·`tokens_measured` 도출 → 3·4순위 tier 건너뛰기)
+severity: medium
+reason: 리뷰 pass 4가 "미측정 축이 승부를 내지 않게" 두 tier를 건너뛰도록 고친 것 자체는 옳다. 다만 이 레포가 실제로 만들 수 있는 유일한 raw는 이 러너의 출력뿐이고 그건 항상 N=1·토큰 0이므로, 두 tier가 **영원히 실행되지 않는다** — 사전식 승부는 사실상 결과집합·라우팅·지연 3축으로 줄었고, 그중 지연은 로컬 컨테이너 기준이라 모델 선택 신호로 검증된 적이 없다. 즉 "조작된 값이 결정한다"는 문제는 "결정 근거가 없다"로 옮겨갔을 뿐이다.
+trigger: Story 13.8(모델 A/B 채택 판단) 스펙 작성 시 — N>1 반복 실행과 토큰 실측을 러너에 넣을지, 아니면 두 tier를 걷어내고 사전식 기준을 명시적으로 3축으로 줄일지 결정한다.
+status: open
+
+### DW-566: 러너 테스트가 `RUN_LIVE_SMOKE=1`을 켠 채 돌아, 쿼터 보호가 모킹 대상 1곳에만 의존한다
+
+origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 5(adversarial 발견) — 게이트 자체는 동작하므로 defer
+location: `api/tests/test_run_phase_b.py`(`monkeypatch.setenv("RUN_LIVE_SMOKE", "1")`을 쓰는 테스트들) · `api/scripts/run_phase_b.py`(게이트) · `api/app/graph/graph.py`(import 시점에 `COMPILED_GRAPH = _build_graph()`)
+severity: medium
+reason: 러너의 쿼터 보호는 스토리 Boundaries의 "Always" 조항인데, 그 게이트를 켜고 도는 테스트들이 **오직 `app.graph.graph.run_search` 몽키패치 하나**로 실제 호출을 막는다. "LLM 클라이언트가 만들어지지 않았다"·"소켓이 안 열렸다"를 단언하는 검사는 없다. 앞으로 라이브 호출 지점이 하나 더 생기거나(임베딩 워밍업·모델 프로브) import 위치가 바뀌면, CI가 매 push마다 실제 Gemini 쿼터를 태우면서도 전량 green일 수 있다. B9("규칙은 어길 수 없는 자리에 박는다") 기준으로 지금은 규칙이 관례에 얹혀 있다.
+trigger: DW-554(44건 전량 라이브 캡처) 실행 직전, 또는 러너에 라이브 호출 지점이 하나라도 추가될 때 — 테스트에서 실제 LLM 클라이언트 생성 자체가 실패하도록(예: 클라이언트 팩토리를 raise하도록 패치) 이중으로 못박는다.
+status: open
+
+### DW-567: Follow-up review still recommended for 13-1-sql-guard-하이브리드-정비-g2-baseline after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260730-153003-855d; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
