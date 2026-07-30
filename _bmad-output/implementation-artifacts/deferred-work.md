@@ -2166,7 +2166,8 @@ location: 이 파일 #125(1539-1544행, "해소: 미해소(위 트리거에서 �
 severity: medium
 reason: 이번 실행(bmad-dev-auto 후속리뷰)은 기존 대장 항목의 status·해소를 수정하지 말라는 지시 아래 돌아, #125를 직접 닫지 않고 이 신규 항목으로만 남겼다. 실체(배선)는 이미 코드에 있으므로 남은 것은 장부 정리 + 800 weight 실측 1회뿐이다.
 trigger: 다음 대장 점검 또는 Story 11.3 착수 시(둘 중 먼저 오는 쪽) — 헤더 로고의 `getComputedStyle(...).fontWeight`가 800로 나오는지 실측하고, 그 결과와 함께 #125를 닫는다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: web/src/components/layout/AppHeader.tsx:13,79-81 has the `<Link href="/"><Logo size="sm" /></Link>` wiring, and commit c6086c9 already closed the paired DW-425 with that same evidence; the outstanding "800 weight 실경로 확인" is now an executing browser assertion at web/e2e/landing-and-view-count.spec.ts:51-57 (getComputedStyle(...).fontWeight === '800' on the rendered header Logo). Both halves of this entry are satisfied.
 
 - **위치:** 이 파일 #125(1539-1544행, "해소: 미해소(위 트리거에서 처리)") · 실제 배선은 `web/src/components/layout/AppHeader.tsx`의 consumer 분기(`<Link href="/" aria-label="홈으로 이동"><Logo size="sm" /></Link>`).
 - **내용:** #125의 트리거는 "Epic 11의 헤더·브랜딩을 손대는 스토리(11.3 히어로 또는 **내비 재구성**) — 그때 `<Logo>`를 실제 배선하거나, 안 쓸 거면 컴포넌트를 정리한다. **어느 쪽이든 그 시점에 800 weight 렌더를 실경로로 한 번 확인한다**"였다. Story 11-2가 바로 그 "내비 재구성"이고 `<Logo>`를 실제로 배선했으므로 트리거는 소진됐다. 그런데 (a) #125는 여전히 "해소: 미해소"이고 상단 요약행에도 열린 것으로 남아 있으며, (b) 요구된 800 weight 렌더 실측 확인은 어디에도 기록이 없다. B8("일을 끝내면 대장을 닫는다 — 안 닫으면 '안 한 것'과 '했는지 모르는 것'이 구별되지 않고, 후자가 더 비싸다")이 트리거를 소진한 바로 그 스토리에서 깨졌다.
@@ -2416,7 +2417,8 @@ location: `.bmad-loop/policy.toml`의 `[review] trigger = "recommended"` vs Epic
 severity: high
 reason: 정책이 `recommended`(권장)일 때 dev 세션의 자기평가로 독립 리뷰를 건너뛰는데, 실제로 건너뛴 두 스토리(11-3, DB 마이그레이션이 든 11-4)가 오히려 크고 위험한 스토리였다 — 리뷰량이 위험도가 아니라 dev 자신의 자기평가에 좌우된 것이다.
 trigger: Epic 12 착수 시 그 런을 `always`로 띄웠는지 확인하고, 끝나면 "마이그 스토리에 독립 리뷰가 실제로 붙었는지"를 로그로 확인해 이 항목을 닫는다. 선택지: (a) 현행 유지(토큰 절약 우선) (b) `trigger = "always"`로 복귀 (c) **조건부** — `supabase/migrations/**`가 diff에 있으면 `recommended`와 무관하게 독립 리뷰 강제. (c)가 이 프로젝트 규칙과 가장 정합적이다 — CLAUDE.md B3이 *"DB는 되돌리기가 없다"* 로 마이그레이션을 가장 무거운 축으로 다루는데, 정작 그 축에서 검토를 아끼는 것은 앞뒤가 안 맞는다. 다만 bmad-loop이 diff 조건부 트리거를 지원하는지는 **미확인**(추측 금지 — 착수 시 실측할 것).
-status: open
+status: done 2026-07-30
+resolution: already resolved: .bmad-loop/policy.toml:140 `trigger = "recommended"` with dated comments recording the 2026-07-28 flip to `always` for the Epic 12 run and the 2026-07-29 revert; sprint-status.yaml epic-11 action A5 = done ('policy.toml trigger=always로 Epic 12 전체를 돌렸고 12-2의 교차-방 유출을 그 덕에 잡았다') and epic-12 action B1 = done. The entry's own closing condition (verify the Epic 12 run used `always`, then close) is met, and bmad_loop/policy.py:16 REVIEW_TRIGGER_MODES={'always','recommended'} settles the previously-unverified diff-conditional question.
 
 - **위치:** `.bmad-loop/policy.toml`의 `[review] trigger = "recommended"` vs Epic 11 실행 로그(`.bmad-loop/runs/20260728-105733-33e0/journal.jsonl`).
 - **내용:** `recommended`는 dev 세션이 "독립 리뷰 불필요"로 판정하면 opus 리뷰 세션을 건너뛴다. #123에서 **작동 자체는 실증**됐는데, 실제로 걸린 두 스토리가 하필 이랬다:
@@ -2492,7 +2494,8 @@ location: 로컬 Supabase Docker 스택(포트 55322)의 `supabase_migrations.sc
 severity: high
 reason: 12.1의 범위(멱등키 컬럼·제약)와 무관하고, 착수 전부터 있던 상태다. 지금 스택을 리셋하면 진행 중인 검증 환경이 날아간다.
 trigger: **다음 `supabase db reset` 또는 다음 로컬 E2E 실행 시** — 그 자리에서 `select * from supabase_migrations.schema_migrations`를 실제로 떠서 0001~0022가 전부 들어 있는지 확인하고, 빠졌으면 리셋해 파일에서 다시 만든다. "고쳤다"가 아니라 "이력 행이 22개다"로 닫는다.
-status: open
+status: done 2026-07-30
+resolution: already resolved: Queried the already-running local stack (docker ps: supabase_db_bmad-encar-demo healthy, port 55322): `select version from supabase_migrations.schema_migrations` returns 24 rows, 0001 through 0024 — 0020/0021/0022 are all recorded. The entry's stated closing test ('이력 행이 22개다') passes.
 
 - **위치:** 로컬 Supabase Docker 스택(포트 55322)의 `supabase_migrations.schema_migrations` 테이블 vs `supabase/migrations/` 파일 목록.
 - **내용:** 12.1 검증을 시작할 때 로컬 스택은 0019까지만 적용돼 있었다(0020·0021 미적용). 검증을 진행하려고 0020~0022를 psql로 직접 적용했는데, 그러면 스키마는 최신이 되지만 CLI가 "무엇을 적용했나"를 기록하는 이력 테이블은 갱신되지 않는다. 이건 §9.2가 상세히 적어둔 사고와 같은 계열이다 — `0003c_chat_room_integrity.sql`이 CLI에 조용히 `Skipping`돼 로컬 fresh DB에만 `chat_rooms` 위조 방지 트리거가 없었던 일. 스펙의 Residual risks에 적히긴 했으나 대장에 없어서 "열린 일"로 세어지지 않았다(B8 — 미룬 것도 여기 적는다).
@@ -2506,7 +2509,8 @@ location: `api/tests/integration/` 5개 파일 전부 — `TEST_DATABASE_URL` sk
 severity: medium
 reason: 공통 픽스처 추출은 12.1이 안 만든 파일 4개를 함께 고치는 일이라 "바뀐 줄이 요청에 추적된다"(A3 외과적 변경)를 어긴다. 12.1 하나만 보면 이득이 없다.
 trigger: **Epic 12에서 실DB 통합 테스트 파일을 하나 더 추가할 때**(12.2의 `realtime.messages` 정책 검증이 유력) — 6번째 복제를 만들기 전에 `conftest.py`로 skip 가드·`_create_user`·`_insert_listing`을 올린다. 그 자리에서 tests.yml의 격리 규칙(현재 주석뿐)도 픽스처로 강제할지 함께 판단한다(#143·B9와 같은 축).
-status: open
+status: done 2026-07-30
+resolution: already resolved: api/tests/integration/conftest.py now exists (defines _DSN, pytestmark skip guard, _LISTING_COLS, _create_user, _insert_listing) — created by Story 12.2 when it added test_chat_realtime_broadcast_real_db.py, which is exactly this entry's trigger ('6번째 복제를 만들기 전에 conftest.py로 올린다'). The title claim 'conftest.py가 없어' is now false; the remaining partial de-duplication is tracked by its own successor entry DW-494.
 
 - **위치:** `api/tests/integration/` 5개 파일 전부 — `TEST_DATABASE_URL` skip 가드, `auth.users`+`profiles` 생성, `listings` INSERT 컬럼 목록을 각자 다시 구현한다. `find api/tests -name conftest.py` → 0건.
 - **내용:** 복제가 이미 결함을 만들었다 — 12.1의 첫 구현이 형제 파일의 `_create_seller`를 옮기다 판매자 유저에도 `role: "buyer"`를 하드코딩했고 코드리뷰에서 잡혔다. `_LISTING_COLS`처럼 15개 컬럼을 나열한 상수도 파일마다 따로 산다. Epic 12에 스토리가 5개 더 남아 있어 그대로 두면 복제본이 계속 늘어난다. 지금 위험이 낮은 이유는 각 파일이 uuid로 유일 키를 쓰고 스스로 정리하기 때문이고, 실제 피해는 `listings`에 NOT NULL 컬럼이 추가되는 순간 5개 파일이 각각 깨지는 형태로 온다.
@@ -2582,7 +2586,8 @@ location: `#185`의 트리거 문구("chat 관련 마이그레이션에 GRANT/RL
 severity: medium
 reason: `#185`가 예고한 트리거(chat/realtime 마이그레이션)가 이번 스토리에서 실제로 왔고, 대응은 게이트 프로브 확장이 아니라 전용 실DB 통합테스트(`test_chat_realtime_broadcast_real_db.py`) 신설로 판단했다.
 trigger: 다음 chat/realtime 관련 마이그레이션이 GRANT/RLS 축을 또 건드릴 때 — 그때도 "프로브 확장 vs 전용 테스트" 판단을 반복할지, 아니면 이번까지 누적된 사례(12.1·12.2)를 근거로 `check_migrations.py`에 실제로 프로브를 추가할지를 그 자리에서 다시 결정한다(지금은 후자로 옮길 만큼의 누적이 아니라고 본 판단이다).
-status: open
+status: done 2026-07-30
+resolution: already resolved: Both artifacts this decision-record describes exist: supabase/migrations/0023_chat_realtime_broadcast.sql (the realtime.messages participant-scoped SELECT policy) and api/tests/integration/test_chat_realtime_broadcast_real_db.py (the dedicated real-DB test chosen over expanding check_migrations.py probes). The entry's own body states it moved #185 from '아직 안 옴' to '왔고, 처리 방식을 골랐다' — the decision it records is complete; the underlying probe-coverage gap remains open separately as DW-485.
 
 - **위치:** `#185`의 트리거 문구("chat 관련 마이그레이션에 GRANT/RLS처럼 프로브가 실측 확인해야 할 축(예: `realtime.messages` 정책, Story 12.2)이 새로 생길 때") vs `supabase/migrations/0023_chat_realtime_broadcast.sql`(정확히 그 축 — `realtime.messages`의 참가자 한정 SELECT 정책).
 - **내용:** #185가 예고한 트리거가 이번 스토리(12.2)에서 실제로 왔다. 대응은 `scripts/check_migrations.py`의 정적 프로브 3종(listings/guide_documents 고정 목록)을 확장하는 것이 아니라 — 그건 이 스토리 범위를 넘는 별도 게이트 인프라 변경이다 — `api/tests/integration/test_chat_realtime_broadcast_real_db.py`로 대체했다(스펙 Design Notes에 이미 근거가 적혀 있다: 12.1이 자신의 제약도 프로브가 아닌 전용 실DB 테스트로 검증한 전례). 이 전용 테스트는 트리거 발동(방송 행 생성)과 RLS(당사자 허용/제3자 차단) 둘 다 `set local role authenticated` + `request.jwt.claim.sub` + `set local realtime.topic`으로 실제 인가 경로를 재현해 확인한다 — 정적 프로브(존재 여부만 봄)보다 오히려 신뢰도가 높다(B4 "존재 확인은 작동 확인이 아니다"). 이 판단으로 `#185`는 "아직 안 옴"에서 "왔고, 처리 방식을 골랐다"로 넘어갔지만, 게이트 자체의 커버리지 갭(#185 원문의 지적)은 여전히 남아 있다 — 이번 결정은 "이 트리거는 프로브가 아니라 전용 테스트로 받는다"는 정책 판단이지, 게이트를 넓힌 게 아니다.
