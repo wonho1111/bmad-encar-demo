@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-07-31'
 status: 'done'
 baseline_revision: '20b69679012caf1e85ca433c08edd92243ec1689'
-final_revision: '4d9c2bb3ebb661ca9d75e247e2a62cc00e67ad92'
+final_revision: '211800158ed1c3f6bcea6b64b81e810c73c80717'
 review_loop_iteration: 0
 followup_review_recommended: true
 context: ['{project-root}/docs/conventions.md']
