@@ -3774,3 +3774,12 @@ summary: DW-558을 닫은 전체 앵커링은 우회를 확실히 막았지만(�
 evidence: DW-574가 요구한 (b)항("검사 옆에 이 검사가 통과시키지 않는 안전 표현 목록을 실측해 적는다 — 추측 금지")과 정확히 같은 종류의 공백이고, 13.3은 그 요구를 `_conjunct_is_bare_status_on_sale`에 대해서만 다뤘다(그것도 미완). 스펙이 회귀 없음을 주장한 근거는 `LIMIT n`·`LIMIT n OFFSET m` 두 형태 테스트뿐이다. 후속 리뷰 blind-hunter 발견.
 trigger: DW-574의 (b)항을 실제로 처리할 때 함께 — 두 항목이 같은 파일·같은 종류의 작업이므로 한 번에 실측해 적는다.
 status: open
+
+### DW-585: 13-3의 후속 리뷰가 한도 중단으로 끝맺지 못했다 — 의도적 재검토 1회가 남아 있다
+origin: review-budget-followup (수동 인수)
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+severity: low
+summary: 13-3은 리뷰 1차가 `done`으로 끝나 결과가 커밋(`final_revision: 2118001`)됐고, 2차는 **선택적 후속 검토**였다. 그 2차 세션이 2026-07-31 02:09 세션 한도로 중단됐다가 03:26에 깨어났으나 끝맺음 단계를 완수하지 못해, 세션이 시작 시 `in-review`로 바꿔둔 스펙 status를 `done`으로 되돌리지 못했다. 오케스트레이터는 그 순간의 작업 파일만 보고 "리뷰 미수렴"으로 판정해 스토리를 이월 처리하고 커밋 4개를 되돌렸다(run 20260730-205944-48e1, journal `review-result cycle=2 status=in-review` → `story-deferred`).
+evidence: 되돌려진 커밋은 엔진이 `attempt-preserve/20260730-205944-48e1-e2e62a24`로 보존해 뒀고, 사람이 그 ref에서 4개 커밋을 그대로 복원했다. 복원 후 정책의 검증 명령 전량을 실제로 실행해 초록을 확인했다 — 환경 무결성 통과, api pytest 337 passed/83 skipped, web lint 무경고, web test 291 passed, flutter analyze 이슈 0. 후속 검토가 실제로 찾아낸 지적은 유실되지 않고 DW-579~584로 이미 등재돼 있다.
+trigger: 13-3 코드(`hybrid_rag_node`·`sql_guard` 벡터절)를 다음에 손댈 때, 또는 에픽 13 회고 시 — 그때 독립 리뷰 1회를 의도적으로 돌린다. DW-583(임베딩 NULL 필터)·DW-584(거부되는 정상 SQL 표현 목록)와 같은 파일을 보므로 함께 처리하면 된다.
+status: open
