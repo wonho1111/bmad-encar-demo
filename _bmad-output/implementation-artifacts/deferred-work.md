@@ -3424,7 +3424,26 @@ reason: 44개 질의 × N=3(flaky 판정)을 이 무인 실행 안에서 전량 
   관찰, `api/docs/g2-baseline-partial.json`), 44개 전량 캡처는 **의도적으로 이번에 안 했다**
   (B8 — 미루는 판단은 틀린 게 아니라 안 적는 게 틀린 것).
 trigger: 사용자가 Gemini 쿼터 여유를 확인하고 직접 실행할 때(또는 Story 13.8 착수 직전).
-status: open
+status: done 2026-07-30
+resolution: **미룬 근거 자체가 사실이 아니었다.** 이 프로젝트의 Gemini 키는 **유료 티어**다(사용자
+  확인, 2026-07-29). 위 reason이 인용한 "무료 티어 약 20 req/day"는 `test_live_smoke.py` 헤더의
+  낡은 주석이었고, 그게 리포 안의 유일한 근거라 무인 세션이 그걸 읽고 판단했다 — 세션은 절차를
+  제대로 밟았고(미룬 것을 등재하고 트리거까지 지정), 틀린 건 근거였다. 그래서 **원인부터 고쳤다**:
+  `test_live_smoke.py:3`과 `run_phase_b.py` 헤더의 그 문구를 사실로 정정했다(안 고치면 13.8이
+  같은 근거로 또 미룬다 — 게이트 자체는 유지, 실제 과금은 여전히 발생하므로).
+  그 뒤 **44개 전량을 실제로 실행했다**(2026-07-30, 로컬 스택):
+    `RUN_LIVE_SMOKE=1 DATABASE_URL=...55322 .venv/bin/python scripts/run_phase_b.py --out docs/g2-baseline.json`
+    → 44/44 캡처, 실패 0건. 라우트 분포 A=27 · B=5 · C=12, 지연 중앙값 1,853ms.
+    채점(`score_ab.py --raw docs/g2-baseline.json --out docs/g2-baseline-report.json`):
+    커버리지 **44/44**(errored 0 · missing 0) · `is_partial: false` · 결과집합정확도 **0.938**(clean A, n=27) ·
+    라우팅 **50/55** · 오염 0 · dead-end 0 · 게이트 **PASS**.
+  ⚠️ **이 기준선을 읽을 때의 조건**(적어두지 않으면 다음 사람이 잘못 비교한다):
+    ① **로컬 시드 DB(127.0.0.1:55322) 기준**이다 — 13.8이 다른 DB로 재면 매물이 달라 숫자가 달라지고,
+       그건 RAG 회귀가 아니라 데이터 차이다. **같은 로컬 스택으로 재야 비교가 성립한다.**
+    ② `flaky_measured: false` · `tokens_measured: false` — flaky 0과 비용 0은 **측정값이 아니라
+       미측정**이다(러너가 구조적으로 N=1·토큰 0. DW-565 참조). "흔들림이 없다"로 읽으면 안 된다.
+    ③ 라우팅 50/55 = **베이스라인에 이미 오라우팅 5건**이 있다. Story 13.2(4분기 라우팅)가 줄여야 할
+       대상이 이 5건이고, 13.8은 이 수치와 대조한다.
 
 - **실행법:** `api/` 에서
   `RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres
@@ -3547,7 +3566,12 @@ origin: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md` 리뷰 pass 
 location: `api/tests/test_run_phase_b.py`(`monkeypatch.setenv("RUN_LIVE_SMOKE", "1")`을 쓰는 테스트들) · `api/scripts/run_phase_b.py`(게이트) · `api/app/graph/graph.py`(import 시점에 `COMPILED_GRAPH = _build_graph()`)
 severity: medium
 reason: 러너의 쿼터 보호는 스토리 Boundaries의 "Always" 조항인데, 그 게이트를 켜고 도는 테스트들이 **오직 `app.graph.graph.run_search` 몽키패치 하나**로 실제 호출을 막는다. "LLM 클라이언트가 만들어지지 않았다"·"소켓이 안 열렸다"를 단언하는 검사는 없다. 앞으로 라이브 호출 지점이 하나 더 생기거나(임베딩 워밍업·모델 프로브) import 위치가 바뀌면, CI가 매 push마다 실제 Gemini 쿼터를 태우면서도 전량 green일 수 있다. B9("규칙은 어길 수 없는 자리에 박는다") 기준으로 지금은 규칙이 관례에 얹혀 있다.
-trigger: DW-554(44건 전량 라이브 캡처) 실행 직전, 또는 러너에 라이브 호출 지점이 하나라도 추가될 때 — 테스트에서 실제 LLM 클라이언트 생성 자체가 실패하도록(예: 클라이언트 팩토리를 raise하도록 패치) 이중으로 못박는다.
+trigger: ~~DW-554(44건 전량 라이브 캡처) 실행 직전~~, 또는 러너에 라이브 호출 지점이 하나라도 추가될 때 — 테스트에서 실제 LLM 클라이언트 생성 자체가 실패하도록(예: 클라이언트 팩토리를 raise하도록 패치) 이중으로 못박는다.
+  ✎ 2026-07-30 **트리거 재지정**: 첫 번째 조건이 소진됐다 — DW-554의 44건 전량 캡처를 오늘 실행했고,
+  이 하드닝은 **하지 않았다**(사람이 의도적으로 1회 돌린 것이라 테스트 게이트와 경로가 다르고,
+  승인받은 작업 범위 밖이었다). 트리거를 안 옮기면 이 항목은 발동 조건이 없는 채로 조용히 남는다(B8).
+  → 새 자리: **Story 13.8(RAG exit gate) 착수 시점** — 거기서 같은 러너로 재캡처하므로 그 전에 못박는다.
+    그때까지도 두 번째 조건(라이브 호출 지점 추가)은 그대로 유효하다.
 status: open
 
 ### DW-567: Follow-up review still recommended for 13-1-sql-guard-하이브리드-정비-g2-baseline after the review budget was exhausted
@@ -3555,4 +3579,38 @@ origin: review-budget-followup
 source_spec: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260730-153003-855d; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-568: bmad-loop의 실패-시도 보존(attempt-preserve)이 **한글 파일명에서 항상 실패**한다 — 이 리포에선 안전망이 사실상 꺼져 있다
+
+origin: Epic 13 런 `20260730-153003-855d` 운영 중 실측(13-1 dev-1 타임아웃 시점)
+location: bmad-loop 엔진 `engine.py`의 `_preserve_attempt_worktree`(상류 도구) · 영향 대상은 `_bmad-output/implementation-artifacts/spec-*.md` 전부(전 스토리 스펙이 한글 이름)
+severity: medium
+reason: 루프는 실패한 dev/review 시도를 버리기 전에 `attempt-preserve/*` 브랜치로 백업하는데, 2026-07-30 17:00 13-1 dev-1이 타임아웃됐을 때 그 백업이 실패했다. 저널 원문:
+  `git add (snapshot untracked) failed ... fatal: pathspec '"_bmad-output/implementation-artifacts/spec-13-1-sql-guard-\355\225\230\354\235\264..."' did not match any files`
+  git이 비ASCII 경로를 `core.quotepath` 규칙으로 이스케이프해 출력하는데, 엔진이 그 **출력 문자열을 그대로 다시 `git add`에 넘겨** 매칭에 실패한다. 결과: dev-1의 90분치 작업(8파일 수정, weighted 6.15M)이 보존 없이 롤백됐다. **이 리포의 스토리 스펙은 전부 한글 이름**이라 앞으로 어떤 스토리가 실패하든 같은 자리에서 같은 이유로 실패한다 — 즉 Epic 12에서 12-2를 살렸던 그 안전망(사용자가 A-1로 채택한 보존본)이 이 리포에선 작동하지 않는다.
+  **원리적 한계가 아니라 구현 문제임을 실측으로 확인했다**: 같은 시점에 사람이 `git ls-files --others -z | tar --null -T -`로 같은 한글 파일을 문제없이 보관했다(`backup/13-1-dev2-tracked` 브랜치 + 스크래치패드 사본).
+trigger: 다음에 dev/review 세션이 실패해 보존이 필요해지는 시점 — 그 전까지는 실패 직전에 사람이 수동 백업한다(위 tar 방식). 상류(bmad-loop)에 보고하고, 고쳐지기 전까지는 이 항목을 닫지 않는다. bmad-loop 업그레이드 시 재확인.
+status: open
+
+### DW-569: 리뷰 서브에이전트가 `ReportFindings`로 보고한 발견이 **부모 세션에 전달되지 않아** 조용히 유실될 수 있다
+
+origin: Epic 13 런 `20260730-153003-855d` 13-1 dev-1 세션 기록 분석(2026-07-30)
+location: `.claude/skills/bmad-dev-auto/step-04-review.md`(리뷰 레이어 서브에이전트 호출부) · 리뷰 레이어가 쓰는 `ReportFindings` 도구
+severity: medium
+reason: dev-1 세션 40.8분 지점에서 adversarial 리뷰 레이어가 결함 **10건**을 찾았는데 부모 세션에는 **4건만 산문 요약**으로 도달했고 나머지 6건은 한 구절씩만 언급됐다. 부모가 이렇게 되물어 복구했다(원문):
+  *"I only received a summary describing 4 of the 10 findings in prose ... I cannot see your ReportFindings tool call output directly, only your final text message."*
+  즉 리뷰 레이어는 전용 도구로 보고하는데 **부모는 그 도구 출력을 볼 수 없고 최종 텍스트만** 받는다. 이번엔 부모가 개수 불일치를 눈치채 되물었지만, **눈치채지 못하면 발견 6건이 아무 흔적 없이 사라진다** — 리뷰를 여러 레이어로 병렬 실행하는 설계의 값이 통째로 새는 자리다.
+trigger: 다음 리뷰 사이클에서 대조로 확인한다 — 리뷰 세션 로그의 "N건 찾았다"와 스펙 `## Review Triage Log`에 실제 등재된 건수를 세어 맞는지 본다(추측 말고 실측). 어긋나면 서브에이전트 프롬프트에 "발견 전량을 최종 텍스트로도 평문 나열하라"를 명시한다.
+status: open
+
+### DW-570: 리뷰 세션엔 **유휴 감지가 없어**, API 오류로 죽은 세션을 루프가 타임아웃까지 방치한다
+
+origin: Epic 13 런 `20260730-153003-855d` 13-1 review-1 실측(2026-07-30) — 사용자가 화면을 보고 발견
+location: bmad-loop 엔진 `adapters/generic.py`의 `wait_for_completion`(상류 도구) · `.bmad-loop/policy.toml`의 `dev_stall_grace_s`·`dev_stall_nudges`
+severity: medium
+reason: 2026-07-30 18:04:27 시작한 13-1 review-1이 Anthropic 측 장애(`529 Overloaded`, 상태 페이지에 공식 등재된 진행 중 장애)로 10회 재시도 후 전부 실패하고 **입력 대기 상태로 멈췄다**. 세션 화면은 `0/1.0M 토큰 · $0.00 · 0/min` — 성공한 호출이 0건이었다. 그런데 엔진은 세션 종료를 ①Stop 훅 이벤트 ②창(window) 소멸 **두 가지로만** 판정하는데, 이 세션은 창이 살아 있고 Stop도 안 보냈으므로 "작업 중"으로 보였다. 유휴 감지(`stall_deadline`/wake-nudge)는 소스 주석에 **`dev adapter only`로 명시**돼 리뷰 세션엔 적용되지 않는다.
+  결과: 18:34:30에 로그가 멈춘 뒤 **52분간 아무 일도 하지 않았고**, 사람이 화면을 보고 tmux로 프롬프트를 다시 넣지 않았다면 `session_timeout_min`(150분)을 꽉 채운 20:34까지 방치됐을 것이다. 게다가 타임아웃된 세션도 **리뷰 사이클 1회를 소모**하므로(Epic 11의 11-1과 같은 패턴, 구 `#182` 계열), 상한 2회 중 1회가 아무 일도 없이 사라졌을 상황이었다.
+  ⚠️ **재발 가능성이 높다**: 해당 장애는 이 항목을 쓰는 시점에도 "조사 중"으로 열려 있다.
+trigger: Epic 13 남은 스토리 실행 중 세션이 또 API 오류로 죽을 때 — 그때 (a)사람이 즉시 깨우거나 (b)`bmad-loop status` 감시에 "로그 파일이 N분간 안 자란다" 조건을 넣어 자동 경보한다. 상류(bmad-loop)에 리뷰 세션에도 유휴 감지를 달아달라고 보고한다. Epic 13 회고 확인 항목.
 status: open

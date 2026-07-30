@@ -1,8 +1,11 @@
 """Phase B G2 baseline 캡처 러너 — 큐리셋을 실제 `run_search()`로 1회씩 돌려 raw 결과를 만든다.
 
-⚠️ 쿼터 보호: `test_live_smoke.py`와 동일 게이트 — 환경변수 `RUN_LIVE_SMOKE=1`이 아니면 절대
-  실제 LLM/DB를 호출하지 않는다(CI·무심코 실행한 pytest·다음 dev-auto 루프가 실수로 Gemini
-  무료 티어 일일 쿼터를 태우지 않게 — 13.1 스토리 Boundaries).
+⚠️ 과금 보호: `test_live_smoke.py`와 동일 게이트 — 환경변수 `RUN_LIVE_SMOKE=1`이 아니면 절대
+  실제 LLM/DB를 호출하지 않는다(CI·무심코 실행한 pytest·다음 dev-auto 루프가 실수로 Gemini를
+  호출하지 않게 — 13.1 스토리 Boundaries).
+  ✎ 2026-07-30 정정: 여기 있던 "무료 티어 일일 쿼터" 표현은 사실이 아니다 — 이 프로젝트 키는
+  **유료 티어**다(사용자 확인). 게이트는 그대로 두되(무심코 과금되는 것은 여전히 막아야 한다),
+  "쿼터 때문에 전량을 못 돌린다"는 근거는 성립하지 않는다. `test_live_smoke.py` 헤더 참조.
 
 역할: `docs/ai-ab-test-queryset.json`의 각 item(단일/멀티턴)을 `app.graph.graph.run_search()`
   로 N=1회 실행해, `score_ab.score_model()`이 기대하는 shape으로 직렬화한다:
@@ -25,9 +28,12 @@
   `run_phase_b.py && score_ab.py ...`처럼 셸에서 체인해도 게이트 차단이나 부분 실패가
   조용히 삼켜지지 않는다. `--out`은 필수다(기본값이 커밋된 baseline 산출물 자체였다).
 
-실행(3~5개 대표 질의만 — 44개 전량은 DW로 등재된 수동 후속 작업):
+실행 — 전량(44개, G2 baseline 정본. 2026-07-30 실행됨, DW-554 종료):
   api/ 에서 RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres \
-    .venv/bin/python scripts/run_phase_b.py --subset A1,B1,C1 --out docs/g2-baseline-partial.json
+    .venv/bin/python scripts/run_phase_b.py --out docs/g2-baseline.json
+
+실행 — 일부만(디버깅·재캡처용):
+  ... --subset A1,B1,C1 --out docs/g2-baseline-partial.json
 """
 
 from __future__ import annotations
