@@ -46,6 +46,7 @@ def test_live_smoke_pathA():
     out = _run_or_skip("3천만원 이하 흰색 SUV")
     assert isinstance(out["answer"], str) and out["answer"]
     assert isinstance(out["listings"], list)
+    assert out["route"] == "SQL"
 
 
 def test_live_smoke_pathB():
@@ -53,6 +54,7 @@ def test_live_smoke_pathB():
     out = _run_or_skip("패밀리카로 무난한 거")
     assert isinstance(out["answer"], str) and out["answer"]
     assert isinstance(out["listings"], list)
+    assert out["route"] == "CLARIFY"
 
 
 def test_live_smoke_pathC():
@@ -63,3 +65,13 @@ def test_live_smoke_pathC():
     out = _run_or_skip("오늘 날씨 어때?")
     assert out["listings"] == [], "무관 질의에는 매물이 없어야 한다(CM1)"
     assert "중고차" in out["answer"]
+    assert out["route"] == "REJECT"
+
+
+def test_live_smoke_hybrid():
+    """조합형(구조+의미) 대표 1건 — HYBRID로 분류되고 hybrid_rag_node가 실제 단일쿼리로
+    응답하는지(Story 13.3 AC — 직접 실행·관찰, B4)."""
+    out = _run_or_skip("3천만원 이하로 무난한 패밀리카")
+    assert isinstance(out["answer"], str) and out["answer"]
+    assert isinstance(out["listings"], list)
+    assert out["route"] == "HYBRID"

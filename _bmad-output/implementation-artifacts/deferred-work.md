@@ -3461,7 +3461,8 @@ location: `api/app/db/sql_guard.py`(96행대, `no_vector` 정규식: `order\s+by
 severity: low
 reason: 이 스토리의 I/O 매트릭스가 요구한 정확한 한 가지 모양(별칭 없음·단일 정렬 키)은 화이트리스트를 통과하고, 그 밖의 위치(SELECT 목록 등)는 여전히 `forbidden_column`으로 거부된다 — 의도한 동작. 다만 `ORDER BY (embedding <=> %s::vector)`(괄호로 감쌈)나 `ORDER BY category, embedding <=> %s::vector`(2차 정렬 키와 결합) 같은 변형은 이 정규식에 안 걸려 `embedding`/`vector`가 여전히 미화이트리스트 식별자로 거부된다(직접 재현 확인). I4 원칙상 이 절은 LLM이 아니라 코드(13.3)가 붙이므로, 13.3이 이 정확한 모양으로만 절을 생성하면 문제가 되지 않는다 — 하지만 13.3이 동점 처리 등으로 2차 정렬 키나 별칭을 붙이는 형태를 택하면 하이브리드 경로 전체가 `forbidden_column`으로 막힌다.
 trigger: Story 13.3(하이브리드 노드) 스펙 작성 시 — 벡터절에 별칭이나 2차 정렬 키가 필요한지 먼저 확인하고, 필요하면 이 정규식을 그 모양까지 포함하도록 확장한다.
-status: open
+status: done 2026-07-31
+resolution: Story 13.3이 `hybrid_rag_node`를 구현하면서 정확히 이 정규식이 기대하는 모양(`SELECT {SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' AND (<조건>) ORDER BY embedding <=> %s::vector LIMIT <정수>`)으로만 SQL을 조립한다 — 별칭·2차 정렬키를 붙이지 않는다(`api/app/graph/hybrid_rag_node.py`). `sql_guard.py`의 벡터절 정규식 주석에 이 확인 완료를 남겼다("DW-555: 13.3은 별칭·2차 정렬 없이 정확히 이 모양만 쓰므로 기존 정규식 확장 불필요, 확인 완료"). 로컬 Supabase+GEMINI_API_KEY로 대표 조합형 질의 5건(3천만원 이하로 무난한 패밀리카·가족이랑 타기 좋은 7인승 차 보여줘·연비 좋은 차 중에 2천만원 이하로 보여줘·초보가 몰기 쉬운 작은 차 2천 이하면 좋겠어·연비 좋은 전기차 추천)을 직접 실행해 매번 가드를 통과하거나(3건, 예: `seats = 7`·`body_type IN ('경차', '소형차') AND price <= 20000000`·`fuel = '전기'`) 정상 폴백함을 확인(2건, `NONE`→doc_rag_node)했다(B4 실측). `api/tests/test_hybrid_rag_node.py`가 조립 모양을 회귀 고정한다.
 
 ### DW-556: `run_phase_b.py --model` 생략 시 캡처 시점의 baseline 모델명으로 항상 라벨링됨
 
@@ -3497,7 +3498,8 @@ reason: 숫자 매처가 `\b(limit|offset)\s+([-+]?\d+)`로 **첫 정수만** �
   - `... LIMIT 10, 5`(MySQL 2인자 형태) → 통과 후 psycopg가 실행 단계에서 거부 → `/ai/search` 500.
   - `... LIMIT 5 LIMIT 999`(이중 LIMIT) → 통과 후 실행 단계 문법 오류 → 500. `sql_rag_node`의 재시도 루프가 직전 SQL을 되먹이므로 재시도 산출물로 나올 수 있는 형태다.
 trigger: Story 13.3(하이브리드 노드) 착수 시 — 그 스토리가 벡터절에 `LIMIT k`를 붙이며 이 블록을 다시 만진다. 고칠 방향은 LIMIT/OFFSET 절을 "꼬리에 오는 bare integer" 형태로 **전체 앵커링**하고 그 밖의 모든 형태를 `limit_malformed`/신규 `offset_malformed`로 명시 거부하는 것이다.
-status: open
+status: done 2026-07-31
+resolution: `api/app/db/sql_guard.py`의 LIMIT·OFFSET 숫자 매처를 값 뒤(lookahead)가 문장 끝 또는 짝이 되는 절(LIMIT↔OFFSET)로만 이어지도록 전체 앵커링했다(`(?=\s*$|\s+offset\b)`/`(?=\s*$|\s+limit\b)`). 이중 LIMIT/OFFSET은 값 판정 전에 개수 검사로 먼저 거부하고(`limit_malformed`/신규 `offset_malformed`), OFFSET에도 LIMIT과 대칭인 malformed 분기를 신설했다. red→green 실측(B4): 수정 전 코드(baseline)에 `LIMIT 5+100`·`LIMIT 10, 5`·`LIMIT 5 LIMIT 999`·`OFFSET 5 (999999)`·`OFFSET 500+600` 5형태를 넣으면 전부 조용히 통과(PASSED (BUG))했고, 수정 후엔 전부 `limit_malformed`/`offset_malformed`로 거부되며 정상 `LIMIT 5`·`LIMIT 5 OFFSET 10`은 회귀 없이 통과함을 확인했다. `api/tests/test_sql_guard.py`에 6형태 거부 + 2형태 정상 통과 회귀 테스트를 추가했다.
 
 ### DW-559: 하이브리드 벡터절이 가드를 통과한 뒤 params 없이 실행돼 400이 500으로 바뀐다
 
@@ -3506,7 +3508,8 @@ location: `api/app/graph/sql_rag_node.py`(`run_select(safe_sql)` — params 없�
 severity: medium
 reason: 이번 스토리가 화이트리스트한 `ORDER BY embedding <=> %s::vector`는 **미바인드 자리표시자를 담은 SQL을 반환**한다. I4 원칙상 그 절은 코드가 붙이고 params도 코드가 넘기지만, 그 배선(13.3)이 아직 없어서 지금은 정당한 생산자가 없다. LLM이 환각·프롬프트 인젝션으로 그 모양을 뱉으면 가드는 통과시키고, `run_select`는 params 없이 실행해 psycopg 문법 오류가 나고, `sql_rag_node`의 `except SqlGuardError`가 못 잡아 500 `internal_error`가 된다 — 이 변경 전에는 `forbidden_column` 400(한국어 안내 + LLM 1회 자기수정)이었다. 데이터 노출은 없고 에러 품질만 나빠지는 회귀다. 테스트도 가드의 **판정**만 보고 **산출물이 실행 가능한지**는 아무도 안 본다.
 trigger: Story 13.3(하이브리드 노드) 구현 시 — 코드가 벡터절과 params를 함께 넘기는 경로를 만들 때 함께 정한다. (a) params를 받는 별도 진입점을 두거나 (b) `run_select`가 `%` 있는 쿼리를 params 없이 실행하지 않게 하거나 (c) 가드 통과 SQL을 실제로 실행해 보는 테스트를 붙인다.
-status: open
+status: done 2026-07-31
+resolution: `hybrid_rag_node`(`api/app/graph/hybrid_rag_node.py`)가 정당한 생산자가 됐다 — 가드 통과 직후 `embed_query(query)` → `_vec_literal`(doc_rag_node와 동일 로직)로 만든 벡터 리터럴을 `run_select(safe_sql, (qvec_literal,))`의 params로 실제로 바인딩해 실행한다. `api/tests/test_hybrid_rag_node.py`의 `test_hybrid_assembles_expected_sql_and_binds_embedding_params`가 `run_select`에 전달되는 `params`가 정확히 `(_vec_literal(...),)`인지 배선을 못박는다. 로컬 Supabase+GEMINI_API_KEY 라이브 스모크(`test_live_smoke_hybrid`, DW-555 resolution의 5건 수동 실행)로 실제 psycopg 실행까지 성공함을 확인했다(400이 500으로 바뀌는 회귀 없음).
 
 ### DW-560: 에픽·아키텍처 문서의 벡터절 바인드 형태(`$1::vector`·`LIMIT k`)가 psycopg `%s`와 어긋나 가드가 거부한다
 
@@ -3515,7 +3518,8 @@ location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(AC-SEC
 severity: medium
 reason: 계획문서 3곳이 하이브리드 절을 `ORDER BY embedding <=> $1::vector LIMIT k`로 규정한다. `$1`은 asyncpg/raw 프로토콜 스타일이고 이 프로젝트의 드라이버는 psycopg(`%s`·`%(name)s`)다. 실측: `... ORDER BY embedding <=> $1::vector LIMIT 10` → `forbidden_column` 거부, `... ORDER BY embedding <=> %s::vector LIMIT %s`(문서가 말하는 "LIMIT k를 바인드 파라미터로") → `limit_malformed` 거부. 13.3은 이 문서를 보고 쓰이도록 설계돼 있으므로, 문서를 그대로 따르면 하이브리드 경로가 100% 막힌다. 아키텍처 문서의 "`embedding`/`vector` 식별자를 화이트리스트로 추가" 서술도 1차 리뷰에서 폐기된 접근(위치-무관 화이트리스트)을 가리킨다.
 trigger: Story 13.3 스펙 작성 직전 — 계획문서 3곳의 `$1::vector`를 `%s::vector`로, `LIMIT k` 바인드 서술을 코드가 정수로 붙이는 형태로 정정하고, 폐기된 화이트리스트 서술을 위치-스코프 방식으로 갱신한다.
-status: open
+status: done 2026-07-31
+resolution: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(AC-SEC-1 서술·Story 13.3 AC 2곳, 3줄)와 `architecture-increment-2026-07-12.md`(하이브리드 검색 서술·I4 서술, 2줄)의 `$1::vector`를 `%s::vector`로, "LIMIT k를 바인드 파라미터로 덧붙임"을 "`%s`는 임베딩 바인드, `LIMIT k`는 코드가 붙이는 정수 리터럴(바인드 아님)"로 정정했다. `epic-13-context.md`는 이번 스토리 Code Map에 없어 손대지 않았다(별도 확인 필요 시 후속). architecture 문서의 "embedding/vector 식별자를 화이트리스트로 추가" 서술도 "위치-스코프로만 화이트리스트(전역 추가 아님)"로 정정했다.
 
 ### DW-561: `router_node`의 폴백이 일시적 429/timeout을 삼켜, G2 캡처가 폴백 라우트를 실측값으로 기록한다
 
@@ -3625,7 +3629,8 @@ location: `api/docs/ai-ab-test-queryset.json`(44개 질의·golden 값 — 13.2�
 severity: medium
 reason: 13.2가 FR43 ④(조합형)를 위해 HYBRID 라우트를 신설했지만, 44개 큐리셋 중 구조 조건과 의미/느낌 조건이 함께 있는 질의(예: "3천만원 이하로 무난한 패밀리카")는 하나도 없다(Design Notes 확인) — 그래서 HYBRID는 골든 예시 없이 신설됐다. `score_model()`의 `if primary == "A": ... elif primary == "B": ... elif primary == "C": ...` 분기에도 HYBRID(신버전 그대로 등장할 primary_path는 아직 없지만, 향후 큐리셋에 HYBRID 예시가 추가되면) 대응 분기가 없어 결과집합 채점(score_path_a류)이 비어 있는 상태로 남는다. routing_correct(라우팅 정확도)만 `route_ok()` 번역으로 채점되고, HYBRID의 "결과가 실제로 맞았는가"는 어떤 지표로도 측정되지 않는다.
 trigger: Story 13.3 스펙 작성 시(하이브리드 질의 예시를 큐리셋에 추가하거나 별도 검증 방법을 정한다) — 13.3이 HYBRID의 실제 벡터+SQL 결합 실행을 구현하면서, 큐리셋에 HYBRID `primary_path` 예시(구조+의미 조합 질의, golden predicate)를 추가하고 `score_model()`에 HYBRID 결과집합 채점 분기를 추가할지, 아니면 별도 검증 방법(예: 수동 스모크만)으로 대신할지 그 스펙에서 정한다.
-status: open
+status: done 2026-07-31
+resolution: Story 13.3은 (b) 별도 검증 방법을 택했다 — 큐리셋에 HYBRID golden 예시를 신규로 추가하지 않는다(13.2 Never 절 큐리셋 수정 금지 승계 + `_require_legacy_paths`의 전량-마이그레이션 강제를 피하기 위해). 대신 결과집합 자동채점 대신 라이브 스모크(`test_live_smoke_hybrid` + 대표 조합형 질의 5건 수동 실행, DW-555 resolution 참조)로 HYBRID 동작을 직접 확인했다. `score_model()`에 HYBRID 결과집합 채점 분기는 추가하지 않는다(이 결정으로 DW-571을 닫는다 — 결과집합 자동채점 공백은 남지만, 그 공백을 메우지 않기로 명시 결정했다는 점이 다르다).
 
 ### DW-572: 큐리셋의 구버전 `A` 라벨이 **올바른 HYBRID 분류를 오답으로 집계**한다 — DW-571의 전제("조합형 질의가 하나도 없다")는 사실과 다르다
 
@@ -3634,7 +3639,8 @@ location: `api/docs/ai-ab-test-queryset.json`(항목 A5·G3·G5·G6, 멀티턴 M
 severity: medium
 reason: 13.2가 구 `A`(구조형)를 `SQL`과 `HYBRID` 둘로 쪼갰는데, 어휘 번역표는 `A→SQL` 1:1이다. 그래서 라우터가 **정확히 맞게** HYBRID로 분류해도 번역된 허용집합(`{SQL}` 또는 `{SQL, CLARIFY}`)에 HYBRID가 없어 라우팅 오답으로 집계된다(실측: `route_ok("HYBRID","A",["A"])=False`, `route_ok("HYBRID","A",["A","B"])=False`). 그리고 DW-571이 근거로 적은 "44개 중 구조+의미 조합형 질의는 하나도 없다"는 **실측으로 거짓**이다 — 큐리셋을 전량 파싱하면 A5 `1500만원 이하 가성비 좋은 차 있어?`(primary=A, acceptable=[A]), G3 `가족이랑 타기 좋은 7인승 차 보여줘`([A,B]), G5 `연비 좋은 차 중에 2천만원 이하로 보여줘`([A,B]), G6 `초보가 몰기 쉬운 작은 차 2천 이하면 좋겠어`([A,B]) 등 최소 4건이 "구조 조건 + 용도·느낌 조건"을 함께 갖고 있고, 새 프롬프트의 최우선 규칙("둘 다 있으면 HYBRID")을 그대로 따르면 이들은 HYBRID로 간다. 즉 다음 G2 전량 캡처 때 회귀가 아닌데 최소 4~6건이 라우팅 오답으로 깎인다. 따라서 필요한 일은 DW-571이 적은 "예시 추가"가 아니라 **기존 A 라벨의 재판정**이다(이 항목은 DW-571을 대체하지 않고 그 전제를 정정한다 — DW-571의 "HYBRID 결과집합 채점 분기 부재"는 그대로 유효하다).
 trigger: Story 13.3 스펙 작성 시 — DW-571과 같은 자리에서 함께 결정한다. 선택지는 (a) `A`를 `{SQL, HYBRID}` 집합으로 번역해 허용집합을 넓히거나, (b) 해당 항목들의 `primary_path`를 신어휘로 재라벨링(13.2의 Never 절 "큐리셋 데이터 수정 금지"와 충돌하므로 스펙 수준 결정 필요)하거나, (c) 오답 집계를 그대로 두되 리포트에 "재배정으로 인한 오답 N건"을 분리 표기. 어느 쪽이든 44개 전량 재캡처(DW-554) 전에 정해야 그 캡처의 라우팅 점수가 해석 가능하다.
-status: open
+status: done 2026-07-31
+resolution: (a)안 채택 — `api/scripts/score_ab.py`에 `route_ok()` 전용 집합 번역 `_LEGACY_ROUTE_ALIASES_SET = {"A": {"SQL", "HYBRID"}, "B": {"CLARIFY"}, "C": {"REJECT"}}`를 신설하고 `route_ok()`가 `primary`/`acceptable`의 각 값을 이 집합으로 번역해 합집합과 `actual`을 비교하도록 교체했다(`captured_route`/`_require_legacy_paths`가 쓰는 1:1 `_LEGACY_ROUTE_ALIASES`는 손대지 않았다). red→green 실측(B4): 수정 전 `route_ok("HYBRID","A",["A"])`는 False(코드리뷰 재현), 수정 후 True. `route_ok("CLARIFY","A",["A"])`는 여전히 False임도 함께 확인해 집합 번역이 다른 카테고리까지 느슨해지지 않았음을 못박았다(`api/tests/test_ab_scoring.py`의 `test_route_ok_legacy_a_accepts_both_sql_and_hybrid`·`test_route_ok_legacy_b_and_c_unaffected_by_set_translation`). 알려진 트레이드오프(Design Notes): 이 확장은 legacy `A` 44개 중 구조전용 항목의 HYBRID 오분류도 함께 허용한다 — 큐리셋을 안 건드리는 쪽을 우선한 결정이다.
 
 ### DW-573: `api/tests/demo_queries.py`가 여전히 구버전 `A/B/AB/C` 어휘 — 문서는 이 파일을 "기대 경로 단일출처"로 가리킨다
 
@@ -3653,6 +3659,22 @@ severity: low
 reason: 이 검사는 "좌변=status 식별자, 연산자 `=`, 우변=`'on_sale'` 문자열"이라는 **정확히 하나의 토큰 형상**만 통과시킨다. 부정 우회를 막는 데는 확실히 성공했지만(실측: 알려진 우회 16형태 전부 거부, review-4가 새로 고안한 괄호+부정 조합 5형태도 전부 거부), 그 대가로 의미상 동치인 안전한 표현도 함께 거부된다 — 실측 거부: `WHERE 'on_sale' = status`(좌우 반전), `WHERE status = ('on_sale')`(우변 괄호), `WHERE status IN ('on_sale')`. 셋 다 베이스라인에서도 거부됐으므로 회귀는 아니지만, DW-557 resolution과 테스트 주석이 "표현 형태가 아니라 구조를 보므로 아직 실측되지 않은 새 변형도 원리상 함께 막힌다"고 적은 것은 **차단 방향에서만 참이고 통과 방향에서는 과장**이다(B4 "재보기 전엔 선언하지 않는다"). 또 `WHERE status = 'ON_SALE'`은 통과하는데(우변을 소문자화해 비교) PostgreSQL 문자열 비교는 대소문자를 구분하므로 이 쿼리는 항상 0행이다 — 누출은 아니지만(안전 방향) 가드는 "FR11 충족"이라고 판정한다. 지금 이걸 엄격하게 바꾸면 0행 안내가 400 오류로 바뀌어 사용자 경험이 오히려 나빠지므로 이번엔 손대지 않았다.
 trigger: 13.3에서 하이브리드 벡터+SQL 결합으로 **SQL 표면이 넓어질 때** — 그때 LLM이 내는 SQL 형태가 다양해지므로, (a) 위 동치 표현 중 실제로 나오는 것이 있는지 먼저 측정하고, (b) 검사 옆에 "이 검사가 통과시키지 않는 안전 표현" 목록을 실측해 적고(추측 금지), (c) DW-557 resolution의 과장된 문구를 그때 정정한다.
 status: open
+✎ 2026-07-31 Story 13.3 실측 갱신(코드 변경 없음, open 유지): 트리거대로 SQL 표면이 넓어졌지만
+  (`hybrid_rag_node`가 LLM에게 WHERE 구조조건 표현식을 자유 형태로 생성시킨다), **`status`
+  자체는 이 넓어진 표면에 노출되지 않는다** — 스펙이 LLM에게 `status`·`SELECT`·`ORDER BY`·
+  `LIMIT`을 절대 언급하지 말라고 명시 지시하고(hybrid_rag_node.py `_HYBRID_INSTRUCTIONS`),
+  `status = 'on_sale'`는 코드가 조립 시점에 항상 리터럴로 붙인다(`hybrid_rag_node`의 SQL
+  조립 f-string). 로컬 Supabase+GEMINI_API_KEY로 대표 조합형 질의 5건을 직접 실행해 관찰한
+  실제 LLM 산출 조건은 `NONE`(2건, doc_rag_node 폴백)·`seats = 7`·`body_type IN ('경차',
+  '소형차') AND price <= 20000000`·`fuel = '전기'`였다 — 전부 `status`를 언급하지 않았다.
+  즉 이 항목이 우려한 "13.3이 SQL 표면을 넓혀 동치 표현이 실제로 나올 가능성"은, `status`
+  절만 놓고 보면 **이 스토리에서는 실현되지 않는다**(구조가 원천적으로 막는다 — LLM이
+  만드는 조건은 SELECT 목록 안의 AND 결합항일 뿐, status 비교식 자체를 생성할 위치가 없다).
+  따라서 이 항목이 요구한 (a) 측정은 "13.3 경로에서는 관측된 동치 표현 0건"으로 완료했지만,
+  (b)(검사 옆 안전 표현 목록)·(c)(DW-557 resolution 과장 문구 정정)는 손대지 않는다 —
+  둘 다 코드 변경이 아니라 **문서 갱신**인데, 이 항목의 본래 우려(경로 A/sql_rag_node가
+  LLM에게 status를 직접 쓰게 하는 구조)는 13.3 범위 밖이라 여전히 유효하며, 그쪽 경로는
+  이번 스토리로 아무것도 바뀌지 않았다. status는 open으로 유지한다.
 
 ### DW-575: `A→SQL` 1:1 번역이 만드는 라우팅 오답 4~6건이 **A/B 모델 승자 판정을 뒤집을 수 있다**(임계값이 5)
 
@@ -3661,7 +3683,8 @@ location: `api/scripts/score_ab.py`(`_LEGACY_ROUTE_ALIASES`의 `A→SQL` · `ROU
 severity: medium
 reason: DW-572는 "구 `A` 라벨이 올바른 HYBRID 분류를 오답으로 집계한다 → 라우팅 점수를 해석할 수 없다"까지만 적었다. 그 뒤가 남아 있다 — `routing_correct`는 `lexicographic_winner()`의 2순위 기준이고 그 임계값 `ROUTING_DELTA`가 **5**다. DW-572가 센 오답이 최소 4~6건이므로, 이 허수 격차가 임계값 바로 위/아래에 앉는다. 즉 두 모델을 비교할 때 **회귀가 아닌 어휘 분할 때문에 승자가 뒤집히고**, 리포트에는 "라우팅 정답 N vs M"이라는 정상적으로 보이는 사유가 찍힌다(`gate_pass`는 오염·dead-end·에러만 보므로 여기서 아무것도 못 걸러준다). 실측 확인: `route_ok("HYBRID","A",["A"])=False`, `route_ok("HYBRID","A",["A","B"])=False` — 라우터가 맞게 분류할수록 점수가 깎인다.
 trigger: DW-572와 **같은 자리에서 함께 결정한다**(Story 13.3 스펙 작성 시) — 어휘 재판정 방식을 고르는 그 결정이 이 문제도 같이 닫는다. 만약 (c)안(오답을 그대로 두고 리포트에 분리 표기)을 택한다면, 그 분리된 건수를 `lexicographic_winner()`의 라우팅 비교에서 **빼고** 계산하도록 함께 고쳐야 이 항목이 닫힌다.
-status: open
+status: done 2026-07-31
+resolution: DW-572와 같은 수정(route_ok의 `A→{SQL,HYBRID}` 집합 번역)이 이 문제도 함께 닫는다 — 허수 오답 4~6건 자체가 더는 발생하지 않으므로 `ROUTING_DELTA` 임계값 부근에서 승자가 뒤집힐 여지가 사라진다. `lexicographic_winner()`는 손대지 않았다(분리 표기 방식이 아니라 오답 자체를 없애는 방식을 택했으므로 그 함수를 고칠 필요가 없다).
 
 ### DW-576: 데모 인수 게이트의 ② 목록이 실측 분류와 어긋난다 — `연비 좋은 전기차 추천`은 CLARIFY가 아니라 HYBRID다
 
@@ -3686,4 +3709,10 @@ origin: review-budget-followup
 source_spec: `spec-13-2-4분기-라우팅.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260730-205944-48e1; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-579: `assert last_error is not None`이 SQL/HYBRID 노드의 재시도 루프 종료를 제어 흐름으로 방어한다 — `-O` 최적화 실행 시 사라지는 방어
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+summary: `sql_rag_node.py`(사전 존재)와 이번 스토리가 같은 패턴으로 새로 만든 `hybrid_rag_node.py` 둘 다, 재시도 루프가 두 번 다 돌고도 return을 못 했을 때 `last_error`가 항상 설정돼 있다는 보장을 `assert`문으로만 지킨다 — 코드를 눈으로 추적하면 성립하지만, Python을 `-O`로 실행하면 이 assert가 통째로 사라져 방어가 없어진다.
+evidence: blind-hunter 리뷰(story 13.3)가 두 파일 모두에서 이 패턴을 발견. 지금은 두 곳 다 루프 구조상 `last_error`가 항상 설정된 채로 이 줄에 도달하지만, 나중에 이 루프에 손대는 사람이 실수로 미설정 경로를 만들면 `-O` 실행 환경에서는 조용히 `None`을 반환하고 호출부가 엉뚱한 위치(`SqlGuardError` 대신 `TypeError` 등)에서 죽는다(CLAUDE.md B9 "규칙은 어길 수 없는 자리에 박는다" 위반 소지 — 실행되는 검사가 아니라 주석/관례로만 지켜지는 불변식).
 status: open

@@ -196,6 +196,17 @@ def is_redirect(answer: str) -> bool:
 # REJECT/CLARIFY/SQL/HYBRID만 내는 지금, 번역 없이 비교하면 44개 전량이 오판된다(DW-562).
 _LEGACY_ROUTE_ALIASES = {"A": "SQL", "B": "CLARIFY", "C": "REJECT"}
 
+# route_ok() 전용 집합 번역(DW-572/575, Story 13.3) — 13.2가 구 `A`(구조형)를 `SQL`과
+# `HYBRID` 둘로 쪼갰는데 위 1:1 매핑은 여전히 `A→SQL`뿐이라, 라우터가 **정확히 맞게**
+# HYBRID로 분류해도 라우팅 오답으로 집계된다(실측: route_ok("HYBRID","A",["A"])=False).
+# `B`(→CLARIFY)·`C`(→REJECT)는 13.2에서 이미 taxonomy가 안 갈라졌으므로 1개 값 그대로 둔다.
+# 이 확장이 "진짜 SQL을 HYBRID로 오분류"하는 버그를 가려버릴 여지(legacy `A` 44개 중
+# 구조전용 항목도 이제 `HYBRID` actual을 허용)는 알려진 트레이드오프다 — 큐리셋을 안
+# 건드리는 쪽을 우선했다(13.2 Never 절 승계, spec-13-3 Design Notes 참조).
+_LEGACY_ROUTE_ALIASES_SET: dict[str, set[str]] = {
+    "A": {"SQL", "HYBRID"}, "B": {"CLARIFY"}, "C": {"REJECT"},
+}
+
 
 def _require_legacy_paths(primary: str, acceptable: list[str] | None, where: str) -> str:
     """큐리셋 골든 라벨(primary + acceptable 원소 전부)이 구어휘(A/B/C)인지 확인한다.
@@ -248,10 +259,18 @@ def route_ok(actual: str, primary: str, acceptable: list[str] | None) -> bool:
     primary·acceptable만 구버전→신버전으로 번역하고 actual은 그대로 둔다(DW-562, 13.2
     Design Notes — actual은 이 스토리 이후로 항상 신버전 어휘만 나온다). 구어휘로
     캡처된 옛 raw는 호출 전에 `captured_route()`로 올려서 넣는다.
+
+    번역은 1:1이 아니라 **집합**이다(DW-572/575, Story 13.3) — legacy `A`는 `{"SQL",
+    "HYBRID"}` 둘 다로 번역되므로, 라우터가 옛 `A` 질의를 HYBRID로 정확히 분류해도
+    라우팅 오답으로 잘못 집계되지 않는다. `B`·`C`는 여전히 1개 값(`captured_route`/
+    `_require_legacy_paths`가 쓰는 `_LEGACY_ROUTE_ALIASES`와는 별개 상수).
     """
-    primary_t = _LEGACY_ROUTE_ALIASES.get(primary, primary)
-    acceptable_t = [_LEGACY_ROUTE_ALIASES.get(a, a) for a in (acceptable or [primary])]
-    allowed = set(acceptable_t) | {primary_t}
+    def _translate(v: str) -> set[str]:
+        return _LEGACY_ROUTE_ALIASES_SET.get(v, {v})
+
+    allowed: set[str] = set()
+    for v in [primary, *(acceptable or [primary])]:
+        allowed |= _translate(v)
     return actual in allowed
 
 

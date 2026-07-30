@@ -695,6 +695,61 @@ def test_clause_keyword_with_odd_whitespace_does_not_open_a_bypass():
         assert exc.value.code == "missing_status_filter", f"거부 사유가 다르다: {tail!r}"
 
 
+# ── DW-558: LIMIT·OFFSET bare-integer 전체 앵커링 (Story 13.3) ────────────────
+# 숫자 매처가 절 뒤에 뭐가 붙어도 첫 정수만 부분 매치해 통과시키던 구멍(review pass 4가
+# 발견) — 값 뒤를 문장 끝/짝 절로 앵커링해 6형태 전부 거부, 정상 2형태는 회귀 없이 통과.
+def test_limit_with_trailing_arithmetic_rejected_as_malformed():
+    """`LIMIT 5+100` — 부분 매치로 n=5만 보고 통과시키면 MAX_LIMIT(50)을 우회해 전량 반환된다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5+100"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_limit_mysql_two_arg_form_rejected_as_malformed():
+    """`LIMIT 10, 5`(MySQL 2인자 형태) — 통과시키면 psycopg 실행 단계에서 문법 오류(500)가 난다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 10, 5"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_duplicated_limit_clause_rejected_as_malformed():
+    """`LIMIT 5 LIMIT 999` — 이중 LIMIT은 실행 불가 SQL이다(재시도 루프가 직전 SQL을 되먹여
+    나올 수 있는 형태)."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 LIMIT 999"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_offset_with_trailing_parenthesized_number_rejected_as_malformed():
+    """`OFFSET 5 (999999)` — 수정 전엔 offset_match가 None이 되어 MAX_OFFSET 검사가
+    통째로 건너뛰어졌다(offset_malformed 짝 분기가 없었다)."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 5 (999999)"
+    assert _code(sql) == "offset_malformed"
+
+
+def test_offset_with_trailing_arithmetic_rejected_as_malformed():
+    """`OFFSET 500+600` — LIMIT의 `5+100`과 동일 우회 형태."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 500+600"
+    assert _code(sql) == "offset_malformed"
+
+
+def test_duplicated_offset_clause_rejected_as_malformed():
+    """이중 OFFSET도 이중 LIMIT과 대칭으로 거부된다(실행 불가 SQL 사전 차단)."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 5 OFFSET 10"
+    assert _code(sql) == "offset_malformed"
+
+
+def test_limit_bare_integer_still_passes_after_anchoring():
+    """정상 `LIMIT n`은 앵커링 후에도 회귀 없이 통과한다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5"
+    out = validate_select_sql(sql)
+    assert out == sql
+
+
+def test_limit_offset_bare_integers_still_pass_after_anchoring():
+    """정상 `LIMIT n OFFSET m`도 앵커링 후 회귀 없이 통과한다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 10"
+    out = validate_select_sql(sql)
+    assert out == sql
+
+
 def test_negation_inside_paren_group_still_rejected():
     """과잉 차단을 고치다 부정 우회까지 열지 않았는지 — 평탄화의 대조군.
 

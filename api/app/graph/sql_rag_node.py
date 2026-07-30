@@ -29,11 +29,16 @@ logger = logging.getLogger(__name__)
 # ListingCard 7필드 — SELECT 컬럼 순서는 공유 헬퍼(listing_cards)에 단일출처로 둔다(경로 B와 공유).
 _SELECT_COLUMNS = SELECT_COLUMNS
 
-# 시스템 프롬프트 — 스키마·허용값·단위 정규화·불변 규칙을 LLM에 그대로 박는다.
-# 허용값은 0002_listings.sql CHECK 목록과 정확히 일치(단일출처, drift 금지).
-_SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL 생성기다. listings 테이블만 조회한다.
-
-[스키마: listings 테이블 — 아래 컬럼과 허용값만 사용]
+# 도메인 규칙(스키마·허용값 / 단위 정규화·차형 용어 매핑·옵션 필터) — 경로 A(sql_rag_node)·
+# 조합형(hybrid_rag_node, 13.3)이 공유하는 순수 리팩터 추출. 문자열 내용은 그대로이고
+# _SYSTEM_PROMPT가 f-string으로 포함한다(drift 방지 — hybrid_rag_node가 재사용). 허용값은
+# 0002_listings.sql CHECK 목록과 정확히 일치(단일출처, drift 금지).
+# 두 조각(스키마 / 단위·차형·옵션)으로 나눈 이유: _SYSTEM_PROMPT는 원래(리팩터 전) 이 둘
+# 사이에 경로 A 전용 [불변 규칙] 블록이 끼어 있었다 — 리팩터로 이미 운영 중인 이 프롬프트의
+# 블록 순서(=LLM 입력)가 바뀌면 SQL 생성 품질이 조용히 변할 위험이 있어(review 발견), 아래
+# _SYSTEM_PROMPT 조립에서 원래 순서를 문자 그대로 복원한다. hybrid_rag_node는 [불변 규칙]이
+# 없으므로 _DOMAIN_RULES(둘을 합친 것)를 그대로 한 덩어리로 재사용한다.
+_SCHEMA_RULES = """[스키마: listings 테이블 — 아래 컬럼과 허용값만 사용]
 - id, manufacturer(제조사), model(모델·자유값), year(연식·정수), price(가격·원), mileage(주행거리·km),
   region(지역), body_type(차종), color(색상), fuel(연료), transmission(변속기),
   displacement(배기량·cc), seats(인승), accident_free(무사고 여부·boolean), status(상태),
@@ -45,7 +50,32 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL �
 - color ∈ (흰색,검정,회색,은색,파랑,빨강,갈색,녹색,기타)
 - fuel ∈ (가솔린,디젤,하이브리드,전기,LPG)
 - transmission ∈ (자동,수동)
-- region ∈ (서울,부산,대구,인천,광주,대전,울산,세종,경기,강원,충북,충남,전북,전남,경북,경남,제주)
+- region ∈ (서울,부산,대구,인천,광주,대전,울산,세종,경기,강원,충북,충남,전북,전남,경북,경남,제주)"""
+
+_UNIT_AND_FILTER_RULES = """[단위 정규화 — 자연어를 저장 단위(정수)로 변환]
+- 주행거리: "만km" → ×10000 (예: "10만km 이하" → mileage <= 100000)
+- 가격: "천만원"=10000000, "만원"=10000 (예: "3천만원 이하" → price <= 30000000)
+- 방향: "이하/미만" → <= / < , "이상/초과" → >= / >
+
+[차형 용어 매핑]
+- 크기를 안 밝힌 "세단" → body_type IN ('준중형차','중형차','대형차')
+- 크기를 밝힌 세단은 그 크기만 정확히 매핑한다: "준중형세단"→body_type = '준중형차',
+  "중형세단"→body_type = '중형차', "대형세단"→body_type = '대형차' (넓게 IN으로 풀지 말 것)
+- 데모에 없는 차형(해치백·쿠페 등)은 무리하게 매핑하지 말고 가격·기타 조건만 적용한다.
+
+[옵션 필터 — options 배열]
+- 사용자가 특정 옵션(예: 스마트키·통풍시트·후방카메라·내비게이션·파노라마선루프 등)을 요구하면
+  `'<옵션명>' = ANY(options)` 형태로 정확히 거른다. 예: "스마트키 있는 거" → '스마트키' = ANY(options)
+- 옵션이 여러 개면 각각의 `= ANY(options)` 조건을 AND 로 결합한다. 옵션명은 사용자 표현 그대로 쓴다."""
+
+# hybrid_rag_node가 재사용하는 단일 덩어리(순서: 스키마 → 단위·차형·옵션, [불변 규칙] 없음).
+_DOMAIN_RULES = f"{_SCHEMA_RULES}\n\n{_UNIT_AND_FILTER_RULES}"
+
+# 시스템 프롬프트 — 도메인 규칙 + 경로 A 전용 불변 규칙을 LLM에 그대로 박는다(리팩터 전과
+# 문자 그대로 동일한 순서: 스키마 → 불변 규칙 → 단위·차형·옵션 → 출력).
+_SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL 생성기다. listings 테이블만 조회한다.
+
+{_SCHEMA_RULES}
 
 [불변 규칙 — 반드시 지켜라]
 1. 반드시 `SELECT {_SELECT_COLUMNS} FROM listings` 로 시작한다.
@@ -67,21 +97,7 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL �
      "비흡연 차량"처럼 요구해도 이 두 컬럼으로 거르지 말고, 나머지 조건(가격·차종 등)만으로
      조회해라.
 
-[단위 정규화 — 자연어를 저장 단위(정수)로 변환]
-- 주행거리: "만km" → ×10000 (예: "10만km 이하" → mileage <= 100000)
-- 가격: "천만원"=10000000, "만원"=10000 (예: "3천만원 이하" → price <= 30000000)
-- 방향: "이하/미만" → <= / < , "이상/초과" → >= / >
-
-[차형 용어 매핑]
-- 크기를 안 밝힌 "세단" → body_type IN ('준중형차','중형차','대형차')
-- 크기를 밝힌 세단은 그 크기만 정확히 매핑한다: "준중형세단"→body_type = '준중형차',
-  "중형세단"→body_type = '중형차', "대형세단"→body_type = '대형차' (넓게 IN으로 풀지 말 것)
-- 데모에 없는 차형(해치백·쿠페 등)은 무리하게 매핑하지 말고 가격·기타 조건만 적용한다.
-
-[옵션 필터 — options 배열]
-- 사용자가 특정 옵션(예: 스마트키·통풍시트·후방카메라·내비게이션·파노라마선루프 등)을 요구하면
-  `'<옵션명>' = ANY(options)` 형태로 정확히 거른다. 예: "스마트키 있는 거" → '스마트키' = ANY(options)
-- 옵션이 여러 개면 각각의 `= ANY(options)` 조건을 AND 로 결합한다. 옵션명은 사용자 표현 그대로 쓴다.
+{_UNIT_AND_FILTER_RULES}
 
 출력: SQL 텍스트 한 줄만."""
 

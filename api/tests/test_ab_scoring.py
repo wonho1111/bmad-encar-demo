@@ -106,6 +106,27 @@ def test_route_ok_translates_each_acceptable_list_element():
     assert score_ab.route_ok("CLARIFY", "A", ["A", "B"])
 
 
+# ── route_ok 집합 번역 (DW-572/575, Story 13.3) ────────────────────────
+# 13.2가 구 `A`(구조형)를 `SQL`과 `HYBRID` 둘로 쪼갰는데 번역표가 여전히 `A→SQL` 1:1이면,
+# 라우터가 옛 `A` 질의를 **정확히** HYBRID로 분류해도 라우팅 오답으로 집계된다(DW-572
+# 실측: route_ok("HYBRID","A",["A"])가 False였다). 집합 번역(`_LEGACY_ROUTE_ALIASES_SET`)이
+# 그 오답을 바로잡는지, 그러면서도 다른 카테고리(B/C)까지 느슨해지지 않는지 함께 확인한다.
+def test_route_ok_legacy_a_accepts_both_sql_and_hybrid():
+    assert score_ab.route_ok("HYBRID", "A", ["A"])
+    assert score_ab.route_ok("SQL", "A", ["A"])
+    # CLARIFY는 A의 번역집합({"SQL","HYBRID"})에 없으므로 여전히 False — 집합 번역이
+    # 다른 카테고리까지 느슨해지지 않았음을 함께 못박는다.
+    assert not score_ab.route_ok("CLARIFY", "A", ["A"])
+
+
+def test_route_ok_legacy_b_and_c_unaffected_by_set_translation():
+    # B(→CLARIFY)·C(→REJECT)는 13.2에서 taxonomy가 안 갈라졌으므로 여전히 1개 값만 허용한다.
+    assert score_ab.route_ok("CLARIFY", "B", ["B"])
+    assert not score_ab.route_ok("HYBRID", "B", ["B"])
+    assert score_ab.route_ok("REJECT", "C", ["C"])
+    assert not score_ab.route_ok("HYBRID", "C", ["C"])
+
+
 def test_doc_hit_and_redirect():
     ans = "'초보' 매물 5건 (참고: 초보 운전자에게 적합한 차종)"
     assert score_ab.doc_hit(ans, ["03-초보운전자-적합-차종"])
@@ -528,10 +549,15 @@ def test_score_model_multiturn_counts_each_turn_and_fires_contamination_via_hybr
     ⚠️ 픽스처는 실제 큐리셋에 존재할 수 있는 라벨만 쓴다(review-4). 이전엔
     `acceptable_paths=["A","HYBRID"]`라는 구·신 혼합 라벨을 썼는데, 큐리셋 데이터는
     수정 금지(Never 절)라 그런 값이 존재할 수 없다 — 그 가짜 라벨이 "라우팅은 맞게
-    세면서 게이트도 올라간다"는 존재하지 않는 조합을 증명하고 있었다. 실제 조합은
-    "라우팅은 오답으로 집계되지만 오염 게이트는 올라간다"이고, 아래가 그것을 잠근다.
-    (라우팅이 오답이 되는 것 자체는 이 스토리에서 못 고친다 — 큐리셋에 HYBRID를
-    허용하는 라벨이 없기 때문. 장부에 별도 항목으로 등재돼 있다.)
+    세면서 게이트도 올라간다"는 존재하지 않는 조합을 증명하고 있었다.
+
+    ✎ Story 13.3(DW-572/575)이 route_ok의 legacy `A` 번역을 1:1(`A→SQL`)에서 집합
+    (`A→{"SQL","HYBRID"}`)으로 넓혔다 — 그 전엔 이 테스트가 "라우팅은 오답으로
+    집계되지만 오염 게이트는 올라간다"를 잠갔지만, 그건 DW-572가 지목한 바로 그 버그였다
+    (라우터가 정확히 HYBRID로 분류해도 legacy `A` 라벨 때문에 오답으로 깎였다). 이제
+    routing_correct가 옳게 2로 집계된다 — 그리고 하드 오염 게이트는 라우팅 정답 여부와
+    무관하게 독립적으로 발화해야 하므로(수정 전엔 route=="SQL"만 봐서 0/True로 조용히
+    통과했었다) 여전히 깨져야 한다.
     """
     monkeypatch.setattr(score_ab, "fetch_attrs",
                         lambda ids: [{"id": i, "body_type": "중형차", "price": 1} for i in ids])
@@ -555,9 +581,9 @@ def test_score_model_multiturn_counts_each_turn_and_fires_contamination_via_hybr
     }}
     summary = score_ab.score_model(qs, raw)
     assert summary["routing_total"] == 2
-    # 구어휘 "A" 라벨은 SQL로만 번역되므로 올바른 HYBRID 분류도 라우팅 오답으로 집계된다.
-    # 고칠 수 없는 자리(큐리셋 수정 금지)라 사실 그대로 못박는다 — 조용히 넘기지 않는다.
-    assert summary["routing_correct"] == 0
+    # DW-572 수정 후: legacy "A"가 {"SQL","HYBRID"} 집합으로 번역되므로 올바른 HYBRID
+    # 분류가 더는 라우팅 오답으로 깎이지 않는다(수정 전엔 0이었다 — 바로 그 버그).
+    assert summary["routing_correct"] == 2
     # 그럼에도 HYBRID 경로에서 하드 오염 게이트는 올라가고 PASS가 깨져야 한다
     # (수정 전엔 0/True로 조용히 통과 — 게이트는 라우팅 정답 여부와 독립이어야 한다).
     assert summary["contamination"] == 1

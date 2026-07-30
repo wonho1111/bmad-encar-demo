@@ -1,23 +1,23 @@
 """검색 파이프라인 StateGraph 조립 — router → (REJECT/CLARIFY/SQL/HYBRID) → answer → END
-(FR13·FR16·FR17·FR43, 13.2 4분기 라우팅).
+(FR13·FR16·FR17·FR43·FR45, 13.3 하이브리드 검색).
 
 architecture가 그린 단일 파이프라인을 LangGraph StateGraph로 묶는다.
   질의 → 라우터(의도 4분류) → 분기:
-    · SQL     → sql_rag_node  (구조형: Text-to-SQL)
-    · HYBRID  → sql_rag_node  (조합형, 신규 — 13.3 전까지 임시 배선: 구조 조건만 우선 반영)
-    · CLARIFY → doc_rag_node  (질적·의미형, 되묻기 — 13.4 전까지 임시 배선: 기존 B 경험 그대로)
-    · REJECT  → guard_node    (매물 무관: 정중한 거절)
+    · SQL     → sql_rag_node    (구조형: Text-to-SQL)
+    · HYBRID  → hybrid_rag_node (조합형: 구조조건 + 벡터 단일쿼리, Story 13.3)
+    · CLARIFY → doc_rag_node    (질적·의미형, 되묻기 — 13.4 전까지 임시 배선: 기존 B 경험 그대로)
+    · REJECT  → guard_node      (매물 무관: 정중한 거절)
   → answer_node(공통 계약 {answer, listings[]} 보장 + FR17 0건 안내) → END.
 
 설계 결정(OI2): architecture가 StateGraph(LangGraph)와 graph/ 노드 파일을 명시했으므로
-  함수형 대안 대신 StateGraph를 채택한다. 노드 4개 단순 분기라 conditional_edges 한 번으로 충분.
+  함수형 대안 대신 StateGraph를 채택한다. 노드 5개 단순 분기라 conditional_edges 한 번으로 충분.
   컴파일 비용을 매 요청마다 치르지 않도록 모듈 import 시 1회만 compile한다(함정 #4).
 
-중요(함정 #1) — SQL 경로(SQL·HYBRID 둘 다 sql_rag_node) 어댑터는 SqlGuardError를 삼키지 않는다.
-  sql_rag_node가 가드 차단으로 SqlGuardError를 던지면 그대로 그래프 밖(/ai/search)으로
-  전파돼 기존 핸들러가 400으로 잡아야 한다. 어댑터가 try/except로 감싸 빈 결과로 바꾸면
-  400이 사라지는 회귀가 난다 → 절대 감싸지 않는다.
-[Source: story 4.5 graph 설계; architecture.md#AI 데이터 흐름·OI2; 함정 #1·#4]
+중요(함정 #1) — SQL·HYBRID 어댑터는 SqlGuardError를 삼키지 않는다.
+  sql_rag_node·hybrid_rag_node가 가드 차단으로 SqlGuardError를 던지면 그대로 그래프 밖
+  (/ai/search)으로 전파돼 기존 핸들러가 400으로 잡아야 한다. 어댑터가 try/except로 감싸
+  빈 결과로 바꾸면 400이 사라지는 회귀가 난다 → 절대 감싸지 않는다.
+[Source: story 4.5 graph 설계; spec-13-3-하이브리드-검색-sql-벡터.md; architecture.md#AI 데이터 흐름·OI2; 함정 #1·#4]
 """
 
 import logging
@@ -29,6 +29,7 @@ from app.graph.answer_node import answer_node
 from app.graph.contextualize_node import contextualize_query
 from app.graph.doc_rag_node import doc_rag_node
 from app.graph.guard_node import guard_node
+from app.graph.hybrid_rag_node import hybrid_rag_node
 from app.graph.router_node import router_node
 from app.graph.sql_rag_node import sql_rag_node
 
@@ -51,12 +52,18 @@ def _router_step(state: SearchState) -> SearchState:
 
 
 def _sql_step(state: SearchState) -> SearchState:
-    """SQL·HYBRID 공용 어댑터 — sql_rag_node 호출. SqlGuardError는 삼키지 않고 전파(함정 #1).
-
-    HYBRID는 13.3(실제 벡터+SQL 결합 노드) 전까지 SQL과 동일하게 이 노드로 임시 배선한다
-    (구조 조건만 우선 반영, 의미 결합은 13.3에서 추가 — 13.2 Never 절).
-    """
+    """SQL 어댑터 — sql_rag_node(Text-to-SQL) 호출. SqlGuardError는 삼키지 않고 전파(함정 #1)."""
     result = sql_rag_node(state["query"])
+    return {"answer": result["answer"], "listings": result["listings"]}
+
+
+def _hybrid_step(state: SearchState) -> SearchState:
+    """HYBRID 어댑터 — hybrid_rag_node(구조조건+벡터 단일쿼리, Story 13.3) 호출.
+
+    SqlGuardError는 _sql_step과 동일하게 감싸지 않고 그대로 전파한다(함정 #1) — 그래야
+    가드가 2회 연속 차단할 때 /ai/search까지 SqlGuardError가 올라가 400(500 아님)이 된다.
+    """
+    result = hybrid_rag_node(state["query"])
     return {"answer": result["answer"], "listings": result["listings"]}
 
 
@@ -99,19 +106,22 @@ def _build_graph():
     g = StateGraph(SearchState)
     g.add_node("router", _router_step)
     g.add_node("sql", _sql_step)
+    g.add_node("hybrid", _hybrid_step)
     g.add_node("doc", _doc_step)
     g.add_node("guard", _guard_step)
     g.add_node("answer", _answer_step)
 
     g.set_entry_point("router")
-    # 라우터 분류값으로 네 경로 중 하나로 분기. HYBRID는 sql로, CLARIFY는 doc으로 임시 배선(13.2).
+    # 라우터 분류값으로 네 경로 중 하나로 분기. HYBRID는 hybrid_rag_node로(Story 13.3),
+    # CLARIFY는 doc으로 임시 배선(13.4 전까지, 13.2).
     g.add_conditional_edges(
         "router",
         _route_decision,
-        {"REJECT": "guard", "SQL": "sql", "HYBRID": "sql", "CLARIFY": "doc"},
+        {"REJECT": "guard", "SQL": "sql", "HYBRID": "hybrid", "CLARIFY": "doc"},
     )
     # 어느 경로를 타든 마지막엔 answer_node로 모여 계약을 보장한 뒤 종료.
     g.add_edge("sql", "answer")
+    g.add_edge("hybrid", "answer")
     g.add_edge("doc", "answer")
     g.add_edge("guard", "answer")
     g.add_edge("answer", END)

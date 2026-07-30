@@ -191,3 +191,20 @@ def test_system_prompt_instructs_not_filtering_by_all_null_bool_columns():
     from app.graph.sql_rag_node import _SYSTEM_PROMPT
 
     assert "필터 조건으로 쓰지 마라" in _SYSTEM_PROMPT
+
+
+# --- Story 13.3: _DOMAIN_RULES 추출(경로 A·하이브리드 공유) 리팩터가 순서를 보존하는지 -----
+# 13.3 리뷰가 실측: _SYSTEM_PROMPT의 [단위 정규화]·[차형 용어 매핑]·[옵션 필터] 블록이
+# [불변 규칙] "뒤"에 있어야 하는데(리팩터 전 순서), 처음 구현은 [불변 규칙] "앞"으로 옮겨진
+# 채였다(내용은 그대로여도 LLM 입력 순서가 바뀌는 실제 리스크). 아래가 그 순서를 못박는다.
+def test_system_prompt_preserves_original_block_order():
+    from app.graph.sql_rag_node import _SYSTEM_PROMPT
+
+    schema_idx = _SYSTEM_PROMPT.index("[스키마:")
+    invariant_idx = _SYSTEM_PROMPT.index("[불변 규칙")
+    unit_idx = _SYSTEM_PROMPT.index("[단위 정규화")
+    body_type_idx = _SYSTEM_PROMPT.index("[차형 용어 매핑]")
+    option_idx = _SYSTEM_PROMPT.index("[옵션 필터")
+    output_idx = _SYSTEM_PROMPT.rindex("출력: SQL 텍스트 한 줄만.")
+
+    assert schema_idx < invariant_idx < unit_idx < body_type_idx < option_idx < output_idx

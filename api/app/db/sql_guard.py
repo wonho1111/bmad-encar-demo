@@ -271,6 +271,9 @@ def validate_select_sql(sql: str) -> str:
     # 그래서 벡터절 뒤에는 문장 끝·LIMIT·OFFSET만 올 수 있게 lookahead로 못박는다. 여기 안
     # 걸리는 변형(괄호·복합 정렬키 등)은 지워지지 않으므로 embedding/vector가 미화이트리스트
     # 식별자로 남아 forbidden_column으로 거부된다 — 넓히는 쪽이 아니라 막는 쪽으로 실패한다.
+    # DW-555: 13.3(hybrid_rag_node)은 별칭·2차 정렬키 없이 정확히 이 모양(`ORDER BY
+    # embedding <=> %s::vector LIMIT <정수>`)만 코드로 조립해 쓰므로, 이 정규식을 넓힐
+    # 필요가 없음을 hybrid_rag_node 구현·테스트로 확인 완료(DW-555 닫음).
     no_vector = re.sub(
         r"(?i:order\s+by\s+embedding)\s*<=>\s*(?:%s|%\(\w+\)s)\s*::\s*(?i:vector)"
         r"(?=\s*$|\s+(?i:limit|offset)\b)",
@@ -349,7 +352,28 @@ def validate_select_sql(sql: str) -> str:
             "판매중 매물만 조회할 수 있도록 status = 'on_sale' 조건이 필요합니다.",
         )
 
-    # ── 5) OFFSET 상한 검사 ────────────────────────────────────────
+    # ── 8) LIMIT·OFFSET 절 중복 금지 (DW-558, bare-integer 전체 앵커링의 일부) ──────
+    # 번호를 8부터 잇는 이유(13.3 리뷰 패치): 위 1~6이 이미 4)·5)·6)을 한 번씩 쓰고,
+    # 4) FR11이 그걸 재사용하는 건 이 diff 이전부터 있던 상태라 손대지 않는다(A3) —
+    # 그 뒤를 5)·6)·7)로 이으면 위 5) 서브쿼리·6) 테이블/컬럼과, 그리고 파일 끝의
+    # 기존 단독 7) 통과와 또 충돌한다. 겹치지 않는 새 번호(8~11)로 이어 붙인다.
+    # 정상 SQL은 LIMIT·OFFSET이 각각 최대 1개다. `LIMIT 5 LIMIT 999`처럼 절이 두 번
+    # 등장하면, 뒤에서 하는 숫자 매처(re.search는 첫 성공 매치만 본다)가 두 번째 절의
+    # 값만 보고 첫 번째 절의 존재를 놓칠 수 있다 — 그 틈에서 "값은 상한 이내"로 우연히
+    # 통과하면 실행 단계에서 psycopg 문법 오류(이중 LIMIT은 실행 불가)로 400이 500이
+    # 된다(DW-558). 개수 검사를 먼저 해 이 형태를 값 판정 이전에 명시 거부한다.
+    if len(re.findall(r"\blimit\b", no_strings, re.IGNORECASE)) > 1:
+        raise SqlGuardError(
+            "limit_malformed",
+            "LIMIT 절이 두 번 이상 등장합니다. LIMIT은 한 번만 사용해 주세요.",
+        )
+    if len(re.findall(r"\boffset\b", no_strings, re.IGNORECASE)) > 1:
+        raise SqlGuardError(
+            "offset_malformed",
+            "OFFSET 절이 두 번 이상 등장합니다. OFFSET은 한 번만 사용해 주세요.",
+        )
+
+    # ── 9) OFFSET 상한 검사 ────────────────────────────────────────
     # OFFSET은 "앞에서 N건 건너뛰기". 상한이 없으면 OFFSET 999999처럼 DB를 통째로 훑는
     # 우회 조회가 통과한다. 부호([-+]?)까지 잡아 음수/과도한 값을 모두 거부한다(MAX_LIMIT와 동일 정책).
     # no_strings(리터럴 제거본)로 검사한다 — cleaned로 검사하면 description 등 자유텍스트
@@ -357,7 +381,13 @@ def validate_select_sql(sql: str) -> str:
     # 검사를 우회시킨다(3차 리뷰 패스 수정 — limit_malformed 분기에만 적용됐던 규칙을
     # 짝이 되는 숫자 매처에도 동일 적용). 반환값(normalized)은 계속 cleaned 기반이다
     # (리터럴이 지워진 SQL을 실행하면 안 되므로).
-    offset_match = re.search(r"\boffset\s+([-+]?\d+)", no_strings, re.IGNORECASE)
+    # 값 뒤(lookahead)를 문장 끝 또는 LIMIT 절로 앵커링한다(DW-558) — 전엔 "OFFSET" 뒤
+    # 첫 정수만 부분 매치해 `OFFSET 5 (999999)`·`OFFSET 500+600`처럼 값 뒤에 다른 토큰이
+    # 붙어도 앞의 5·500만 보고 통과시켰다(가짜 값이 실제 우회분을 가렸다). 이제 값 뒤에
+    # 절 경계가 아닌 무엇이 오면 매치 자체가 실패해 아래 elif(offset_malformed)로 떨어진다.
+    offset_match = re.search(
+        r"\boffset\s+([-+]?\d+)(?=\s*$|\s+limit\b)", no_strings, re.IGNORECASE
+    )
     if offset_match:
         off = int(offset_match.group(1))
         if off < 0 or off > MAX_OFFSET:
@@ -365,13 +395,28 @@ def validate_select_sql(sql: str) -> str:
                 "offset_exceeded",
                 f"건너뛸 수 있는 매물 수(OFFSET)는 최대 {MAX_OFFSET}건입니다.",
             )
+    elif re.search(r"\boffset\b", no_strings, re.IGNORECASE):
+        # OFFSET 키워드는 있는데 위 앵커링된 숫자 패턴에 안 걸리는 형태
+        # (`OFFSET 5 (999999)`·`OFFSET 500+600`) — 조용히 통과시키지 않고 명시 거부한다
+        # (DW-558 신규 offset_malformed, limit_malformed와 동일 설계).
+        raise SqlGuardError(
+            "offset_malformed",
+            "OFFSET 형식을 인식할 수 없습니다. 정수 리터럴(예: OFFSET 10)로 작성해 주세요.",
+        )
 
-    # ── 6) LIMIT 검사·주입 ─────────────────────────────────────────
+    # ── 10) LIMIT 검사·주입 ─────────────────────────────────────────
     # 부호([-+]?)까지 함께 잡는다. 안 그러면 `LIMIT -1`이 "LIMIT 없음"으로 오인돼
     #   `LIMIT -1 LIMIT 5`라는 실행 불가 SQL이 만들어진다(코드리뷰 후속 버그). 음수·0은 거부.
     # no_strings로 검사 — 위 OFFSET과 동일 이유(리터럴 속 "limit 3" 같은 숫자가 먼저 매치돼
     # MAX_LIMIT 상한 검사를 우회하는 것을 막는다, 3차 리뷰 패스 수정).
-    limit_match = re.search(r"\blimit\s+([-+]?\d+)", no_strings, re.IGNORECASE)
+    # 값 뒤(lookahead)를 문장 끝 또는 OFFSET 절로 앵커링한다(DW-558) — 전엔 "LIMIT" 뒤
+    # 첫 정수만 부분 매치해 `LIMIT 5+100`·`LIMIT 10, 5`처럼 값 뒤에 다른 토큰이 붙어도
+    # 앞의 5·10만 보고 통과시켰다(예: `LIMIT 5+100`이 n=5로 판정돼 MAX_LIMIT 상한 검사를
+    # 우회하고 실행 시 95행 전량이 반환됐다 — DW-558 실측). 이제 값 뒤에 절 경계가 아닌
+    # 무엇이 오면 매치 자체가 실패해 아래 elif(limit_malformed)로 떨어진다.
+    limit_match = re.search(
+        r"\blimit\s+([-+]?\d+)(?=\s*$|\s+offset\b)", no_strings, re.IGNORECASE
+    )
     if limit_match:
         n = int(limit_match.group(1))
         if n <= 0:
@@ -389,10 +434,10 @@ def validate_select_sql(sql: str) -> str:
         # no_strings(문자열 리터럴 이미 제거됨)로 검사 — cleaned로 검사하면 description 등
         # 자유텍스트 리터럴 안의 우연한 "limit" 단어(예: 'no limit here')가 이 분기를 잘못
         # 태워 정상 쿼리를 limit_malformed로 오탐 거부한다(코드리뷰 패치).
-        # LIMIT 키워드는 있는데 위 숫자 패턴에 안 걸리는 형태(예: `LIMIT (10)`) — 조용히
-        # 뒤에 LIMIT 5를 이어붙이면 `LIMIT (10) LIMIT 5`라는 이중 LIMIT의 깨진 SQL이 실행
-        # 단계에서야 터진다(DW-315). 형식 오류로 명시 거부한다("값은 잡았는데 0 이하"인
-        # limit_invalid와는 원인이 달라 코드를 분리한다 — Design Notes 참조).
+        # LIMIT 키워드는 있는데 위 앵커링된 숫자 패턴에 안 걸리는 형태(예: `LIMIT (10)`·
+        # `LIMIT 5+100`·`LIMIT 10, 5`) — 조용히 뒤에 LIMIT 5를 이어붙이면 이중 LIMIT의
+        # 깨진 SQL이 실행 단계에서야 터진다(DW-315·DW-558). 형식 오류로 명시 거부한다
+        # ("값은 잡았는데 0 이하"인 limit_invalid와는 원인이 달라 코드를 분리한다 — Design Notes 참조).
         raise SqlGuardError(
             "limit_malformed",
             "LIMIT 형식을 인식할 수 없습니다. 정수 리터럴(예: LIMIT 10)로 작성해 주세요.",
@@ -401,5 +446,5 @@ def validate_select_sql(sql: str) -> str:
         # LIMIT 없으면 끝에 append — append는 결정론적으로 안전(WHERE 변형 위험 없음).
         normalized = f"{cleaned} LIMIT {DEFAULT_LIMIT}"
 
-    # ── 7) 통과 — 정규화된 안전 SQL 반환 ──────────────────────────
+    # ── 11) 통과 — 정규화된 안전 SQL 반환 ──────────────────────────
     return normalized

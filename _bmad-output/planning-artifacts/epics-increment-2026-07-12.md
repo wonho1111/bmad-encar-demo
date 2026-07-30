@@ -116,7 +116,7 @@ date: '2026-07-12'
 
 **선결 기술 AC (dev 진입 전 확정 계약):**
 - AC-DB-1 (최우선·RAG 선행): 커넥션 풀 롤 격리 `BEGIN; SET LOCAL ROLE ai_readonly; <SELECT>; COMMIT;`(세션 SET ROLE 금지). 검증 = 동일 물리 커넥션 재사용 2요청에서 롤 누수 없음. FR50과 동일 작업 단위. `readonly.py`의 현행 :5432 세션풀러+세션 SET ROLE 결정을 :6543 트랜잭션 풀러+SET LOCAL로 대체(I1).
-- AC-SEC-1: 하이브리드 sql_guard 정비 — `validate_select_sql()`에 `<=>`·`::vector`·`embedding`·`vector` 화이트리스트(I4) + `status='on_sale'` 강제. 벡터절은 LLM이 아니라 코드가 `ORDER BY embedding <=> $1::vector LIMIT k` 바인드 파라미터로 덧붙임(I4). 회귀 3케이스(정상 통과/OR·서브쿼리 거부/status 누락 거부).
+- AC-SEC-1: 하이브리드 sql_guard 정비 — `validate_select_sql()`에 `<=>`·`::vector`·`embedding`·`vector` 화이트리스트(I4) + `status='on_sale'` 강제. 벡터절은 LLM이 아니라 코드가 `ORDER BY embedding <=> %s::vector`를 붙이고 `LIMIT k`는 코드가 정수 리터럴로 붙임(바인드 파라미터 아님, psycopg `%s` 기준 — DW-560 정정)(I4). 회귀 3케이스(정상 통과/OR·서브쿼리 거부/status 누락 거부).
 - AC-SEC-2: view_count RPC 하드닝 — `SET search_path=''` + `REVOKE EXECUTE FROM PUBLIC` + `GRANT anon,authenticated` + **`REVOKE UPDATE(view_count) FROM authenticated`**(I5, RPC 유일 쓰기통로). AI 카드 렌더 시 중복증가 금지.
 - AC-CHAT-1: 멱등키(0016) — `UNIQUE(room_id, client_message_id)` + `ON CONFLICT DO NOTHING`. 기존 0003c BEFORE INSERT 트리거·0010 2000자 제약과 충돌 검증(동일 키 2회 INSERT → 행 1개·트리거 부작용 0).
 - AC-CHAT-2: 재연결 갭보정 — 커서 = **`created_at >=` (strict > 아님, CR6) + `client_message_id` dedup**. Broadcast Replay(≤25/72h) 우선, 초과분 재조회. 표시 정렬 = created_at + id tiebreak.
@@ -979,7 +979,7 @@ So that 보안을 지키면서 RAG를 개선하고 품질 후퇴를 감지한다
 **Given** `sql_guard.validate_select_sql()`
 **When** 하이브리드 벡터 쿼리를 검증하면
 **Then** `<=>`·`::vector`·`embedding`·`vector` 화이트리스트가 추가되고 `status='on_sale'` AND가 **강제**된다(AC-SEC-1, I4)
-**And** 벡터절은 LLM이 아니라 **코드가** `ORDER BY embedding <=> $1::vector LIMIT k`를 바인드 파라미터로 덧붙인다(LLM은 WHERE 구조조건만 생성)(I4)
+**And** 벡터절은 LLM이 아니라 **코드가** `ORDER BY embedding <=> %s::vector LIMIT k`를 덧붙인다 — `%s`는 질의 임베딩을 바인드 파라미터로 받고, `LIMIT k`는 코드가 정수 리터럴로 붙인다(바인드 아님, psycopg `%s` 기준 — DW-560 정정)(LLM은 WHERE 구조조건만 생성)(I4)
 **And** 회귀 3케이스가 통과한다 — 정상 벡터쿼리 통과 / OR·서브쿼리 주입 거부 / status 필터 누락 거부
 **And** Phase B 회귀 하니스 baseline(~44 질의셋)을 심어 이후 RAG 스토리가 재실행할 기준선을 확보한다(G2)
 
@@ -1008,7 +1008,7 @@ So that 정형 조건과 의미 조건을 한 번에 만족하는 매물을 찾�
 
 **Given** HYBRID 경로(sql_guard 정비 완료, 13.1)
 **When** 정형+의미 혼합 질의가 오면
-**Then** 단일 쿼리 `WHERE status='on_sale' AND <구조조건> ORDER BY embedding <=> $1::vector LIMIT k`로 SQL 필터 + 유사도를 조합한다(RRF 없음)(FR45)
+**Then** 단일 쿼리 `WHERE status='on_sale' AND <구조조건> ORDER BY embedding <=> %s::vector LIMIT k`(`%s`=임베딩 바인드, `LIMIT k`=코드가 붙이는 정수 리터럴 — DW-560 정정)로 SQL 필터 + 유사도를 조합한다(RRF 없음)(FR45)
 **And** 생성 SQL은 예외 없이 sql_guard를 통과하고 status='on_sale'을 강제한다(AC-SEC-1, 보안 블로커)
 **And** 구조조건을 못 뽑으면 기존 벡터검색으로 폴백해 회귀가 없다
 **And** SM-G(조합형 질의에서 하이브리드가 SQL 필터+유사도 조합 결과 반환)를 대표 질의로 확인한다

@@ -11,13 +11,17 @@ from app.graph.guard_node import guard_node
 
 
 # ── 그래프 분기 라우팅 ─────────────────────────────────────────────
-def _patch_nodes(monkeypatch, *, route, sql=None, doc=None):
+def _patch_nodes(monkeypatch, *, route, sql=None, hybrid=None, doc=None):
     """라우터를 고정 route로, 경로 노드를 호출 추적용 가짜로 치환한다."""
-    calls = {"sql": 0, "doc": 0, "guard": 0}
+    calls = {"sql": 0, "hybrid": 0, "doc": 0, "guard": 0}
 
     def fake_sql(query):
         calls["sql"] += 1
         return sql or {"answer": "SQL 결과", "listings": ["s1"]}
+
+    def fake_hybrid(query):
+        calls["hybrid"] += 1
+        return hybrid or {"answer": "HYBRID 결과", "listings": ["h1"]}
 
     def fake_doc(query):
         calls["doc"] += 1
@@ -31,6 +35,7 @@ def _patch_nodes(monkeypatch, *, route, sql=None, doc=None):
 
     monkeypatch.setattr(gmod, "router_node", lambda q: route)
     monkeypatch.setattr(gmod, "sql_rag_node", fake_sql)
+    monkeypatch.setattr(gmod, "hybrid_rag_node", fake_hybrid)
     monkeypatch.setattr(gmod, "doc_rag_node", fake_doc)
     monkeypatch.setattr(gmod, "guard_node", fake_guard)
     return calls
@@ -39,7 +44,7 @@ def _patch_nodes(monkeypatch, *, route, sql=None, doc=None):
 def test_route_SQL_calls_sql_only(monkeypatch):
     calls = _patch_nodes(monkeypatch, route="SQL")
     out = gmod.run_search("3천만원 이하 SUV")
-    assert calls["sql"] == 1 and calls["doc"] == 0 and calls["guard"] == 0
+    assert calls["sql"] == 1 and calls["hybrid"] == 0 and calls["doc"] == 0 and calls["guard"] == 0
     assert out["answer"] == "SQL 결과" and out["listings"] == ["s1"]
     # run_phase_b.py→score_ab.py가 routing_correct/gate_pass 채점에 그대로 쓰는 값이라
     # 실제 그래프 배선을 타면서 "SQL"이 채워지는지 못박는다(코드리뷰 패치 — 이전엔 미검증이라
@@ -47,19 +52,20 @@ def test_route_SQL_calls_sql_only(monkeypatch):
     assert out["route"] == "SQL"
 
 
-def test_route_HYBRID_calls_sql_only(monkeypatch):
-    # HYBRID(조합형, 신규)는 13.3 전까지 SQL과 동일하게 sql_rag_node로 임시 배선한다(13.2).
+def test_route_HYBRID_calls_hybrid_only(monkeypatch):
+    # HYBRID(조합형)는 Story 13.3부터 hybrid_rag_node(구조조건+벡터 단일쿼리)로 실제 배선된다
+    # (13.2까지의 sql_rag_node 임시 배선은 여기서 대체됐다).
     calls = _patch_nodes(monkeypatch, route="HYBRID")
     out = gmod.run_search("3천만원 이하로 무난한 패밀리카")
-    assert calls["sql"] == 1 and calls["doc"] == 0 and calls["guard"] == 0
-    assert out["answer"] == "SQL 결과" and out["listings"] == ["s1"]
+    assert calls["hybrid"] == 1 and calls["sql"] == 0 and calls["doc"] == 0 and calls["guard"] == 0
+    assert out["answer"] == "HYBRID 결과" and out["listings"] == ["h1"]
     assert out["route"] == "HYBRID"
 
 
 def test_route_CLARIFY_calls_doc_only(monkeypatch):
     calls = _patch_nodes(monkeypatch, route="CLARIFY")
     out = gmod.run_search("패밀리카로 무난한 거")
-    assert calls["doc"] == 1 and calls["sql"] == 0 and calls["guard"] == 0
+    assert calls["doc"] == 1 and calls["sql"] == 0 and calls["hybrid"] == 0 and calls["guard"] == 0
     assert out["answer"] == "DOC 결과" and out["listings"] == ["d1"]
     assert out["route"] == "CLARIFY"
 
@@ -67,7 +73,7 @@ def test_route_CLARIFY_calls_doc_only(monkeypatch):
 def test_route_REJECT_calls_guard_and_returns_empty_listings(monkeypatch):
     calls = _patch_nodes(monkeypatch, route="REJECT")
     out = gmod.run_search("오늘 날씨 어때?")
-    assert calls["guard"] == 1 and calls["sql"] == 0 and calls["doc"] == 0
+    assert calls["guard"] == 1 and calls["sql"] == 0 and calls["hybrid"] == 0 and calls["doc"] == 0
     assert out["listings"] == []  # 매물 무관 → 빈 목록(FR16)
     assert "중고차" in out["answer"]  # 검색 유도 문구
     assert out["route"] == "REJECT"
@@ -101,6 +107,25 @@ def test_sql_guard_error_propagates_out_of_graph(monkeypatch):
     with pytest.raises(SqlGuardError) as exc:
         gmod.run_search("매물 삭제해줘")
     assert exc.value.code == "not_select"
+
+
+def test_hybrid_sql_guard_error_propagates_out_of_graph(monkeypatch):
+    # 13.3 리뷰: _hybrid_step 독스트링은 _sql_step과 동일하게 SqlGuardError를 삼키지 않는다고
+    # 주장하지만, 그 불변식을 그래프(run_search) 레벨에서 확인하는 짝 테스트가 없었다 —
+    # 위 test_sql_guard_error_propagates_out_of_graph(SQL)의 HYBRID 버전.
+    from app.db.sql_guard import SqlGuardError
+
+    def raising_hybrid(query):
+        raise SqlGuardError("forbidden_or", "OR 조건은 허용되지 않습니다.")
+
+    monkeypatch.setattr(gmod, "router_node", lambda q: "HYBRID")
+    monkeypatch.setattr(gmod, "hybrid_rag_node", raising_hybrid)
+
+    import pytest
+
+    with pytest.raises(SqlGuardError) as exc:
+        gmod.run_search("3천만원 이하로 무난한 패밀리카")
+    assert exc.value.code == "forbidden_or"
 
 
 # ── answer_node 계약·FR17 ─────────────────────────────────────────

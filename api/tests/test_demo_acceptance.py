@@ -23,10 +23,11 @@ from tests.demo_queries import GRAY_AB, SEMANTIC_B, STRUCTURED_A, UNRELATED_C
 # 공통 모킹 헬퍼 — 라우터를 고정 route로, 경로 노드를 추적용 가짜로 치환.
 # (test_graph.py의 _patch_nodes와 동일 사상 — 여기선 OI5 판정에 맞춰 재사용.)
 # ─────────────────────────────────────────────────────────────────────
-def _patch_route(monkeypatch, route, *, sql_cards=None, doc_cards=None):
+def _patch_route(monkeypatch, route, *, sql_cards=None, doc_cards=None, hybrid_cards=None):
     """router를 고정 route로 강제하고, 경로 노드가 줄 매물 카드를 주입한다."""
     sql_cards = sql_cards if sql_cards is not None else [{"id": "s1"}]
     doc_cards = doc_cards if doc_cards is not None else [{"id": "d1"}]
+    hybrid_cards = hybrid_cards if hybrid_cards is not None else [{"id": "h1"}]
     monkeypatch.setattr(gmod, "router_node", lambda q: route)
     monkeypatch.setattr(
         gmod, "sql_rag_node",
@@ -35,6 +36,12 @@ def _patch_route(monkeypatch, route, *, sql_cards=None, doc_cards=None):
     monkeypatch.setattr(
         gmod, "doc_rag_node",
         lambda q: {"answer": "추천 매물이에요.", "listings": list(doc_cards)},
+    )
+    # HYBRID(Story 13.3부터 hybrid_rag_node로 실배선)도 sql_rag_node·doc_rag_node와 동일하게
+    # 모킹한다 — 안 그러면 route="HYBRID"를 강제할 때 실제 LLM/DB를 호출하게 된다(회귀).
+    monkeypatch.setattr(
+        gmod, "hybrid_rag_node",
+        lambda q: {"answer": "조합 조건에 맞는 매물이에요.", "listings": list(hybrid_cards)},
     )
     # guard_node는 실제 함수를 그대로 둔다(거절 문구·빈 목록 검증을 위해).
 

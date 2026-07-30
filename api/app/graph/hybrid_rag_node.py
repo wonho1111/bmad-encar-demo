@@ -1,0 +1,143 @@
+"""조합형(구조+의미) 하이브리드 검색 노드 — SQL+벡터 단일쿼리(FR45, Story 13.3).
+
+흐름: 자연어 질의 → (Gemini) WHERE 구조조건만 추출 → 코드가 벡터절·LIMIT를 붙여 조립
+  → sql_guard 검증 → ai_readonly 실행(임베딩 바인딩) → ListingCard.
+  · LLM은 WHERE 구조조건 표현식만 낸다 — SELECT/status/ORDER BY/LIMIT은 절대 언급하지
+    않는다. 그 절들은 **코드**가 정확히 `ORDER BY embedding <=> %s::vector LIMIT <정수>`
+    모양으로 붙인다(I4, sql_guard의 벡터절 정규식이 기대하는 자리 — Story 13.1 주석 참조).
+  · 구조조건을 하나도 못 뽑으면(순수 용도·느낌만 있는 질의) doc_rag_node(query)를 그대로
+    호출해 폴백한다(기존 벡터검색 재사용, 별도 폴백 SQL을 새로 쓰지 않는다 — 드리프트 방지).
+  · 조립된 SQL은 항상 validate_select_sql()을 거친다(LLM 생성 텍스트를 신뢰하지 않는다,
+    함정 #1). 가드 차단 시 sql_rag_node와 동일한 1회 재생성 재시도 패턴을 따른다.
+  · 가드 통과 후 embed_query로 만든 질의 임베딩을 %s 자리표시자에 실제로 바인딩해
+    run_select(safe_sql, (qvec,))로 실행한다(DW-559 — 미바인드 실행 방지).
+
+Design Notes(spec 13.3): 하이브리드 조립은 가드 통과 "직전"에 완성한다 — LLM 조건 →
+  코드가 전체 SQL 문자열로 합친 뒤에야 validate_select_sql()을 부른다. 가드를 먼저
+  부르고 나중에 벡터절을 이어붙이면 정규식이 못 보는 위치에 결합돼 embedding/vector가
+  미화이트리스트 식별자로 거부된다.
+
+13.3은 이 함수를 "호출 가능한 노드"로만 만든다. graph.py가 HYBRID 분기를 이 노드로 배선한다.
+[Source: spec-13-3-하이브리드-검색-sql-벡터.md; sql_guard.py 벡터절 정규식 주석(13.1)]
+"""
+
+import logging
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from app.config import require, settings
+from app.db.readonly import run_select
+from app.db.sql_guard import (
+    DEFAULT_LIMIT,
+    SqlGuardError,
+    validate_select_sql,
+)
+from app.embeddings import embed_query
+from app.graph.doc_rag_node import doc_rag_node
+from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
+from app.graph.sql_rag_node import _DOMAIN_RULES, _content_to_text, _strip_sql
+
+logger = logging.getLogger(__name__)
+
+# ListingCard 7필드 — SELECT 컬럼 순서는 공유 헬퍼(listing_cards)에 단일출처로 둔다(경로 A·B와 공유).
+_SELECT_COLUMNS = SELECT_COLUMNS
+
+# 구조조건 추출 전용 규칙 — 도메인 규칙(_DOMAIN_RULES, sql_rag_node에서 재사용)에 이 규칙만
+# 덧붙인다. SELECT/status/ORDER BY/LIMIT은 코드가 붙이므로 LLM에게 언급을 금지한다(I4).
+_HYBRID_INSTRUCTIONS = """[구조조건 추출 규칙 — 반드시 지켜라]
+1. 질의에서 구조적으로 판별 가능한 조건(가격·연식·주행거리·차종·색상·연료·변속기·배기량·
+   인승·무사고 여부·옵션 등)만 뽑아 WHERE에 들어갈 조건 표현식 한 줄로 출력한다.
+2. 조건을 하나도 못 뽑으면(순수 용도·느낌만 있는 질의) 다른 말 없이 정확히 `NONE`만 출력한다.
+3. `SELECT`·`status`·`ORDER BY`·`LIMIT`은 절대 언급하지 않는다 — 코드가 붙인다.
+4. 조건은 AND 로만 결합한다. OR 는 절대 쓰지 않는다.
+5. 조건 표현식(또는 `NONE`) 한 줄만 출력한다. 설명·코드펜스(```)·세미콜론·주석을 붙이지 않는다."""
+
+_SYSTEM_PROMPT = f"""너는 중고차 매물 DB 검색을 위해 WHERE 구조조건만 뽑는 조수다. listings 테이블만 다룬다.
+
+{_DOMAIN_RULES}
+
+{_HYBRID_INSTRUCTIONS}
+
+출력: 조건 표현식 한 줄 또는 NONE."""
+
+_ANSWER_FOUND = "조건에 맞는 매물 {n}건을 찾았어요."
+_ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."  # FR17 조건 완화 안내
+
+
+def _llm() -> ChatGoogleGenerativeAI:
+    """구조조건 추출용 LLM. temperature=0으로 같은 질의에 같은 조건이 나오게 한다(재현성)."""
+    return ChatGoogleGenerativeAI(
+        model=settings.gemini_generation_model,
+        google_api_key=require("GEMINI_API_KEY", settings.gemini_api_key),
+        temperature=0,
+    )
+
+
+def _vec_literal(vec: list[float]) -> str:
+    """list[float] → pgvector 텍스트 리터럴 "[v1,v2,...]"(doc_rag_node와 동일 로직, 3줄 중복 허용).
+
+    이 문자열을 %s 파라미터로 바인딩하고 SQL에서 ::vector로 캐스팅한다(사용자값/벡터를
+    f-string으로 SQL에 직접 박지 않는다 — 항상 파라미터 바인딩).
+    """
+    return "[" + ",".join(map(str, vec)) + "]"
+
+
+def hybrid_rag_node(query: str) -> dict:
+    """조합형 질의를 받아 {"answer": str, "listings": list[ListingCard]}를 반환한다.
+
+    GEMINI_API_KEY/DATABASE_URL 부재 시 embed_query/run_select 내부 require()가 명확한
+    한국어 에러로 즉시 실패한다. 가드 차단은 1회 재생성 후에도 막히면 SqlGuardError를
+    상위로 전달한다(sql_rag_node와 동일 계약 — graph.py가 삼키지 않고 전파).
+    """
+    llm = _llm()  # 키 부재 시 여기서 fail-loud — 아래 재시도 루프 전에 즉시 실패.
+
+    messages = [("system", _SYSTEM_PROMPT), ("human", query)]
+    last_error: SqlGuardError | None = None
+
+    for attempt in range(2):  # 최초 1회 + 재시도 1회
+        raw = llm.invoke(messages).content
+        text = _content_to_text(raw)
+        condition = _strip_sql(text)
+        condition_stripped = condition.strip()
+        logger.info("hybrid_rag_node attempt %d 구조조건: %s", attempt + 1, condition)
+
+        if not condition_stripped or condition_stripped.upper() == "NONE":
+            # 구조조건 미추출(정확히 NONE이거나 빈/공백 응답) — 별도 폴백 SQL을 새로 쓰지
+            # 않고 기존 벡터검색을 그대로 재사용한다. 빈 응답을 NONE과 다르게 취급하면
+            # 아래에서 `AND ()`라는 깨진 SQL이 조립돼(가드는 다른 AND항인 status='on_sale'
+            # 만으로 통과시키므로 못 잡는다) 실행 단계에서 psycopg 문법 오류로 죽는다.
+            return doc_rag_node(query)
+
+        # psycopg는 params가 있으면(아래 run_select) SQL 문자열 전체에서 '%'를 자리표시자로
+        # 스캔한다 — 따옴표 리터럴 안(예: `model LIKE '%아반떼%'`)도 예외가 아니다. sql_guard의
+        # 리터럴 스트립(no_strings)은 검증에서만 그 '%'를 무시하고, 반환값(cleaned)엔 그대로
+        # 남기 때문에 여기서 미리 이스케이프하지 않으면 통과된 SQL이 실행 단계에서 psycopg
+        # ProgrammingError(또는 멀티바이트 리터럴이면 UnicodeDecodeError)로 죽는다(400이 아니라
+        # 500 — DW-559와 같은 부류의 회귀). LLM이 낸 부분만 이스케이프하고, 코드가 붙이는
+        # 벡터절의 진짜 %s 자리표시자는 이스케이프 뒤에 그대로 이어붙인다.
+        base_sql = (
+            f"SELECT {_SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' "
+            f"AND ({condition})"
+        ).replace("%", "%%")
+        sql = f"{base_sql} ORDER BY embedding <=> %s::vector LIMIT {DEFAULT_LIMIT}"
+        try:
+            safe_sql = validate_select_sql(sql)  # 가드 통과 못하면 SqlGuardError
+            qvec = embed_query(query)  # 키 부재 시 여기서 fail-loud
+            rows = run_select(safe_sql, (_vec_literal(qvec),))  # DW-559 — 임베딩 바인딩
+            listings = attach_cover_images(rows_to_cards(rows))
+            answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
+            return {"answer": answer, "listings": listings}
+        except SqlGuardError as exc:
+            # 가드 차단만 재시도 대상 — LLM이 조건을 고치면 통과할 여지가 있다.
+            last_error = exc
+            logger.warning("hybrid_rag_node attempt %d 가드 차단: %s", attempt + 1, exc.message)
+            messages.append(("ai", text))
+            messages.append((
+                "human",
+                f"방금 조건으로 조립한 SQL이 거부됐어: {exc.message}. 구조조건 표현식만 "
+                "위 규칙을 모두 지켜서 한 줄로 다시 출력해(SELECT/status/ORDER BY/LIMIT 언급 금지).",
+            ))
+
+    # 최초+재시도 모두 가드 차단 — 마지막 가드 에러를 그대로 전달(사용자에게 의미 있는 한국어 400).
+    assert last_error is not None
+    raise last_error

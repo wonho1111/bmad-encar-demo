@@ -192,7 +192,7 @@ _심화검토(2026-07-12/13, advanced-elicitation + party-mode) 개정 반영본
 - **AC-CHAT-2 갭보정 커서**: 서버 `created_at` + `id` tiebreak(Supabase Replay도 타임스탬프 커서). 재조회분 dedup 키=`client_message_id`.
 - **FR57 안읽음(0018)**: `chat_room_reads(user_id, room_id, last_read_at)` → 안읽음 카운트 = `created_at > last_read_at` 집계. 방 목록 최신순.
 - **4분기 라우팅(FR43)**: `add_conditional_edges` 확장(REJECT/CLARIFY/SQL/HYBRID), RouterDecision Literal·`_fallback_route`·`_route_decision` **3곳 락스텝**.
-- **하이브리드 검색(FR45)**: 단일 쿼리 `WHERE status='on_sale' AND <구조조건> ORDER BY embedding <=> $1::vector`(sql_guard 통과, RRF 없음). 구조조건 미추출 시 기존 벡터검색 유지(회귀 없음).
+- **하이브리드 검색(FR45)**: 단일 쿼리 `WHERE status='on_sale' AND <구조조건> ORDER BY embedding <=> %s::vector`(psycopg 바인드 파라미터, sql_guard 통과, RRF 없음 — DW-560 정정: `$1`은 이 프로젝트 드라이버 형식이 아니다). 구조조건 미추출 시 기존 벡터검색 유지(회귀 없음).
 - **가이드 (b) 질의확장**: 가이드 content로 검색조건 확장(답변은 결정론 유지, LLM 설명생성 안 함).
 - **AI 응답 계약**: `{answer, listings[], route, narrowed_by?}`. 0건·거절=**구조화 사유 데이터**(narrowed_by)로 결정론 템플릿 조립(문장 다양화 아님). 되묻기=제안형 질문+tappable 칩(추가 LLM 없음). answer_node 결정론·고정 거절 유지(FR47).
 - **멀티턴 상태 소유권=클라이언트**: 대화 턴 클라 보관·동봉(contextualize_query, 무상태). interrupt()/체크포인터 미도입.
@@ -379,7 +379,7 @@ service_role 금지(규칙6) · 임베딩 768(규칙2) · 마이그 번호 무�
   - **"안전한가?"를 물을 땐 어느 축의 안전인지 명시한다** — DB 권한 / 데이터 노출 / **비용** / 가용성. 축을 안 밝히면 이번처럼 한 축만 보고 통과된다.
   - 근거: Story 8.5 코드리뷰 + party-mode(2026-07-14). 계약 원문 = `docs/conventions.md` §8.
 - **I3 FR52 가입/트리거**: F14 델타에 **`(auth)/signup` 역할선택 UI 제거 + `0001 handle_new_user` 트리거의 신규 가입 기본 role 배정** 추가(역할선택 제거 시 role 기본값 필요).
-- **I4 sql_guard 하이브리드**: AC-SEC-1에 **`embedding` 컬럼·`vector` 식별자도 화이트리스트 추가**. 벡터절은 **LLM이 아니라 코드가 `ORDER BY embedding <=> $1::vector LIMIT k`를 바인드 파라미터로 덧붙임**(LLM은 WHERE 구조조건만 생성 → sql_guard 통과, 벡터는 코드).
+- **I4 sql_guard 하이브리드**: AC-SEC-1에 **`ORDER BY embedding <=> %s::vector` 모양·위치만 위치-스코프로 화이트리스트**(`embedding`/`vector`를 전역 화이트리스트로 넣지 않는다 — 위치와 무관하게 통과하면 안전하지 않다, Story 13.1 결정). 벡터절은 **LLM이 아니라 코드가 `ORDER BY embedding <=> %s::vector`를 붙이고, `%s`에는 질의 임베딩을 바인드 파라미터로, `LIMIT k`는 코드가 정수 리터럴로 덧붙임**(바인드 파라미터 아님 — DW-560 정정. LLM은 WHERE 구조조건만 생성 → sql_guard 통과, 벡터절·LIMIT은 코드).
 - **I5 view_count 봉쇄**: "직접 UPDATE를 RLS로 봉쇄"는 부정확(RLS는 행 단위). → **`REVOKE UPDATE(view_count) FROM authenticated`**(컬럼 권한)으로 RPC 유일 쓰기통로 강제.
 - **I6 안읽음 필터**: 안읽음 = `created_at > last_read_at **AND sender_id != {me}**`(내 발신 제외).
 - **I7 FR29 N장**: ListingCard 계약에 **`image_count`** 추가. api는 on_sale 스코프로 `listing_images` count 반환.
