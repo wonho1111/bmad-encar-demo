@@ -22,7 +22,9 @@ Design Notes(spec 13.3): 하이브리드 조립은 가드 통과 "직전"에 완
 """
 
 import logging
+import re
 
+import psycopg
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import require, settings
@@ -47,10 +49,17 @@ _SELECT_COLUMNS = SELECT_COLUMNS
 _HYBRID_INSTRUCTIONS = """[구조조건 추출 규칙 — 반드시 지켜라]
 1. 질의에서 구조적으로 판별 가능한 조건(가격·연식·주행거리·차종·색상·연료·변속기·배기량·
    인승·무사고 여부·옵션 등)만 뽑아 WHERE에 들어갈 조건 표현식 한 줄로 출력한다.
-2. 조건을 하나도 못 뽑으면(순수 용도·느낌만 있는 질의) 다른 말 없이 정확히 `NONE`만 출력한다.
-3. `SELECT`·`status`·`ORDER BY`·`LIMIT`은 절대 언급하지 않는다 — 코드가 붙인다.
-4. 조건은 AND 로만 결합한다. OR 는 절대 쓰지 않는다.
-5. 조건 표현식(또는 `NONE`) 한 줄만 출력한다. 설명·코드펜스(```)·세미콜론·주석을 붙이지 않는다."""
+2. 느낌·용도 표현(무난한·가성비·패밀리카·데일리용 등)이 섞여 있어도 **구조 조건이 하나라도
+   있으면 반드시 그것만 뽑아 출력한다** — 느낌 표현은 무시하고 버려라. 그건 네가 아니라
+   코드가 벡터검색으로 처리한다. 질의가 애매해 보인다는 이유로 NONE을 내면 안 된다.
+   예: "3천만원 이하로 무난한 패밀리카" → `price <= 30000000`  ("무난한 패밀리카"는 버린다)
+   예: "주행거리 5만 이하 깔끔한 차"     → `mileage <= 50000`
+3. 구조 조건이 **정말 하나도 없을 때만**(예: "무난한 차 추천해줘") 다른 말 없이 정확히
+   `NONE`만 출력한다.
+4. `SELECT`·`status`·`ORDER BY`·`LIMIT`은 절대 언급하지 않는다 — 코드가 붙인다.
+5. 조건은 AND 로만 결합한다. OR 는 절대 쓰지 않는다.
+6. `WHERE`·`AND`로 시작하지 않는다 — 조건 표현식 자체만 낸다(코드가 `AND (...)`로 감싼다).
+7. 조건 표현식(또는 `NONE`) 한 줄만 출력한다. 설명·코드펜스(```)·세미콜론·주석을 붙이지 않는다."""
 
 _SYSTEM_PROMPT = f"""너는 중고차 매물 DB 검색을 위해 WHERE 구조조건만 뽑는 조수다. listings 테이블만 다룬다.
 
@@ -62,6 +71,16 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB 검색을 위해 WHERE 구조조
 
 _ANSWER_FOUND = "조건에 맞는 매물 {n}건을 찾았어요."
 _ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."  # FR17 조건 완화 안내
+
+# 폴백 신호(NONE) 인식 — 정확히 "NONE"만 보면 LLM이 `NONE.`·`"NONE"`처럼 살짝 어긋나게
+# 낼 때 폴백을 놓치고, 그 문자열이 조건으로 조립돼 가드 차단(400)까지 간다(실측: `NONE.`
+# → forbidden_column). 따옴표·백틱·마침표·공백만 두른 형태는 전부 폴백으로 읽는다.
+_NONE_SENTINEL_RE = re.compile(r"""^["'`.\s]*none["'`.\s]*$""", re.IGNORECASE)
+
+# 가드는 통과했지만 DB가 실행하지 못하는 조건일 때 사용자에게 나가는 메시지.
+# code는 sql_guard의 차단 코드와 겹치지 않는 별도 값 — 라우터(ai.py)가 SqlGuardError를
+# 400으로 매핑하므로, 이 변환이 없으면 psycopg 예외가 그대로 올라가 500이 된다.
+_NOT_EXECUTABLE_MESSAGE = "검색 조건을 이해하지 못했어요. 조건을 조금 더 간단히 말씀해 주세요."
 
 
 def _llm() -> ChatGoogleGenerativeAI:
@@ -82,12 +101,26 @@ def _vec_literal(vec: list[float]) -> str:
     return "[" + ",".join(map(str, vec)) + "]"
 
 
+def _append_retry_turn(messages: list, text: str, reason: str) -> None:
+    """재생성 요청 1턴을 대화에 덧붙인다(가드 차단·실행 불가 두 경로가 같은 문구를 쓴다)."""
+    messages.append(("ai", text))
+    messages.append((
+        "human",
+        f"방금 조건으로 {reason}. 구조조건 표현식만 위 규칙을 모두 지켜서 한 줄로 다시 "
+        "출력해(SELECT/status/ORDER BY/LIMIT 언급 금지, `WHERE`·`AND`로 시작하지 말 것).",
+    ))
+
+
 def hybrid_rag_node(query: str) -> dict:
     """조합형 질의를 받아 {"answer": str, "listings": list[ListingCard]}를 반환한다.
 
     GEMINI_API_KEY/DATABASE_URL 부재 시 embed_query/run_select 내부 require()가 명확한
     한국어 에러로 즉시 실패한다. 가드 차단은 1회 재생성 후에도 막히면 SqlGuardError를
     상위로 전달한다(sql_rag_node와 동일 계약 — graph.py가 삼키지 않고 전파).
+
+    "가드는 통과했지만 실행이 안 되는 조건"(psycopg ProgrammingError/DataError)도 같은
+    재시도 대상이며, 2회째도 실패하면 SqlGuardError로 변환해 전달한다 — 사용자에게는
+    500이 아니라 400 한국어 안내가 나가야 한다는 계약을 지키기 위해서다.
     """
     llm = _llm()  # 키 부재 시 여기서 fail-loud — 아래 재시도 루프 전에 즉시 실패.
 
@@ -101,7 +134,7 @@ def hybrid_rag_node(query: str) -> dict:
         condition_stripped = condition.strip()
         logger.info("hybrid_rag_node attempt %d 구조조건: %s", attempt + 1, condition)
 
-        if not condition_stripped or condition_stripped.upper() == "NONE":
+        if not condition_stripped or _NONE_SENTINEL_RE.match(condition_stripped):
             # 구조조건 미추출(정확히 NONE이거나 빈/공백 응답) — 별도 폴백 SQL을 새로 쓰지
             # 않고 기존 벡터검색을 그대로 재사용한다. 빈 응답을 NONE과 다르게 취급하면
             # 아래에서 `AND ()`라는 깨진 SQL이 조립돼(가드는 다른 AND항인 status='on_sale'
@@ -131,12 +164,20 @@ def hybrid_rag_node(query: str) -> dict:
             # 가드 차단만 재시도 대상 — LLM이 조건을 고치면 통과할 여지가 있다.
             last_error = exc
             logger.warning("hybrid_rag_node attempt %d 가드 차단: %s", attempt + 1, exc.message)
-            messages.append(("ai", text))
-            messages.append((
-                "human",
-                f"방금 조건으로 조립한 SQL이 거부됐어: {exc.message}. 구조조건 표현식만 "
-                "위 규칙을 모두 지켜서 한 줄로 다시 출력해(SELECT/status/ORDER BY/LIMIT 언급 금지).",
-            ))
+            _append_retry_turn(messages, text, f"조립한 SQL이 거부됐어: {exc.message}")
+        except (psycopg.ProgrammingError, psycopg.DataError) as exc:
+            # 가드를 통과했지만 DB가 실행하지 못하는 조건 — 조각(`AND (<조건>)`)으로 합치는
+            # 구조 때문에 "가드는 통과하는데 실행은 안 되는" 형태가 존재한다(실측: `WHERE
+            # price <= N`·`AND price <= N`·`price <= N AND`·`price`·`price < (100`·`없음`
+            # 전부 가드 통과 후 psycopg SyntaxError/DatatypeMismatch/UndefinedColumn).
+            # 잡지 않으면 except SqlGuardError를 스쳐 지나가 400이 아니라 500이 된다 —
+            # DW-559·`%` 이스케이프와 같은 부류의 실패가 다른 경로로 재발하는 자리다.
+            # 연결 장애(OperationalError)는 조건 문제가 아니므로 일부러 잡지 않는다(500 유지).
+            last_error = SqlGuardError("condition_not_executable", _NOT_EXECUTABLE_MESSAGE)
+            logger.warning("hybrid_rag_node attempt %d 실행 불가 조건: %s", attempt + 1, exc)
+            _append_retry_turn(
+                messages, text, "조립한 SQL이 실행되지 않았어(문법/타입 오류)"
+            )
 
     # 최초+재시도 모두 가드 차단 — 마지막 가드 에러를 그대로 전달(사용자에게 의미 있는 한국어 400).
     assert last_error is not None

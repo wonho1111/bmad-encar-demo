@@ -3659,18 +3659,28 @@ severity: low
 reason: 이 검사는 "좌변=status 식별자, 연산자 `=`, 우변=`'on_sale'` 문자열"이라는 **정확히 하나의 토큰 형상**만 통과시킨다. 부정 우회를 막는 데는 확실히 성공했지만(실측: 알려진 우회 16형태 전부 거부, review-4가 새로 고안한 괄호+부정 조합 5형태도 전부 거부), 그 대가로 의미상 동치인 안전한 표현도 함께 거부된다 — 실측 거부: `WHERE 'on_sale' = status`(좌우 반전), `WHERE status = ('on_sale')`(우변 괄호), `WHERE status IN ('on_sale')`. 셋 다 베이스라인에서도 거부됐으므로 회귀는 아니지만, DW-557 resolution과 테스트 주석이 "표현 형태가 아니라 구조를 보므로 아직 실측되지 않은 새 변형도 원리상 함께 막힌다"고 적은 것은 **차단 방향에서만 참이고 통과 방향에서는 과장**이다(B4 "재보기 전엔 선언하지 않는다"). 또 `WHERE status = 'ON_SALE'`은 통과하는데(우변을 소문자화해 비교) PostgreSQL 문자열 비교는 대소문자를 구분하므로 이 쿼리는 항상 0행이다 — 누출은 아니지만(안전 방향) 가드는 "FR11 충족"이라고 판정한다. 지금 이걸 엄격하게 바꾸면 0행 안내가 400 오류로 바뀌어 사용자 경험이 오히려 나빠지므로 이번엔 손대지 않았다.
 trigger: 13.3에서 하이브리드 벡터+SQL 결합으로 **SQL 표면이 넓어질 때** — 그때 LLM이 내는 SQL 형태가 다양해지므로, (a) 위 동치 표현 중 실제로 나오는 것이 있는지 먼저 측정하고, (b) 검사 옆에 "이 검사가 통과시키지 않는 안전 표현" 목록을 실측해 적고(추측 금지), (c) DW-557 resolution의 과장된 문구를 그때 정정한다.
 status: open
-✎ 2026-07-31 Story 13.3 실측 갱신(코드 변경 없음, open 유지): 트리거대로 SQL 표면이 넓어졌지만
-  (`hybrid_rag_node`가 LLM에게 WHERE 구조조건 표현식을 자유 형태로 생성시킨다), **`status`
-  자체는 이 넓어진 표면에 노출되지 않는다** — 스펙이 LLM에게 `status`·`SELECT`·`ORDER BY`·
-  `LIMIT`을 절대 언급하지 말라고 명시 지시하고(hybrid_rag_node.py `_HYBRID_INSTRUCTIONS`),
-  `status = 'on_sale'`는 코드가 조립 시점에 항상 리터럴로 붙인다(`hybrid_rag_node`의 SQL
-  조립 f-string). 로컬 Supabase+GEMINI_API_KEY로 대표 조합형 질의 5건을 직접 실행해 관찰한
-  실제 LLM 산출 조건은 `NONE`(2건, doc_rag_node 폴백)·`seats = 7`·`body_type IN ('경차',
-  '소형차') AND price <= 20000000`·`fuel = '전기'`였다 — 전부 `status`를 언급하지 않았다.
-  즉 이 항목이 우려한 "13.3이 SQL 표면을 넓혀 동치 표현이 실제로 나올 가능성"은, `status`
-  절만 놓고 보면 **이 스토리에서는 실현되지 않는다**(구조가 원천적으로 막는다 — LLM이
-  만드는 조건은 SELECT 목록 안의 AND 결합항일 뿐, status 비교식 자체를 생성할 위치가 없다).
-  따라서 이 항목이 요구한 (a) 측정은 "13.3 경로에서는 관측된 동치 표현 0건"으로 완료했지만,
+✎ 2026-07-31 Story 13.3 실측 갱신(코드 변경 없음, open 유지): 트리거대로 SQL 표면이 넓어졌다
+  (`hybrid_rag_node`가 LLM에게 WHERE 구조조건 표현식을 자유 형태로 생성시킨다). 로컬
+  Supabase+GEMINI_API_KEY로 대표 조합형 질의 5건을 직접 실행해 관찰한 실제 LLM 산출 조건은
+  `NONE`(2건, doc_rag_node 폴백)·`seats = 7`·`body_type IN ('경차', '소형차') AND price <=
+  20000000`·`fuel = '전기'`였다 — 전부 `status`를 언급하지 않았다.
+  (✎ 후속 리뷰에서 프롬프트를 고친 뒤 5건 재측정: `price <= 30000000`·`price <= 20000000
+  AND body_type = 'SUV'`·`fuel = '전기' AND price <= 30000000`·`mileage <= 50000`·`NONE`
+  1건 — 역시 `status` 언급 0건. 표본이 5→10건으로 늘었을 뿐 아래 결론은 그대로다.)
+  ✎✎ 2026-07-31 후속 리뷰 정정: 이 자리에 원래 "`status`는 이 표면에 노출되지 않는다 —
+  구조가 원천적으로 막는다(LLM이 만드는 조건은 SELECT 목록 안의 AND 결합항일 뿐, status
+  비교식 자체를 생성할 위치가 없다)"고 적혀 있었는데 **틀렸다.** LLM이 낸 조건은 SELECT
+  목록이 아니라 **WHERE절**에 `AND (<조건>)`으로 그대로 이어붙는다 — status 비교식을
+  생성할 위치가 정확히 거기 있다. 실측(후속 리뷰에서 실제 `validate_select_sql()` 호출):
+  조건이 `status = 'ON_SALE'`이면 조립 SQL이 **가드를 통과**한다(코드가 붙이는 bare
+  `status = 'on_sale'` 결합항이 이미 FR11 검사를 충족시키므로 추가 status 술어가 얹혀
+  간다). PostgreSQL 문자열 비교는 대소문자를 구분하니 그 쿼리는 항상 0행인데 가드는
+  "FR11 충족"이라고 판정한다 — 이 항목이 원래 지적한 바로 그 형태다. 즉 이를 막는 것은
+  구조가 아니라 **프롬프트 문장 하나**(`_HYBRID_INSTRUCTIONS` 규칙 3)뿐이며, 그건 실행되는
+  검사가 아니다(CLAUDE.md B9). 위 5건 관측은 "Gemini가 마침 규칙을 지켰다"는 **표본**이지
+  구조적 차단의 증거가 아니다(B4 "재보기 전엔 선언하지 않는다" — 같은 실수를 이 항목 자신이
+  반복했다). 따라서 이 항목이 요구한 (a) 측정은 "13.3 경로 5건 표본에서 관측된 동치 표현
+  0건, 단 구조적 차단은 없음"으로만 완료했고,
   (b)(검사 옆 안전 표현 목록)·(c)(DW-557 resolution 과장 문구 정정)는 손대지 않는다 —
   둘 다 코드 변경이 아니라 **문서 갱신**인데, 이 항목의 본래 우려(경로 A/sql_rag_node가
   LLM에게 status를 직접 쓰게 하는 구조)는 13.3 범위 밖이라 여전히 유효하며, 그쪽 경로는
@@ -3715,4 +3725,52 @@ status: open
 source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
 summary: `sql_rag_node.py`(사전 존재)와 이번 스토리가 같은 패턴으로 새로 만든 `hybrid_rag_node.py` 둘 다, 재시도 루프가 두 번 다 돌고도 return을 못 했을 때 `last_error`가 항상 설정돼 있다는 보장을 `assert`문으로만 지킨다 — 코드를 눈으로 추적하면 성립하지만, Python을 `-O`로 실행하면 이 assert가 통째로 사라져 방어가 없어진다.
 evidence: blind-hunter 리뷰(story 13.3)가 두 파일 모두에서 이 패턴을 발견. 지금은 두 곳 다 루프 구조상 `last_error`가 항상 설정된 채로 이 줄에 도달하지만, 나중에 이 루프에 손대는 사람이 실수로 미설정 경로를 만들면 `-O` 실행 환경에서는 조용히 `None`을 반환하고 호출부가 엉뚱한 위치(`SqlGuardError` 대신 `TypeError` 등)에서 죽는다(CLAUDE.md B9 "규칙은 어길 수 없는 자리에 박는다" 위반 소지 — 실행되는 검사가 아니라 주석/관례로만 지켜지는 불변식).
+severity: low
+trigger: `sql_rag_node`·`hybrid_rag_node`의 재시도 루프를 다음에 다시 손댈 때(재시도 횟수 변경·예외 종류 추가 등) — 그때 `assert`를 명시적 `raise RuntimeError`로 바꾼다. 그 전이라도 배포 실행 커맨드에 `python -O`가 들어오면 즉시 처리한다.
+status: open
+✎ 2026-07-31 후속 리뷰: 등재 당시 이 프로젝트의 필수 필드인 `severity:`·`trigger:`가 빠져 있었다(CLAUDE.md B8 — "미룬 항목엔 언제·어디서 고칠지를 대장에 함께 적는다"). 항목을 만든 스토리(13.3)의 후속 리뷰에서 두 줄만 보강했다. 상태·resolution은 손대지 않았다.
+
+### DW-580: 하드 오염 게이트가 route 라벨로 판정해, HYBRID가 `doc_rag_node`로 폴백한 턴까지 오염으로 집계한다
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+location: `api/scripts/score_ab.py`(멀티턴 하드 오염 게이트, `captured_route(tr["route"]) in ("SQL","HYBRID")`)
+severity: medium
+summary: 13.3이 HYBRID를 전용 `hybrid_rag_node`로 재배선하면서 "route=HYBRID면 구조조건이 붙은 SQL이 돌았다"는 게이트의 전제가 깨졌다 — 구조조건을 못 뽑아 `doc_rag_node`로 폴백한 턴은 조건이 하나도 안 붙은 순수 벡터검색인데 route 라벨은 그대로 HYBRID라, 게이트가 그 결과를 하드 오염으로 센다.
+evidence: 게이트 바로 위 주석이 "CLARIFY/REJECT에서 같은 차종이 결과에 떠도 그건 의미검색의 우연이지 조건 잔존이 아니다"라고 명시하는데, 폴백 턴은 실행 실체가 정확히 그 CLARIFY/REJECT 케이스(doc_rag_node 벡터검색)와 같다. `contamination > 0` → `gate_pass=False` → `lexicographic_winner`의 `gate` 티어에서 자동 패배. 후속 리뷰 blind-hunter 발견, 오케스트레이터가 `score_ab.py` 해당 분기를 직접 읽어 확인. 13.3에서 코드를 고치지 않은 이유: 스토리 intent가 `score_ab.py` 변경을 `route_ok()`로 한정했다. 대신 게이트 옆 주석에 이 사실을 기록해 뒀다.
+trigger: 다음 G2 A/B 캡처를 돌리기 전(멀티턴 HYBRID 턴이 포함된 큐리셋으로 실제 채점할 때) — 그때 게이트 판정 기준을 route 라벨이 아니라 "구조조건이 실제로 적용됐는가"로 바꾸거나, 폴백 턴을 별도로 표시해 제외한다.
+status: open
+
+### DW-581: legacy `A` 항목이 HYBRID로 라우팅되면 구조 golden으로 결과채점돼 `result_mean`(1순위 지표)이 조용히 깎인다
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+location: `api/scripts/score_ab.py`(`score_model`의 `if primary == "A": score_path_a(...)` 분기 · `lexicographic_winner` 1순위 `result_mean`)
+severity: medium
+summary: `route_ok()`는 legacy `A`를 `{SQL,HYBRID}`로 넓혀 라우팅 오답 신호를 없앴지만(DW-572/575), 결과채점 분기는 여전히 **legacy 라벨**만 보고 `score_path_a`를 태운다 — route와 무관하다. 그래서 legacy `A` 항목이 HYBRID로 가면 임베딩 순서로 나온 결과가 구조 golden과 비교된다.
+evidence: 큐리셋의 A7(`제일 싼 차 뭐야?`)·A8(`가장 비싼 매물 하나 보여줘`)는 `predicate.order`+`predicate.limit`을 가져 `score_path_a`가 `mode="topn"`(순서까지 정확일치)로 채점한다. `hybrid_rag_node`는 `ORDER BY embedding <=> %s::vector`로만 정렬하고 LIMIT을 5로 고정하므로(스펙이 명시 선택) 이 두 항목은 결정론적으로 0.0이 된다. `result_mean`은 `lexicographic_winner`가 라우팅보다 **먼저** 보는 1순위 지표라, 승자가 뒤집혀도 원인을 지목하는 지표가 어디에도 없다. DW-575가 닫으려던 "임계값 근처에서 승자가 뒤집힌다"는 위험이 ②(라우팅)에서 ①(결과)로 옮겨간 것. 후속 리뷰 blind-hunter·verification-gap 독립 발견, 오케스트레이터가 `score_ab.py:440-456`을 직접 읽어 확인.
+trigger: 다음 G2 44문항 캡처를 돌릴 때 — 그때 (a) HYBRID로 간 legacy `A` 항목을 `result_scores_clean_A`에서 분리 집계하거나, (b) 그 항목들의 golden을 신어휘로 마이그레이션한다. 큐리셋 수정 금지 제약(13.2/13.3 승계)을 그때 다시 판단한다.
+status: open
+
+### DW-582: HYBRID 경로의 "결과가 맞았는가"를 CI에서 보는 검사가 하나도 없다
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+location: `api/tests/test_live_smoke.py`(`RUN_LIVE_SMOKE=1` 게이트) · `.github/workflows/tests.yml`(api·api-db 잡)
+severity: medium
+summary: 13.3은 DW-571을 "결과집합 자동채점 대신 라이브 스모크로 검증"이라는 대체 수단으로 닫았는데, 그 라이브 스모크 모듈은 `RUN_LIVE_SMOKE=1`이 없으면 통째로 skip이고 CI 어느 잡도 그 변수를 설정하지 않는다. 단위테스트는 `run_select`를 전부 monkeypatch하므로 실제 DB 왕복이 한 번도 안 일어난다.
+evidence: `pytestmark = pytest.mark.skipif(not _LIVE)`, CI `api` 잡은 `python -m pytest -q`(secrets 없음), `api-db` 잡은 `tests/integration`만 도는데 거기 하이브리드/벡터 params 테스트가 없다. 즉 조건추출·조립·랭킹이 회귀해도 전부 초록으로 통과한다. 후속 리뷰 verification-gap·blind-hunter 독립 발견. 13.3에서 라이브 스모크가 폴백과 실제 하이브리드 실행을 구분하지 못하던 문제(답변 문구 미단언)는 이번 후속 리뷰에서 패치했으나, "CI에서 안 돈다"는 구조는 그대로다.
+trigger: `api-db` 잡(실DB 통합)에 테스트를 추가할 일이 생길 때 — 가짜 LLM으로 고정 조건을 주입해 실제 pgvector에 `run_select(validate_select_sql(<하이브리드 모양 SQL>), (vec,))`를 돌리는 통합 테스트를 그때 함께 넣는다(GEMINI_API_KEY 불필요).
+status: open
+
+### DW-583: `hybrid_rag_node`가 `embedding IS NOT NULL`을 안 붙여 `doc_rag_node`와 필터가 어긋난다
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+location: `api/app/graph/hybrid_rag_node.py`(SQL 조립) · `api/app/graph/doc_rag_node.py:57` · `api/app/db/sql_guard.py`(`ALLOWED_COLUMNS`)
+severity: low
+summary: 같은 벡터검색인데 `doc_rag_node`는 `AND embedding IS NOT NULL`을 붙이고 `hybrid_rag_node`는 안 붙인다. `embedding`이 NULL이면 `embedding <=> %s::vector`가 NULL이고 PostgreSQL은 ASC에서 NULL을 마지막에 놓으므로, 구조조건에 맞으면서 임베딩이 있는 매물이 5건 미만일 때 임베딩 없는 매물이 "의미적으로 맞는 결과"인 양 끼어든다(예: 임베딩 생성이 아직 안 돈 신규 매물).
+evidence: 후속 리뷰 blind-hunter 발견. 오케스트레이터가 실제 `validate_select_sql()`로 확인한 결과, `AND embedding IS NOT NULL`을 조립 SQL에 넣으면 **가드가 차단한다**(`embedding`은 `ALLOWED_COLUMNS`에 없고 벡터절 정규식이 기대하는 위치에서만 허용된다). 즉 트리비얼 패치가 아니라 가드 화이트리스트/정규식 변경이 함께 필요해 13.3 범위에서 처리하지 않았다.
+trigger: `sql_guard`의 `ALLOWED_COLUMNS`나 벡터절 정규식을 다음에 손댈 때 — 그때 `embedding IS NOT NULL` 결합항을 함께 허용하고 `hybrid_rag_node` 조립에 추가한다. 그 전이라도 임베딩 미생성 매물이 검색결과에 섞인다는 신고가 들어오면 즉시 처리한다.
+status: open
+
+### DW-584: 새 LIMIT/OFFSET 앵커링이 거부하게 된 **정상 SQL 표현 목록**이 검사 옆에 안 적혀 있다
+source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
+location: `api/app/db/sql_guard.py`(LIMIT/OFFSET 앵커링 정규식·중복절 검사)
+severity: low
+summary: DW-558을 닫은 전체 앵커링은 우회를 확실히 막았지만(실측 확인), 동시에 PostgreSQL이 정상으로 받아들이는 `LIMIT ALL`·`OFFSET n ROWS`·`FETCH FIRST n ROWS ONLY` 같은 표현도 함께 `limit_malformed`/`offset_malformed`로 거부한다. fail-closed 방향이라 안전하지만, **무엇이 거부되는지가 검사 옆에 실측으로 적혀 있지 않다.**
+evidence: DW-574가 요구한 (b)항("검사 옆에 이 검사가 통과시키지 않는 안전 표현 목록을 실측해 적는다 — 추측 금지")과 정확히 같은 종류의 공백이고, 13.3은 그 요구를 `_conjunct_is_bare_status_on_sale`에 대해서만 다뤘다(그것도 미완). 스펙이 회귀 없음을 주장한 근거는 `LIMIT n`·`LIMIT n OFFSET m` 두 형태 테스트뿐이다. 후속 리뷰 blind-hunter 발견.
+trigger: DW-574의 (b)항을 실제로 처리할 때 함께 — 두 항목이 같은 파일·같은 종류의 작업이므로 한 번에 실측해 적는다.
 status: open

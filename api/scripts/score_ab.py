@@ -490,6 +490,14 @@ def score_model(queryset: dict, raw: dict) -> dict:
                 #   타므로 "SQL"만 검사하면 이 게이트가 HYBRID 경로의 조건 잔존을 조용히 놓친다
                 #   (실측: route만 HYBRID로 바꾸면 contamination=0·gate_pass=True로 통과해버림) —
                 #   그래서 두 route 모두 검사한다.
+                # ✎ 2026-07-31(Story 13.3 리뷰): 위 "HYBRID도 같은 sql_rag_node를 탄다"는
+                #   전제는 **이제 사실이 아니다** — 13.3이 HYBRID를 전용 hybrid_rag_node로
+                #   재배선했다. 구조조건이 실제로 붙는 경로에서는 이 게이트가 여전히 옳지만,
+                #   hybrid_rag_node가 구조조건을 못 뽑아 doc_rag_node로 폴백한 턴은 조건이
+                #   하나도 안 붙은 순수 벡터검색인데도 route 라벨이 HYBRID라 여기서 하드
+                #   오염으로 집계된다 — 바로 위 주석이 "오염 아님"이라고 못박은 CLARIFY/REJECT
+                #   케이스와 같은 상황이다. 이번 스토리의 intent가 score_ab.py 변경을
+                #   route_ok()로 한정해 손대지 않았다(DW-580).
                 mnc = turn.get("must_not_contain")
                 if mnc and captured_route(tr["route"]) in ("SQL", "HYBRID"):
                     v = contamination_violations(tr["ids"], mnc, None)

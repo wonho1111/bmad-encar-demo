@@ -1,4 +1,4 @@
-"""라이브 스모크 — 실제 Gemini로 경로 A·B·C 대표 질의를 소량(3건 이하) 확인한다.
+"""라이브 스모크 — 실제 Gemini로 4개 라우트(SQL·CLARIFY·REJECT·HYBRID) 대표 질의를 소량 확인한다.
 
 ⚠️ 쿼터 보호: 실제 과금·호출이 일어나므로 **기본 실행에서는 스킵**한다.
   ✎ 2026-07-30 정정: 이 자리에 있던 "무료 티어 일일 쿼터(약 20 req/day)"는 **사실이 아니다** —
@@ -75,3 +75,9 @@ def test_live_smoke_hybrid():
     assert isinstance(out["answer"], str) and out["answer"]
     assert isinstance(out["listings"], list)
     assert out["route"] == "HYBRID"
+    # route만으로는 부족하다 — route는 라우터 노드가 정하고, hybrid_rag_node가 구조조건을
+    # 못 뽑아 doc_rag_node로 폴백해도 route는 그대로 HYBRID다. 즉 이 단언만 있으면
+    # "하이브리드 단일쿼리가 실제로 돌았다"와 "폴백해서 그냥 벡터검색만 했다"를 구분하지
+    # 못한다. 두 노드는 답변 문구가 다르므로 그걸로 실제 실행 경로를 고정한다.
+    assert out["answer"].startswith("조건에 맞는 매물")  # doc_rag_node는 "'<질의>'에 어울리는…"
+    assert "원하시는 용도나 예산" not in out["answer"]  # doc_rag_node의 0건 문구 배제

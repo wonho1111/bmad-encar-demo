@@ -120,6 +120,25 @@ warnings: ['multiple-goals', 'oversized']
   - defer 1건(장부 신규 등재): `assert last_error is not None`을 제어 흐름으로 쓰는 패턴(`-O` 최적화 실행 시 사라지는 실행되지 않는 방어) — sql_rag_node.py에 이미 있던 사전 존재 패턴을 hybrid_rag_node.py가 스펙 지시대로("sql_rag_node와 동일 패턴") 그대로 재현한 것이라 이번 스토리가 새로 만든 결함은 아니다(blind-hunter 발견).
   - reject 사유: HYBRID LIMIT이 "더 보여줘" 요청과 무관하게 항상 5로 고정된 것(blind-hunter)은 스펙 Design Notes가 명시적으로 선택한 단순화(코드가 정수 리터럴을 붙인다)이지 결함이 아니다 · `route_ok` 집합 번역이 legacy `A` 44건 전체에 적용된다는 지적(blind-hunter)은 스펙 Design Notes가 이미 "알려진 트레이드오프"로 명시·공개한 내용이라 새로운 결함이 아니다 · `_vec_literal`·답변 문구 3~4줄 중복(blind-hunter)은 스펙 Tasks가 명시적으로 허용한 프로젝트 관례(CLAUDE.md A2)다 · deferred-work.md의 "5건 라이브 확인" 문구가 `%` 케이스를 안 다뤘다는 지적(blind-hunter)은 위 high 항목 수정으로 해당 실패 클래스 자체가 사라지고, 문구도 실제 테스트한 5건만 정확히 나열해 과장이 아니다.
 
+### 2026-07-31 — Review pass (follow-up)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 9: (high 2, medium 4, low 3)
+- defer: 5: (high 0, medium 3, low 2)
+- reject: 8: (high 0, medium 0, low 8)
+- addressed_findings:
+  - `[high]` `[patch]` `api/app/graph/hybrid_rag_node.py` — **이 스토리의 대표 질의가 실제로는 하이브리드로 동작하지 않고 있었다.** 라이브 스모크 단언을 강화(아래 medium 항목)하자마자 드러났다: 스펙 I/O 매트릭스 1행이자 AC의 예시인 "3천만원 이하로 무난한 패밀리카"에서 LLM이 `NONE`을 내고 `doc_rag_node`로 폴백해, 단일 쿼리 조립·임베딩 바인딩이 한 번도 일어나지 않았다("3천만원 이하"라는 명백한 구조조건이 있는데도). `_HYBRID_INSTRUCTIONS`가 "조건을 하나도 못 뽑으면 NONE"이라고만 지시해, 느낌 표현(무난한·패밀리카)이 섞이면 모델이 질의 전체를 애매하다고 판정한 것. 규칙 2를 "느낌 표현이 섞여 있어도 구조조건이 하나라도 있으면 반드시 그것만 뽑아라(느낌은 버려라)"로 바꾸고 예시 2개를 넣었다. 재측정(라이브 5건): `price <= 30000000`·`price <= 20000000 AND body_type = 'SUV'`·`fuel = '전기' AND price <= 30000000`·`mileage <= 50000`, 순수 느낌 질의("무난한 차 추천해줘")만 `NONE`으로 폴백 유지.
+  - `[high]` `[patch]` `api/app/graph/hybrid_rag_node.py` — 가드는 통과하지만 DB가 실행하지 못하는 조건이 `except SqlGuardError`를 뚫고 나가 400이 아니라 500이 된다(edge-case-hunter 발견, 오케스트레이터가 실제 `validate_select_sql()`로 재현: `WHERE price <= N`·`AND price <= N`·`price <= N AND`·`price`·`price < (100`·`없음`이 전부 가드 통과). 조각을 `AND (<조건>)`으로 감싸는 구조 때문에 토큰 검사만으로는 문법 오류가 안 보인다. `psycopg.ProgrammingError`/`DataError`를 재시도 대상으로 추가하고, 2회째 실패는 `SqlGuardError("condition_not_executable")`로 변환해 400 계약을 지킨다. 연결 장애(`OperationalError`)는 일부러 안 잡아 500을 유지한다. 지난 패스가 이 실패 클래스의 두 멤버(`%` 리터럴·빈 조건)만 개별로 막았던 자리다.
+  - `[medium]` `[patch]` `api/app/graph/hybrid_rag_node.py` — 폴백 판정이 정확히 `NONE`만 봐서 `NONE.`·`"NONE"` 같은 근사치를 놓친다(실측: `NONE.`은 폴백이 아니라 `forbidden_column` 400으로 끝난다). 따옴표·백틱·마침표·공백만 두른 형태를 전부 폴백으로 읽도록 정규식화.
+  - `[medium]` `[patch]` `api/tests/test_live_smoke.py` — HYBRID 스모크가 `route == "HYBRID"`만 단언하는데 `route`는 라우터 노드가 정하므로, 노드가 폴백해도 그대로 통과한다 — 즉 이 스토리의 핵심 주장을 관측하지 못한다(verification-gap·intent-alignment 독립 발견). 두 노드의 답변 문구가 다르다는 점을 이용해 실제 실행 경로를 단언하도록 보강했고, **그 즉시 위 high 항목을 잡아냈다.**
+  - `[medium]` `[patch]` `deferred-work.md` DW-574 — 지난 패스가 "`status`는 넓어진 표면에 노출되지 않는다(LLM 조건은 SELECT 목록 안 AND 결합항일 뿐)"를 **실측 사실로** 장부에 박았는데 틀렸다. 조건은 SELECT 목록이 아니라 WHERE절에 들어가고, 실측 결과 `status = 'ON_SALE'`은 가드를 통과한다(항상 0행인데 FR11 충족으로 판정). 막는 것은 구조가 아니라 프롬프트 문장 하나뿐임을 근거와 함께 정정했다(status는 open 유지).
+  - `[medium]` `[patch]` `deferred-work.md` DW-579 — 이 스토리가 등재한 항목에 프로젝트 필수 필드인 `severity:`·`trigger:`가 빠져 있었다(CLAUDE.md B8 — 트리거 없는 항목은 조용히 또 밀린다). 두 줄만 보강했고 status·resolution은 손대지 않았다.
+  - `[low]` `[patch]` `api/tests/test_hybrid_rag_node.py` — 임베딩 바인딩 단언이 기대값을 검사 대상 함수(`node._vec_literal`)로 만들어 어떤 구현에도 항상 참이었다(자기참조). `test_doc_rag_node.py`와 같이 리터럴 문자열로 박아 pgvector 형식을 실제로 고정.
+  - `[low]` `[patch]` `api/scripts/score_ab.py` — 하드 오염 게이트 주석이 근거로 든 "HYBRID도 같은 sql_rag_node를 탄다"는 전제를 이번 스토리가 무효화했는데 주석이 그대로였다. 사실을 정정하고 폴백 턴 오집계 문제를 DW-580으로 지목.
+  - `[low]` `[patch]` `api/tests/test_live_smoke.py` docstring + `.github/workflows/tests.yml` — 라이브 스모크 건수 표기가 3건인데 실제 4건(과금 안내용 숫자라 틀리면 안 된다).
+  - defer 5건(장부 신규 등재, 기존 항목 무수정): DW-580(오염 게이트가 폴백 턴을 오염으로 집계) · DW-581(legacy `A`가 HYBRID로 가면 구조 golden으로 결과채점돼 1순위 지표 `result_mean`이 조용히 깎임) · DW-582(HYBRID 결과품질을 CI에서 보는 검사가 0건 — 라이브 스모크는 기본 skip) · DW-583(`embedding IS NOT NULL`이 `doc_rag_node`와 어긋남 — 가드가 차단해 트리비얼 패치 불가) · DW-584(새 앵커링이 거부하게 된 정상 SQL 목록 미기록).
+  - reject 사유(전부 low): `LIMIT 5 LIMIT 9` 미검증 주장은 **실측으로 반증**(중복절 게이트가 두 값 모두 차단, 기존 테스트는 유효) · HYBRID LIMIT 5 고정·정렬 표현 불가는 스펙 Design Notes의 명시적 단순화 · `route_ok` 완화가 라우팅 오답을 가린다는 지적은 Design Notes가 이미 공개한 트레이드오프(지난 패스에서도 같은 사유로 reject) · psycopg 내부함수 의존 테스트는 실제 재현 가치가 취약성 비용보다 크다 · route 정확일치 단언은 드리프트 감지가 목적이고 스위트가 opt-in이다 · `sql_guard` 번호 주석은 A3(기존 중복은 이 스토리 원인 아님) · `rows_to_cards`발 `SqlGuardError`의 무의미한 1회 재시도는 상한이 1회라 영향 미미 · `review_loop_iteration: 0`은 후속 리뷰 시작 시 워크플로가 규정대로 리셋한 값이고 장부의 `status: done`은 이 파일의 기존 관례다.
+
 ## Design Notes
 
 **하이브리드 조립을 가드 통과 후가 아니라 통과 "직전"에 완성한다.** LLM은 조건 표현식만 내고, 코드가 `status='on_sale' AND (<조건>) ORDER BY embedding <=> %s::vector LIMIT 5`까지 전부 문자열로 합친 뒤에야 `validate_select_sql()`을 부른다 — 그래야 가드의 LIMIT 리터럴 검사가 이미 붙어 있는 숫자를 보고 통과시키고(별도 주입 로직을 다시 타지 않음), 벡터절 정규식도 정확히 설계된 위치(문장 끝 직전)에서만 매치한다. 가드를 먼저 부르고 나중에 벡터절을 이어붙이면 정규식이 못 보는 위치에 결합돼 버려 embedding/vector가 미화이트리스트 식별자로 거부된다.
@@ -153,18 +172,34 @@ warnings: ['multiple-goals', 'oversized']
 - `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`, `architecture-increment-2026-07-12.md` -- `$1::vector`→`%s::vector` 표기 정정(DW-560).
 - `_bmad-output/implementation-artifacts/deferred-work.md` -- DW-555·558·559·560·571·572·575 closed, DW-574 실측 갱신(open 유지), DW-579 신규 등재(리뷰 defer).
 
-**Review findings breakdown:** patch 5건(high 1·medium 3·low 1) 전부 적용·재검증 완료. defer 1건(DW-579) 장부 등재. reject 4건(스펙이 이미 명시적으로 결정했거나 프로젝트 관례로 허용된 트레이드오프 — Review Triage Log 참조).
+**Files changed (후속 리뷰 패스에서 추가):**
+- `api/app/graph/hybrid_rag_node.py` -- 구조조건 추출 프롬프트 강화(느낌 표현이 섞여도 구조조건은 반드시 추출), NONE 근사치 센티널 인식, 실행 불가 조건의 psycopg 예외를 재시도·400으로 변환.
+- `api/tests/test_hybrid_rag_node.py` -- 신규 7건(NONE 근사치 4·실행불가 재시도 2·연결장애는 500 유지 1), 자기참조 params 단언 제거.
+- `api/tests/test_live_smoke.py` -- HYBRID 스모크가 답변 문구로 실제 실행 경로를 단언(폴백과 구분), docstring 건수 정정.
+- `api/scripts/score_ab.py` -- 오염 게이트 주석의 낡은 전제 정정(코드 변경 없음, DW-580 지목).
+- `.github/workflows/tests.yml` -- 라이브 스모크 건수 주석 3→4.
+- `_bmad-output/implementation-artifacts/deferred-work.md` -- DW-574 사실오류 정정·재측정 추가, DW-579 필수필드 보강, DW-580~584 신규 등재.
 
-**Follow-up review recommendation:** true (patch 심각도 1×high 존재 — 계산식과 무관하게 high 1건만으로 true).
+**Review findings breakdown (누적):** 1차 패스 patch 5건 + 후속 패스 patch 9건(high 2·medium 4·low 3) 전부 적용·재검증 완료. defer 누적 6건(DW-579·580·581·582·583·584) 장부 등재. reject 누적 12건(스펙이 명시 결정했거나 프로젝트 관례로 허용된 트레이드오프, 실측으로 반증된 1건 포함 — Review Triage Log 참조).
 
-**Verification performed:**
-- `cd api && .venv/bin/python -m pytest tests/ -q` → 330 passed, 83 skipped(재검증 완료, 패치 적용 후 재실행).
-- `cd api && RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/test_live_smoke.py -q` → 4 passed(SQL/CLARIFY/REJECT/HYBRID 4개 라우트 전부 실측 관측, 패치 적용 후 재실행).
-- DW-558 6개 우회 SQL 직접 재현(수정 전 통과 확인 → 수정 후 거부 확인, red→green).
-- `%` 이스케이프 수정을 psycopg 내부 함수(`_query2pg_nocache`)로 직접 재현해 크래시 없이 단일 placeholder만 남고 리터럴이 원래 값으로 복원됨을 확인.
-- `sql_rag_node._SYSTEM_PROMPT`가 리팩터 전 원본과 문자 그대로 동일함을 직접 렌더링 비교로 확인(추측 아님).
+**후속 패스에서 드러난 것(가장 중요):** 라이브 스모크가 `route == "HYBRID"`만 단언하고 있어서, **이 스토리의 대표 질의가 실제로는 하이브리드로 동작하지 않는데도 초록이었다.** 단언을 실행 경로까지 보도록 고치자마자 잡혔다 — "3천만원 이하로 무난한 패밀리카"에서 LLM이 `NONE`을 내고 `doc_rag_node`로 폴백해, 단일 쿼리 조립·임베딩 바인딩이 한 번도 일어나지 않았다. 프롬프트 규칙을 고쳐 해소했고 라이브로 재측정해 확인했다.
+
+**Follow-up review recommendation:** true (이번 패스 patch 심각도에 high 2건 — high가 하나라도 있으면 계산식과 무관하게 true).
+
+**Verification performed (후속 패스):**
+- `cd api && .venv/bin/python -m pytest tests/ -q` → **337 passed, 83 skipped**(1차 패스 330 → 신규 테스트 7건 추가).
+- `cd api && RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/test_live_smoke.py -q` → **4 passed**. 이번엔 route 라벨이 아니라 **답변 문구로 실제 하이브리드 실행 경로를 단언**한다(폴백과 구분됨).
+- red→green 실측: 신규 테스트 6건이 수정 전 코드에서 실제로 실패하는 것을 확인(`git checkout HEAD -- hybrid_rag_node.py` 후 실행 → 6 failed / 8 passed, 그중 `DatatypeMismatch`가 `except`를 뚫고 나가는 것까지 관측) → 패치 복원 후 전량 통과.
+- 가드 통과·실행 불가 조건 클래스를 실제 `validate_select_sql()`로 직접 재현(`WHERE price <= N`·`AND price <= N`·`price <= N AND`·`price`·`price < (100`·`없음` 전부 GUARD-PASS).
+- DW-574 정정 근거: `status = 'ON_SALE'` 조건이 조립 SQL에서 가드를 통과함을 직접 실행해 확인.
+- 프롬프트 수정 전/후 조건추출을 라이브 LLM으로 각각 측정(수정 전 대표 질의 `NONE` → 수정 후 `price <= 30000000`, 순수 느낌 질의는 여전히 `NONE`).
+- blind-hunter의 `LIMIT 5 LIMIT 9` 미검증 주장은 직접 실행으로 **반증**(중복절 게이트가 두 값 모두 차단).
 
 **Residual risks:**
-- `route_ok`의 legacy `A`→`{SQL,HYBRID}` 집합 번역은 큐리셋 44건 전체에 적용돼, "진짜 SQL을 HYBRID로 오분류"하는 미래 회귀를 legacy `A` 항목에 한해 못 잡을 수 있다(스펙 Design Notes가 명시한 트레이드오프).
-- `assert last_error is not None` 제어흐름 패턴(sql_rag_node·hybrid_rag_node 공통)이 `-O` 최적화 실행 시 사라지는 방어라는 점은 DW-579로 남겨뒀다(이번 스토리가 새로 만든 결함은 아님).
+- `route_ok`의 legacy `A`→`{SQL,HYBRID}` 집합 번역은 큐리셋 44건 전체에 적용돼, "진짜 SQL을 HYBRID로 오분류"하는 미래 회귀를 legacy `A` 항목에 한해 못 잡을 수 있다(스펙 Design Notes가 명시한 트레이드오프). 그 부작용이 결과지표(`result_mean`)로 옮겨간 부분은 DW-581로 등재.
+- HYBRID의 **결과품질**을 CI에서 보는 검사는 여전히 0건이다(DW-582). 이번에 강화한 라이브 스모크는 실행 경로를 확실히 구분하지만 `RUN_LIVE_SMOKE=1` 없이는 skip된다.
+- 멀티턴 A/B 채점에서 HYBRID 폴백 턴이 하드 오염으로 오집계될 수 있다(DW-580) — 다음 G2 캡처 전에 처리해야 한다.
+- 구조조건 추출은 프롬프트 품질에 의존한다. 이번 수정으로 대표 5건은 정상화됐지만, 이 계약을 강제하는 실행 검사는 없다(라이브 관측 표본에 의존).
+- `hybrid_rag_node`에 `embedding IS NOT NULL`이 없어 `doc_rag_node`와 필터가 어긋난다 — 가드 화이트리스트 변경이 함께 필요해 DW-583으로 이월.
+- `assert last_error is not None` 제어흐름 패턴은 DW-579로 남아 있다(이번 스토리가 새로 만든 결함은 아님).
 - `epic-13-context.md`에도 `$1::vector` 옛 표기가 남아있으나 이번 스펙의 Code Map 대상이 아니라 손대지 않았다(DW-560 resolution에 기록).

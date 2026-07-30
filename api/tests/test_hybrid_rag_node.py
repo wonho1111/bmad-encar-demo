@@ -61,7 +61,10 @@ def test_hybrid_assembles_expected_sql_and_binds_embedding_params(monkeypatch):
     assert "ORDER BY embedding <=> %s::vector" in sql
     assert f"LIMIT {DEFAULT_LIMIT}" in sql
     # run_select가 %s 자리표시자에 실제로 임베딩(벡터 리터럴)을 바인딩해 호출됐는지(DW-559).
-    assert captured["params"] == (node._vec_literal([0.5, -0.25]),)
+    # 기대값을 _vec_literal로 만들지 않고 문자열로 박는다 — 검사 대상 함수로 기대값을 만들면
+    # 그 함수가 어떤 모양을 내든 항상 참이라 pgvector 리터럴 형식을 고정하지 못한다
+    # (test_doc_rag_node.py가 쓰는 방식과 맞춘다).
+    assert captured["params"] == ("[0.5,-0.25]",)
     assert result["listings"]
 
 
@@ -128,7 +131,7 @@ def test_hybrid_percent_literal_in_condition_is_escaped_before_execution(monkeyp
     # (벡터절의 진짜 자리표시자는 단일 %s로 그대로 남아야 한다).
     assert "LIKE '%%아반떼%%'" in captured["sql"]
     assert "ORDER BY embedding <=> %s::vector" in captured["sql"]
-    assert captured["params"] == (node._vec_literal([0.1]),)
+    assert captured["params"] == ("[0.1]",)
     # psycopg가 실제로 이 SQL+params를 어떻게 치환하는지까지 직접 재현 — 크래시 없이 단일
     # placeholder만 남고 리터럴 '%'는 원래 값으로 복원돼야 한다(가드 통과 후 500으로 새지 않음).
     from psycopg._queries import _query2pg_nocache
@@ -137,6 +140,91 @@ def test_hybrid_percent_literal_in_condition_is_escaped_before_execution(monkeyp
     assert formatted.count(b"$1") == 1  # 진짜 자리표시자는 하나만 남는다
     assert "%아반떼%".encode("utf-8") in formatted  # 이스케이프가 원래 리터럴로 복원됨
     assert result["listings"]
+
+
+# ── NONE 유사 응답(따옴표·마침표)도 폴백으로 읽는지(review-2 patch) ─────
+@pytest.mark.parametrize("raw", ["NONE.", '"NONE"', "`none`", " None . "])
+def test_hybrid_near_miss_none_sentinel_falls_back(monkeypatch, raw):
+    calls = {"doc": 0}
+
+    def fake_doc(query):
+        calls["doc"] += 1
+        return {"answer": "DOC 결과", "listings": ["d1"]}
+
+    # 정확히 "NONE"만 인식하면 `NONE.`은 조건으로 조립돼 가드에 forbidden_column으로
+    # 걸리고(실측), 폴백이 아니라 400이 나간다 — 의도한 경로가 통째로 사라진다.
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM([raw]))
+    monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+
+    assert node.hybrid_rag_node("패밀리카로 무난한 거") == {
+        "answer": "DOC 결과", "listings": ["d1"],
+    }
+    assert calls["doc"] == 1
+
+
+# ── 가드는 통과하지만 실행 불가한 조건 → 재시도, 최종 실패는 400 계약 유지(review-2 patch) ──
+def test_hybrid_unexecutable_condition_retries_then_raises_sql_guard_error(monkeypatch):
+    import psycopg
+
+    # `WHERE price <= N`은 가드를 **통과**한다(실측) — 조각이 `AND (...)` 안에 들어가
+    # 토큰 검사만으로는 문법 오류가 안 보인다. 실행 단계에서야 psycopg가 죽는다.
+    llm = _FixedLLM(["WHERE price <= 30000000", "AND price <= 30000000"])
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+
+    calls = {"n": 0}
+
+    def boom(sql, params=None):
+        calls["n"] += 1
+        raise psycopg.errors.SyntaxError('syntax error at or near "WHERE"')
+
+    monkeypatch.setattr(node, "run_select", boom)
+
+    with pytest.raises(SqlGuardError) as exc:
+        node.hybrid_rag_node("3천만원 이하로 무난한 패밀리카")
+
+    # 2회(최초+재생성) 시도했고, 최종적으로 psycopg 예외가 아니라 SqlGuardError가 나가야
+    # /ai/search가 500이 아닌 400 한국어 안내로 응답한다(sql_rag_node와 동일 계약).
+    assert calls["n"] == 2
+    assert exc.value.code == "condition_not_executable"
+
+
+def test_hybrid_unexecutable_condition_recovers_on_retry(monkeypatch):
+    import psycopg
+
+    llm = _FixedLLM(["price", "body_type = 'SUV'"])
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    state = {"n": 0}
+
+    def flaky(sql, params=None):
+        state["n"] += 1
+        if state["n"] == 1:
+            raise psycopg.errors.DatatypeMismatch("argument of AND must be type boolean")
+        return [_fake_row()]
+
+    monkeypatch.setattr(node, "run_select", flaky)
+
+    assert node.hybrid_rag_node("아무 질의")["listings"]
+
+
+def test_hybrid_connection_failure_is_not_swallowed_as_400(monkeypatch):
+    import psycopg
+
+    # 연결 장애는 "조건이 나쁜 것"이 아니므로 400으로 바꾸면 안 된다 — 그대로 올라가 500이
+    # 돼야 운영에서 DB 장애가 사용자 입력 탓으로 오분류되지 않는다.
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+
+    def down(sql, params=None):
+        raise psycopg.OperationalError("connection failed")
+
+    monkeypatch.setattr(node, "run_select", down)
+
+    with pytest.raises(psycopg.OperationalError):
+        node.hybrid_rag_node("아무 질의")
 
 
 # ── (3) 가드 차단 1회 후 재생성 성공 ────────────────────────────────────
