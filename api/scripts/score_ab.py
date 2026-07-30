@@ -191,8 +191,67 @@ def is_redirect(answer: str) -> bool:
     return any(m in (answer or "") for m in REDIRECT_MARKERS)
 
 
+# 큐리셋(ai-ab-test-queryset.json)의 primary_path/acceptable_paths는 구버전 A/B/C 어휘로
+# 고정돼 있다(13.2가 이 파일 데이터는 손대지 않기로 함 — Never 절). 라우터가 신버전
+# REJECT/CLARIFY/SQL/HYBRID만 내는 지금, 번역 없이 비교하면 44개 전량이 오판된다(DW-562).
+_LEGACY_ROUTE_ALIASES = {"A": "SQL", "B": "CLARIFY", "C": "REJECT"}
+
+
+def _require_legacy_paths(primary: str, acceptable: list[str] | None, where: str) -> str:
+    """큐리셋 골든 라벨(primary + acceptable 원소 전부)이 구어휘(A/B/C)인지 확인한다.
+
+    `acceptable_paths`도 함께 보는 이유(review-5 실측): 이 검사가 `primary`만 볼 때
+    `route_ok("SQL", "A", ["A", "BB_TYPO"])`가 True를 돌려준다 — 오타 한 글자가
+    허용집합에서 조용히 무시되고, 리포트 어디에도 흔적이 안 남는다. 골든 라벨은
+    우리가 쓴 데이터이므로 두 자리를 같은 기준으로 막는다(B9).
+
+    `route_ok()`만 어휘 번역을 얻었고, 결과집합·doc_hit·redirect 채점 분기는 여전히
+    `primary == "A"/"B"/"C"` 리터럴로 갈라진다. 그래서 큐리셋에 신어휘 라벨을 하나만
+    넣어도 **라우팅은 계속 맞다고 세면서 결과집합 채점만 조용히 0건이 된다**(review-4
+    실측: primary_path를 'A'→'SQL'로만 바꾸면 routing 1/1 그대로, result_n 1→0,
+    result_mean 1.0→0.0, 경고 없음). DW-571이 13.3에 지시한 작업이 정확히 "큐리셋에
+    HYBRID 예시 추가"라 그 지시를 따르는 순간 이 함정을 밟는다 — 조용한 오답 대신
+    "여기도 같이 고쳐라"라고 알려주는 편이 싸다(B9: 규칙은 어길 수 없는 자리에).
+    """
+    for field, value in [("primary_path", primary)] + [
+        ("acceptable_paths 원소", a) for a in (acceptable or [])
+    ]:
+        if value not in _LEGACY_ROUTE_ALIASES:
+            raise ValueError(
+                f"{where}: {field}={value!r}는 구어휘(A/B/C)가 아니다. 큐리셋을 신어휘로 "
+                f"옮기려면 score_model()의 결과집합·doc_hit·redirect 분기(primary == 'A'/'B'/'C')도 "
+                f"함께 신어휘로 옮겨야 한다 — 안 그러면 결과집합 채점이 조용히 0건이 된다."
+            )
+    return primary
+
+
+def captured_route(value: str) -> str:
+    """이미 캡처된 raw의 route 값을 신버전 어휘로 올린다(읽는 지점에서만).
+
+    13.2 이후 라우터가 내는 값은 항상 신버전이지만, **13.1이 캡처해 리포에 커밋한
+    `docs/g2-baseline.json`(44개 전량)은 구어휘 A/B/C다.** 그 파일을 지금 코드로
+    재채점하면 라우팅이 50/55 → 0/55로 무너지고(review-4 실측), 멀티턴 하드 오염
+    게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과한다(실측: 동일 오염
+    데이터가 route="A"면 contamination=0·gate_pass=True, "SQL"이면 1·False).
+    DW-562가 막으려던 "전량 오판"이 방향만 바뀌어 되살아난 것이라, 캡처 어휘를
+    읽는 지점에서 한 번 올려 준다. 신버전 캡처에는 별칭표가 걸리지 않아 무영향이다.
+
+    `route_ok()`의 계약(actual은 번역하지 않는다)은 그대로다 — 어휘를 올리는 것은
+    route_ok의 책임이 아니라 "구어휘로 캡처된 raw"라는 입력 파일의 성질이다.
+    """
+    return _LEGACY_ROUTE_ALIASES.get(value, value)
+
+
 def route_ok(actual: str, primary: str, acceptable: list[str] | None) -> bool:
-    allowed = set(acceptable or [primary]) | {primary}
+    """actual(캡처된 실제 route, 항상 신버전)과 primary/acceptable(큐리셋, 구버전 A/B/C)을 비교.
+
+    primary·acceptable만 구버전→신버전으로 번역하고 actual은 그대로 둔다(DW-562, 13.2
+    Design Notes — actual은 이 스토리 이후로 항상 신버전 어휘만 나온다). 구어휘로
+    캡처된 옛 raw는 호출 전에 `captured_route()`로 올려서 넣는다.
+    """
+    primary_t = _LEGACY_ROUTE_ALIASES.get(primary, primary)
+    acceptable_t = [_LEGACY_ROUTE_ALIASES.get(a, a) for a in (acceptable or [primary])]
+    allowed = set(acceptable_t) | {primary_t}
     return actual in allowed
 
 
@@ -345,7 +404,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
         rep = usable_runs[0]
         if len(usable_runs) > 1:
             flaky_measured = True
-        sigs = {(r["route_last"], tuple(r["ids_last"])) for r in usable_runs}
+        # route는 captured_route()로 어휘를 올린 뒤 비교한다 — 안 그러면 같은 경로를 한 번은
+        # "C", 한 번은 "REJECT"로 캡처한 raw(어휘 이관 중 부분 재캡처)가 "모델이 흔들린다"는
+        # 거짓 flaky로 잡힌다(review-5: 다른 세 읽는 지점은 이미 정규화하는데 여기만 빠져 있었다).
+        sigs = {(captured_route(r["route_last"]), tuple(r["ids_last"])) for r in usable_runs}
         is_flaky = len(sigs) > 1
         if is_flaky:
             flaky_n += 1
@@ -358,9 +420,9 @@ def score_model(queryset: dict, raw: dict) -> dict:
                      "flaky": is_flaky}
 
         if item["kind"] == "single":
-            primary = item["primary_path"]
             acc = item.get("acceptable_paths")
-            r_ok = route_ok(rep["route_last"], primary, acc)
+            primary = _require_legacy_paths(item["primary_path"], acc, rid)
+            r_ok = route_ok(captured_route(rep["route_last"]), primary, acc)
             rec["route"] = rep["route_last"]
             rec["route_ok"] = r_ok
             routing_total += 1
@@ -392,17 +454,25 @@ def score_model(queryset: dict, raw: dict) -> dict:
             last_route_ok = True
             for ti, turn in enumerate(item["turns"]):
                 tr = rep["turns"][ti]
-                primary = turn["primary_path"]
-                r_ok = route_ok(tr["route"], primary, turn.get("acceptable_paths"))
+                turn_acc = turn.get("acceptable_paths")
+                primary = _require_legacy_paths(turn["primary_path"], turn_acc, f"{rid}.t{ti}")
+                r_ok = route_ok(captured_route(tr["route"]), primary, turn_acc)
                 routing_total += 1
                 if r_ok:
                     routing_correct += 1
                 trec = {"turn": ti, "route": tr["route"], "route_ok": r_ok}
-                # 하드 오염 게이트 — 카테고리 조건 "계승"은 경로 A(SQL 필터)에서만 발생 가능.
-                #   B/C에서 같은 차종이 결과에 떠도 그건 의미검색의 우연이지 조건 잔존이 아니다
-                #   (예: RESET이 B로 정상 라우팅됐는데 doc_rag가 중형차 1대 추천 → 오염 아님).
+                # 하드 오염 게이트 — 카테고리 조건 "계승"은 sql_rag_node를 타는 경로(SQL·
+                #   HYBRID — 13.2에서 HYBRID도 13.3 전까지 SQL과 동일 노드로 임시 배선됨)
+                #   에서만 발생 가능. CLARIFY/REJECT에서 같은 차종이 결과에 떠도 그건 의미검색의
+                #   우연이지 조건 잔존이 아니다(예: RESET이 CLARIFY로 정상 라우팅됐는데 doc_rag가
+                #   중형차 1대 추천 → 오염 아님). tr["route"]는 캡처된 실제 route라 13.2 이후
+                #   항상 신버전 어휘("A" 아님)이므로, 이 비교도 "SQL"로 갱신했었다(DW-562와
+                #   같은 근본 원인). review-2·review-3이 지적한 대로 HYBRID도 같은 sql_rag_node를
+                #   타므로 "SQL"만 검사하면 이 게이트가 HYBRID 경로의 조건 잔존을 조용히 놓친다
+                #   (실측: route만 HYBRID로 바꾸면 contamination=0·gate_pass=True로 통과해버림) —
+                #   그래서 두 route 모두 검사한다.
                 mnc = turn.get("must_not_contain")
-                if mnc and tr["route"] == "A":
+                if mnc and captured_route(tr["route"]) in ("SQL", "HYBRID"):
                     v = contamination_violations(tr["ids"], mnc, None)
                     if v:
                         trec["contamination"] = v

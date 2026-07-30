@@ -3482,7 +3482,9 @@ reason: 검사가 "`status='on_sale'`라는 문자열이 어딘가 있는가"만
   `SELECT id, status FROM listings WHERE status = 'on_sale' IS NOT TRUE LIMIT 5` → 동일하게 통과·같은 sold 행 반환.
   `ai_readonly` 롤의 RLS는 `using(true)`라 2차 방어선이 없다(그 모듈 주석이 이미 그렇게 적고 있다). 베이스라인 `d654beb`에서도 동일하게 재현되므로 이번 변경이 만든 것은 아니지만, FR11("판매완료는 구매자의 모든 경로에서 비노출", `docs/conventions.md` §6)의 유일한 실패 모드가 실제로 열려 있다는 뜻이다. 이번 스토리의 intent는 "status 강제는 하이브리드 SQL에도 **그대로** 적용된다"(기존 동작 보존)여서 강화는 범위 밖이었다.
 trigger: Story 13.2(4분기 라우팅) 착수 시 — 라우팅이 SQL 경로를 넓히기 전에 먼저 막는다. 고칠 방향은 "문자열 존재"가 아니라 "최상위 AND 결합항으로서의 술어"를 요구하는 것이고(부정·`IS NOT TRUE`·`<>`·달러쿼팅 차단 포함), 세 형태 각각에 red-first 회귀 테스트를 붙인다.
-status: open
+status: done 2026-07-30
+resolution: Story 13.2 최초 구현(문자열 존재 검사)과 review-1(부정 연산자 정규식을 "괄호 깊이 무관 + 6종"으로 확장)이 둘 다 review 라운드에서 실측으로 뚫렸다 — review-1이 넓힌 정규식은 review-2가 따옴표 불리언(`(status='on_sale')='f'`)과 괄호로 감싼 불리언(`(status='on_sale')=(false)`)으로 다시 뚫었다. "알려진 부정 표현을 정규식으로 나열"하는 접근이 두 라운드 연속 실패해 수렴하지 않는 전략임이 실증됐으므로, review-2에서 정규식 나열 접근을 완전히 폐기하고 sqlparse 토큰 기반 구조적 검사로 교체했다: WHERE절을 파싱해 최상위(순수 그룹핑 괄호만 감싼 것은 최상위로 인정) AND 결합항 중 부정·재비교 없이 `status = 'on_sale'`이 정확히 그대로 있는 항이 하나라도 있는지 구조적으로 판정한다(`_has_unnegated_status_on_sale`). review-3은 이 구조적 검사가 반대 방향으로 과잉 차단하는 버그(`WHERE (status='on_sale' AND price<X)`처럼 WHERE절 전체를 바깥 괄호로 감싼 정상 쿼리를 오탈락)를 실측해, AND 분리 전에 WHERE절 전체를 감싼 괄호도 벗기도록 수정했다.
+  **정확한 테스트 현황(review-3이 이전 문구의 부정확한 개수·미검증 주장을 지적해 정정)**: `api/tests/test_sql_guard.py`의 DW-557 전용 블록에 **총 15건**(거부 12건 + 정상 통과 3건)이 있다. 거부 12건 중 **11건**은 구조적 검사(`missing_status_filter`)가 의도한 대로 막는 서로 다른 우회 형태(`NOT status`·`NOT (status)`·`NOT ((status))`·`IS NOT TRUE`·`IS FALSE`·`=false`·`<>true`·`!=true`·`='f'`·`=(false)`·review-3이 새로 찾은 "WHERE절 전체를 감싼 뒤 NOT"). **나머지 1건은 예외다** — `(status='on_sale') IS DISTINCT FROM TRUE`는 `missing_status_filter`가 **아니라** `forbidden_table`로 거부된다(원인은 이 스토리의 구조적 검사가 아니라 기존 테이블 화이트리스트 정규식이 "DISTINCT FROM TRUE"의 "FROM TRUE"를 두 번째 FROM절로 오인하는 무관한 우연 — `re.findall`로 직접 재현: `['listings', 'TRUE']`). 이전 resolution 문구가 이 형태를 "막는다"고만 적고 사유를 확인 안 한 채 뭉뚱그렸던 것을 review-3이 지적해, 이번에 전용 테스트(`test_status_on_sale_is_distinct_from_true_rejected`)로 실제 사유(`forbidden_table`)를 그대로 단언하도록 정정했다. 정상 통과 3건은 단독·AND 결합·그룹핑 괄호 status='on_sale'과, review-3이 고친 "WHERE절 전체를 감싼" 정상 형태를 검증한다. `api/tests/test_sql_guard.py`에서 review-3 신규분 red(수정 전 실측: 과잉차단 1건 + 신규 전용 테스트 2건 전부 기대와 다른 결과) → green(수정 후 전부 의도한 코드)으로 실측 확인.
 
 ### DW-558: LIMIT·OFFSET 절 파싱이 bare integer 이외 형태를 못 잡아 안전 상한이 우회된다 (4형태 실측)
 
@@ -3531,7 +3533,8 @@ location: `api/docs/ai-ab-test-queryset.json`(`primary_path`: A/B/C) · `api/scr
 severity: medium
 reason: G2 라우팅 채점은 캡처된 `route_last`를 질의셋의 `primary_path`와 문자열로 비교한다. 13.2가 라우트 어휘를 4분기로 바꾸면 재실행은 전부 불일치가 되어 라우팅 정확도가 0/44로 떨어진다 — 실제 회귀가 아닌데 "전면 회귀"로 오판하거나, 질의셋을 다시 쓰면서 baseline이 무효가 된다. 어느 쪽이든 13.1이 baseline을 만든 이유가 사라진다.
 trigger: Story 13.2 스펙 작성 시 — 새 라우트 어휘와 질의셋 `primary_path` 사이의 매핑을 그 스펙에서 먼저 정하고 `score_ab.py`의 `route_ok()`에 반영한다(또는 baseline 전량 캡처를 13.2 이후로 미룬다).
-status: open
+status: done 2026-07-30
+resolution: Story 13.2가 `score_ab.py`에 `_LEGACY_ROUTE_ALIASES = {"A": "SQL", "B": "CLARIFY", "C": "REJECT"}`를 두고 `route_ok()`가 `primary`/`acceptable`만 이 매핑으로 번역한 뒤 `actual`(항상 신버전)과 비교한다 — 큐리셋(`ai-ab-test-queryset.json`)의 A/B/C 데이터는 손대지 않는다(Never 절). 같은 근본 원인으로 멀티턴 하드 오염 게이트(`score_model()`의 `tr["route"] == "A"` 리터럴)도 `"SQL"`로 함께 갱신했다 — 안 고치면 route_ok만 고쳐도 오염 게이트가 조용히 무력화되는 자리였다. `api/tests/test_ab_scoring.py`에서 red(수정 전 실측: `route_ok("SQL","A",["A"])`가 False) → green으로 확인. review-1·review-2 모두 이 closure를 재작업 대상으로 지정하지 않았다(내용상 정확했다고 확인, Spec Change Log KEEP instructions 참조) — 재구현에서도 그대로 유지. (이 게이트가 HYBRID 경로는 놓친다는 review-2 지적은 별도 사안으로 이번 스토리 범위 밖으로 이월 — moot, 다음 리뷰 패스.)
 
 ### DW-563: CLARIFY 턴 상한이 클라이언트 강제로만 규정돼 있다 (유료 API 호출 상한이 상한이 아니다)
 
@@ -3613,4 +3616,74 @@ reason: 2026-07-30 18:04:27 시작한 13-1 review-1이 Anthropic 측 장애(`529
   결과: 18:34:30에 로그가 멈춘 뒤 **52분간 아무 일도 하지 않았고**, 사람이 화면을 보고 tmux로 프롬프트를 다시 넣지 않았다면 `session_timeout_min`(150분)을 꽉 채운 20:34까지 방치됐을 것이다. 게다가 타임아웃된 세션도 **리뷰 사이클 1회를 소모**하므로(Epic 11의 11-1과 같은 패턴, 구 `#182` 계열), 상한 2회 중 1회가 아무 일도 없이 사라졌을 상황이었다.
   ⚠️ **재발 가능성이 높다**: 해당 장애는 이 항목을 쓰는 시점에도 "조사 중"으로 열려 있다.
 trigger: Epic 13 남은 스토리 실행 중 세션이 또 API 오류로 죽을 때 — 그때 (a)사람이 즉시 깨우거나 (b)`bmad-loop status` 감시에 "로그 파일이 N분간 안 자란다" 조건을 넣어 자동 경보한다. 상류(bmad-loop)에 리뷰 세션에도 유휴 감지를 달아달라고 보고한다. Epic 13 회고 확인 항목.
+status: open
+
+### DW-571: G2 큐리셋 44개 중 HYBRID 정답 라벨이 없어 HYBRID 분류 정확도를 채점할 수 없다
+
+origin: `spec-13-2-4분기-라우팅.md` Tasks(13.2가 스펙 자체에서 등재를 요구) — HYBRID 신설이 만든 커버리지 공백
+location: `api/docs/ai-ab-test-queryset.json`(44개 질의·golden 값 — 13.2는 이 파일을 수정하지 않는다) · `api/scripts/score_ab.py`(`score_model()` — `primary_path`가 HYBRID인 item을 다루는 채점 분기가 없다)
+severity: medium
+reason: 13.2가 FR43 ④(조합형)를 위해 HYBRID 라우트를 신설했지만, 44개 큐리셋 중 구조 조건과 의미/느낌 조건이 함께 있는 질의(예: "3천만원 이하로 무난한 패밀리카")는 하나도 없다(Design Notes 확인) — 그래서 HYBRID는 골든 예시 없이 신설됐다. `score_model()`의 `if primary == "A": ... elif primary == "B": ... elif primary == "C": ...` 분기에도 HYBRID(신버전 그대로 등장할 primary_path는 아직 없지만, 향후 큐리셋에 HYBRID 예시가 추가되면) 대응 분기가 없어 결과집합 채점(score_path_a류)이 비어 있는 상태로 남는다. routing_correct(라우팅 정확도)만 `route_ok()` 번역으로 채점되고, HYBRID의 "결과가 실제로 맞았는가"는 어떤 지표로도 측정되지 않는다.
+trigger: Story 13.3 스펙 작성 시(하이브리드 질의 예시를 큐리셋에 추가하거나 별도 검증 방법을 정한다) — 13.3이 HYBRID의 실제 벡터+SQL 결합 실행을 구현하면서, 큐리셋에 HYBRID `primary_path` 예시(구조+의미 조합 질의, golden predicate)를 추가하고 `score_model()`에 HYBRID 결과집합 채점 분기를 추가할지, 아니면 별도 검증 방법(예: 수동 스모크만)으로 대신할지 그 스펙에서 정한다.
+status: open
+
+### DW-572: 큐리셋의 구버전 `A` 라벨이 **올바른 HYBRID 분류를 오답으로 집계**한다 — DW-571의 전제("조합형 질의가 하나도 없다")는 사실과 다르다
+
+origin: `spec-13-2-4분기-라우팅.md` review-4(팔로업 리뷰) — blind-hunter·edge-case-hunter·verification-gap·intent-alignment 4개 레이어가 독립 발견, 오케스트레이터가 큐리셋 전량 파싱으로 재확인
+location: `api/docs/ai-ab-test-queryset.json`(항목 A5·G3·G5·G6, 멀티턴 M4/M5의 일부 턴) · `api/scripts/score_ab.py`(`_LEGACY_ROUTE_ALIASES`의 `A→SQL` 1:1 매핑)
+severity: medium
+reason: 13.2가 구 `A`(구조형)를 `SQL`과 `HYBRID` 둘로 쪼갰는데, 어휘 번역표는 `A→SQL` 1:1이다. 그래서 라우터가 **정확히 맞게** HYBRID로 분류해도 번역된 허용집합(`{SQL}` 또는 `{SQL, CLARIFY}`)에 HYBRID가 없어 라우팅 오답으로 집계된다(실측: `route_ok("HYBRID","A",["A"])=False`, `route_ok("HYBRID","A",["A","B"])=False`). 그리고 DW-571이 근거로 적은 "44개 중 구조+의미 조합형 질의는 하나도 없다"는 **실측으로 거짓**이다 — 큐리셋을 전량 파싱하면 A5 `1500만원 이하 가성비 좋은 차 있어?`(primary=A, acceptable=[A]), G3 `가족이랑 타기 좋은 7인승 차 보여줘`([A,B]), G5 `연비 좋은 차 중에 2천만원 이하로 보여줘`([A,B]), G6 `초보가 몰기 쉬운 작은 차 2천 이하면 좋겠어`([A,B]) 등 최소 4건이 "구조 조건 + 용도·느낌 조건"을 함께 갖고 있고, 새 프롬프트의 최우선 규칙("둘 다 있으면 HYBRID")을 그대로 따르면 이들은 HYBRID로 간다. 즉 다음 G2 전량 캡처 때 회귀가 아닌데 최소 4~6건이 라우팅 오답으로 깎인다. 따라서 필요한 일은 DW-571이 적은 "예시 추가"가 아니라 **기존 A 라벨의 재판정**이다(이 항목은 DW-571을 대체하지 않고 그 전제를 정정한다 — DW-571의 "HYBRID 결과집합 채점 분기 부재"는 그대로 유효하다).
+trigger: Story 13.3 스펙 작성 시 — DW-571과 같은 자리에서 함께 결정한다. 선택지는 (a) `A`를 `{SQL, HYBRID}` 집합으로 번역해 허용집합을 넓히거나, (b) 해당 항목들의 `primary_path`를 신어휘로 재라벨링(13.2의 Never 절 "큐리셋 데이터 수정 금지"와 충돌하므로 스펙 수준 결정 필요)하거나, (c) 오답 집계를 그대로 두되 리포트에 "재배정으로 인한 오답 N건"을 분리 표기. 어느 쪽이든 44개 전량 재캡처(DW-554) 전에 정해야 그 캡처의 라우팅 점수가 해석 가능하다.
+status: open
+
+### DW-573: `api/tests/demo_queries.py`가 여전히 구버전 `A/B/AB/C` 어휘 — 문서는 이 파일을 "기대 경로 단일출처"로 가리킨다
+
+origin: `spec-13-2-4분기-라우팅.md` review-4 — verification-gap·intent-alignment 독립 발견, 오케스트레이터가 grep으로 소비처 확인
+location: `api/tests/demo_queries.py`(`DEMO_QUERIES` 상수 및 모듈 docstring의 경로 표기) · 이 파일을 정본으로 가리키는 `docs/learning/06-file-reference.md` · `api/docs/ai-demo-queries.md`
+severity: low
+reason: 13.2가 라우트 어휘를 SQL/HYBRID/CLARIFY/REJECT로 바꿨지만 이 파일은 손대지 않았다. `test_demo_acceptance.py`는 이 파일에서 질의 **리스트만** import하고 라벨은 자기가 신어휘로 주입하므로 지금 깨지지는 않는다. 문제는 `DEMO_QUERIES`(질의와 `"A"/"B"/"AB"/"C"` 라벨의 쌍)가 리포 어디에서도 import되지 않는 **죽은 상수**라 어긋남이 드러나지 않는데, 위 문서 2곳이 이 파일을 "다른 테스트가 참조하는 기대 경로 단일출처"라고 가리킨다는 점이다 — 다음 담당자가 구어휘를 정본으로 읽을 수 있다. 특히 회색지대 라벨 `"AB"`가 가리키는 3개 질의(`출퇴근용 적당한 차`·`괜찮은 SUV 있어?`·`너무 비싸지 않은 중형차`)는 새 taxonomy에서 HYBRID 후보다.
+trigger: `api/docs/ai-demo-queries.md`를 손대는 다음 작업 시(그 문서가 아직 "경로 A/B/C" 표기를 쓰고 있어 어차피 같이 고쳐야 한다) — 또는 `DEMO_QUERIES`에 소비처가 처음 생길 때. 고칠 방향은 신어휘로 옮기거나, 소비처가 계속 0이면 상수를 지우고 문서의 "단일출처" 표현을 정정하는 것.
+status: open
+
+### DW-574: `sql_guard`의 `status='on_sale'` 구조 검사는 **단일 형상 화이트리스트**다 — "새 변형도 원리상 막힌다"는 주장보다 좁고, 동치의 안전 표현도 함께 거부한다
+
+origin: `spec-13-2-4분기-라우팅.md` review-4 — blind-hunter·edge-case-hunter 독립 발견, 오케스트레이터가 27개 SQL 형태를 직접 넣어 재확인
+location: `api/app/db/sql_guard.py`(`_conjunct_is_bare_status_on_sale`) · `api/tests/test_sql_guard.py`(DW-557 블록 주석) · `deferred-work.md`의 DW-557 resolution 문구
+severity: low
+reason: 이 검사는 "좌변=status 식별자, 연산자 `=`, 우변=`'on_sale'` 문자열"이라는 **정확히 하나의 토큰 형상**만 통과시킨다. 부정 우회를 막는 데는 확실히 성공했지만(실측: 알려진 우회 16형태 전부 거부, review-4가 새로 고안한 괄호+부정 조합 5형태도 전부 거부), 그 대가로 의미상 동치인 안전한 표현도 함께 거부된다 — 실측 거부: `WHERE 'on_sale' = status`(좌우 반전), `WHERE status = ('on_sale')`(우변 괄호), `WHERE status IN ('on_sale')`. 셋 다 베이스라인에서도 거부됐으므로 회귀는 아니지만, DW-557 resolution과 테스트 주석이 "표현 형태가 아니라 구조를 보므로 아직 실측되지 않은 새 변형도 원리상 함께 막힌다"고 적은 것은 **차단 방향에서만 참이고 통과 방향에서는 과장**이다(B4 "재보기 전엔 선언하지 않는다"). 또 `WHERE status = 'ON_SALE'`은 통과하는데(우변을 소문자화해 비교) PostgreSQL 문자열 비교는 대소문자를 구분하므로 이 쿼리는 항상 0행이다 — 누출은 아니지만(안전 방향) 가드는 "FR11 충족"이라고 판정한다. 지금 이걸 엄격하게 바꾸면 0행 안내가 400 오류로 바뀌어 사용자 경험이 오히려 나빠지므로 이번엔 손대지 않았다.
+trigger: 13.3에서 하이브리드 벡터+SQL 결합으로 **SQL 표면이 넓어질 때** — 그때 LLM이 내는 SQL 형태가 다양해지므로, (a) 위 동치 표현 중 실제로 나오는 것이 있는지 먼저 측정하고, (b) 검사 옆에 "이 검사가 통과시키지 않는 안전 표현" 목록을 실측해 적고(추측 금지), (c) DW-557 resolution의 과장된 문구를 그때 정정한다.
+status: open
+
+### DW-575: `A→SQL` 1:1 번역이 만드는 라우팅 오답 4~6건이 **A/B 모델 승자 판정을 뒤집을 수 있다**(임계값이 5)
+
+origin: `spec-13-2-4분기-라우팅.md` review-5 — edge-case-hunter 발견, 오케스트레이터가 큐리셋·`lexicographic_winner` 임계값을 직접 대조
+location: `api/scripts/score_ab.py`(`_LEGACY_ROUTE_ALIASES`의 `A→SQL` · `ROUTING_DELTA` · `lexicographic_winner()`)
+severity: medium
+reason: DW-572는 "구 `A` 라벨이 올바른 HYBRID 분류를 오답으로 집계한다 → 라우팅 점수를 해석할 수 없다"까지만 적었다. 그 뒤가 남아 있다 — `routing_correct`는 `lexicographic_winner()`의 2순위 기준이고 그 임계값 `ROUTING_DELTA`가 **5**다. DW-572가 센 오답이 최소 4~6건이므로, 이 허수 격차가 임계값 바로 위/아래에 앉는다. 즉 두 모델을 비교할 때 **회귀가 아닌 어휘 분할 때문에 승자가 뒤집히고**, 리포트에는 "라우팅 정답 N vs M"이라는 정상적으로 보이는 사유가 찍힌다(`gate_pass`는 오염·dead-end·에러만 보므로 여기서 아무것도 못 걸러준다). 실측 확인: `route_ok("HYBRID","A",["A"])=False`, `route_ok("HYBRID","A",["A","B"])=False` — 라우터가 맞게 분류할수록 점수가 깎인다.
+trigger: DW-572와 **같은 자리에서 함께 결정한다**(Story 13.3 스펙 작성 시) — 어휘 재판정 방식을 고르는 그 결정이 이 문제도 같이 닫는다. 만약 (c)안(오답을 그대로 두고 리포트에 분리 표기)을 택한다면, 그 분리된 건수를 `lexicographic_winner()`의 라우팅 비교에서 **빼고** 계산하도록 함께 고쳐야 이 항목이 닫힌다.
+status: open
+
+### DW-576: 데모 인수 게이트의 ② 목록이 실측 분류와 어긋난다 — `연비 좋은 전기차 추천`은 CLARIFY가 아니라 HYBRID다
+
+origin: `spec-13-2-4분기-라우팅.md` review-5 — blind-hunter 발견, 오케스트레이터가 로컬 라이브 LLM으로 ②·③ 목록 7개 질의를 전부 재분류해 확인
+location: `api/tests/demo_queries.py`(`SEMANTIC_B` 목록) · `api/tests/test_demo_acceptance.py`(`test_sm3_pathB_returns_listings`) · `api/docs/ai-demo-queries.md`(표 ②)
+severity: medium
+reason: 13.2의 새 프롬프트는 "명시 조건 + 용도·느낌 조건이 둘 다면 HYBRID(최우선)"인데, ② 목록의 `연비 좋은 전기차 추천`은 전기차(=연료, 명시 조건) + `연비 좋은`(느낌)이라 이 규칙대로 HYBRID로 간다. 실측(라이브 LLM): ② 4개 중 `연비 좋은 전기차 추천`만 **HYBRID**, 나머지 3개는 CLARIFY. ③ 회색지대 3개 중 `너무 비싸지 않은 중형차`도 **HYBRID**. 그런데 `test_sm3_pathB_returns_listings`는 `_patch_route(monkeypatch, "CLARIFY")`로 route를 **강제 주입**하므로, 라우터가 실제로 그 질의를 어디로 보내든 게이트는 초록이다 — 즉 SM3(데모 인수)가 이 질의에 대해 아무것도 보장하지 않는다. DW-573은 같은 파일의 "구어휘·죽은 상수·문서가 정본으로 가리킴"을 다루지만, **② 목록 자체의 소속이 실측과 다르다**는 이 사실은 그 항목에 없다.
+trigger: DW-573을 손대는 같은 작업에서 함께(`api/docs/ai-demo-queries.md`를 신어휘로 옮길 때) — 그때 ②·③ 목록을 실측 분류로 재배치하고, `test_sm3_pathB_returns_listings`가 route를 강제 주입하는 대신 목록별 기대 route를 받도록 바꿀지 정한다. 데모 시연 전이라면 그 전에 한다(데모 당일 이 질의가 문서와 다른 경로를 탄다).
+status: open
+
+### DW-577: 라이브 스모크 파일이 `route`를 단언하지 않고 HYBRID 질의도 없어, 4갈래 회귀를 재실행 가능한 형태로 잡지 못한다
+
+origin: `spec-13-2-4분기-라우팅.md` review-5 — blind-hunter·intent-alignment 독립 지적, 오케스트레이터가 파일 내용으로 확인
+location: `api/tests/test_live_smoke.py`(경로 A/B/C 3건, `out["route"]` 단언 0건, "HYBRID" 등장 0회)
+severity: low
+reason: 13.2의 Block If 게이트(G1 — 명시조건 질의가 CLARIFY로 새면 HALT)와 4갈래 관측은 **오케스트레이터가 손으로 5~6개 질의를 돌려** 충족했고, 그 결과는 스펙 산문에만 남았다. 리포의 라이브 스모크 파일은 `answer`가 비지 않았는지와 `listings`가 리스트인지만 보고 `route`는 아예 안 본다 — CLARIFY도 매물을 돌려주므로 G1 위반이 일어나도 이 파일은 `RUN_LIVE_SMOKE=1`로 켜도 초록이다. 즉 다음 사람이 같은 게이트를 다시 확인하려면 이번처럼 손으로 다시 짜야 한다. (프롬프트 표류 자체는 review-4·5가 넣은 프롬프트 잠금 테스트가 CI에서 막지만, 그건 "문자열이 남아 있는가"이지 "LLM이 실제로 그렇게 가르는가"는 아니다 — project-context §12가 실제 LLM 품질을 eval/live-smoke 트랙으로 분리한 그 자리다.)
+trigger: Story 13.3에서 HYBRID의 실제 벡터+SQL 결합을 구현할 때 — 그 스토리는 HYBRID가 **다른 노드**를 타게 만들므로 배선 회귀를 잡을 라이브 근거가 필요하다. 그때 `test_live_smoke.py`에 4갈래 각 1건씩 `out["route"]` 단언을 추가한다(HYBRID 질의 포함).
+status: open
+
+### DW-578: Follow-up review still recommended for 13-2-4분기-라우팅 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-2-4분기-라우팅.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260730-205944-48e1; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

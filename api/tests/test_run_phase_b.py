@@ -158,7 +158,9 @@ def test_main_end_to_end_with_mocked_run_search_feeds_score_ab_single_mode(monke
     out_path = tmp_path / "raw.json"
 
     def fake_run_search(query, context=None):
-        return {"answer": "그건 못 도와드려요.", "listings": [], "route": "C"}
+        # 13.2 이후 실제 run_search가 내는 route는 항상 신버전 어휘다 — queryset의
+        # primary_path="C"(구버전, 이 스토리는 데이터를 손대지 않는다)는 route_ok가 번역해 비교한다.
+        return {"answer": "그건 못 도와드려요.", "listings": [], "route": "REJECT"}
 
     # main()이 `from app.graph.graph import run_search`로 늦게 import하므로, 모듈 속성 자체를
     # 패치해 그 늦은 import가 가짜 함수를 받게 한다(라이브 Gemini/DB 호출 0).
@@ -173,7 +175,7 @@ def test_main_end_to_end_with_mocked_run_search_feeds_score_ab_single_mode(monke
     run_phase_b.main()
 
     raw = json.loads(out_path.read_text(encoding="utf-8"))
-    assert raw["results"]["C1"][0]["route_last"] == "C"
+    assert raw["results"]["C1"][0]["route_last"] == "REJECT"
 
     # 이 raw를 score_ab.py의 1파일 모드로 실제 채점(DB 불필요 — C경로는 골든 SQL을 안 씀).
     report_path = tmp_path / "report.json"

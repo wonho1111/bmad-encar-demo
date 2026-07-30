@@ -14,15 +14,19 @@ MAX_QUERY_LENGTH = 1000
 
 
 class RouterDecision(BaseModel):
-    """라우터(router_node)의 구조화 출력 — 질의 의도 3분류(FR13).
+    """라우터(router_node)의 구조화 출력 — 질의 의도 4분류(FR13·FR43, 13.2 4분기 라우팅).
 
-    route만 A/B/C로 강제(Literal)해 LLM이 형식을 벗어나지 못하게 한다. reason은 선택(디버깅용).
-      · A = 구조형(가격·차종·연식 등 명시 조건) → 경로 A(Text-to-SQL)
-      · B = 질적·의미형(용도·느낌·추천) → 경로 B(문서 RAG)
-      · C = 매물 무관(잡담·상식 등) → 가드(정중한 거절)
+    route만 REJECT/CLARIFY/SQL/HYBRID로 강제(Literal)해 LLM이 형식을 벗어나지 못하게 한다.
+    reason은 선택(디버깅용).
+      · SQL = 구조형(가격·차종·연식 등 명시 조건만) → 경로 SQL(Text-to-SQL)
+      · HYBRID = 구조 조건 + 의미/느낌 조건이 함께 있는 조합형(신규) → 경로 HYBRID
+        (13.3 전까지는 sql_rag_node로 임시 실행)
+      · CLARIFY = 구조 조건 없이 순수 용도·느낌만 묻는 질의 → 경로 CLARIFY(되묻기)
+        (13.4 전까지는 doc_rag_node로 임시 실행, 기존 B와 동일 경험)
+      · REJECT = 매물 무관(잡담·상식·금융/세금/보험 일반지식 등) → 가드(정중한 거절)
     """
 
-    route: Literal["A", "B", "C"]
+    route: Literal["REJECT", "CLARIFY", "SQL", "HYBRID"]
     reason: str | None = None
 
 

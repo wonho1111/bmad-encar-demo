@@ -1,17 +1,19 @@
-"""검색 파이프라인 StateGraph 조립 — router → (A/B/C) → answer → END (FR13·FR16·FR17).
+"""검색 파이프라인 StateGraph 조립 — router → (REJECT/CLARIFY/SQL/HYBRID) → answer → END
+(FR13·FR16·FR17·FR43, 13.2 4분기 라우팅).
 
 architecture가 그린 단일 파이프라인을 LangGraph StateGraph로 묶는다.
-  질의 → 라우터(의도 A/B/C 분류) → 분기:
-    · A → sql_rag_node  (경로 A: Text-to-SQL)
-    · B → doc_rag_node  (경로 B: 문서 RAG)
-    · C → guard_node    (경로 C: 정중한 거절)
+  질의 → 라우터(의도 4분류) → 분기:
+    · SQL     → sql_rag_node  (구조형: Text-to-SQL)
+    · HYBRID  → sql_rag_node  (조합형, 신규 — 13.3 전까지 임시 배선: 구조 조건만 우선 반영)
+    · CLARIFY → doc_rag_node  (질적·의미형, 되묻기 — 13.4 전까지 임시 배선: 기존 B 경험 그대로)
+    · REJECT  → guard_node    (매물 무관: 정중한 거절)
   → answer_node(공통 계약 {answer, listings[]} 보장 + FR17 0건 안내) → END.
 
 설계 결정(OI2): architecture가 StateGraph(LangGraph)와 graph/ 노드 파일을 명시했으므로
   함수형 대안 대신 StateGraph를 채택한다. 노드 4개 단순 분기라 conditional_edges 한 번으로 충분.
   컴파일 비용을 매 요청마다 치르지 않도록 모듈 import 시 1회만 compile한다(함정 #4).
 
-중요(함정 #1) — 경로 A 어댑터는 SqlGuardError를 삼키지 않는다.
+중요(함정 #1) — SQL 경로(SQL·HYBRID 둘 다 sql_rag_node) 어댑터는 SqlGuardError를 삼키지 않는다.
   sql_rag_node가 가드 차단으로 SqlGuardError를 던지면 그대로 그래프 밖(/ai/search)으로
   전파돼 기존 핸들러가 400으로 잡아야 한다. 어댑터가 try/except로 감싸 빈 결과로 바꾸면
   400이 사라지는 회귀가 난다 → 절대 감싸지 않는다.
@@ -37,31 +39,39 @@ class SearchState(TypedDict, total=False):
     """그래프 상태 — 노드 사이를 흐르는 최소 dict."""
 
     query: str            # 입력 질의(라우터·경로 노드가 읽음)
-    route: str            # 라우터 판정 "A"/"B"/"C"
+    route: str            # 라우터 판정 "REJECT"/"CLARIFY"/"SQL"/"HYBRID"
     answer: str           # 경로/answer 노드가 채우는 자연어 설명
     listings: list        # 매물 카드 목록(ListingCard)
 
 
 def _router_step(state: SearchState) -> SearchState:
-    """라우터 노드 — 질의를 A/B/C로 분류해 state["route"]에 기록(FR13)."""
+    """라우터 노드 — 질의를 REJECT/CLARIFY/SQL/HYBRID로 분류해 state["route"]에 기록(FR13·FR43)."""
     route = router_node(state["query"])
     return {"route": route}
 
 
 def _sql_step(state: SearchState) -> SearchState:
-    """경로 A 어댑터 — sql_rag_node 호출. SqlGuardError는 삼키지 않고 전파(함정 #1)."""
+    """SQL·HYBRID 공용 어댑터 — sql_rag_node 호출. SqlGuardError는 삼키지 않고 전파(함정 #1).
+
+    HYBRID는 13.3(실제 벡터+SQL 결합 노드) 전까지 SQL과 동일하게 이 노드로 임시 배선한다
+    (구조 조건만 우선 반영, 의미 결합은 13.3에서 추가 — 13.2 Never 절).
+    """
     result = sql_rag_node(state["query"])
     return {"answer": result["answer"], "listings": result["listings"]}
 
 
 def _doc_step(state: SearchState) -> SearchState:
-    """경로 B 어댑터 — doc_rag_node(의미형 RAG) 호출."""
+    """CLARIFY 어댑터 — doc_rag_node(의미형 RAG) 호출.
+
+    13.4(실제 되묻기 UX) 전까지는 기존 B(질적·의미형)와 동일하게 이 노드로 임시 배선한다
+    (13.2 Never 절 — 회귀 없음).
+    """
     result = doc_rag_node(state["query"])
     return {"answer": result["answer"], "listings": result["listings"]}
 
 
 def _guard_step(state: SearchState) -> SearchState:
-    """경로 C 어댑터 — guard_node(정중한 거절) 호출(FR16)."""
+    """REJECT 어댑터 — guard_node(정중한 거절) 호출(FR16)."""
     result = guard_node(state["query"])
     return {"answer": result["answer"], "listings": result["listings"]}
 
@@ -72,20 +82,20 @@ def _answer_step(state: SearchState) -> SearchState:
 
 
 def _route_decision(state: SearchState) -> str:
-    """conditional_edges 분기 키 — route 값(A/B/C)에 따라 다음 노드를 고른다.
+    """conditional_edges 분기 키 — route 값(REJECT/CLARIFY/SQL/HYBRID)에 따라 다음 노드를 고른다.
 
-    router_node가 이미 A/B/C로 보정해 주지만, 혹시 모를 예외값은 안전하게 guard로 보낸다
+    router_node가 이미 4값으로 보정해 주지만, 혹시 모를 예외값은 안전하게 guard로 보낸다
     (조용히 잘못된 경로로 흘리지 않는다).
     """
     route = state.get("route")
-    if route in ("A", "B", "C"):
+    if route in ("REJECT", "CLARIFY", "SQL", "HYBRID"):
         return route
-    logger.warning("_route_decision 예기치 못한 route=%r → guard(C)로 안전 보정", route)
-    return "C"
+    logger.warning("_route_decision 예기치 못한 route=%r → guard(REJECT)로 안전 보정", route)
+    return "REJECT"
 
 
 def _build_graph():
-    """StateGraph 조립: router → conditional(A/B/C) → 각 경로 노드 → answer → END."""
+    """StateGraph 조립: router → conditional(REJECT/CLARIFY/SQL/HYBRID) → 각 경로 노드 → answer → END."""
     g = StateGraph(SearchState)
     g.add_node("router", _router_step)
     g.add_node("sql", _sql_step)
@@ -94,11 +104,11 @@ def _build_graph():
     g.add_node("answer", _answer_step)
 
     g.set_entry_point("router")
-    # 라우터 분류값으로 세 경로 중 하나로 분기.
+    # 라우터 분류값으로 네 경로 중 하나로 분기. HYBRID는 sql로, CLARIFY는 doc으로 임시 배선(13.2).
     g.add_conditional_edges(
         "router",
         _route_decision,
-        {"A": "sql", "B": "doc", "C": "guard"},
+        {"REJECT": "guard", "SQL": "sql", "HYBRID": "sql", "CLARIFY": "doc"},
     )
     # 어느 경로를 타든 마지막엔 answer_node로 모여 계약을 보장한 뒤 종료.
     g.add_edge("sql", "answer")
@@ -119,7 +129,8 @@ def run_search(query: str, context: list | None = None) -> dict:
       흡수한 독립 질의를 만든 뒤, 그 질의를 그래프에 흘린다. 맥락이 없으면(None·[]) 원 질의가
       그대로 들어가 4.5까지와 동일하게 동작한다(회귀 0). 맥락은 인자로만 흐르고 저장하지 않는다(무상태).
     /ai/search가 sql_rag_node 직접 호출 대신 이 함수를 부른다.
-    경로 A에서 SqlGuardError가 나면 여기서 잡지 않고 호출자(/ai/search)로 전파한다(함정 #1).
+    SQL 경로(route=SQL·HYBRID)에서 SqlGuardError가 나면 여기서 잡지 않고 호출자(/ai/search)로
+    전파한다(함정 #1).
 
     "route"는 13.1이 추가한 부가 키다(G2 baseline 러너 `scripts/run_phase_b.py`가 라우팅
       채점에 씀) — 기존 소비처(/ai/search·test_graph.py 등)는 answer/listings만 꺼내 쓰므로

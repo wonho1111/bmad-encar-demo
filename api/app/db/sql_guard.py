@@ -15,7 +15,9 @@
 import re
 
 import sqlparse
+from sqlparse.sql import Comparison, Parenthesis, Where
 from sqlparse.tokens import DDL, DML
+from sqlparse.tokens import Comparison as COMPARISON_OP
 
 # 추천 기본 개수와 안전 상한은 서로 다른 개념이다(코드리뷰 4.3에서 분리).
 #   · DEFAULT_LIMIT: LLM이 LIMIT을 안 붙였을 때 주입하는 "기본 추천 개수".
@@ -70,6 +72,134 @@ class SqlGuardError(Exception):
         self.code = code
         self.message = message
         super().__init__(message)
+
+
+# ── status = 'on_sale' 부정 우회 차단 — 구조적(sqlparse 토큰) 검사(DW-557, review-2) ──
+# 최초 구현(문자열 존재 검사)·review-1(부정 연산자 정규식 나열)이 둘 다 실측으로 뚫렸다
+# (review-1: 괄호 2겹 이상·`=false`/`<>true`, review-2: 따옴표 불리언 `='f'`·괄호로 감싼
+# 불리언 `=(false)`). "어떤 문자열로 부정을 표현했는가"를 나열하는 정규식은 두더지 잡기라
+# 수렴하지 않는다는 것이 두 라운드 연속 증명됐다(Design Notes). 그래서 표현 형태가 아니라
+# 구조를 본다: WHERE절의 최상위 AND 결합항 중 "부정·재비교 없이 `status = 'on_sale'`가
+# 그대로 있는 항"이 하나라도 있는가만 확인한다. 그 항 자체가 다른 무언가와 다시 비교되거나
+# (`(status='on_sale') = <무엇이든>`), NOT·IS 등으로 감싸이면 — 그 겉을 감싼 표현이 무엇이든
+# 좌변이 더 이상 순수 `status` 식별자가 아니게 되므로 자동으로 탈락한다(별도 나열 불필요).
+def _strip_ws(tokens):
+    return [t for t in tokens if not t.is_whitespace]
+
+
+def _peel_grouping_parens(tokens):
+    """전체가 괄호 하나로만 감싸인 경우 그 괄호를 벗긴다(깊이 무관, 반복 적용).
+
+    `(status='on_sale')`·`((status='on_sale'))`처럼 순수 그룹핑 괄호는 최상위로 인정한다.
+    `NOT (status='on_sale')`처럼 앞에 다른 토큰(NOT 등)이 붙어 있으면 tokens 길이가
+    1이 아니므로 이 함수가 손대지 않고 그대로 반환 — 아래 길이 검사에서 자연히 탈락한다.
+    """
+    while len(tokens) == 1 and isinstance(tokens[0], Parenthesis):
+        inner = _strip_ws(tokens[0].tokens)  # inner[0]='(', inner[-1]=')'
+        tokens = _strip_ws(inner[1:-1])
+    return tokens
+
+
+def _conjunct_is_bare_status_on_sale(tokens):
+    """이 AND 결합항이 부정·재비교 없이 정확히 `status = 'on_sale'` 하나뿐인가.
+
+    NOT·IS (NOT) TRUE/FALSE·다른 값과의 재비교(`= false`·`= 'f'`·`= (false)` 등)는 전부
+    이 항을 "좌변=status 식별자, 연산자='=', 우변='on_sale' 문자열"이라는 정확히 3토큰
+    형태에서 벗어나게 만들므로, 표현을 나열하지 않고도 구조만으로 전부 걸러진다.
+    """
+    tokens = _peel_grouping_parens(_strip_ws(tokens))
+    if len(tokens) == 1 and isinstance(tokens[0], Comparison):
+        tokens = _peel_grouping_parens(_strip_ws(tokens[0].tokens))
+    if len(tokens) != 3:
+        return False
+    left, op, right = tokens
+    if op.ttype is not COMPARISON_OP or op.normalized != "=":
+        return False
+    left_name = left.get_real_name() if hasattr(left, "get_real_name") else left.value
+    if (left_name or "").strip().lower() != "status":
+        return False
+    if right.ttype not in (sqlparse.tokens.Literal.String.Single,):
+        return False
+    if right.value.strip("'").lower() != "on_sale":
+        return False
+    return True
+
+
+def _split_top_level_and(tokens):
+    """최상위(괄호 안에 들어있지 않은) AND 키워드 기준으로 토큰을 결합항 리스트로 나눈다."""
+    groups = [[]]
+    for t in tokens:
+        if t.ttype is sqlparse.tokens.Keyword and t.normalized == "AND":
+            groups.append([])
+        else:
+            groups[-1].append(t)
+    return groups
+
+
+# sqlparse의 Where 그룹은 절 키워드를 만나면 닫히지만, 두 경우엔 닫히지 않아 그 꼬리가
+# 결합항 안으로 딸려 들어와 3토큰 형태를 깬다(= 정상 SQL이 missing_status_filter로 오탈락):
+#   (a) 애초에 Where의 종료 키워드가 아닌 것 — OFFSET·FETCH·WINDOW (review-4 실측).
+#   (b) 종료 키워드인데 공백이 한 칸이 아니라 sqlparse의 문자열 매칭이 빗나가는 것 —
+#       `ORDER  BY`(두 칸)·`ORDER\tBY`·`ORDER\nBY` (review-5 실측: 베이스라인에서 통과하던
+#       쿼리가 구조 검사 도입 후 거부로 뒤집혔다). sqlparse는 키워드를 정규화할 때 대문자로만
+#       바꾸고 공백은 접지 않으므로, 여기서도 접어서 비교해야 같은 절로 인식된다.
+# 실측 도달성(추측 아님 — 아래 6개를 실제로 넣어 확인, B4): 이 검사에 **실제로 도달**하는
+#   것은 OFFSET과 공백 변형 ORDER BY뿐이다. FETCH·WINDOW·GROUP BY는 꼬리가 새기는 하지만
+#   앞선 식별자 화이트리스트가 forbidden_column으로 먼저 거부하고, HAVING은 애초에 안 샌다.
+#   도달 못 하는 것도 남겨 두는 이유는 13.3이 화이트리스트를 넓히면 그때 처음 살아나서다.
+_WHERE_TAIL_KEYWORDS = frozenset({
+    "OFFSET", "FETCH", "WINDOW", "ORDER BY", "GROUP BY", "HAVING",
+})
+
+
+def _fold_ws(value: str) -> str:
+    """토큰 값의 연속 공백·탭·줄바꿈을 한 칸으로 접는다(`ORDER  BY` → `ORDER BY`)."""
+    return " ".join(value.split())
+
+
+def _cut_where_tail(tokens):
+    """WHERE 술어 뒤에 딸려온 절 키워드 이후를 잘라낸다(공백을 접어서 비교)."""
+    for i, t in enumerate(tokens):
+        if t.ttype is sqlparse.tokens.Keyword and _fold_ws(t.normalized).upper() in _WHERE_TAIL_KEYWORDS:
+            return tokens[:i]
+    return tokens
+
+
+def _flatten_conjuncts(tokens):
+    """최상위 AND 결합항을 괄호 깊이에 무관하게 평탄화해 돌려준다.
+
+    `(status='on_sale' AND price<X) AND year>2020`처럼 AND 그룹이 괄호에 싸인 채
+    다른 결합항과 나란히 있으면, 그 괄호 안의 항들도 의미상 최상위 AND 결합항이다.
+    괄호를 벗기고 재귀적으로 쪼개야 안쪽의 `status='on_sale'`을 찾을 수 있다(review-4
+    실측: 이걸 안 하면 베이스라인이 통과시키던 정상 SQL이 오탈락한다).
+
+    부정은 이 평탄화를 통과하지 못한다 — `NOT (...)`·`(NOT ...)`은 토큰이 2개라
+    `_peel_grouping_parens`가 벗기지 않고, 3토큰 매치에서도 탈락한다. OR 그룹도
+    AND로 쪼개지지 않아 통째로 한 결합항으로 남아 매치에 실패한다(OR 자체는 별도
+    검사가 전면 금지).
+    """
+    tokens = _peel_grouping_parens(_strip_ws(tokens))
+    groups = _split_top_level_and(tokens)
+    if len(groups) == 1:
+        return [tokens]
+    flat = []
+    for g in groups:
+        flat.extend(_flatten_conjuncts(g))
+    return flat
+
+
+def _has_unnegated_status_on_sale(stmt) -> bool:
+    """WHERE절의 최상위 AND 결합항 중 부정 없는 `status = 'on_sale'`가 하나라도 있는가."""
+    where = next((t for t in stmt.tokens if isinstance(t, Where)), None)
+    if where is None:
+        return False
+    inner = _strip_ws(where.tokens)
+    # inner[0]는 'WHERE' 키워드 — 결합항 분리 전에 제거.
+    inner = inner[1:] if inner and inner[0].ttype is sqlparse.tokens.Keyword else inner
+    inner = _cut_where_tail(inner)
+    # WHERE절 전체를 바깥 괄호 하나로 감싼 형태(`WHERE (a AND b)` — Gemini가 종종 쓰는
+    # 방어적 스타일, review-3 실측)를 포함해, 괄호에 싸인 AND 그룹을 재귀적으로 평탄화한다.
+    return any(_conjunct_is_bare_status_on_sale(c) for c in _flatten_conjuncts(inner))
 
 
 def validate_select_sql(sql: str) -> str:
@@ -207,10 +337,13 @@ def validate_select_sql(sql: str) -> str:
             "허용되지 않는 컬럼 또는 식별자가 포함되어 있습니다.",
         )
 
-    # ── 4) FR11 — status = 'on_sale' 필수 ─────────────────────────
+    # ── 4) FR11 — status = 'on_sale' 필수(구조적 검사, DW-557 review-2) ────
     # RLS는 ai_readonly에 sold를 못 거른다 → 쿼리가 직접 on_sale을 강제해야 한다(함정 #2).
-    # 주입이 아니라 "존재 검증 + 없으면 거부"(함정 #3: OR 우회 위험 회피).
-    if not re.search(r"status\s*=\s*'on_sale'", cleaned, re.IGNORECASE):
+    # "문자열 존재"도, "알려진 부정 표현 나열"도 아니라 — WHERE절을 sqlparse로 토큰
+    # 파싱해 최상위 AND 결합항 중 부정·재비교 없는 `status = 'on_sale'`이 실제로 있는지
+    # 구조적으로 확인한다(_has_unnegated_status_on_sale, 위 정의 참조). stmt는 이미
+    # 파싱돼 있으므로 재파싱하지 않는다.
+    if not _has_unnegated_status_on_sale(stmt):
         raise SqlGuardError(
             "missing_status_filter",
             "판매중 매물만 조회할 수 있도록 status = 'on_sale' 조건이 필요합니다.",

@@ -44,29 +44,34 @@ def _patch_route(monkeypatch, route, *, sql_cards=None, doc_cards=None):
 # ═════════════════════════════════════════════════════════════════════
 @pytest.mark.parametrize("query", STRUCTURED_A)
 def test_sm3_pathA_returns_listings(monkeypatch, query):
-    """① 구조형 질의 → 경로 A가 매물 카드(listings 비어있지 않음)를 돌려준다."""
-    _patch_route(monkeypatch, "A")
+    """① 구조형 질의 → 경로 SQL이 매물 카드(listings 비어있지 않음)를 돌려준다."""
+    _patch_route(monkeypatch, "SQL")
     out = gmod.run_search(query)
-    assert out["listings"], f"경로 A가 빈손이면 SM3 불합격: {query!r}"
+    assert out["listings"], f"경로 SQL이 빈손이면 SM3 불합격: {query!r}"
     assert out["answer"].strip(), "answer가 비어 있으면 안 된다(FR17/계약)"
 
 
 @pytest.mark.parametrize("query", SEMANTIC_B)
 def test_sm3_pathB_returns_listings(monkeypatch, query):
-    """② 질적·의미형 질의 → 경로 B가 추천 매물(listings 비어있지 않음)을 돌려준다."""
-    _patch_route(monkeypatch, "B")
+    """② 질적·의미형 질의 → 경로 CLARIFY(구 B)가 추천 매물(listings 비어있지 않음)을 돌려준다."""
+    _patch_route(monkeypatch, "CLARIFY")
     out = gmod.run_search(query)
-    assert out["listings"], f"경로 B가 빈손이면 SM3 불합격: {query!r}"
+    assert out["listings"], f"경로 CLARIFY가 빈손이면 SM3 불합격: {query!r}"
     assert out["answer"].strip()
 
 
 @pytest.mark.parametrize("query", GRAY_AB)
-@pytest.mark.parametrize("route", ["A", "B"])
+@pytest.mark.parametrize("route", ["SQL", "HYBRID", "CLARIFY"])
 def test_sm3_gray_zone_returns_listings_either_route(monkeypatch, query, route):
-    """③ 회색지대 — A로 가든 B로 가든 매물/추천을 주면 합격(거절·빈손만 아니면 됨).
+    """③ 회색지대 — SQL로 가든 CLARIFY로 가든 매물/추천을 주면 합격(거절·빈손만 아니면 됨).
 
-    ai-demo-queries.md ③: "둘 중 어디로 가도 매물 카드/추천을 돌려주면 데모 합격".
-    경로를 한쪽으로 단정하지 않고 두 경우 모두 빈손이 아님을 확인한다(과잉 단정 금지).
+    ai-demo-queries.md ③: "둘 중 어디로 가도 매물 카드/추천을 돌려주면 데모 합격"(구 A/B 라벨을
+    13.2 신버전 어휘로 옮김 — 회색지대 판정 자체는 변경 없음).
+    경로를 한쪽으로 단정하지 않고 모든 경우 빈손이 아님을 확인한다(과잉 단정 금지).
+
+    HYBRID는 13.2가 신설한 라우트인데 이 데모 인수 파일에 한 번도 등장하지 않아,
+    HYBRID 배선이 깨져도 데모 게이트가 전부 초록이었다(review-4 실측: 파일 내
+    "HYBRID" 등장 0회). 회색지대야말로 조합형이 실제로 나오는 자리라 여기에 넣는다.
     """
     _patch_route(monkeypatch, route)
     out = gmod.run_search(query)
@@ -121,8 +126,8 @@ def test_sm3_pathA_real_guard_passes_generated_sql(monkeypatch):
 # ═════════════════════════════════════════════════════════════════════
 @pytest.mark.parametrize("query", UNRELATED_C)
 def test_cm1_unrelated_rejected_via_graph(monkeypatch, query):
-    """④ 무관 질의 → 경로 C: listings 빈 목록 + 검색 유도 거절 문구."""
-    _patch_route(monkeypatch, "C")
+    """④ 무관 질의 → 경로 REJECT(구 C): listings 빈 목록 + 검색 유도 거절 문구."""
+    _patch_route(monkeypatch, "REJECT")
     out = gmod.run_search(query)
     assert out["listings"] == [], f"무관 질의에 매물을 주면 CM1 불합격: {query!r}"
     # 거절 문구는 고정 상수(_GUARD_ANSWER)와 "정확히 일치"해야 한다 — 부분문자열 검사보다 강한 단언.
@@ -154,7 +159,7 @@ def test_cm1_decline_is_not_dead_end():
 
 def test_cm1_count_all_unrelated_rejected(monkeypatch):
     """집계 단언 — 무관 질의 전부(N건)가 거절된다. 거절 실패 0건이어야 CM1 합격."""
-    _patch_route(monkeypatch, "C")
+    _patch_route(monkeypatch, "REJECT")
     not_rejected = []
     for q in UNRELATED_C:
         out = gmod.run_search(q)

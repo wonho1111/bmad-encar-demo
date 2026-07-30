@@ -92,9 +92,18 @@ def test_score_path_a_topn_exact_order():
 
 
 def test_route_ok_acceptable_paths():
-    assert score_ab.route_ok("A", "A", ["A"])
-    assert score_ab.route_ok("B", "A", ["A", "B"])  # 혼합 허용
-    assert not score_ab.route_ok("C", "A", ["A", "B"])
+    # 큐리셋은 구버전 A/B/C 어휘를 그대로 두고(13.2 Never 절), actual은 신버전만 낸다 —
+    # route_ok가 primary/acceptable을 번역한 뒤 비교해야 매칭된다(DW-562).
+    assert score_ab.route_ok("SQL", "A", ["A"])
+    assert score_ab.route_ok("CLARIFY", "B", ["A", "B"])  # 혼합 허용(번역 후 매칭)
+    assert not score_ab.route_ok("REJECT", "A", ["A", "B"])
+
+
+def test_route_ok_translates_each_acceptable_list_element():
+    # 번역이 acceptable 리스트의 원소 각각에 적용돼야 한다 — primary("A"→SQL)만 번역되고
+    # acceptable의 2번째 원소("B")가 번역 안 되면 이 매칭은 실패해야 정상인데, 실제로는
+    # 번역돼 "CLARIFY"가 되므로 통과한다(첫 원소만 번역되는 회귀 방지).
+    assert score_ab.route_ok("CLARIFY", "A", ["A", "B"])
 
 
 def test_doc_hit_and_redirect():
@@ -285,7 +294,9 @@ def test_score_model_continues_scoring_other_items_when_one_errors():
     raw = {
         "model": "m",
         "results": {
-            "C1": [{"route_last": "C", "ids_last": [], "answer_last": "거절",
+            # route_last는 캡처된 실제 route라 13.2 이후 항상 신버전 어휘다(queryset의
+            # primary_path="C"는 구버전 그대로 — route_ok가 번역해 비교한다, DW-562).
+            "C1": [{"route_last": "REJECT", "ids_last": [], "answer_last": "거절",
                     "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}],
             "C2": [{"error": "429 quota exceeded"}],
         },
@@ -310,7 +321,8 @@ def test_cli_raw_single_file_mode_survives_error_entries(tmp_path, monkeypatch):
     raw = _write_json(tmp_path / "raw.json", {
         "model": "gemini-3.1-flash-lite",
         "results": {
-            "C1": [{"route_last": "C", "ids_last": [], "answer_last": "거절",
+            # route_last는 캡처된 실제 route라 13.2 이후 항상 신버전 어휘다(DW-562).
+            "C1": [{"route_last": "REJECT", "ids_last": [], "answer_last": "거절",
                     "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}],
             "C2": [{"error": "429 quota exceeded"}],
         },
@@ -485,12 +497,14 @@ def test_score_model_multiturn_counts_each_turn_and_fires_contamination(monkeypa
              "must_not_contain": ["중형차"]},
         ],
     }]}
+    # turns[].route(=tr["route"])는 캡처된 실제 route라 13.2 이후 항상 신버전 어휘("SQL")다.
+    # queryset의 primary_path="A"(구버전)는 route_ok가 번역해 비교한다(DW-562).
     raw = {"model": "m", "results": {
         "M1": [{
-            "route_last": "A", "ids_last": ["l9"], "answer_last": "a2",
+            "route_last": "SQL", "ids_last": ["l9"], "answer_last": "a2",
             "turns": [
-                {"route": "A", "ids": ["l1"], "answer": "a1"},
-                {"route": "A", "ids": ["l9"], "answer": "a2"},  # 이전 턴 조건이 살아남음 = 오염
+                {"route": "SQL", "ids": ["l1"], "answer": "a1"},
+                {"route": "SQL", "ids": ["l9"], "answer": "a2"},  # 이전 턴 조건이 살아남음 = 오염
             ],
             "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0,
         }],
@@ -505,6 +519,52 @@ def test_score_model_multiturn_counts_each_turn_and_fires_contamination(monkeypa
     assert summary["per_item"][0]["turns"][1]["contamination"] == ["l9: body_type=중형차 (금지)"]
 
 
+def test_score_model_multiturn_counts_each_turn_and_fires_contamination_via_hybrid(monkeypatch):
+    """review-3 실측 재현 — HYBRID도 SQL과 동일한 sql_rag_node를 타므로 같은 조건 잔존
+    위험이 있는데, 하드 오염 게이트가 route=="SQL"만 보면 이 경로를 조용히 놓친다(수정 전
+    실측: contamination=0·gate_pass=True로 통과). route만 "HYBRID"로 바꾼 것 외엔 위
+    test_score_model_multiturn_counts_each_turn_and_fires_contamination과 동일하다.
+
+    ⚠️ 픽스처는 실제 큐리셋에 존재할 수 있는 라벨만 쓴다(review-4). 이전엔
+    `acceptable_paths=["A","HYBRID"]`라는 구·신 혼합 라벨을 썼는데, 큐리셋 데이터는
+    수정 금지(Never 절)라 그런 값이 존재할 수 없다 — 그 가짜 라벨이 "라우팅은 맞게
+    세면서 게이트도 올라간다"는 존재하지 않는 조합을 증명하고 있었다. 실제 조합은
+    "라우팅은 오답으로 집계되지만 오염 게이트는 올라간다"이고, 아래가 그것을 잠근다.
+    (라우팅이 오답이 되는 것 자체는 이 스토리에서 못 고친다 — 큐리셋에 HYBRID를
+    허용하는 라벨이 없기 때문. 장부에 별도 항목으로 등재돼 있다.)
+    """
+    monkeypatch.setattr(score_ab, "fetch_attrs",
+                        lambda ids: [{"id": i, "body_type": "중형차", "price": 1} for i in ids])
+    qs = {"items": [{
+        "id": "M1H", "kind": "multiturn", "category": "clean",
+        "turns": [
+            {"query": "q1", "primary_path": "A", "acceptable_paths": ["A"]},
+            {"query": "q2", "primary_path": "A", "acceptable_paths": ["A"],
+             "must_not_contain": ["중형차"]},
+        ],
+    }]}
+    raw = {"model": "m", "results": {
+        "M1H": [{
+            "route_last": "HYBRID", "ids_last": ["l9"], "answer_last": "a2",
+            "turns": [
+                {"route": "HYBRID", "ids": ["l1"], "answer": "a1"},
+                {"route": "HYBRID", "ids": ["l9"], "answer": "a2"},  # 이전 턴 조건이 살아남음 = 오염
+            ],
+            "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0,
+        }],
+    }}
+    summary = score_ab.score_model(qs, raw)
+    assert summary["routing_total"] == 2
+    # 구어휘 "A" 라벨은 SQL로만 번역되므로 올바른 HYBRID 분류도 라우팅 오답으로 집계된다.
+    # 고칠 수 없는 자리(큐리셋 수정 금지)라 사실 그대로 못박는다 — 조용히 넘기지 않는다.
+    assert summary["routing_correct"] == 0
+    # 그럼에도 HYBRID 경로에서 하드 오염 게이트는 올라가고 PASS가 깨져야 한다
+    # (수정 전엔 0/True로 조용히 통과 — 게이트는 라우팅 정답 여부와 독립이어야 한다).
+    assert summary["contamination"] == 1
+    assert summary["gate_pass"] is False
+    assert summary["per_item"][0]["turns"][1]["contamination"] == ["l9: body_type=중형차 (금지)"]
+
+
 def test_score_model_multiturn_route_mismatch_counted():
     """턴 라우팅 오답도 실제로 집계된다(route_ok를 True로 못박아도 안 잡히던 자리)."""
     qs = {"items": [{
@@ -514,10 +574,11 @@ def test_score_model_multiturn_route_mismatch_counted():
             {"query": "q2", "primary_path": "B", "acceptable_paths": ["B"]},
         ],
     }]}
+    # route(actual)는 13.2 이후 항상 신버전 어휘 — 2번째 턴은 CLARIFY(구 B)여야 하는데 SQL(구 A)이 왔다.
     raw = {"model": "m", "results": {
-        "M2": [{"route_last": "A", "ids_last": [], "answer_last": "a2",
-                "turns": [{"route": "A", "ids": [], "answer": "a1"},
-                          {"route": "A", "ids": [], "answer": "a2"}],  # B여야 하는데 A
+        "M2": [{"route_last": "SQL", "ids_last": [], "answer_last": "a2",
+                "turns": [{"route": "SQL", "ids": [], "answer": "a1"},
+                          {"route": "SQL", "ids": [], "answer": "a2"}],  # CLARIFY여야 하는데 SQL
                 "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}],
     }}
     summary = score_ab.score_model(qs, raw)
@@ -544,3 +605,141 @@ def test_flaky_measured_true_when_repeated_runs_present():
     summary = score_ab.score_model(qs, raw)
     assert summary["flaky_measured"] is True
     assert summary["flaky_n"] == 1
+
+
+# ── 구어휘로 캡처된 옛 raw 재채점 (DW-562 후속, review-4) ──────────────────────
+# 13.1이 캡처해 리포에 커밋한 docs/g2-baseline.json(44개 전량)은 구어휘 A/B/C다.
+# route_ok가 primary/acceptable만 번역하고 actual은 그대로 두던 동안, 그 파일을 재채점하면
+# 라우팅이 50/55 → 0/55로 무너지고(저장된 g2-baseline-report.json과 직접 모순) 멀티턴 하드
+# 오염 게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과했다. DW-562가 막으려던
+# "전량 오판"이 방향만 바뀌어 되살아난 것이라, 캡처 어휘를 읽는 지점에서 올린다.
+
+def test_captured_route_upgrades_legacy_and_passes_new_through():
+    assert score_ab.captured_route("A") == "SQL"
+    assert score_ab.captured_route("B") == "CLARIFY"
+    assert score_ab.captured_route("C") == "REJECT"
+    # 신버전 캡처에는 별칭표가 걸리지 않아 무영향이어야 한다(무해성).
+    for r in ("SQL", "HYBRID", "CLARIFY", "REJECT"):
+        assert score_ab.captured_route(r) == r
+
+
+def test_legacy_captured_single_turn_scores_as_correct():
+    """구어휘로 캡처된 단일턴 raw가 다시 정답으로 집계돼야 한다(수정 전엔 전량 오답)."""
+    qs = {"items": [{"id": "A1", "kind": "single", "category": "clean", "query": "q",
+                     "primary_path": "C", "acceptable_paths": ["C"]}]}
+    raw = {"model": "m", "results": {"A1": [{
+        "route_last": "C", "ids_last": [], "answer_last": "매물 검색을 도와드릴게요",
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}]}}
+    summary = score_ab.score_model(qs, raw)
+    assert summary["routing_total"] == 1
+    assert summary["routing_correct"] == 1
+    # 리포트에 남는 route는 "무엇이 캡처됐는가"라 원본 그대로 둔다(기록의 정직성).
+    assert summary["per_item"][0]["route"] == "C"
+
+
+def test_legacy_captured_multiturn_still_fires_contamination_gate(monkeypatch):
+    """구어휘 캡처에서도 하드 오염 게이트가 올라가야 한다.
+
+    수정 전 실측: 완전히 동일한 오염 데이터가 route="A"면 contamination=0·gate_pass=True,
+    "SQL"이면 1·False. 게이트가 조용히 꺼지는 쪽이라 실패가 아니라 통과로 보였다 —
+    review-3이 HYBRID에서 잡아낸 것과 같은 구조의 구멍이 구어휘 쪽에 남아 있었다.
+    """
+    monkeypatch.setattr(score_ab, "fetch_attrs",
+                        lambda ids: [{"id": i, "body_type": "중형차", "price": 1} for i in ids])
+    qs = {"items": [{
+        "id": "M6", "kind": "multiturn", "category": "clean",
+        "turns": [
+            {"query": "q1", "primary_path": "A", "acceptable_paths": ["A"]},
+            {"query": "q2", "primary_path": "A", "acceptable_paths": ["A"],
+             "must_not_contain": ["중형차"]},
+        ],
+    }]}
+    raw = {"model": "m", "results": {"M6": [{
+        "route_last": "A", "ids_last": ["l9"], "answer_last": "a2",
+        "turns": [{"route": "A", "ids": ["l1"], "answer": "a1"},
+                  {"route": "A", "ids": ["l9"], "answer": "a2"}],
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}]}}
+    summary = score_ab.score_model(qs, raw)
+    assert summary["routing_correct"] == 2      # 구어휘도 정상 채점
+    assert summary["contamination"] == 1        # 게이트가 실제로 발화
+    assert summary["gate_pass"] is False
+
+
+def test_new_vocab_primary_path_fails_loud_instead_of_scoring_zero():
+    """큐리셋 골든 라벨이 신어휘로 바뀌면 조용히 0점이 아니라 시끄럽게 죽어야 한다.
+
+    route_ok만 어휘 번역을 얻었고 결과집합·doc_hit·redirect 분기는 여전히 'A'/'B'/'C'
+    리터럴이라, primary_path를 'A'→'SQL'로만 바꾸면 라우팅은 1/1 그대로인데 결과집합
+    채점이 result_n 1→0으로 조용히 사라졌다(review-4 실측). 다음 스토리가 큐리셋에
+    HYBRID 예시를 넣는 순간 밟게 되는 함정이라, 실행되는 검사로 막는다.
+    """
+    qs = {"items": [{"id": "A9", "kind": "single", "category": "clean", "query": "q",
+                     "primary_path": "SQL", "acceptable_paths": ["SQL"],
+                     "predicate": {"price_max": 1}}]}
+    raw = {"model": "m", "results": {"A9": [{
+        "route_last": "SQL", "ids_last": ["l1"], "answer_last": "a",
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}]}}
+    with pytest.raises(ValueError) as exc:
+        score_ab.score_model(qs, raw)
+    assert "primary_path" in str(exc.value)
+
+
+def test_new_vocab_primary_path_in_multiturn_turn_also_fails_loud():
+    """같은 fail-loud 가드가 **멀티턴 턴**에도 걸려야 한다.
+
+    review-5 실측: 단일턴 가드만 테스트로 잠겨 있고 멀티턴 쪽(score_model의 turns 루프)은
+    가드를 통째로 지워도 스위트가 41 passed로 초록이었다. 그 상태를 재현하면 라우팅은
+    2/2 만점인데 결과집합 채점 0건·deadend 0·gate_pass True — 정확히 이 가드가 막으려던
+    "조용한 오답"이다. DW-572가 재라벨링 대상으로 지목한 항목에 멀티턴 턴이 들어 있어
+    다음 스토리가 실제로 밟는 자리다.
+    """
+    qs = {"items": [{"id": "M9", "kind": "multiturn", "category": "clean",
+                     "turns": [
+                         {"query": "q1", "primary_path": "SQL", "acceptable_paths": ["SQL"],
+                          "predicate": {"price_max": 1}},
+                     ]}]}
+    raw = {"model": "m", "results": {"M9": [{
+        "route_last": "SQL", "ids_last": ["l1"], "answer_last": "a",
+        "turns": [{"route": "SQL", "ids": ["l1"], "answer": "a"}],
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}]}}
+    with pytest.raises(ValueError) as exc:
+        score_ab.score_model(qs, raw)
+    assert "M9.t0" in str(exc.value) and "primary_path" in str(exc.value)
+
+
+def test_unknown_acceptable_path_label_fails_loud_instead_of_being_ignored():
+    """`acceptable_paths`의 미지 라벨도 조용히 무시되지 않고 시끄럽게 죽어야 한다.
+
+    review-5 실측: 가드가 primary만 볼 때 `route_ok("SQL", "A", ["A", "BB_TYPO"])`가 True를
+    돌려줬다 — 오타 한 글자가 허용집합에서 조용히 사라지고 리포트에 흔적이 안 남는다.
+    골든 라벨은 우리가 쓴 데이터이므로 primary와 같은 기준으로 막는다(B9).
+    """
+    qs = {"items": [{"id": "A8", "kind": "single", "category": "clean", "query": "q",
+                     "primary_path": "A", "acceptable_paths": ["A", "BB_TYPO"],
+                     "predicate": {"price_max": 1}}]}
+    raw = {"model": "m", "results": {"A8": [{
+        "route_last": "SQL", "ids_last": ["l1"], "answer_last": "a",
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}]}}
+    with pytest.raises(ValueError) as exc:
+        score_ab.score_model(qs, raw)
+    assert "acceptable_paths" in str(exc.value)
+
+
+def test_mixed_vocab_repeats_are_not_counted_as_flaky():
+    """같은 경로를 구/신 어휘로 나눠 캡처한 반복 실행은 flaky가 아니다.
+
+    flaky 서명만 captured_route() 정규화를 빼먹고 raw route를 그대로 썼다(review-5).
+    그러면 어휘 이관 중 부분 재캡처된 raw가 "모델이 흔들린다"는 거짓 양성으로 잡혀,
+    모델 안정성 지표가 이관 사고로 오염된다.
+    """
+    qs = {"items": [{"id": "A7", "kind": "single", "category": "clean", "query": "q",
+                     "primary_path": "C", "acceptable_paths": ["C"]}]}
+    runs = [
+        {"route_last": "C", "ids_last": [], "answer_last": "a",
+         "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0},
+        {"route_last": "REJECT", "ids_last": [], "answer_last": "a",
+         "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0},
+    ]
+    summary = score_ab.score_model(qs, {"model": "m", "results": {"A7": runs}})
+    assert summary["flaky_n"] == 0, "같은 경로의 구/신 어휘를 서로 다른 판정으로 세면 안 된다"
+    assert summary["routing_correct"] == 1
