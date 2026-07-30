@@ -97,6 +97,8 @@ def test_live_smoke_pathC():
     assert out["listings"] == [], "무관 질의에는 매물이 없어야 한다(CM1)"
     assert "중고차" in out["answer"]
     assert out["route"] == "REJECT"
+    # 13.5: narrowed_by 고정 상수가 실제로 실려 오는지(비공백 리스트) 확인.
+    assert out["narrowed_by"]
 
 
 def test_live_smoke_hybrid():

@@ -77,6 +77,66 @@ def test_search_clarify_absent_serializes_to_null(monkeypatch):
         app.dependency_overrides.clear()
 
 
+def test_search_returns_narrowed_by_when_present(monkeypatch):
+    # 13.5: run_search가 REJECT의 narrowed_by 고정 상수를 채워 돌려주면 HTTP 응답에도 그대로 실린다.
+    narrowed_by = ["price<=30000000", "body_type=SUV", "fuel=전기"]
+    monkeypatch.setattr(
+        "app.routers.ai.run_search",
+        lambda query, context=None: {
+            "answer": "저는 중고차 찾기를 도와드리는 차장님이에요.",
+            "listings": [],
+            "narrowed_by": narrowed_by,
+        },
+    )
+    _auth()
+    try:
+        r = client.post("/ai/search", json={"query": "오늘 날씨 어때?"})
+        assert r.status_code == 200
+        assert r.json()["narrowed_by"] == narrowed_by
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_search_narrowed_by_absent_serializes_to_null(monkeypatch):
+    # run_search가 narrowed_by 키를 아예 안 주면(기존 SQL/HYBRID/CLARIFY 경로) 응답의 narrowed_by는 null.
+    monkeypatch.setattr(
+        "app.routers.ai.run_search",
+        lambda query, context=None: {"answer": "조건에 맞는 매물 1건을 찾았어요.", "listings": []},
+    )
+    _auth()
+    try:
+        r = client.post("/ai/search", json={"query": "3천만원 이하 SUV"})
+        assert r.status_code == 200
+        assert r.json()["narrowed_by"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_search_response_validation_error_returns_500_with_cors(monkeypatch):
+    # DW-593 해결 실측 증거: run_search가 SearchResponse 스키마를 위반하는 값(narrowed_by에
+    # 비문자열)을 반환하면, 응답 조립이 try 안에서 실패해 except Exception(CORS 안쪽) 500이 된다.
+    monkeypatch.setattr(
+        "app.routers.ai.run_search",
+        lambda query, context=None: {
+            "answer": "저는 중고차 찾기를 도와드리는 차장님이에요.",
+            "listings": [],
+            "narrowed_by": [123],  # 스키마 위반 — list[str] 아님
+        },
+    )
+    _auth()
+    try:
+        r = client.post(
+            "/ai/search",
+            json={"query": "오늘 날씨 어때?"},
+            headers={"Origin": "http://localhost:3000"},
+        )
+        assert r.status_code == 500
+        assert r.headers["access-control-allow-origin"] == "http://localhost:3000"
+        assert r.json()["error"]["code"] == "internal_error"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_search_guard_route_returns_empty_listings(monkeypatch):
     # 경로 C(매물 무관) — 그래프가 빈 목록 + 유도 문구를 주면 200으로 그대로 전달.
     monkeypatch.setattr(

@@ -61,6 +61,9 @@ def test_route_SQL_calls_sql_only(monkeypatch):
     # 실제 그래프 배선을 타면서 "SQL"이 채워지는지 못박는다(코드리뷰 패치 — 이전엔 미검증이라
     # route를 항상 빈 문자열로 망가뜨려도 이 테스트들이 전부 통과했었다).
     assert out["route"] == "SQL"
+    # 13.5 코드리뷰: narrowed_by는 REJECT 전용이다 — SQL 경로가 실제로 None을 내는지
+    # 그래프 끝단(run_search)에서 직접 확인한다(answer_node 단위테스트만으로는 간접 증거였다).
+    assert out["narrowed_by"] is None
 
 
 def test_route_HYBRID_calls_hybrid_only(monkeypatch):
@@ -71,6 +74,8 @@ def test_route_HYBRID_calls_hybrid_only(monkeypatch):
     assert calls["hybrid"] == 1 and calls["sql"] == 0 and calls["doc"] == 0 and calls["guard"] == 0
     assert out["answer"] == "HYBRID 결과" and out["listings"] == ["h1"]
     assert out["route"] == "HYBRID"
+    # 13.5 코드리뷰: HYBRID도 SQL과 동일하게 narrowed_by가 그래프 끝단에서 실제로 None인지 확인.
+    assert out["narrowed_by"] is None
 
 
 def test_route_CLARIFY_calls_clarify_only(monkeypatch):
@@ -84,6 +89,10 @@ def test_route_CLARIFY_calls_clarify_only(monkeypatch):
     assert out["answer"] == "되묻기 질문" and out["listings"] == []
     assert out["clarify"] == {"question": "되묻기 질문", "chips": ["a", "b", "c"]}
     assert out["route"] == "CLARIFY"
+    # 13.5 2차 코드리뷰: I/O 매트릭스는 "SQL/HYBRID/CLARIFY 모두 narrowed_by=None"인데 1차 패치가
+    # SQL·HYBRID에만 이 단언을 넣어 CLARIFY만 간접 증거로 남아 있었다. CLARIFY는 narrowed_by를
+    # 흘리면 클라이언트가 REJECT로 오판하는 경로라(conventions.md §4 판별자) 여기서도 못박는다.
+    assert out["narrowed_by"] is None
 
 
 def test_clarify_turn_cap_not_yet_reached_still_clarifies(monkeypatch):
@@ -116,6 +125,9 @@ def test_clarify_turn_cap_forces_doc_fallback(monkeypatch):
     assert out["listings"] == ["d1"]
     assert gmod._CLARIFY_CAP_NOTICE in out["answer"]
     assert out["answer"].startswith("찾은 결과 문구")
+    # 13.5 2차 코드리뷰: 상한 초과 분기는 _clarify_step의 별도 return이라 위 정상 분기 단언이
+    # 덮지 못한다 — 두 분기 모두 narrowed_by를 흘리지 않아야 REJECT 판별자가 유효하다.
+    assert out["narrowed_by"] is None
 
 
 def test_clarify_cap_counts_all_turns_not_only_clarify_turns(monkeypatch):
@@ -177,6 +189,8 @@ def test_route_REJECT_calls_guard_and_returns_empty_listings(monkeypatch):
     assert out["listings"] == []  # 매물 무관 → 빈 목록(FR16)
     assert "중고차" in out["answer"]  # 검색 유도 문구
     assert out["route"] == "REJECT"
+    # 13.5: REJECT는 narrowed_by 고정 상수를 그래프 끝까지 통과시킨다(비공백 리스트).
+    assert out["narrowed_by"]
 
 
 def test_unexpected_route_falls_back_to_guard(monkeypatch):
@@ -231,8 +245,9 @@ def test_hybrid_sql_guard_error_propagates_out_of_graph(monkeypatch):
 # ── answer_node 계약·FR17 ─────────────────────────────────────────
 def test_answer_node_preserves_existing_answer_and_listings():
     out = answer_node({"answer": "찾았어요", "listings": ["a", "b"]})
-    # 13.4: answer_node가 clarify 키를 계약에 추가로 채우므로(값 없으면 None) 그 키도 함께 확인한다.
-    assert out == {"answer": "찾았어요", "listings": ["a", "b"], "clarify": None}
+    # 13.4/13.5: answer_node가 clarify·narrowed_by 키를 계약에 추가로 채우므로(값 없으면 None)
+    # 그 키들도 함께 확인한다.
+    assert out == {"answer": "찾았어요", "listings": ["a", "b"], "clarify": None, "narrowed_by": None}
 
 
 def test_answer_node_empty_result_injects_fr17_fallback():
@@ -275,12 +290,38 @@ def test_answer_node_clarify_absent_defaults_to_none():
     assert out["clarify"] is None
 
 
+def test_answer_node_passes_through_narrowed_by_field():
+    # 13.5 함정 #3 승계 — narrowed_by 키가 있으면(값 그대로) 새 판단 없이 그대로 통과시킨다.
+    narrowed_by = ["price<=30000000", "body_type=SUV", "fuel=전기"]
+    out = answer_node({"answer": "q", "listings": [], "narrowed_by": narrowed_by})
+    assert out["narrowed_by"] == narrowed_by
+
+
+def test_answer_node_narrowed_by_absent_defaults_to_none():
+    # narrowed_by 키 자체가 없는 결과(기존 sql/hybrid/clarify 경로)는 None으로 채워진다.
+    out = answer_node({"answer": "찾았어요", "listings": ["a"]})
+    assert out["narrowed_by"] is None
+
+
 # ── guard_node 직접 ───────────────────────────────────────────────
 def test_guard_node_returns_empty_listings_and_guidance():
     out = guard_node("파이썬 코드 짜줘")
     assert out["listings"] == []
-    # "갈림길" 멘트 — 매물 검색으로 재유도하는 정보(매물·예산·용도)를 담는다(dead-end 0%, 안건2/3).
-    assert "매물" in out["answer"] and "예산" in out["answer"]
+    # 13.5: EXPERIENCE.md Voice 표("AI 거절(FR47, 고정)") 문구로 정정 — 핵심어(차장님·조건)로 확인.
+    assert "차장님" in out["answer"] and "조건" in out["answer"]
+    # REDIRECT_MARKERS(score_ab.py) 판정용 부분 문자열이 여전히 포함되는지 회귀 확인(G1 게이트).
+    assert "매물을 찾아드릴게요" in out["answer"]
+
+
+def test_guard_node_returns_fixed_narrowed_by():
+    # 13.5: narrowed_by는 고정 상수 3개 — 서로 다른 query로 호출해도 완전히 동일하다(무상태·결정론).
+    out1 = guard_node("파이썬 코드 짜줘")
+    out2 = guard_node("오늘 날씨 어때?")
+    assert out1["narrowed_by"] == out2["narrowed_by"]
+    # 13.5 2차 코드리뷰: 길이·타입만 보면 값을 _CLARIFY_CHIPS류 한국어 표시문자열("3천만원 이하")로
+    # 바꿔도 통과해, conventions.md §4가 클라이언트에 공표한 CR4 저장단위 술어 형식이 조용히 깨진다.
+    # 값 자체를 못박는다(고정 상수이므로 change-detector가 아니라 계약 단언이다).
+    assert out1["narrowed_by"] == ["price<=30000000", "body_type=SUV", "fuel=전기"]
 
 
 # ── 4.6 멀티턴 맥락화 배선 (run_search 앞단) ───────────────────────

@@ -2,8 +2,8 @@
 
 4.5: 라우터+그래프를 앞단에 꽂는다. 더는 모든 질의를 경로 A로 직행시키지 않고,
   run_search(그래프)가 질의를 라우터로 A/B/C 분류 → 경로 노드 → answer_node로 흘려
-  공통 계약 {answer, listings[]}로 돌려준다(13.4부터 되묻기 필드 `clarify`가 추가됐다 — 계약
-  정본은 docs/conventions.md §4).
+  공통 계약 {answer, listings[]}로 돌려준다(13.4부터 되묻기 필드 `clarify`가, 13.5부터
+  REJECT 전용 `narrowed_by`가 추가됐다 — 계약 정본은 docs/conventions.md §4).
   (4.3까지는 sql_rag_node를 직접 호출했다. 그 한 줄을 그래프 호출로 교체한 것이 4.5의 핵심.)
 
 인증(get_current_user — 로그인 필수)·응답 계약·에러 포맷은 4.1 확정값 그대로 유지한다
@@ -46,6 +46,15 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
         # 맥락화→라우터→경로→answer 그래프. context가 있으면 후속 질의를 독립 질의로 재작성해 반영(FR18).
         # 동기 파이프라인 전체(LLM+DB)를 스레드풀로 넘겨 이벤트 루프를 막지 않는다(AC-DB-1 FR50).
         result = await asyncio.to_thread(run_search, req.query, req.context)
+        # DW-593 해결(13.5): 응답 조립(SearchResponse 검증)을 try 안으로 옮겨, 스키마 위반이면
+        # 아래 except Exception(CORS 안쪽, 500)이 잡는다 — try 밖에 있으면 그 500은 main.py
+        # 전역 핸들러(CORS 바깥)로 나가 Access-Control-Allow-Origin이 빠진다(원인 은폐).
+        return SearchResponse(
+            answer=result["answer"],
+            listings=result["listings"],
+            clarify=result.get("clarify"),
+            narrowed_by=result.get("narrowed_by"),
+        )
     except SqlGuardError as exc:
         # 가드 차단·재시도 실패 — 사용자에게 의미 있는 한국어 안내(400). 서버 500 누출 금지(AC3).
         logger.info("sql_guard 차단 — 400 반환: [%s] %s", exc.code, exc.message)
@@ -77,4 +86,3 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
             status_code=500,
             detail={"error": {"code": "internal_error", "message": "서버 내부 오류가 발생했습니다."}},
         )
-    return SearchResponse(answer=result["answer"], listings=result["listings"], clarify=result.get("clarify"))

@@ -8,8 +8,9 @@
 //   POST {NEXT_PUBLIC_API_BASE_URL}/ai/search
 //   headers: Authorization: Bearer <supabase access_token>(필수), Content-Type: application/json
 //   body:    { query, context? }    // context = 직전 대화(멀티턴, 최대 12턴)
-//   200:     { answer, listings[], clarify } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
+//   200:     { answer, listings[], clarify, narrowed_by } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
 //                                            // clarify = 되묻기 페이로드 또는 null(13.4, conventions.md §4)
+//                                            // narrowed_by = REJECT 전용 고정 상수 또는 null(13.5, conventions.md §4)
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
 //   FR58(8.5): 열람(매물 목록·상세)은 anon에 열렸지만 **AI 검색은 로그인 필수**다 —
 //     검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "열람"이 아니라 "행동"(docs/conventions.md §8).
@@ -34,6 +35,10 @@ export type SearchResult = {
   // (`?`를 붙이지 않는다 — searchAi()가 항상 값을 채우므로 소비처가 다뤄야 할 상태는
   //  "페이로드 있음 / null" 두 가지뿐이다. undefined까지 세 가지로 만들 이유가 없다.)
   clarify: ClarifyPayload | null;
+  // REJECT 전용 고정 상수 사유 술어 배열(FR47, CR4, Story 13.5) — 서버가 REJECT(매물 무관 질의
+  // 거절) 경로를 타면 항상 채워지고, 그 외 라우트는 null이다. clarify와 동일하게 웹은 아직
+  // 탭 가능한 "재제안 칩" UI로 렌더하지 않는다(값만 배선 — clarify.chips와 동일 경계).
+  narrowed_by: string[] | null;
 };
 
 /** 되묻기 페이로드(FR46) — 서버가 CLARIFY 경로에서 상한 이내일 때만 채워 보낸다. */
@@ -48,6 +53,16 @@ function isValidClarify(value: unknown): value is ClarifyPayload {
     Array.isArray(c.chips) &&
     c.chips.every((chip) => typeof chip === 'string')
   );
+}
+
+/** wire의 narrowed_by가 실제로 계약 형태인지 확인한다(문자열 배열, Story 13.5).
+ *
+ * 빈 배열(`[]`)은 거른다 — 서버 계약상 narrowed_by가 채워지면 항상 고정 3개이므로, 빈 배열은
+ * 정상값이 아니라 wire/스키마 버그 신호다. `narrowed_by !== null`을 REJECT 판별로 쓰는 소비처가
+ * 있다면(conventions.md §4) 빈 배열을 통과시키면 그 판별이 잘못된 REJECT 신호를 받게 된다.
+ */
+function isValidNarrowedBy(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string');
 }
 
 export type SearchAiParams = {
@@ -130,6 +145,9 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
     // `clarify.chips.map(...)`을 쓰는데 서버가 chips를 문자열로 보내면 렌더 도중 터진다 —
     // listings에 isValidListing이 있는 이유와 똑같다(이 파일이 wire 값의 유일한 방어선).
     clarify: isValidClarify(result.clarify) ? result.clarify : null,
+    // narrowed_by(Story 13.5) — listings/clarify와 같은 규칙: 형태가 깨졌으면(문자열 배열이 아니면)
+    // null로 정규화한다(이 파일이 wire 값의 유일한 방어선).
+    narrowed_by: isValidNarrowedBy(result.narrowed_by) ? result.narrowed_by : null,
   };
 }
 

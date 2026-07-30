@@ -178,12 +178,26 @@ def test_cm1_decline_is_not_dead_end():
     """거절 문구는 "막다른 길"이 아니라 "갈림길"이어야 한다 — 사용자를 매물 검색으로 재유도.
 
     party-mode 2026-06-23 결정(dead-end 0%): 거절하더라도 사용자가 다음에 무엇을 하면 되는지
-    (예산·용도로 매물 찾기) 길을 열어 둔다. 단순 "못 한다" 종결이 아니어야 한다.
+    (조건을 알려주면 매물을 찾아준다) 길을 열어 둔다. 단순 "못 한다" 종결이 아니어야 한다.
+
+    13.5: 문구가 EXPERIENCE.md Voice 표("AI 거절(FR47, 고정)")로 정정되며 예산·용도 대신
+    "조건"으로 재유도 정보를 묶었다(car-condition 축 통합) — 의도(dead-end 0%)는 그대로이므로
+    이 검사도 새 핵심어로 갱신한다. score_ab.py의 REDIRECT_MARKERS(is_redirect, G1 게이트)가
+    보는 "매물을 찾아드릴게요" 부분문자열도 함께 고정한다.
     """
-    # 거절 멘트가 검색 재유도 정보(예산·용도/매물)를 담고 있어야 한다(부분문자열로 의도만 고정).
-    assert "예산" in _GUARD_ANSWER
-    assert "용도" in _GUARD_ANSWER
+    # 거절 멘트가 검색 재유도 정보(조건/매물)를 담고 있어야 한다(부분문자열로 의도만 고정).
+    assert "조건" in _GUARD_ANSWER
     assert "매물" in _GUARD_ANSWER
+    assert "매물을 찾아드릴게요" in _GUARD_ANSWER
+    # 13.5 2차 코드리뷰: 스펙의 최강 제약("EXPERIENCE.md Voice 표와 글자 그대로 일치")을 어느 검사도
+    # 지키지 않아, 문구를 리워드해도 전 스위트가 초록이었다(실측). markdown을 파싱하는 golden 검사는
+    # 과설계라 채택하지 않고(1차 리뷰 판단 유지), 정본 문자열 자체를 리터럴로 못박는다 — 문구 변경이
+    # "조용한 드리프트"가 아니라 "두 곳을 같이 고치는 의도적 편집"이 되게 한다.
+    # 정본: _bmad-output/planning-artifacts/ux-designs/.../EXPERIENCE.md Voice 표 "AI 거절(FR47, 고정)" 행.
+    assert _GUARD_ANSWER == (
+        "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 "
+        "그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요."
+    )
 
 
 def test_cm1_count_all_unrelated_rejected(monkeypatch):

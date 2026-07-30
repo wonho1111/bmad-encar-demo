@@ -146,3 +146,75 @@ describe('searchAi 응답 매핑', () => {
     expect(result.clarify).toBeNull();
   });
 });
+
+// searchAi — narrowed_by 매핑 (Story 13.5)
+//
+// 왜 이 테스트가 필요한가: 위 clarify 테스트 상단 주석과 같은 이유다 — 타입만 선언하고 매핑을
+// 빠뜨리면 값이 영원히 undefined로 새고, 실제 재제안 칩 UI를 만드는 사람이 값을 믿고 써도
+// 아무 데서도 오류가 나지 않는다(13.4 1차 리뷰가 clarify에서 잡았던 것과 동일한 함정 재발 방지).
+describe('searchAi narrowed_by 매핑', () => {
+  const originalFetch = globalThis.fetch;
+
+  function mockJsonResponse(payload: unknown) {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof globalThis.fetch;
+  }
+
+  beforeAll(() => {
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.example.test';
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('서버가 narrowed_by(정상 문자열 배열)를 보내면 그대로 실어 돌려준다', async () => {
+    const narrowedBy = ['price<=30000000', 'body_type=SUV', 'fuel=전기'];
+    mockJsonResponse({
+      answer: '저는 중고차 찾기를 도와드리는 차장님이에요.',
+      listings: [],
+      narrowed_by: narrowedBy,
+    });
+
+    const result = await searchAi({ query: '오늘 날씨 어때?', accessToken: 'token' });
+
+    expect(result.narrowed_by).toEqual(narrowedBy);
+  });
+
+  it('narrowed_by가 없으면(다른 라우트) null로 정규화한다 — undefined로 새지 않는다', async () => {
+    mockJsonResponse({ answer: '조건에 맞는 매물 1건을 찾았어요.', listings: [] });
+
+    const result = await searchAi({ query: '3천만원 이하 SUV', accessToken: 'token' });
+
+    expect(result.narrowed_by).toBeNull();
+  });
+
+  it('깨진 형태(숫자 배열)의 narrowed_by는 null로 떨군다', async () => {
+    mockJsonResponse({
+      answer: '저는 중고차 찾기를 도와드리는 차장님이에요.',
+      listings: [],
+      narrowed_by: [123, 456],
+    });
+
+    const result = await searchAi({ query: '오늘 날씨 어때?', accessToken: 'token' });
+
+    expect(result.narrowed_by).toBeNull();
+  });
+
+  it('빈 배열([])은 정상값이 아니라 wire 버그 신호로 보고 null로 떨군다', async () => {
+    // 서버 계약상 narrowed_by는 채워지면 항상 고정 3개다 — 빈 배열은 REJECT 판별
+    // (narrowed_by !== null)을 잘못 트리거할 수 있는 스키마 위반 신호다(코드리뷰 2026-07-31).
+    mockJsonResponse({
+      answer: '저는 중고차 찾기를 도와드리는 차장님이에요.',
+      listings: [],
+      narrowed_by: [],
+    });
+
+    const result = await searchAi({ query: '오늘 날씨 어때?', accessToken: 'token' });
+
+    expect(result.narrowed_by).toBeNull();
+  });
+});

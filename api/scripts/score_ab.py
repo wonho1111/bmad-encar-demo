@@ -59,8 +59,15 @@ DOC_STEM_TO_TITLE: dict[str, str] = {
     "12-옵션-가치-판단": "옵션의 가치 판단",
 }
 
-# 거절(C) answer가 "갈림길"인지 — guard_node 고정 멘트의 유도 문구. 둘 중 하나라도 있으면 redirect.
-REDIRECT_MARKERS = ("매물을 찾아드릴게요", "예산", "용도를 알려주시면")
+# 거절(C) answer가 "갈림길"인지 — 셋 중 하나라도 있으면 redirect. 마커는 전부 **행동 유도 문구**여야
+# 한다(다음에 뭘 하면 되는지 알려주는 절). 판정이 OR이므로 아무 데나 흔한 낱말을 넣으면 게이트가
+# 구조적으로 항상 통과해 dead-end를 영영 못 잡는다.
+# 13.5 2차 코드리뷰: 1차 패치가 넣은 "차장님"은 페르소나 호칭일 뿐 유도 의미가 없어(거절 문장을
+#   통째로 지워도 통과) 제거하고, 함께 빠졌던 "용도를 알려주시면"을 되살렸다 — answer_node의
+#   FR17 0건 fallback이 그 문구로 재유도하는데 1차 패치 후 dead-end로 오분류되고 있었다(실측).
+# 커버 대상: guard_node._GUARD_ANSWER(마커 1·2) · answer_node._EMPTY_FALLBACK(마커 3).
+# 이 결합은 tests/test_ab_scoring.py가 is_redirect()를 실제로 호출해 못박는다(주석은 계약이 아니다).
+REDIRECT_MARKERS = ("매물을 찾아드릴게요", "조건을 말씀해 주시면", "용도를 알려주시면")
 
 # 카테고리형 컬럼(must_not_contain 오염 검사용) — 반환 매물의 실제 값을 DB에서 조회해 대조.
 CATEGORICAL_COLUMNS = ("manufacturer", "body_type", "fuel", "color", "region", "transmission")

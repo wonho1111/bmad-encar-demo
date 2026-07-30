@@ -36,12 +36,14 @@
 
 ## 4. 응답·에러 공통 포맷
 
-- **AI 검색 응답:** `{ "answer": string, "listings": ListingCard[], "clarify": ClarifyPayload | null }`
+- **AI 검색 응답:** `{ "answer": string, "listings": ListingCard[], "clarify": ClarifyPayload | null, "narrowed_by": string[] | null }`
   - 0건이면 `listings: []` + `answer`에 조건 완화 안내(FR17).
   - AI 검색 응답 카드(`SearchResponse.listings[]`)는 아래 **ListingCard와 동일한 계약을 공유**한다(별도 카드 타입 없음).
   - `clarify?: { question: string, chips: string[] }`(FR46, Story 13.4) — 서버가 CLARIFY(되묻기) 경로를 타고, **직전까지의 대화가 3턴 미만**일 때만 채워진다. 그 외(다른 라우트, 또는 CLARIFY라도 3턴 이상 진행돼 서버가 결과를 강제 제시한 경우)는 `null`.
     - **세는 것은 "되묻기 횟수"가 아니라 요청에 실린 `context`의 총 턴 수**다(`len(context)//2`, 한 턴 = user+assistant 2개 항목). 앞선 턴이 일반 검색이었어도 카운트에 들어간다 — 즉 `context`가 6개 항목 이상이면 그 요청은 이미 상한 초과다. 클라이언트가 "몇 번 더 물어볼 수 있나"를 자체 계산하려면 이 정의를 그대로 써야 서버와 어긋나지 않는다.
-    - **클라이언트는 `clarify !== null`로만 판별한다.** 응답에 `route` 필드는 없다(내부 라우팅 값이라 노출하지 않음 — 13.5/13.6 소관). 즉 `res.route === 'CLARIFY'` 같은 분기는 성립하지 않는다.
+    - **클라이언트는 `clarify !== null`로만 판별한다.** 응답에 `route` 필드는 없다(내부 라우팅 값이라 노출하지 않음 — **13.5가 확정: 노출하지 않음**). 즉 `res.route === 'CLARIFY'` 같은 분기는 성립하지 않는다.
+  - `narrowed_by?: string[] | null`(FR47, CR4, Story 13.5) — **REJECT 전용 고정 상수**다. 서버가 REJECT(매물 무관 질의 거절) 경로를 타면 항상 동일한 사유 술어 배열(예: `["price<=30000000", "body_type=SUV", "fuel=전기"]`, CR4 저장단위 정규화 형식)로 채워진다 — `query`나 대화 맥락을 읽어 값을 바꾸지 않는다(무상태·결정론, CLARIFY의 `chips`와 동일 철학). REJECT가 아닌 다른 라우트(SQL/HYBRID/CLARIFY)는 `null`. 클라이언트는 `narrowed_by !== null`로 REJECT 여부를 판별할 수 있다(별도 `route` 노출 불필요) — ⚠️ **단, 이 판별자는 `narrowed_by`가 REJECT 전용인 동안에만 유효하다.** SQL/HYBRID 0건 응답까지 이 필드를 확장하는 안이 별도로 열려 있고(DW-598), 그것이 채택되는 순간 이 판별자는 깨진다. 확장하는 쪽이 이 줄과 소비처를 **함께** 고쳐야 한다(그때는 판별 수단을 따로 마련한다). 이 배열을 탭 가능한 "재제안 칩" UI로 렌더하는 것은 이번 스토리 범위가 아니다(값만 배선, `clarify.chips`와 동일한 경계 — DW-587 선례).
+    - **빈 배열(`[]`)은 "채워진 값"이 아니다 — `null`과 동일하게 취급한다.** 서버는 REJECT일 때 항상 비어 있지 않은 배열을 보내므로 `[]`는 정상 산출물이 아니고, 스키마(`SearchResponse`)도 길이를 강제하지 않는다. 따라서 소비처는 `narrowed_by !== null` 대신 **"비어 있지 않은 문자열 배열인가"**로 판별한다(web `aiSearch.ts`의 `isValidNarrowedBy`가 이 규약을 구현한다 — 형태가 어긋나거나 비면 `null`로 떨군다). DW-598이 이 필드를 0건 응답까지 확장할 때 "조건을 못 뽑았다"를 `[]`로 표현하더라도 이 규약이면 REJECT로 오분류되지 않는다.
 - **ListingCard 필드(snake_case):**
   - 기존(필수): `id, manufacturer, model, year, price, mileage, region`
   - 기존(nullable): `seller_name`(판매자 표시 이름, 0007 비정규화 — web/app은 Supabase에서 직접 읽어 노출, api 응답엔 포함되지 않음)

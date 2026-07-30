@@ -27,11 +27,12 @@ _EMPTY_FALLBACK = (
 
 
 def answer_node(result: dict) -> dict:
-    """경로 노드 결과(dict)를 받아 공통 계약 {answer, listings[], clarify}로 정규화한다(FR17).
+    """경로 노드 결과(dict)를 받아 공통 계약 {answer, listings[], clarify, narrowed_by}로 정규화한다(FR17).
 
     - listings: 누락/None이면 빈 목록으로 보정(계약상 항상 list).
     - answer: 누락/공백이고 listings도 0건이면 FR17 공통 fallback 주입.
     - clarify: 있으면(None 포함) 그대로 통과시킨다 — 새 판단 없음(13.4, 함정 #3 승계).
+    - narrowed_by: 있으면(None 포함) 그대로 통과시킨다 — clarify와 동일 패턴(13.5, 함정 #3 승계).
     - LLM 재호출 없음(함정 #3) — 노드가 만든 answer를 그대로 살린다.
     """
     listings = result.get("listings") or []
@@ -46,4 +47,9 @@ def answer_node(result: dict) -> dict:
             answer = _EMPTY_FALLBACK  # FR17 — 0건 + 빈 문구 → 조건 완화/재질문 유도.
         logger.info("answer_node 빈 answer 보정 → %r (listings=%d)", answer, len(listings))
 
-    return {"answer": answer, "listings": listings, "clarify": result.get("clarify")}
+    return {
+        "answer": answer,
+        "listings": listings,
+        "clarify": result.get("clarify"),
+        "narrowed_by": result.get("narrowed_by"),
+    }

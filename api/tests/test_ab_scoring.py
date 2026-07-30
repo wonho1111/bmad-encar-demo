@@ -135,6 +135,36 @@ def test_doc_hit_and_redirect():
     assert not score_ab.is_redirect("그냥 거절합니다.")
 
 
+def test_redirect_markers_actually_match_the_shipped_answers():
+    """G1 dead-end 게이트와 실제 응답 문구의 결합을 못박는다(13.5 2차 코드리뷰).
+
+    왜 필요한가: REDIRECT_MARKERS는 guard_node/_EMPTY_FALLBACK의 문구에서 뽑은 부분문자열인데,
+    그 결합이 지금까지 **주석에만** 있었다. 실측으로 마커를 13.5 이전 값으로 되돌려도 api 스위트
+    355건이 전부 초록이었다 — 즉 문구든 마커든 한쪽만 바뀌면 게이트가 조용히 죽는다.
+    deadend는 gate_pass에 직결되므로(score_ab.py) 이 결합은 실행되는 검사여야 한다(CLAUDE.md B9).
+
+    13.5 3차 코드리뷰: 위 두 단언은 **양성 방향만** 못박아, 마커가 과도하게 넓어지는 실패
+    (1차 패치의 "차장님")는 여전히 못 잡았다 — 실측으로 마커에 "차장님"을 되돌려도 api 스위트
+    356건이 전부 초록이었다. OR 판정이라 넓은 마커 하나면 게이트가 구조적으로 항상 통과한다.
+    그래서 아래에 **출고 문구에서 유도 절만 걷어낸 변형**을 음성 대조군으로 고정한다.
+
+    이 검사가 안 보는 것: 마커가 의미상 "행동 유도인가"라는 일반 판단. 페르소나 문장에서 온
+    마커는 아래 대조군이 잡지만, 그 밖의 넓은 낱말(예: 조사·흔한 명사)은 사람이 리뷰에서 본다.
+    """
+    from app.graph.answer_node import _EMPTY_FALLBACK
+    from app.graph.guard_node import _GUARD_ANSWER
+
+    # REJECT 고정 문구는 반드시 "갈림길"로 판정돼야 한다(dead-end 0% 결정).
+    assert score_ab.is_redirect(_GUARD_ANSWER)
+    # FR17 0건 fallback도 재유도 문구다 — C 질의가 다른 경로로 새서 0건이 나와도 dead-end가 아니다.
+    assert score_ab.is_redirect(_EMPTY_FALLBACK)
+    # 음성 대조군: 출고 거절 문구에서 **유도 절만** 지운 변형은 dead-end여야 한다.
+    # 페르소나 문장은 그대로 두었으므로, 마커가 페르소나 낱말("차장님" 등)에서 오면 여기서 red.
+    assert not score_ab.is_redirect(
+        "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어려워요."
+    )
+
+
 # ── 사전식 승부 ────────────────────────────────────────────────────────
 def _summary(name, result_mean=0.9, routing=40, flaky=0, cost=0.01, lat=1000,
              gate=True):

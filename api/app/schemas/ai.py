@@ -106,6 +106,9 @@ class SearchResponse(BaseModel):
     listings: list[ListingCard] = []
     # CLARIFY 되묻기 페이로드(FR46, CR5) — additive 필드라 기존 소비처 회귀 없음.
     clarify: ClarifyPayload | None = None
+    # REJECT 전용 고정 상수 사유 술어 배열(FR47, CR4, Story 13.5) — additive, 기존 소비처 회귀 없음.
+    # REJECT가 아닌 경로(SQL/HYBRID/CLARIFY)는 None.
+    narrowed_by: list[str] | None = None
 
 
 class ErrorBody(BaseModel):

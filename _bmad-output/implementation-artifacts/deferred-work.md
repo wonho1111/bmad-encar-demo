@@ -3855,7 +3855,8 @@ location: `api/app/routers/ai.py`(`search()` — 마지막 `return SearchRespons
 severity: medium
 reason: 이 파일의 `except Exception` 주석은 왜 이 핸들러가 필요한지를 스스로 길게 설명한다 — 라우트 밖(main.py 전역 핸들러)에서 잡힌 500은 `CORSMiddleware` 바깥에서 만들어져 `Access-Control-Allow-Origin`이 빠지고, 브라우저가 진짜 500을 "CORS 차단/연결 실패"로 오인해 원인을 은폐한다. 그런데 정작 응답 객체를 만드는 마지막 줄은 그 try 밖에 있어서, `SearchResponse`(또는 이제 그 안의 `ClarifyPayload`) 검증이 실패하면 그 실패는 **정확히 그 은폐 경로로** 나간다. 지금은 도달 불가에 가깝다 — `clarify`를 만드는 곳이 고정 상수 노드 하나뿐이고 단위테스트가 그 형태를 고정한다. 도달 가능해지는 시점이 예측되는 것이 이 항목의 요점이다: 13.5/13.6이 `route`·`narrowed_by`를 추가하거나, 되묻기 문구를 LLM이 만들게 바뀌면 그 순간 wire 검증이 실패할 수 있는 값이 생긴다. `listings`도 같은 노출면을 13.4 이전부터 갖고 있었으므로 이 스토리가 만든 결함은 아니다(그래서 이번에 고치지 않았다 — 범위 밖 구조 변경).
 trigger: `/ai/search` 응답 스키마에 필드를 다음에 추가할 때(13.5 `route`·13.6 `narrowed_by`가 유력) — 그 스토리에서 `return SearchResponse(...)`를 try 안으로 옮기거나 응답 조립 전에 검증을 한 번 태우고, 일부러 깨진 값을 넣어 500 응답에 CORS 헤더가 붙는지 실측한 뒤 이 항목을 닫는다.
-status: open
+status: done 2026-07-31
+resolution: `api/app/routers/ai.py`의 `return SearchResponse(...)`를 `try` 블록 안(`result = await asyncio.to_thread(...)` 바로 다음)으로 옮겼다. `api/tests/test_ai_search.py::test_search_response_validation_error_returns_500_with_cors`가 `narrowed_by=[123]`(스키마 위반)을 모킹해 실제로 500 + `access-control-allow-origin: http://localhost:3000` + `error.code=="internal_error"`를 실측 확인했다(spec-13-5-부드러운-거절.md). 이 보호는 구조적이다 — `answer`·`listings`·`clarify`·`narrowed_by` 네 필드 모두 같은 `return SearchResponse(...)` 한 줄, 같은 `try` 블록 안에서 조립되므로 어느 필드가 스키마를 위반해도 동일한 경로로 500+CORS가 된다. 이번 테스트는 `narrowed_by`를 **대표 사례로** 깨뜨려 그 구조를 실측한 것이며, `clarify`·`listings` 위반을 별도로 각각 실행해 확인하지는 않았다(코드리뷰 2026-07-31 지적 반영 — 과잉 일반화 방지).
 
 ### DW-594: 되묻기 칩의 세 축이 UX 정본의 데모 워크스루(인원·예산·연료 / "7인승")와 하나 어긋난다
 
@@ -3880,4 +3881,65 @@ origin: review-budget-followup
 source_spec: `spec-13-4-조건-좁혀-되묻기-clarify.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-034209-7126; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-597: REJECT `narrowed_by`는 값만 배선되고 실제 "재제안 칩" 탭 UI(web/app)는 없다
+
+origin: `spec-13-5-부드러운-거절.md` — 스펙이 Never 절에서 명시적으로 범위 밖으로 남긴 항목("실제 '재제안 칩' 탭 UI는 만들지 않는다")
+location: `web/src/lib/api/aiSearch.ts`(`SearchResult.narrowed_by` 타입+매핑만 있고 렌더 소비처 없음) · `app/lib/features/ai_search/`(REJECT `narrowed_by` 파싱 자체가 없음)
+severity: low
+reason: 13.5는 서버 계약(`narrowed_by` 고정 상수 배선)까지가 범위다. `clarify.chips`가 13.4에서 값만 배선되고 렌더는 DW-587(웹)·Story 16.5(앱)로 미뤄진 것과 동일한 경계를 REJECT에도 그대로 적용했다 — 탭하면 그 조건으로 재검색하는 UI를 만들려면 별도 컴포넌트 작업(웹·앱 둘 다)이 필요하고 이번 스토리 크기를 넘는다. 지금은 실피해가 없다 — REJECT 응답은 여전히 텍스트 안내(Voice 표 문구)만으로 완결되고, `narrowed_by`가 렌더되지 않아도 사용자 경험이 깨지지 않는다(칩이 "없던 채로 정상 동작"하던 이전 상태와 같다).
+trigger: `clarify.chips` 렌더링 스토리(DW-587 웹 / Story 16.5 앱)를 착수할 때 — 같은 컴포넌트(칩 배열 → 탭 가능 버튼 → 재검색)를 REJECT의 `narrowed_by`에도 재사용할 수 있는지 그 자리에서 함께 판단하고 닫는다. 두 필드가 같은 UI 패턴(문자열 배열 → 칩)을 쓰므로 한 번에 처리하면 컴포넌트를 두 번 만들지 않아도 된다.
+status: open
+
+### DW-598: SQL/HYBRID 0건 응답에 `narrowed_by`를 확장하는 일반화(실제 추출 SQL 조건 기반)는 범위 밖
+
+origin: `spec-13-5-부드러운-거절.md` — 스펙이 Never 절에서 명시적으로 범위 밖으로 남긴 항목("SQL/HYBRID 경로의 기존 FR17 0건 fallback은 건드리지 않는다")
+location: `api/app/graph/answer_node.py`(`_EMPTY_FALLBACK`, Epic 4부터 존재) · `api/app/graph/sql_rag_node.py`·`hybrid_rag_node.py`(SQL로 실제 추출된 구조조건이 narrowed_by로 노출되지 않음)
+severity: low
+reason: 13.5의 Given/When/Then은 "Given REJECT 경로"로 시작하고, REJECT는 태생적으로 `listings=[]`(0건)이므로 "0건·거절 다양성을 narrowed_by로 표현"하는 요구를 REJECT 자신의 속성으로 좁혀 해석했다(spec Design Notes). SQL/HYBRID 0건 fallback에 "실제 추출된 SQL 조건(가격·차종 등)을 narrowed_by로 노출"하는 확장은 REJECT의 고정 상수와 달리 **실제 조건 추출 로직**이 필요해(SQL 파서 또는 LLM 구조화 출력에서 조건을 다시 뽑아야 함) 이번 스토리의 "고정 상수만" 범위를 크게 넘는다. Story 13.6(가이드 활용) AC에도 이 확장이 언급되지 않아 별도 스토리로 남기는 것이 안전하다.
+trigger: FR17 0건 fallback을 개선하는 후속 스토리를 계획할 때(SQL/HYBRID 0건 응답에 실제 조건 완화 제안을 붙이는 요구가 나오면) — 그때 narrowed_by를 REJECT 밖으로 확장할지, 별도 필드를 새로 둘지 판단하고 이 항목을 닫는다.
+status: open
+
+### DW-599: FR17 0건 문구(`_EMPTY_FALLBACK`)가 EXPERIENCE.md Voice 표와 다르다
+
+origin: `spec-13-5-부드러운-거절.md` 2차 코드리뷰 — 13.5가 "사용자 노출 문구는 EXPERIENCE.md Voice 표 정본과 글자 그대로 일치"라는 규칙을 세우면서 REJECT 문구 **하나에만** 적용했고, 같은 파일의 형제 문구는 손대지 말라고 Never 절이 못박았다.
+location: `api/app/graph/answer_node.py`(`_EMPTY_FALLBACK`) vs `_bmad-output/planning-artifacts/ux-designs/ux-bmad-encar-demo-2026-07-12/EXPERIENCE.md:62`(Voice 표 "검색 0건(FR17)" 행)
+severity: low
+reason: 실측 대조 결과 두 문자열이 다르다 — 코드는 "조건에 맞는 매물을 찾지 못했어요. 가격대나 차종 조건을 넓히거나 원하시는 용도를 알려주시면 다시 찾아드릴게요.", 정본 Voice 표는 "조건에 맞는 매물이 아직 없어요. 조건을 조금 넓혀볼까요?" + 완화 칩. 13.5가 만든 결함은 아니다(`_EMPTY_FALLBACK`은 Epic 4부터 존재). 다만 13.5가 "노출 문구 = Voice 표 정본"이라는 규칙을 새로 세워 놓고 예외를 대장에 남기지 않으면, 다음 사람이 이 불일치가 **결정인지 누락인지** 구별할 수 없다(CLAUDE.md B8 — 미룬 판단은 틀린 게 아니고 안 적는 게 틀린 거다). 실피해는 아직 없다: 두 문구 모두 사용자를 다음 행동으로 유도하며, dead-end 게이트도 양쪽 다 redirect로 판정한다(`REDIRECT_MARKERS` 마커 3 "용도를 알려주시면"이 이 문구를 덮도록 이번 리뷰에서 복구·실측).
+trigger: FR17 0건 응답을 손대는 다음 스토리에서(DW-598의 narrowed_by 확장이 유력한 자리다) — 그때 Voice 표 문구로 맞출지, 코드 문구를 정본으로 승격해 EXPERIENCE.md를 고칠지 정하고 닫는다. 어느 쪽이든 `REDIRECT_MARKERS`와 `tests/test_ab_scoring.py::test_redirect_markers_actually_match_the_shipped_answers`를 함께 갱신해야 한다.
+status: open
+
+### DW-600: `narrowed_by`를 answer 문장으로 "조립"하는 책임이 미구현인데 어느 항목에도 안 잡혀 있다
+
+origin: `spec-13-5-부드러운-거절.md` 2차 코드리뷰(intent-alignment 감사) — 스펙 `<intent-contract>`가 13.5를 "값 배선까지"로 좁혔으나, 그 상위 정본은 더 넓은 표면을 요구한다.
+location: `api/app/graph/answer_node.py`(`narrowed_by`를 판단 없이 통과만 시킴) vs `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:1045`(Story 13.5 AC "…구조화 사유 데이터 `narrowed_by`를 **결정론 템플릿이 조립한다**(CR4)") · `_bmad-output/implementation-artifacts/epic-13-context.md`(L71·L93이 지금도 "answer_node의 결정론 템플릿이 책임진다"고 서술)
+severity: low
+reason: 정본 AC와 CR4가 쓰는 동사는 "조립"이고, 기대가 사는 표면은 **사용자가 읽는 answer 문장**이다. 실제 구현이 도달한 표면은 **응답 JSON 필드**까지이며, 리포지토리 전체에서 `narrowed_by`와 `answer`를 연결짓는 단언은 0개다(유일한 다중 질의 테스트는 오히려 불변성을 못박는다). 이 격차 중 "칩 UI 렌더"는 DW-597이, "SQL/HYBRID 0건 확장"은 DW-598이 잡고 있으나, **"답변 문장 조립"과 "원 조건(맥락) 복원"** 두 조각은 어느 항목에도 없고 스펙 Design Notes의 산문 근거로만 존재한다. 스펙의 좁은 해석 자체는 FR47의 무상태·결정론 요구와 정합해 이번 스토리에서 뒤집을 사안이 아니다(1·2차 리뷰 모두 동일 판단) — 문제는 **격차가 장부에 없다는 것**이다.
+trigger: Story 13.6(가이드 활용)이 `answer_node`의 응답 조립 로직을 손대는 시점 — 같은 함수를 여는 자리이므로 그때 (a) 고정 상수를 한국어 문장으로 렌더해 answer에 붙일지, (b) 정본 AC/`epic-13-context.md` 문구를 "값 배선까지"로 정정할지 택일하고 닫는다. 어느 쪽이든 `narrowed_by`와 `answer`를 연결짓는 단언이 하나는 생겨야 한다.
+status: open
+
+### DW-601: DW-593이 닫은 CORS-500 보호에 남은 노출면 — `response_model` 재검증은 여전히 `try` 밖에서 돈다
+
+origin: `spec-13-5-부드러운-거절.md` 2차 코드리뷰 — DW-593 resolution이 "네 필드 모두 같은 경로로 500+CORS"라고 적었는데, 그 주장은 정확히는 **생성자 검증 층위**에만 해당한다.
+location: `api/app/routers/ai.py`(`@router.post("/search", response_model=SearchResponse)` — 데코레이터 인자와 엔드포인트 함수 본문의 `try`)
+severity: low
+reason: 13.5가 옮긴 것은 `SearchResponse(...)` **생성자 호출**이고, 그건 확실히 `try` 안으로 들어와 CORS 안쪽 500이 된다(테스트로 실측됨). 그러나 FastAPI는 `response_model`로 엔드포인트가 **반환한 뒤** 한 번 더 검증·직렬화하며, 그 단계에서 나는 예외는 함수 밖이라 `except Exception`이 못 잡고 Starlette `ServerErrorMiddleware`(CORSMiddleware 바깥)가 500을 만든다 — DW-593이 처음에 지목한 바로 그 은폐 경로다. 지금은 사실상 도달 불가다(이미 검증된 인스턴스를 그대로 넘기므로). 도달 가능해지는 조건이 예측된다는 점이 이 항목의 요점이다: `@field_serializer` 추가, `response_model_exclude` 사용, 또는 엔드포인트가 모델 대신 dict를 반환하도록 바뀌는 순간. (DW-593 자체는 orchestrator 소관이라 이 리뷰에서 수정하지 않고 신규 항목으로 남긴다.)
+trigger: `SearchResponse`에 직렬화 커스터마이징(`@field_serializer`·`model_serializer`·`response_model_*` 옵션)을 처음 도입할 때, 또는 `/ai/search`가 모델 대신 dict를 반환하도록 바뀔 때 — 그 시점에 `response_model=` 인자를 떼거나(반환 애노테이션만으로 문서화는 유지된다) 직렬화 실패도 CORS 안쪽에서 잡히는지 일부러 깨뜨려 실측하고 닫는다.
+status: open
+
+### DW-602: 라우터 LLM 장애로 폴백 REJECT를 타면, 사용자가 말한 적 없는 조건이 `narrowed_by`로 실려 나간다
+
+origin: `spec-13-5-부드러운-거절.md` 3차 코드리뷰(adversarial 레이어) — 스펙 Always 절이 "`guard_node`는 고정 상수를 **항상** 반환한다"고 못박아 이번 패스에서 코드로 못 고침
+location: `api/app/graph/router_node.py`(`_fallback_route` — 매물 신호 없으면 `"REJECT"`) → `api/app/graph/guard_node.py`(`_GUARD_NARROWED_BY` 무조건 반환) · `docs/conventions.md` §4(`narrowed_by`가 비어 있지 않으면 REJECT라는 판별 규약)
+severity: low
+reason: `router_node`는 구조화 출력 파싱 실패·일시 형식오류를 잡아 `_fallback_route`로 결정론 보정하고 재던지지 않는다(DW-561과 같은 경로). 그 폴백은 매물 신호가 없으면 `REJECT`를 주므로, Gemini 장애 중에는 **정상 차량 질의도 거절 경로를 탄다**. 13.5 이전에는 그 결과가 "거절 문구 하나"였는데, 이제는 사용자가 한 번도 말한 적 없는 `["price<=30000000", "body_type=SUV", "fuel=전기"]`가 "좁힌 조건"이라는 이름으로 함께 나간다. 지금은 이 값을 렌더하는 소비처가 없어 사용자 눈에 보이지 않지만(값만 배선 — DW-597), 재제안 칩 UI가 생기는 순간 장애 상황에서 **거짓 정보를 사용자에게 표시**하게 된다. 이번 스토리에서 못 고친 이유는 스펙 Intent의 Always 절이 "`query`나 `context`를 읽어 값을 바꾸지 않는다(무상태)"를 계약으로 고정했기 때문이다 — 폴백 여부로 값을 바꾸는 것은 그 계약을 어기는 변경이라 스펙 밖 결정이 필요하다.
+trigger: DW-597(재제안 칩 UI)을 실제로 구현하는 시점 — 값이 화면에 보이기 직전이 마지막 방어선이다. 그때 (a) `run_search`가 라우터 폴백 여부를 노출하고(DW-561이 제안한 `route_fallback` 플래그와 같은 자리) 폴백 REJECT면 `narrowed_by`를 비우거나, (b) 칩을 "예시 조건"으로 라벨링해 사용자가 자기 입력의 복원으로 오해하지 않게 하거나 중 택일하고 닫는다.
+status: open
+
+### DW-603: Follow-up review still recommended for 13-5-부드러운-거절 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-5-부드러운-거절.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-051647-7a0b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

@@ -7,7 +7,7 @@ architecture가 그린 단일 파이프라인을 LangGraph StateGraph로 묶는�
     · HYBRID  → hybrid_rag_node (조합형: 구조조건 + 벡터 단일쿼리, Story 13.3)
     · CLARIFY → clarify_node    (질적·의미형, 되묻기 — Story 13.4. 고정 템플릿, LLM/DB 없음)
     · REJECT  → guard_node      (매물 무관: 정중한 거절)
-  → answer_node(공통 계약 {answer, listings[], clarify} 보장 + FR17 0건 안내) → END.
+  → answer_node(공통 계약 {answer, listings[], clarify, narrowed_by} 보장 + FR17 0건 안내) → END.
 
 13.4(되묻기 상한, DW-563): CLARIFY 분기는 매 요청마다 클라이언트가 보내는 `context`(FR18)의
   길이로 서버가 직접 상한을 판정한다(`_clarify_step`). 상한(`_CLARIFY_TURN_CAP`) 이상이면
@@ -64,6 +64,7 @@ class SearchState(TypedDict, total=False):
     listings: list        # 매물 카드 목록(ListingCard)
     clarify: dict | None  # CLARIFY 되묻기 페이로드({question, chips}) — clarify 노드가 채움
     clarify_turns: int    # 대화 전체 턴 수(되묻기 횟수 아님) — run_search가 진입 시점에 계산(13.4)
+    narrowed_by: list[str] | None  # REJECT 전용 고정 상수(13.5) — SQL/HYBRID/CLARIFY는 None
 
 
 def _router_step(state: SearchState) -> SearchState:
@@ -110,18 +111,23 @@ def _clarify_step(state: SearchState) -> SearchState:
 
 
 def _guard_step(state: SearchState) -> SearchState:
-    """REJECT 어댑터 — guard_node(정중한 거절) 호출(FR16)."""
+    """REJECT 어댑터 — guard_node(정중한 거절) 호출(FR16·FR47). narrowed_by 고정 상수를 통과시킨다(13.5)."""
     result = guard_node(state["query"])
-    return {"answer": result["answer"], "listings": result["listings"]}
+    return {
+        "answer": result["answer"],
+        "listings": result["listings"],
+        "narrowed_by": result["narrowed_by"],
+    }
 
 
 def _answer_step(state: SearchState) -> SearchState:
-    """답변 조립 노드 — 공통 계약 정규화 + FR17 0건 안내 + clarify 통과(13.4)."""
+    """답변 조립 노드 — 공통 계약 정규화 + FR17 0건 안내 + clarify/narrowed_by 통과(13.4/13.5)."""
     return answer_node(
         {
             "answer": state.get("answer", ""),
             "listings": state.get("listings", []),
             "clarify": state.get("clarify"),
+            "narrowed_by": state.get("narrowed_by"),
         }
     )
 
@@ -171,7 +177,7 @@ COMPILED_GRAPH = _build_graph()
 
 
 def run_search(query: str, context: list | None = None) -> dict:
-    """그래프를 1회 실행해 {answer, listings[], route}를 반환한다.
+    """그래프를 1회 실행해 {answer, listings[], route, clarify, narrowed_by}를 반환한다.
 
     멀티턴(FR18): 그래프 호출 "앞단"에서 contextualize_query(query, context)로 직전 대화를
       흡수한 독립 질의를 만든 뒤, 그 질의를 그래프에 흘린다. 맥락이 없으면(None·[]) 원 질의가
@@ -183,6 +189,8 @@ def run_search(query: str, context: list | None = None) -> dict:
     "route"는 13.1이 추가한 부가 키다(G2 baseline 러너 `scripts/run_phase_b.py`가 라우팅
       채점에 씀) — 기존 소비처(/ai/search·test_graph.py 등)는 answer/listings만 꺼내 쓰므로
       추가 키가 있어도 회귀 없다(additive).
+    "narrowed_by"는 13.5가 추가한 REJECT 전용 고정 상수 키다 — SQL/HYBRID/CLARIFY 경로는
+      None(회귀 없음, additive).
     """
     effective_query = contextualize_query(query, context)  # 단일턴이면 query 그대로 반환
     # 방어선 — 재작성 결과가 (예기치 못하게) 공백이면 원 질의로 되돌린다. 공개 경로는
@@ -201,4 +209,5 @@ def run_search(query: str, context: list | None = None) -> dict:
         "listings": final_state["listings"],
         "route": final_state.get("route", ""),
         "clarify": final_state.get("clarify"),
+        "narrowed_by": final_state.get("narrowed_by"),
     }
