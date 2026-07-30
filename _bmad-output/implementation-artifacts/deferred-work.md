@@ -64,63 +64,72 @@ origin: review-budget-followup
 source_spec: `spec-11-0-pretendard-self-host-전환.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260727-203454-d410; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-2: Follow-up review still recommended for 11-1-view-count-스키마-increment-rpc-하드닝 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-11-1-view-count-스키마-increment-rpc-하드닝.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260727-223439-2318; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-3: Follow-up review still recommended for 11-2-상단-내비-재구성 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-11-2-상단-내비-재구성.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260727-223439-2318; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-4: Follow-up review still recommended for 11-5-반응형-뷰포트-e2e-감사-sm-b after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-11-5-반응형-뷰포트-e2e-감사-sm-b.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260728-105733-33e0; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-5: Follow-up review still recommended for 12-1-멱등키-마이그레이션 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-12-1-멱등키-마이그레이션.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260728-203648-2fc6; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-6: Follow-up review still recommended for 12-3-실시간-송수신-전환-폴링-제거 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-12-3-실시간-송수신-전환-폴링-제거.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-7: Follow-up review still recommended for 12-4-재연결-배너-갭-보정 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-12-4-재연결-배너-갭-보정.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-8: Follow-up review still recommended for 12-5-안읽음-배지-방-목록-정렬 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-12-5-안읽음-배지-방-목록-정렬.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-9: Follow-up review still recommended for 12-6-실시간-채팅-검증-sm-e after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-12-6-실시간-채팅-검증-sm-e.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260729-003659-be13; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-07-30
+resolution: resolved by sweep bundle dw-epic-11-12-review-budget-followup (run 20260730-113650-eb0d). 근거 = `spec-epic-11-12-review-budget-followup.md` — 9개 커밋(b76ec57·d6548a9·48427e3·51c6154·fbdd5a0·b581b45·4ec2075·dd000bb·dfc3aaa)의 실제 diff를 리뷰 레이어 4종(blind-hunter·edge-case-hunter·verification-gap·intent-alignment)이 새 세션에서 병렬 검토. 원 발견 21건 → 신규 5건 승격(DW-549~553), 16건 기각.
 
 ### DW-302: [구 #2] 안드로이드 릴리스 서명 미설정
 
@@ -3339,3 +3348,50 @@ resolution: 마이그 `0026_chat_unread_by_room` + 방 목록 배지(커밋 b3eb
   - **권한:** 0024·0025와 동일한 `revoke all → grant execute to authenticated` 패턴 복사.
 - **대가(정직하게):** `/chat` 진입마다 DB 왕복 1회 추가. 지금은 함수가 미국에서 돌고 DB가 서울이라 왕복 하나가 비싸다(`DW-540`) — 그래서 **`DW-540`을 먼저 하면 이 비용이 저절로 싸진다.**
 - **범위 밖(명시):** 카카오톡처럼 **실시간으로** 방별 숫자가 줄어드는 동작. 지금 총합 배지도 페이지 로드 기준이라(스펙 I/O 매트릭스: "다음 페이지 로드부터"), 방별만 실시간으로 만들면 두 배지가 서로 다른 시점을 말하게 된다. 실시간까지 원하면 별건으로 다뤄야 한다.
+
+### DW-549: 조회수 RPC가 anon에 열려 있고 그 값이 랜딩 "인기 매물" 정렬의 입력이다 — 누구나 랭킹을 밀어올릴 수 있다
+
+origin: sweep bundle `dw-epic-11-12-review-budget-followup` (run 20260730-113650-eb0d) — DW-2(11-1) 후속 독립 리뷰에서 blind-hunter가 발견, 세션이 코드로 재확인
+location: `supabase/migrations/0020_listings_view_count.sql`(anon GRANT, 커밋 `d6548a9`) → `web/src/lib/listings.ts`(view_count desc 정렬) → `web/src/components/landing/PopularRecentGrid.tsx`
+severity: medium
+reason: `increment_listing_view` RPC에 레이트리밋·중복호출 방지가 없고 실행 권한이 anon(비로그인 포함)에 열려 있는데, 그 조회수가 랜딩 "인기 매물"의 실제 정렬 기준으로 쓰인다. 클라이언트가 유발한 값이 서버 판단 없이 랭킹에 그대로 반영되는 구조(CLAUDE.md B9 위반 패턴). 기존 DW-445(오버플로)·DW-447(값 의미 미정의)와는 다른 축 — 여기서 문제는 **조작 가능성**이다. 데모 규모 트래픽에선 실질 피해가 작아 즉시 수정 대상은 아니다.
+trigger: DW-445(조회수 레이트리밋·오버플로)를 처리할 때 같은 원인을 공유하므로 함께 본다. 또는 랭킹이 실제 사용자에게 의미를 갖는 시점(운영 트래픽·노출 경쟁).
+status: open
+
+- **확인 한계(실측 기준):** GRANT 문과 정렬 조건을 코드로 읽어 "공격 가능한 경로가 실재함"까지 확인했고, RPC를 반복 호출해 랭킹이 실제로 뒤바뀌는 것은 **재현하지 않았다**.
+
+### DW-550: 폰트 용량 가드가 크기만 보고 내용물(해시)은 안 본다 — 같은 크기 파일로 바꿔치기하면 통과
+
+origin: sweep bundle `dw-epic-11-12-review-budget-followup` (run 20260730-113650-eb0d) — DW-4(11-5) 후속 독립 리뷰
+location: `web/`의 `fonts.budget.test.ts` (커밋 `51c6154`)
+severity: low
+reason: sha256 해시 비교가 주석에만 적혀 있고 실제 검사 코드로 옮겨지지 않았다. 파일 크기만 검사하므로 크기가 같은 다른 폰트로 교체돼도 가드가 초록이다. "검사를 만들었다"와 "검사가 잡는다"의 간극(CLAUDE.md B4).
+trigger: 셀프호스팅 폰트 자산을 교체·추가할 때, 또는 폰트 가드를 다시 손댈 때.
+status: open
+
+### DW-551: AppHeader 소스 스캔 정규식이 스프레드 속성 호출부를 못 잡는다
+
+origin: sweep bundle `dw-epic-11-12-review-budget-followup` (run 20260730-113650-eb0d) — DW-3(11-2) 후속 독립 리뷰
+location: `AppHeader.test.ts`의 `APP_HEADER_TAG` 정규식 (커밋 `48427e3` 도입; `dd000bb`는 이 정규식을 건드리지 않음)
+severity: low
+reason: `<AppHeader {...props} />` 형태로 렌더되는 호출부를 정규식이 매칭하지 못해, 그 경로로 헤더가 빠지거나 잘못 쓰여도 검사가 조용히 통과한다. 현재 코드에는 해당 호출부가 없어 오늘은 무해하다.
+trigger: 헤더를 스프레드 속성으로 렌더하는 호출부가 처음 생길 때, 또는 이 계약 테스트를 다시 손댈 때.
+status: open
+
+### DW-552: 재연결 시 realtimeError를 지우는 조건식이 뒤집혀 있다 (현재는 도달 불가, 잠복)
+
+origin: sweep bundle `dw-epic-11-12-review-budget-followup` (run 20260730-113650-eb0d) — DW-6·DW-7(12-3·12-4) 후속 독립 리뷰
+location: `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx` 재연결 클리어 분기 (상태는 `b581b45`, 문제의 조건은 `4ec2075`)
+severity: low
+reason: Supabase Realtime 클라이언트의 현재 재연결 콜백 순서 전제에서는 오늘 도달하지 않는 경로다. 다만 트리거가 **우리가 통제하지 못하는 외부 라이브러리 동작**이라, 라이브러리가 순서를 바꾸면 즉시 살아난다(배너가 안 사라지거나 반대로 오류 중에 사라짐). 같은 리뷰에서 "현재 도달 불가"로 기각된 다른 후보들은 도달하려면 이 프로젝트 코드가 먼저 바뀌어야 해서 판정을 달리했다.
+trigger: `@supabase/supabase-js`(Realtime) 업그레이드, 또는 재연결 배너 동작을 다시 손댈 때.
+status: open
+
+### DW-553: playwright.config.ts에서 빈 문자열 env가 .env.local 값을 이긴다 (같은 파일의 fail-loud 원칙과 불일치)
+
+origin: sweep bundle `dw-epic-11-12-review-budget-followup` (run 20260730-113650-eb0d) — DW-4(11-5) 후속 독립 리뷰
+location: `web/playwright.config.ts` (커밋 `51c6154`)
+severity: low
+reason: 같은 파일의 다른 env 필드는 "값이 없으면 즉시 실패"로 통일돼 있는데 이 필드만 빈 문자열을 조용히 채택한다. CI나 셸에 빈 값이 떠 있으면 `.env.local`을 무시하고 빈 설정으로 E2E가 도는데, 실패 지점이 설정에서 멀어져 원인 추적이 어려워진다.
+trigger: E2E를 CI에 배선할 때(DW-468과 같은 자리) — 그때 빈 env가 실제로 흔해진다.
+status: open
