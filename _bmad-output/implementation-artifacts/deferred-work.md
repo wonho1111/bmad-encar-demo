@@ -3943,3 +3943,64 @@ source_spec: `spec-13-5-부드러운-거절.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-051647-7a0b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-604: 컷오프 실측(Block-If) 미검증 — 이 구현 세션엔 로컬 Supabase/pgvector가 없다
+
+origin: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md` 구현 세션(2026-07-31)
+location: `api/app/graph/doc_rag_node.py`(`_GUIDE_DISTANCE_CUTOFF = 0.3`) · `api/scripts/run_phase_b.py`+`api/scripts/score_ab.py`(Block-If가 요구하는 실측 도구)
+severity: medium
+reason: 스펙의 Block-If("`run_phase_b.py --subset B1,B2,B3,B4,B5,B6,B7,G1,G4` 실행 → `score_ab.py`로 채점, 컷오프 적용 전/후 `doc_hit` recall이 하락하면 HALT")를 검증하려면 `RUN_LIVE_SMOKE=1` + 로컬 Supabase(pgvector 확장) + `GEMINI_API_KEY`가 필요하다. 이 구현 세션의 샌드박스엔 docker가 없고(`docker: command not found`), sudo도 불가해(`sudo: interactive authentication is required`) `postgresql-18-pgvector` 패키지를 설치할 수 없으며, `DATABASE_URL`도 설정돼 있지 않다(로컬·원격 어느 쪽도 없음) — memory `e2e-selftest-env-blockers.md`가 이미 기록한 것과 같은 종류의 환경 차단이다. 단위테스트(몽키패치로 run_select/embed_query를 가짜로 교체)는 게이트 로직 자체(거리 비교·None 반환)는 red→green으로 실측했지만(`_GUIDE_DISTANCE_CUTOFF`를 1.0으로 풀어 관련 테스트가 실제로 깨지는 것까지 확인), 0.3이라는 값이 실제 임베딩 거리 분포에서 정답 가이드까지 쳐내는지는 실 데이터가 있어야만 답할 수 있는 질문이라 이 세션에서 확인 불가.
+trigger: 로컬 Supabase(pgvector)가 뜨는 환경(예: 이전 dev-story 세션이 쓰던 Docker 환경)에서 `RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python scripts/run_phase_b.py --subset B1,B2,B3,B4,B5,B6,B7,G1,G4 --out /tmp/g13-6-check.json && .venv/bin/python scripts/score_ab.py --queryset docs/ai-ab-test-queryset.json --raw /tmp/g13-6-check.json --out /tmp/g13-6-report.json`를 실제로 돌려 `doc_hit` recall을 `docs/g2-baseline.json`(컷오프 적용 전 캡처) 채점 결과와 비교한다. 하락하면 `_GUIDE_DISTANCE_CUTOFF`를 조정하거나 스펙 Block-If에 따라 HALT하고, 문제 없으면 이 항목을 닫는다.
+status: open
+
+### DW-605: 스펙 Block-If의 명명된 subset이 HYBRID를 하나도 커버하지 않는다 — AC1 실물 검증이 test_live_smoke_hybrid()에만 의존
+
+origin: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md` 후속 코드리뷰(2026-07-31)
+location: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md`(`## Verification` → Commands) · `api/docs/ai-ab-test-queryset.json` · `api/tests/test_live_smoke.py`(`test_live_smoke_hybrid`)
+severity: medium
+reason: 스펙의 Block-If·Verification이 명명한 subset(`run_phase_b.py --subset B1,B2,B3,B4,B5,B6,B7,G1,G4`)을 `api/docs/ai-ab-test-queryset.json`에서 직접 확인한 결과, 이 9개 항목은 전부 `primary_path: "B"` — 즉 순수 벡터검색(`doc_rag_node`)의 인용/컷오프 경로만 태운다. HYBRID로 라우팅되는 항목이 하나도 없어, 이 명령을 (미래에 로컬 Supabase/pgvector 환경이 생겨) 실제로 돌려 `doc_hit` recall이 하락 없음을 확인하더라도 그것은 FR49(컷오프·인용)만 검증할 뿐, 이 스토리의 headline 기능인 AC1(`hybrid_rag_node`의 가이드 질의확장, FR44)은 전혀 검증하지 못한다. AC1의 라이브 확인은 이제 코드리뷰로 강화된 `test_live_smoke_hybrid()`(answer에 "(참고:" 인용 접미사가 실제로 붙는지 확인 — 가이드 주입이 조용히 무동작이면 이 단언이 깨진다)와 스펙의 기존 수동 확인 항목("조립된 SQL에 body_type 조건이 실제로 포함되는지... 눈으로 확인")에만 의존한다. 이 둘 다 이 세션(DW-604와 동일한 샌드박스: docker 없음·sudo 불가·DATABASE_URL 미설정)에서는 미실행 상태다 — 미래 세션이 DW-604의 Block-If 명령만 돌려보고 recall이 유지된다는 이유로 AC1까지 "실물 검증 완료"로 잘못 결론 내리는 것을 막기 위해 이 항목을 별도로 남긴다.
+trigger: 로컬 Supabase(pgvector) 환경에서 `cd api && RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres GEMINI_API_KEY=<키> .venv/bin/python -m pytest tests/test_live_smoke.py::test_live_smoke_hybrid -q`를 실제로 돌려 answer에 "(참고:"가 포함되는지 확인한다(가능하면 DW-604의 Block-If subset 실행도 같은 세션에서 함께 수행). 통과하면 AC1이 실물로 확인된 것으로 이 항목을 닫고, "(참고:"가 없으면(가이드가 컷오프를 못 넘겼거나 시스템 프롬프트 주입이 실제로 조건추출에 반영되지 않은 것) `_GUIDE_DISTANCE_CUTOFF`나 `_GUIDE_BLOCK_TEMPLATE` 배선을 재점검한다.
+status: open
+
+### DW-606: `hybrid_rag_node`의 가이드 인용이 "거리상 가까움"만 확인하고 "실제로 조건추출에 반영됐음"은 확인하지 않는다
+
+origin: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md` 코드리뷰(2026-07-31, adversarial·edge-case-hunter 레이어 중복 지적)
+location: `api/app/graph/hybrid_rag_node.py`(성공 경로의 `if listings and guide and guide[0]: answer += f" (참고: {guide[0]})"`)
+severity: low
+reason: `guide`는 조건추출 LLM 호출 **이전**에 컷오프(0.3) 이내로 딱 1건만 조회되고, 그 뒤로는 재시도 전체에서 고정이다. 인용 부착 조건은 "listings가 있고 guide가 존재(제목 비어있지 않음)"뿐이라, LLM이 실제로는 그 가이드 매핑을 전혀 쓰지 않고(예: 사용자가 "3천만원 이하 세단만"처럼 이미 완전히 명시적인 조건을 줘서 가이드 없이도 조건을 뽑은 경우) 우연히 거리상 가까운 무관한 가이드가 컷오프를 통과했다면, 그 매물과 무관한 가이드 제목이 "(참고: ...)"로 붙을 수 있다. 코퍼스가 작고(10개) 각 문서가 서로 다른 주제를 다뤄 실제 발생 빈도는 낮을 것으로 판단하지만(완전히 명시적인 질의는 보통 어느 가이드와도 의미상 멀 가능성이 높다), 이론적으로는 실재하는 갭이다. "실제로 반영됐음"을 프로그램적으로 판별하려면 LLM이 출력한 조건 문자열과 가이드가 제안하는 항목(예: body_type 값)의 대응을 검사하는 새 메커니즘이 필요해, 이번 코드리뷰 패스의 patch 범위(트리비얼하게 고칠 수 있는 것)를 넘는다.
+trigger: 이 인용 정확도가 실사용에서 실제 불만·오해로 이어지는 사례가 관찰되거나, `hybrid_rag_node`의 LLM 조건추출이 구조화 출력(structured output)으로 바뀌어 "이 조건이 가이드에서 왔는지"를 LLM 스스로 표시할 수 있게 되는 시점 — 그때 인용 조건에 "가이드 유래 조건이 실제로 포함됐는가" 검사를 추가하거나, DW-605의 라이브 검증(test_live_smoke_hybrid)에서 이 케이스가 실제로 관측되면 그 결과를 근거로 우선순위를 재평가한다.
+status: open
+
+### DW-607: Block-If의 실측 관측력이 기록된 것보다 훨씬 작다 — 유효 표본 3/9이고 `doc_hit`는 "노이즈 인용"을 원리상 벌하지 못한다
+
+origin: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md` 후속 코드리뷰(2026-07-31)
+location: `api/scripts/score_ab.py`(`doc_hit()` 정의 191행, 채점 분기 465행) · `api/docs/ai-ab-test-queryset.json` · `api/docs/g2-baseline.json`
+severity: medium
+reason: DW-605는 "명명된 subset 9건이 전부 `primary_path: "B"`라 HYBRID를 커버하지 못한다"까지만 적었는데, 실제로 `g2-baseline.json`(컷오프 적용 전 캡처)을 이번 리뷰에서 직접 채점해 보니 관측력은 그보다 더 작다. (1) 9건 중 5건(B2·B4·B5·B6·B7)은 캡처 당시 실제로 `route_last: "C"`(REJECT)로 빠져 `doc_rag_node`에 도달조차 하지 않았다 — 이들의 `doc_hit=False`는 인용 품질이 아니라 라우팅 결과다. `doc_hit`가 True인 항목은 B1·B3·G1 **3건뿐**이라, 이 지표에서 한 건만 뒤집혀도 33% 변동으로 보인다. (2) `score_ab.py`의 `doc_hit()`는 `any(기대 제목 in answer)` — **기대 제목이 있으면 상**을 줄 뿐, 엉뚱한 제목이 인용돼도 **벌하지 못한다**. 실측 예: G4("그냥 괜찮은 차 아무거나 추천해줘", `doc_refs: null`)의 baseline answer는 "(참고: 초보 운전자에게 적합한 차종)"을 달고 있다 — 이 스토리가 FR49로 없애려는 바로 그 노이즈 인용인데, 컷오프로 이걸 성공적으로 걸러도 `doc_hit` 점수는 정확히 0만큼 변한다. 즉 Block-If가 초록이어도 그건 "회귀가 없다"는 뜻이지 "컷오프가 목적을 달성했다"는 증거가 아니다. 스펙 Never 절이 "신규 노이즈 스코어러를 추가하지 않는다"고 이미 결정했으므로 이번 패스에서는 고치지 않고, 그 트레이드오프의 실제 대가를 측정값으로 남긴다.
+trigger: DW-604의 Block-If를 실제로 실행하는 그 세션에서 함께 처리한다 — 실행 결과를 읽을 때 `doc_hit` recall 유지만 보지 말고, (a) `doc_refs: null` 항목(G4 등)의 answer에 "(참고:"가 **사라졌는지**를 눈으로 확인해 컷오프의 노이즈 제거 효과를 직접 관측하고, (b) B2·B4·B5·B6·B7이 여전히 REJECT로 빠지는지 확인한다(빠진다면 그 5건은 이 지표에서 영원히 무신호이므로 subset 재구성이 필요하다). 새 스코어러가 필요하다고 판단되면 그때 스펙 Never 절을 명시적으로 뒤집는 결정을 기록하고 추가한다.
+status: open
+
+### DW-608: 문서화된 Block-If 명령이 그 명령이 약속한 "전/후 recall 비교"를 원리상 수행하지 못한다
+
+origin: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md` 3회차 후속 코드리뷰(2026-07-31)
+location: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md`(`## Verification` → Commands 2번째 줄) · `api/scripts/score_ab.py`(`--raw` 인자 처리 603·609·617행, `score_model()` 반환 summary 560~590행, `doc_hit` 채점 465행)
+severity: medium
+reason: DW-604/605/607은 "환경이 없어 못 돌렸다"·"돌려도 감도가 작다"까지만 다뤘다. 이번 리뷰에서 `score_ab.py`를 직접 읽어보니 **명령 자체가 약속을 이행할 수 없다**. (1) 스펙과 DW-604가 적어 둔 명령은 `--raw /tmp/g13-6-check.json` 파일 **하나**만 넘기는데, `score_ab.py`의 1-raw 모드는 소스 주석 그대로 "베이스라인 단독 — A/B 비교(사전식 승부·회귀 게이트) 없이 그 raw 1개의 채점 요약만 기록한다"다(617행). 즉 "컷오프 적용 전/후 비교"가 일어나지 않는다 — 전/후를 보려면 `--raw docs/g2-baseline.json /tmp/g13-6-check.json` 2-raw 모드여야 한다. (2) 게이트 지표인 `doc_hit`은 `score_model()`이 돌려주는 summary 딕셔너리에 **없다** — 465행에서 per-item 레코드(`rec["doc_hit"]`)로만 기록되고 콘솔 출력에도, 회귀 게이트(`gate_pass`는 오염·데드엔드·errored만, `regression_block`은 `result_mean`만 본다)에도 반영되지 않는다. 리포트 JSON의 `per_item`을 직접 세지 않으면 "recall이 하락했나"라는 질문에 답할 자리가 없다. (3) subset 9건 결과를 44항목 queryset으로 채점하면 `is_partial: True`·`missing_n: 35`가 되어, 44건 전량인 `docs/g2-baseline.json`과는 분모가 다르다(직접 확인: baseline results 44건). 결과적으로 미래 세션이 이 명령을 그대로 붙여 실행하면 비교가 수행되지 않았다는 사실을 눈치채지 못한 채 "Block-If 초록"으로 기록하고 DW-604를 닫을 위험이 있다.
+trigger: DW-604의 Block-If를 실제로 실행하는 그 세션에서, **명령을 그대로 붙이기 전에** 이 항목을 먼저 읽는다 — (a) `--raw`에 베이스라인과 후보 **2개**를 넘기고, (b) 베이스라인도 같은 subset으로 잘라 채점하거나 subset 없이 전량 재캡처해 분모를 맞추고, (c) `doc_hit` recall은 리포트 JSON의 `per_item`에서 `primary_path == "B"` 항목만 골라 직접 센다(또는 그 세션에서 `score_model()`에 `doc_hit_recall` summary 필드와 콘솔 한 줄을 추가한다 — 이는 스펙 Never 절이 금지한 "신규 노이즈 스코어러"가 아니라 기존 지표의 집계이므로 별개 판단이다). 그리고 스펙 Verification과 DW-604의 명령 문자열을 실제로 동작하는 형태로 정정한다.
+status: open
+
+### DW-609: queryset에 HYBRID 라벨 항목이 애초에 0건이라 "subset 재구성"으로는 AC1을 영구히 관측할 수 없다
+
+origin: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md` 3회차 후속 코드리뷰(2026-07-31)
+location: `api/docs/ai-ab-test-queryset.json`(44항목 전체) · `api/scripts/score_ab.py`(`doc_hit` 채점 분기가 `primary == "B"`에만 걸려 있음, 465행)
+severity: medium
+reason: DW-605는 "명명된 subset 9건이 전부 `primary_path: "B"`"라고, DW-607의 trigger는 "빠진다면 그 5건은 이 지표에서 영원히 무신호이므로 **subset 재구성이 필요하다**"고 적었다. 그런데 이번 리뷰에서 queryset 44항목 **전체**의 `primary_path`를 직접 집계해 보니 항목 단위 A=20·B=9·C=6·멀티턴 9이고, 멀티턴의 턴 단위도 A=16·B=3·C=1이다. 파일 전체에 `HYBRID` 문자열이 0회 등장한다(grep 확인). 즉 **뽑을 HYBRID 항목 자체가 존재하지 않으므로** subset을 다시 고르는 것으로는 이 스토리의 headline 기능(AC1, `hybrid_rag_node`의 가이드 질의확장 FR44)이 A/B 하네스에서 영원히 관측되지 않는다. 이 사실이 기록되지 않으면 DW-605·DW-607을 닫는 세션이 "subset을 다시 골랐다"고 적고도 실제로는 아무것도 달라지지 않은 상태로 항목을 닫게 된다. (참고: 이 리뷰 패스에서 라이브 Gemini로 프롬프트만 따로 실행해 질의확장 자체는 동작함을 관측했다 — 가이드 미주입 시 `price <= 30000000`만, `corpus/02-패밀리카-적합-차종.md` 주입 시 `body_type IN ('준중형차','중형차','SUV','RV') AND price <= 30000000`. 즉 결함이 아니라 **회귀 하네스의 커버리지 공백**이다.)
+trigger: DW-604/605의 라이브 검증 세션에서 함께 처리한다 — queryset에 HYBRID 대표 항목을 최소 1~2건 추가하고(예: `"3천만원 이하로 무난한 패밀리카"`에 하이브리드용 `primary_path` 라벨 + `doc_refs: ["02-패밀리카-적합-차종"]` + `predicate`에 price_max와 body_type IN), `score_ab.py`의 `doc_hit` 채점 분기(`primary == "B"`)를 그 라벨까지 포함하도록 넓힌다. 그 전까지 AC1의 유일한 라이브 관측 지점은 `api/tests/test_live_smoke.py::test_live_smoke_hybrid`의 구조조건 로그 단언 하나뿐임을 인정하고, 그 테스트를 반드시 함께 돌린다.
+status: open
+
+### DW-610: Follow-up review still recommended for 13-6-가이드-문서-content-활용-거리-컷오프 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-180320-15df; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

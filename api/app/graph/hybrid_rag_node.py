@@ -1,16 +1,25 @@
 """조합형(구조+의미) 하이브리드 검색 노드 — SQL+벡터 단일쿼리(FR45, Story 13.3).
 
-흐름: 자연어 질의 → (Gemini) WHERE 구조조건만 추출 → 코드가 벡터절·LIMIT를 붙여 조립
-  → sql_guard 검증 → ai_readonly 실행(임베딩 바인딩) → ListingCard.
+흐름: 자연어 질의 → (가이드 질의확장, 있으면) → (Gemini) WHERE 구조조건만 추출
+  → 코드가 벡터절·LIMIT를 붙여 조립 → sql_guard 검증 → ai_readonly 실행(임베딩 바인딩)
+  → ListingCard.
   · LLM은 WHERE 구조조건 표현식만 낸다 — SELECT/status/ORDER BY/LIMIT은 절대 언급하지
     않는다. 그 절들은 **코드**가 정확히 `ORDER BY embedding <=> %s::vector LIMIT <정수>`
     모양으로 붙인다(I4, sql_guard의 벡터절 정규식이 기대하는 자리 — Story 13.1 주석 참조).
-  · 구조조건을 하나도 못 뽑으면(순수 용도·느낌만 있는 질의) doc_rag_node(query)를 그대로
-    호출해 폴백한다(기존 벡터검색 재사용, 별도 폴백 SQL을 새로 쓰지 않는다 — 드리프트 방지).
+  · 구조조건을 하나도 못 뽑으면(순수 용도·느낌만 있는 질의) doc_rag_node(query, qvec=qvec)를
+    그대로 호출해 폴백한다(기존 벡터검색 재사용, 별도 폴백 SQL을 새로 쓰지 않는다 — 드리프트
+    방지). qvec을 넘겨 재시도 루프 진입 전 이미 계산한 임베딩을 재사용한다 — 안 넘기면
+    doc_rag_node가 embed_query(query)를 다시 계산해 Gemini 임베딩 API를 중복 호출한다
+    (코드리뷰: 바로 이 폴백 경로가 이 스토리가 없애려던 재임베딩을 다시 만들 뻔했다).
   · 조립된 SQL은 항상 validate_select_sql()을 거친다(LLM 생성 텍스트를 신뢰하지 않는다,
     함정 #1). 가드 차단 시 sql_rag_node와 동일한 1회 재생성 재시도 패턴을 따른다.
   · 가드 통과 후 embed_query로 만든 질의 임베딩을 %s 자리표시자에 실제로 바인딩해
     run_select(safe_sql, (qvec,))로 실행한다(DW-559 — 미바인드 실행 방지).
+  · 질의확장(FR44, Story 13.6): 재시도 루프 진입 전 1회 `find_relevant_guide()`로 최상위
+    가이드를 조회한다. 코사인 거리가 컷오프(FR49) 이내일 때만 그 content를 시스템 프롬프트에
+    덧붙여 LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건(body_type 등)으로
+    바꾸게 한다 — 무조건 곁들이지 않는다. 최종 answer 인용도 같은 게이트를 통과했을 때만
+    doc_rag_node와 동일하게 결정론적으로 붙인다(답변 문장 자체는 LLM이 새로 짓지 않는다).
 
 Design Notes(spec 13.3): 하이브리드 조립은 가드 통과 "직전"에 완성한다 — LLM 조건 →
   코드가 전체 SQL 문자열로 합친 뒤에야 validate_select_sql()을 부른다. 가드를 먼저
@@ -18,7 +27,8 @@ Design Notes(spec 13.3): 하이브리드 조립은 가드 통과 "직전"에 완
   미화이트리스트 식별자로 거부된다.
 
 13.3은 이 함수를 "호출 가능한 노드"로만 만든다. graph.py가 HYBRID 분기를 이 노드로 배선한다.
-[Source: spec-13-3-하이브리드-검색-sql-벡터.md; sql_guard.py 벡터절 정규식 주석(13.1)]
+[Source: spec-13-3-하이브리드-검색-sql-벡터.md; sql_guard.py 벡터절 정규식 주석(13.1);
+ spec-13-6-가이드-문서-content-활용-거리-컷오프.md]
 """
 
 import logging
@@ -35,7 +45,7 @@ from app.db.sql_guard import (
     validate_select_sql,
 )
 from app.embeddings import embed_query
-from app.graph.doc_rag_node import doc_rag_node
+from app.graph.doc_rag_node import doc_rag_node, find_relevant_guide
 from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
 from app.graph.sql_rag_node import _DOMAIN_RULES, _content_to_text, _strip_sql
 
@@ -68,6 +78,20 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB 검색을 위해 WHERE 구조조
 {_HYBRID_INSTRUCTIONS}
 
 출력: 조건 표현식 한 줄 또는 NONE."""
+
+# 가이드 질의확장(FR44, Story 13.6) — find_relevant_guide()가 컷오프 이내로 찾아낸 가이드
+# content를 시스템 프롬프트 뒤에 덧붙이는 블록. 규칙 2(느낌 표현 버리기)보다 이 매핑이
+# 우선한다는 것을 명시해, LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건으로
+# 바꾸게 한다. 이 블록은 조건추출에만 쓰이고 답변 문장을 새로 짓는 데는 쓰이지 않는다
+# (답변 인용은 hybrid_rag_node가 결정론적 문자열 붙이기로 별도 처리, AC2).
+_GUIDE_BLOCK_TEMPLATE = """
+
+[참고 가이드 문서 — "{title}"]
+{content}
+
+위 가이드 매핑은 규칙 2(느낌·용도 표현 버리기)보다 우선한다 — 질의의 느낌·용도 표현이 위
+가이드가 제시하는 구조조건(차종·인승 등)과 대응되면, 규칙 2로 버리지 말고 그 구조조건을
+뽑아 출력한다. 이 가이드 내용으로 답변 문장을 새로 짓지는 않는다(조건 추출에만 참고)."""
 
 _ANSWER_FOUND = "조건에 맞는 매물 {n}건을 찾았어요."
 _ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."  # FR17 조건 완화 안내
@@ -121,10 +145,23 @@ def hybrid_rag_node(query: str) -> dict:
     "가드는 통과했지만 실행이 안 되는 조건"(psycopg ProgrammingError/DataError)도 같은
     재시도 대상이며, 2회째도 실패하면 SqlGuardError로 변환해 전달한다 — 사용자에게는
     500이 아니라 400 한국어 안내가 나가야 한다는 계약을 지키기 위해서다.
+
+    질의확장(FR44, Story 13.6): 재시도 루프 진입 전에 질의 임베딩을 1회만 계산해(재시도마다
+    재임베딩하던 기존 낭비 제거) find_relevant_guide()에 넘긴다. 컷오프(FR49) 이내 가이드가
+    있으면 시스템 프롬프트에 덧붙이고, 그 가이드로 조건추출이 이뤄졌든 아니든 listings가
+    나오면 doc_rag_node와 동일하게 결정론적 인용을 붙인다.
     """
     llm = _llm()  # 키 부재 시 여기서 fail-loud — 아래 재시도 루프 전에 즉시 실패.
 
-    messages = [("system", _SYSTEM_PROMPT), ("human", query)]
+    qvec = embed_query(query)  # 키 부재 시 여기서 fail-loud — 재시도 루프 전 1회만 계산.
+    qvec_literal = _vec_literal(qvec)
+    guide = find_relevant_guide(qvec_literal)  # 컷오프(FR49) 이내일 때만 non-None(FR44).
+
+    system_prompt = _SYSTEM_PROMPT
+    if guide:
+        system_prompt += _GUIDE_BLOCK_TEMPLATE.format(title=guide[0], content=guide[1])
+
+    messages = [("system", system_prompt), ("human", query)]
     last_error: SqlGuardError | None = None
 
     for attempt in range(2):  # 최초 1회 + 재시도 1회
@@ -139,7 +176,7 @@ def hybrid_rag_node(query: str) -> dict:
             # 않고 기존 벡터검색을 그대로 재사용한다. 빈 응답을 NONE과 다르게 취급하면
             # 아래에서 `AND ()`라는 깨진 SQL이 조립돼(가드는 다른 AND항인 status='on_sale'
             # 만으로 통과시키므로 못 잡는다) 실행 단계에서 psycopg 문법 오류로 죽는다.
-            return doc_rag_node(query)
+            return doc_rag_node(query, qvec=qvec)  # 위에서 계산한 임베딩 재사용(코드리뷰 — 재임베딩 제거)
 
         # psycopg는 params가 있으면(아래 run_select) SQL 문자열 전체에서 '%'를 자리표시자로
         # 스캔한다 — 따옴표 리터럴 안(예: `model LIKE '%아반떼%'`)도 예외가 아니다. sql_guard의
@@ -155,10 +192,15 @@ def hybrid_rag_node(query: str) -> dict:
         sql = f"{base_sql} ORDER BY embedding <=> %s::vector LIMIT {DEFAULT_LIMIT}"
         try:
             safe_sql = validate_select_sql(sql)  # 가드 통과 못하면 SqlGuardError
-            qvec = embed_query(query)  # 키 부재 시 여기서 fail-loud
-            rows = run_select(safe_sql, (_vec_literal(qvec),))  # DW-559 — 임베딩 바인딩
+            rows = run_select(safe_sql, (qvec_literal,))  # DW-559 — 임베딩 바인딩(호이스트 재사용)
             listings = attach_cover_images(rows_to_cards(rows))
             answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
+            # `guide[0]`은 도달 불가한 검사다 — 공백 제목은 find_relevant_guide가 이미 걸렀다
+            # (3회차 코드리뷰). `listings and`가 실제 게이트다: 0건이면 FR17 안내에 인용을 붙이지
+            # 않는다(AC3, I/O 매트릭스 5행). 이 조건이 사라져도 스위트가 초록이던 구멍은
+            # test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
+            if listings and guide and guide[0]:
+                answer += f" (참고: {guide[0]})"  # doc_rag_node와 동일한 결정론적 인용(AC2)
             return {"answer": answer, "listings": listings}
         except SqlGuardError as exc:
             # 가드 차단만 재시도 대상 — LLM이 조건을 고치면 통과할 여지가 있다.

@@ -14,6 +14,7 @@
 [Source: story 4.8 AC5; api/docs/ai-demo-queries.md]
 """
 
+import logging
 import os
 
 import pytest
@@ -101,9 +102,10 @@ def test_live_smoke_pathC():
     assert out["narrowed_by"]
 
 
-def test_live_smoke_hybrid():
+def test_live_smoke_hybrid(caplog):
     """조합형(구조+의미) 대표 1건 — HYBRID로 분류되고 hybrid_rag_node가 실제 단일쿼리로
     응답하는지(Story 13.3 AC — 직접 실행·관찰, B4)."""
+    caplog.set_level(logging.INFO, logger="app.graph.hybrid_rag_node")
     out = _run_or_skip("3천만원 이하로 무난한 패밀리카")
     assert isinstance(out["answer"], str) and out["answer"]
     assert isinstance(out["listings"], list)
@@ -114,3 +116,26 @@ def test_live_smoke_hybrid():
     # 못한다. 두 노드는 답변 문구가 다르므로 그걸로 실제 실행 경로를 고정한다.
     assert out["answer"].startswith("조건에 맞는 매물")  # doc_rag_node는 "'<질의>'에 어울리는…"
     assert "원하시는 용도나 예산" not in out["answer"]  # doc_rag_node의 0건 문구 배제
+    # 매물이 0건이면 아래 인용 단언은 "가이드 주입 고장"이 아니라 "0건"을 잡는 것이므로,
+    # 두 실패 원인을 분리해 먼저 확인한다(후속 코드리뷰).
+    assert out["listings"], "매물 0건이면 아래 가이드 단언들의 의미가 사라진다"
+    # 가이드(api/corpus/02-패밀리카-적합-차종.md)가 컷오프(FR49) 이내로 찾아져 인용됐다는 증거.
+    assert "(참고:" in out["answer"]
+    # ⚠️ 위 인용 단언만으로는 **부족하다**(후속 코드리뷰, 변이 실측). 인용은
+    # `if listings and guide` — 가이드가 거리상 가까운지만 보고, 그 가이드가 조건추출
+    # 프롬프트에 실제로 반영됐는지는 보지 않는다. 실제로 _GUIDE_BLOCK_TEMPLATE를 통째로
+    # 비워 질의확장을 죽여도 answer에는 "(참고: …)"가 그대로 붙어 이 단언이 통과했다.
+    # 그래서 이 스토리의 headline(FR44 질의확장)은 **추출된 구조조건**에서 직접 관찰한다:
+    # 조건추출 규칙 2는 "느낌·용도 표현은 버려라"이므로, 가이드 주입이 없으면 이 질의에서
+    # LLM이 뽑을 수 있는 건 가격 조건뿐이다. 가이드가 실제로 주입돼 규칙 2를 눌렀을 때만
+    # 차종·인승·무사고(guide가 명시하는 구조 컬럼)가 조건에 등장한다.
+    condition_logs = " ".join(
+        r.getMessage() for r in caplog.records if "구조조건" in r.getMessage()
+    )
+    assert condition_logs, "hybrid_rag_node의 구조조건 로그가 없다 — 폴백했거나 로깅이 사라졌다"
+    assert any(col in condition_logs for col in ("body_type", "seats", "accident_free")), (
+        f"가이드 유래 구조조건이 추출되지 않았다(질의확장 미작동 의심): {condition_logs}"
+    )
+    # body_type 자체를 응답 매물에서 직접 단언하지 않는 이유: body_type은 SELECT_COLUMNS
+    # (listing_cards.py)에도 ListingCard wire 계약(app/schemas/ai.py)에도 없어 응답으로
+    # 나오지 않는다. 그래서 다음으로 가까운 관측 지점인 추출 조건 로그를 쓴다.

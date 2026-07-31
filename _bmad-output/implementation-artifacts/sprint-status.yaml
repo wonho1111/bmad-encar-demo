@@ -182,7 +182,7 @@ development_status:
   13-3-하이브리드-검색-sql-벡터: done
   13-4-조건-좁혀-되묻기-clarify: done
   13-5-부드러운-거절: done
-  13-6-가이드-문서-content-활용-거리-컷오프: backlog
+  13-6-가이드-문서-content-활용-거리-컷오프: done
   13-7-langsmith-트레이싱: backlog
   13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b: backlog
   epic-13-retrospective: optional

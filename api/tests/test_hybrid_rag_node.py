@@ -1,5 +1,5 @@
 """hybrid_rag_node 단위 테스트 — 네트워크(LLM)·DB 무관, 조립·폴백·가드 재시도 배선만 검증
-(spec-13-3-하이브리드-검색-sql-벡터.md Tasks).
+(spec-13-3-하이브리드-검색-sql-벡터.md Tasks; 가이드 질의확장·컷오프는 spec-13-6).
 
 실제 생성·실행(라이브 LLM+DB)은 dev-story 라이브 스모크(test_live_smoke.py)에서 확인한다.
 여기서는 결정론적인 부분만 격리해 테스트한다:
@@ -9,15 +9,31 @@
   (3) 가드 차단 1회 후 재생성 성공 경로
   (4) 2회 연속 차단 시 SqlGuardError가 그대로 전파되는지
   (5) run_select가 (qvec,) params와 함께 호출되는지(임베딩 바인딩 배선 검사, DW-559)
+  (6) 가이드 질의확장(FR44/FR49, Story 13.6) — 컷오프 이내 가이드가 시스템 프롬프트에
+      실제로 주입되는지·컷오프 초과 가이드는 주입되지 않는지·가이드로만 도출된 조건이
+      최종 SQL·answer 인용에 반영되는지
+
+⚠️ find_relevant_guide()는 doc_rag_node.py에 정의돼 **그 모듈 자신의 run_select**를 참조한다
+  (hybrid_rag_node.run_select를 패치해도 닿지 않는다 — 서로 다른 모듈 전역이다). hybrid_rag_node()가
+  재시도 루프 진입 전에 항상 find_relevant_guide()를 호출하므로(13.6), 이 파일의 모든 테스트는
+  `doc_rag_node_module.run_select`도 함께(guide 없음이면 빈 리스트로) 패치해야 실제 DB 접속
+  시도 없이 결정론적으로 돈다 — 안 하면 DATABASE_URL 미설정 환경에서 fail-loud로 죽는다.
 """
 
 import pytest
 
+import app.graph.doc_rag_node as doc_rag_node_module
 import app.graph.hybrid_rag_node as node
 import app.graph.listing_cards as listing_cards
 from app.db.sql_guard import DEFAULT_LIMIT, SqlGuardError
 
 _LISTING_ID = "55555555-5555-4555-8555-555555555555"
+
+# 컷오프(0.3) 이내/초과 가이드 행 — (title, content, distance) 3-tuple(find_relevant_guide 계약).
+_GUIDE_ROW_WITHIN_CUTOFF = (
+    "패밀리카로 무난한 차종 고르기", "중형차·SUV·RV, 5~7인승이 가족 용도로 무난하다.", 0.1,
+)
+_GUIDE_ROW_BEYOND_CUTOFF = ("전기차 충전·보조금·주행거리 이해", "전기차 본문 텍스트.", 0.5)
 
 
 def _fake_row():
@@ -25,6 +41,34 @@ def _fake_row():
         _LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원",
         "가솔린", None, None, None, None,
     )
+
+
+def _patch_guide_lookup(monkeypatch, guide_rows=None):
+    """find_relevant_guide()가 쓰는 doc_rag_node 모듈의 run_select를 가짜로 교체한다.
+
+    guide_rows를 생략하면 빈 리스트 — 가이드 0건(기존 테스트 대다수의 전제, 회귀 없음).
+
+    반환값은 이 가짜가 실제로 받은 인자를 담는 dict다(3회차 코드리뷰). 두 가지를 함께 고친다:
+      (1) 이전 버전은 SQL을 보지 않고 **모든** 질의에 가이드 행을 돌려줬다 — 형제 헬퍼
+          `_install_fakes`(test_doc_rag_node.py)는 테이블로 분기하는데 이쪽만 안 했다. 나중에
+          실물 doc_rag_node를 타는 폴백 테스트가 생기면 (title, content, distance) 3-tuple이
+          매물 행으로 넘어가 rows_to_cards에서 정체불명 크래시가 난다.
+      (2) params를 통째로 버려서, hybrid가 `qvec_literal`(문자열) 대신 `qvec`(list[float])을
+          넘기도록 바뀌어도 전 스위트가 초록이었다(변이 실측). 실 DB에선 psycopg가 리스트를
+          ARRAY[...]로 적응시켜 `::vector` 캐스팅이 실패하고 HYBRID 요청 전체가 500이 된다.
+    """
+    captured: dict = {}
+
+    def fake_run_select(sql, params=None):
+        if "from guide_documents" in sql.lower():
+            captured["guide_sql"] = sql
+            captured["guide_params"] = params
+            return guide_rows or []
+        captured.setdefault("other_sql", []).append(sql)
+        return []
+
+    monkeypatch.setattr(doc_rag_node_module, "run_select", fake_run_select)
+    return captured
 
 
 class _FixedLLM:
@@ -38,12 +82,25 @@ class _FixedLLM:
         return type("Msg", (), {"content": text})()
 
 
+class _CapturingLLM:
+    """호출된 messages를 그대로 기록하고 고정 응답을 돌려주는 가짜 LLM(시스템 프롬프트 검증용)."""
+
+    def __init__(self, output):
+        self._output = output
+        self.calls: list = []
+
+    def invoke(self, messages):
+        self.calls.append(messages)
+        return type("Msg", (), {"content": self._output})()
+
+
 # ── (1) 조립 SQL 모양 + (5) run_select 임베딩 바인딩 배선 ─────────────────
 def test_hybrid_assembles_expected_sql_and_binds_embedding_params(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
     monkeypatch.setattr(node, "embed_query", lambda q: [0.5, -0.25])
+    _patch_guide_lookup(monkeypatch)
 
     def fake_run_select(sql, params=None):
         captured["sql"] = sql
@@ -70,39 +127,60 @@ def test_hybrid_assembles_expected_sql_and_binds_embedding_params(monkeypatch):
 
 # ── (2) NONE 폴백 ─────────────────────────────────────────────────────
 def test_hybrid_none_condition_falls_back_to_doc_rag_node(monkeypatch):
-    calls = {"doc": 0}
+    calls = {"doc": 0, "embed": 0}
 
-    def fake_doc(query):
+    def fake_doc(query, qvec=None):
         calls["doc"] += 1
+        # 재임베딩 없이 위에서 계산한 벡터를 그대로 넘겨받았는지(코드리뷰 — 이중 임베딩 제거).
+        assert qvec == [0.1]
         return {"answer": "DOC 결과", "listings": ["d1"]}
+
+    def fake_embed_query(q):
+        calls["embed"] += 1
+        return [0.1]
 
     # 대소문자 무관·공백 트림 확인 — 소문자·앞뒤 공백이 섞여도 폴백해야 한다.
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM([" none "]))
     monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+    # 가이드 조회가 조건추출(NONE 판정)보다 먼저 실행되므로(13.6) embed_query·가이드 조회도
+    # 여기서 결정론적으로 막아야 한다.
+    monkeypatch.setattr(node, "embed_query", fake_embed_query)
+    _patch_guide_lookup(monkeypatch)
 
     result = node.hybrid_rag_node("패밀리카로 무난한 거")
 
     assert calls["doc"] == 1
+    # embed_query가 정확히 1회만 불려야 한다 — doc_rag_node가 qvec을 넘겨받아 재계산하지
+    # 않는지 못박는다(코드리뷰: 폴백에서 임베딩 API가 중복 호출되던 문제).
+    assert calls["embed"] == 1
     assert result == {"answer": "DOC 결과", "listings": ["d1"]}
 
 
 # ── 빈/공백 응답도 NONE과 동일하게 폴백(review patch 2) ────────────────
 def test_hybrid_blank_condition_falls_back_to_doc_rag_node(monkeypatch):
-    calls = {"doc": 0}
+    calls = {"doc": 0, "embed": 0}
 
-    def fake_doc(query):
+    def fake_doc(query, qvec=None):
         calls["doc"] += 1
+        assert qvec == [0.1]
         return {"answer": "DOC 결과", "listings": ["d1"]}
+
+    def fake_embed_query(q):
+        calls["embed"] += 1
+        return [0.1]
 
     # LLM이 공백만 있는 응답을 내도(정확히 "NONE"이 아니어도) 폴백해야 한다 — 안 그러면
     # `AND ()`라는 깨진 SQL이 가드는 통과(status='on_sale' AND항만으로 충족)하고 실행
     # 단계에서 psycopg 문법 오류로 죽는다.
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["   "]))
     monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+    monkeypatch.setattr(node, "embed_query", fake_embed_query)
+    _patch_guide_lookup(monkeypatch)
 
     result = node.hybrid_rag_node("패밀리카로 무난한 거")
 
     assert calls["doc"] == 1
+    assert calls["embed"] == 1
     assert result == {"answer": "DOC 결과", "listings": ["d1"]}
 
 
@@ -116,6 +194,7 @@ def test_hybrid_percent_literal_in_condition_is_escaped_before_execution(monkeyp
     # UnicodeDecodeError로 죽는다(가드는 리터럴 안 '%'를 못 잡는다, no_strings가 지우고 검사).
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["model LIKE '%아반떼%'"]))
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
 
     def fake_run_select(sql, params=None):
         captured["sql"] = sql
@@ -145,21 +224,29 @@ def test_hybrid_percent_literal_in_condition_is_escaped_before_execution(monkeyp
 # ── NONE 유사 응답(따옴표·마침표)도 폴백으로 읽는지(review-2 patch) ─────
 @pytest.mark.parametrize("raw", ["NONE.", '"NONE"', "`none`", " None . "])
 def test_hybrid_near_miss_none_sentinel_falls_back(monkeypatch, raw):
-    calls = {"doc": 0}
+    calls = {"doc": 0, "embed": 0}
 
-    def fake_doc(query):
+    def fake_doc(query, qvec=None):
         calls["doc"] += 1
+        assert qvec == [0.1]
         return {"answer": "DOC 결과", "listings": ["d1"]}
+
+    def fake_embed_query(q):
+        calls["embed"] += 1
+        return [0.1]
 
     # 정확히 "NONE"만 인식하면 `NONE.`은 조건으로 조립돼 가드에 forbidden_column으로
     # 걸리고(실측), 폴백이 아니라 400이 나간다 — 의도한 경로가 통째로 사라진다.
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM([raw]))
     monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+    monkeypatch.setattr(node, "embed_query", fake_embed_query)
+    _patch_guide_lookup(monkeypatch)
 
     assert node.hybrid_rag_node("패밀리카로 무난한 거") == {
         "answer": "DOC 결과", "listings": ["d1"],
     }
     assert calls["doc"] == 1
+    assert calls["embed"] == 1
 
 
 # ── 가드는 통과하지만 실행 불가한 조건 → 재시도, 최종 실패는 400 계약 유지(review-2 patch) ──
@@ -171,6 +258,7 @@ def test_hybrid_unexecutable_condition_retries_then_raises_sql_guard_error(monke
     llm = _FixedLLM(["WHERE price <= 30000000", "AND price <= 30000000"])
     monkeypatch.setattr(node, "_llm", lambda: llm)
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
 
     calls = {"n": 0}
 
@@ -195,6 +283,7 @@ def test_hybrid_unexecutable_condition_recovers_on_retry(monkeypatch):
     llm = _FixedLLM(["price", "body_type = 'SUV'"])
     monkeypatch.setattr(node, "_llm", lambda: llm)
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
     monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
 
     state = {"n": 0}
@@ -217,6 +306,7 @@ def test_hybrid_connection_failure_is_not_swallowed_as_400(monkeypatch):
     # 돼야 운영에서 DB 장애가 사용자 입력 탓으로 오분류되지 않는다.
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
 
     def down(sql, params=None):
         raise psycopg.OperationalError("connection failed")
@@ -229,16 +319,36 @@ def test_hybrid_connection_failure_is_not_swallowed_as_400(monkeypatch):
 
 # ── (3) 가드 차단 1회 후 재생성 성공 ────────────────────────────────────
 def test_hybrid_guard_rejection_retries_once_then_succeeds(monkeypatch):
+    """LLM을 2회 부르는 경로에서도 임베딩·가이드 조회는 각각 1회뿐이다(스펙 Always).
+
+    3회차 코드리뷰: "재시도 루프 **진입 전** 1회만 계산"을 못박는 호출횟수 단언이 NONE/공백
+    폴백 테스트 3건에만 있었다. 정작 낭비가 2배가 되는 경로는 여기(LLM 2회 = 루프 2회전)인데
+    이 테스트는 호출을 세지 않는 람다를 써서, 호이스트를 루프 안으로 되돌리면 과금되는 Gemini
+    임베딩 호출과 guide_documents 조회가 매 재시도마다 반복되는데도 초록으로 통과했다.
+    """
     # 1차: OR 포함 조건(가드가 forbidden_or로 거부) → 2차: 정상 조건.
     llm = _FixedLLM(["price < 1 OR price > 0", "body_type = 'SUV'"])
+    calls = {"embed": 0, "guide": 0}
+
+    def counting_embed(q):
+        calls["embed"] += 1
+        return [0.1]
+
+    def counting_guide(qvec_literal):
+        calls["guide"] += 1
+        return None
+
     monkeypatch.setattr(node, "_llm", lambda: llm)
-    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(node, "embed_query", counting_embed)
+    monkeypatch.setattr(node, "find_relevant_guide", counting_guide)
     monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
     monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
 
     result = node.hybrid_rag_node("아무 질의")
 
     assert result["listings"]
+    assert calls["embed"] == 1, "재시도 2회전인데 임베딩이 재계산됐다(호이스트 회귀)"
+    assert calls["guide"] == 1, "재시도 2회전인데 가이드 조회가 반복됐다(호이스트 회귀)"
 
 
 # ── (4) 2회 연속 가드 차단 → SqlGuardError 전파 ─────────────────────────
@@ -246,6 +356,7 @@ def test_hybrid_guard_rejection_twice_propagates_sql_guard_error(monkeypatch):
     llm = _FixedLLM(["price < 1 OR price > 0", "price < 1 OR price > 0"])
     monkeypatch.setattr(node, "_llm", lambda: llm)
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
 
     with pytest.raises(SqlGuardError) as exc:
         node.hybrid_rag_node("아무 질의")
@@ -256,9 +367,131 @@ def test_hybrid_guard_rejection_twice_propagates_sql_guard_error(monkeypatch):
 def test_hybrid_empty_result_uses_fr17_message(monkeypatch):
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
     monkeypatch.setattr(node, "run_select", lambda sql, params=None: [])
 
     result = node.hybrid_rag_node("절대 없을 조건")
 
     assert result["listings"] == []
     assert "없어요" in result["answer"]
+
+
+def test_hybrid_empty_result_with_guide_omits_citation(monkeypatch):
+    """매물 0건이면 컷오프 이내 가이드가 있어도 인용을 붙이지 않는다(AC3, I/O 매트릭스 5행).
+
+    3회차 코드리뷰 실측: hybrid의 인용 게이트에서 `listings and`를 지워도 전 스위트가
+    370 passed로 초록이었다. 컷오프 이내 가이드를 쓰는 HYBRID 테스트 2건은 둘 다 매물
+    1건을 돌려주고, 0건 테스트는 가이드가 없어서 **두 조건의 교집합이 한 번도 테스트되지
+    않았다**. 회귀가 나면 사용자는 "조건에 맞는 매물이 없어요… (참고: …)" — 0건 안내에
+    근거 인용이 붙은 모순된 답변을 받는다. doc_rag_node 쪽 짝 테스트는
+    test_empty_result_returns_fr17_guidance(test_doc_rag_node.py)로 이미 있었다.
+    """
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch, [_GUIDE_ROW_WITHIN_CUTOFF])
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("가이드는 가깝지만 매물이 없는 조건")
+
+    assert result["listings"] == []
+    assert "참고:" not in result["answer"]
+
+
+# ── 가이드 질의확장(FR44/FR49, Story 13.6) ─────────────────────────────
+def test_guide_within_cutoff_is_injected_into_system_prompt(monkeypatch):
+    """컷오프 이내 가이드는 시스템 프롬프트에 title·content가 실제로 포함된다(FR44)."""
+    llm = _CapturingLLM("body_type IN ('중형차','SUV','RV')")
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    captured = _patch_guide_lookup(monkeypatch, [_GUIDE_ROW_WITHIN_CUTOFF])
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    node.hybrid_rag_node("3천만원 이하로 무난한 패밀리카")
+
+    system_prompt = llm.calls[0][0][1]  # messages[0] == ("system", ...)
+    assert _GUIDE_ROW_WITHIN_CUTOFF[0] in system_prompt  # title
+    assert _GUIDE_ROW_WITHIN_CUTOFF[1] in system_prompt  # content
+    assert "규칙 2" in system_prompt  # 규칙 2보다 우선한다는 지시가 실제로 들어갔는지
+    # hybrid가 가이드 조회에 **pgvector 텍스트 리터럴**을 넘기는지 못박는다(3회차 코드리뷰) —
+    # qvec_literal 대신 qvec(list[float])을 넘기면 실 DB에서 ::vector 캐스팅이 실패해 500이
+    # 되는데, 가짜가 params를 버리던 동안엔 이 변이가 전 스위트 초록으로 통과했다.
+    assert captured["guide_params"] == ("[0.1]", "[0.1]")
+
+
+def test_guide_beyond_cutoff_is_not_injected(monkeypatch):
+    """컷오프 초과 가이드는 프롬프트에 미포함 — 무관 가이드로 조건추출을 오염시키지 않는다(FR49)."""
+    llm = _CapturingLLM("body_type = 'SUV'")
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch, [_GUIDE_ROW_BEYOND_CUTOFF])
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("아무 질의")
+
+    system_prompt = llm.calls[0][0][1]
+    assert _GUIDE_ROW_BEYOND_CUTOFF[0] not in system_prompt
+    assert _GUIDE_ROW_BEYOND_CUTOFF[1] not in system_prompt
+    # 컷오프 초과 가이드는 answer 인용에도 쓰이지 않는다.
+    assert "참고:" not in result["answer"]
+
+
+@pytest.mark.parametrize(
+    "guide_row", [("", "본문", 0.1), ("   ", "본문", 0.1), ("제목", "  \n ", 0.1)]
+)
+def test_blank_guide_is_neither_injected_nor_cited(monkeypatch, guide_row):
+    """제목·본문이 비었거나 공백뿐인 가이드는 프롬프트 주입도 인용도 하지 않는다(후속 코드리뷰).
+
+    이전 패스는 인용 자리에만 `guide[0]` 검사를 넣어 두 구멍을 남겼다: 공백 제목("   ")은
+    참이라 "(참고:    )"가 그대로 붙었고, 빈 제목·빈 본문 가이드도 주입 자리는 `if guide:`뿐이라
+    시스템 프롬프트에 "규칙 2보다 우선한다"는 지시만 매핑 없이 들어갔다. 이제 게이트가
+    find_relevant_guide 한 곳에 있으므로 두 자리 모두 한 번에 닫힌다.
+    """
+    llm = _CapturingLLM("body_type = 'SUV'")
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch, [guide_row])
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("아무 질의")
+
+    assert result["listings"]
+    assert "참고:" not in result["answer"]
+    # 주입 자리도 함께 확인 — 가이드 블록의 우선순위 지시가 프롬프트에 들어가면 안 된다.
+    system_prompt = llm.calls[0][0][1]
+    assert "참고 가이드 문서" not in system_prompt
+
+
+def test_guide_present_condition_is_assembled_and_cited(monkeypatch):
+    """가이드가 주입된 상태에서 조건이 SQL로 조립되고 answer에 결정론적 인용이 붙는다(AC2).
+
+    ⚠️ 이 테스트는 "가이드가 그 조건을 **도출**했다"는 것을 검증하지 않는다(3회차 코드리뷰 —
+    이전 이름·docstring은 그렇게 주장했다). 조건 문자열은 아래 `_FixedLLM`에 테스트가 직접
+    박아 넣은 상수이므로 가이드 주입과 그 조건 사이에 인과가 없다. 가짜 LLM으로는 원리상
+    도출을 관측할 수 없다 — 그 역할은 test_live_smoke.py::test_live_smoke_hybrid의
+    "추출된 구조조건 로그에 body_type/seats/accident_free가 등장하는지" 단언이 맡는다.
+    여기서 실제로 고정되는 것은 (a) `AND (<조건>)` 조립 모양과 (b) 인용 접미사 문자열이다.
+    """
+    captured = {}
+    # 가이드 매핑을 반영한 조건을 LLM이 냈다고 **가정한** 고정 응답(도출 자체는 검증 대상 아님).
+    llm = _FixedLLM(["body_type IN ('중형차','SUV','RV')"])
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch, [_GUIDE_ROW_WITHIN_CUTOFF])
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        return [_fake_row()]
+
+    monkeypatch.setattr(node, "run_select", fake_run_select)
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("3천만원 이하로 무난한 패밀리카")
+
+    assert "AND (body_type IN ('중형차','SUV','RV'))" in captured["sql"]
+    # LLM이 답변 문장을 새로 짓지 않는다 — _ANSWER_FOUND 템플릿 + 결정론적 인용 접미사 그대로.
+    assert result["answer"] == (
+        "조건에 맞는 매물 1건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)"
+    )
