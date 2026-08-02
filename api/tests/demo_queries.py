@@ -49,6 +49,16 @@ GRAY_ALLOWED = {
     "주행거리 많은 차 사도 괜찮을까?": ("CLARIFY", "REJECT"),
 }
 
+# 표 ③의 행 수를 여기서 못박는다(13.8 4차 리뷰). 이 dict에서 행이 사라지면 회색지대 게이트가
+# 조용히 축소되는데(실측: 3행→1행이어도 `-k gray` 3 passed·전량 초록), test_demo_acceptance.py의
+# 큐리셋 락스텝은 큐리셋을 **이 dict의 키로 걸러** 비교하므로 양쪽이 같이 줄어 못 잡았다.
+# 검사를 데이터 옆에 두면 어느 소비처에서든 import 시점에 걸린다(CLAUDE.md B9).
+# 행을 늘리거나 줄이려면 `ai-demo-queries.md` 표 ③·큐리셋·이 숫자를 함께 고쳐야 한다.
+assert len(GRAY_ALLOWED) == 3 and all(GRAY_ALLOWED.values()), (
+    "회색지대 표 ③은 3행이고 각 행에 허용 경로가 있어야 한다 — "
+    "행·허용경로가 비면 게이트가 파라미터째 사라진다"
+)
+
 GRAY_AB = list(GRAY_ALLOWED)
 
 # ── ④ 매물 무관 → REJECT (가드 거절) (ai-demo-queries.md 표 ④) ────────

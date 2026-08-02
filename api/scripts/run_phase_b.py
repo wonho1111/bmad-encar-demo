@@ -30,15 +30,19 @@
 
 실행 — 전량(47개. 큐리셋 2026-08-02 재설계(DW-609) 기준):
   api/ 에서 RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres \
-    .venv/bin/python scripts/run_phase_b.py --out docs/g2-capture-YYYY-MM-DD.json
+    .venv/bin/python scripts/run_phase_b.py --out docs/g2-exit-gate-YYYY-MM-DD.json
 
 실행 — 일부만(디버깅·재캡처용):
-  ... --subset S1,H1,CL1 --out docs/g2-capture-YYYY-MM-DD-partial.json
+  ... --subset S1,H1,CL1 --out docs/g2-exit-gate-YYYY-MM-DD-partial.json
 
 ⚠️ `--out`을 `docs/g2-baseline.json`·`docs/g2-baseline-partial.json`으로 주지 말 것 — 그 둘은
   **커밋된 비교 기준선**이고 G2 게이트가 대조 대상으로 읽는다. 덮어쓰면 회귀 판정의 기준점이
-  사라지고(되돌리려면 유료 라이브 재캡처밖에 없다), 그게 바로 위에서 `--out`을 필수로 만든
-  이유다. 기준선을 의도적으로 다시 뜨는 것(re-baselining)은 별도 결정으로 다룬다.
+  사라지고, 그게 바로 위에서 `--out`을 필수로 만든 이유다. 이 규칙은 산문이 아니라 실행되는
+  검사다 — `main()`의 argparse와 `capture()` 진입부 양쪽에서 거부한다(CLAUDE.md B9).
+  기준선을 의도적으로 다시 뜨는 것(re-baselining)은 별도 결정으로 다룬다.
+  (✎ 13.8 4차 리뷰 정정: 여기 "되돌리려면 유료 라이브 재캡처밖에 없다"고 적혀 있었으나 두
+   파일 모두 git 추적 중이라 `git restore`로 복구된다. 위험한 건 복구 불가가 아니라 파괴가
+   조용히 지나가는 것이다.)
 """
 
 from __future__ import annotations
@@ -194,6 +198,15 @@ def capture(
     for item in items:
         _validate_item(item)  # 라이브 호출 0회 상태에서 전량 사전 검증(쿼터 낭비 방지)
     if out_path is not None:
+        # 기준선 보호는 main()의 argparse에도 있지만(아래), 파일을 실제로 비우는 것은 여기
+        # _flush()다 — capture()는 공개 함수라 테스트·스크립트가 main()을 거치지 않고 직접
+        # 부른다(13.8 4차 리뷰 실측: 직접 호출로 47항목 기준선이 0항목이 됐다). 검사는
+        # 파괴가 일어나는 층에 둔다(CLAUDE.md B9).
+        if Path(out_path).resolve() in _PROTECTED_BASELINES:
+            raise ValueError(
+                f"out_path가 커밋된 G2 비교 기준선({out_path})을 가리킵니다 — "
+                "덮어쓰면 회귀 판정의 기준점이 사라집니다."
+            )
         out_parent = Path(out_path).parent
         if str(out_parent) not in ("", ".") and not out_parent.exists():
             raise ValueError(f"--out 상위 디렉터리가 존재하지 않습니다: {out_parent}")
@@ -265,12 +278,18 @@ def main() -> None:
     # 커밋된 기준선은 --out으로 지목할 수 없다(13.8 3차 리뷰 patch). 위 독스트링이 이미 같은
     # 규칙을 ⚠️로 적었지만 주석은 실행되지 않는다(CLAUDE.md B9) — 실제로 재현해 보면
     # capture()가 루프 진입 **전에** 첫 _flush를 하므로 라이브 호출 0회로 죽는 실행도
-    # 대상 파일을 이미 비운다(실측: 47항목 → 1항목). 복구 수단은 유료 47문항 재캡처뿐이라
-    # 되돌리기가 없는 파괴다. 의도적 re-baselining은 이 스크립트가 아니라 별도 결정으로 다룬다.
+    # 대상 파일을 이미 비운다(실측: 47항목 → 1항목). 의도적 re-baselining은 이 스크립트가
+    # 아니라 별도 결정으로 다룬다.
+    # ✎ 13.8 4차 리뷰 정정 — 이 자리에 "복구 수단은 유료 47문항 재캡처뿐"이라 적혀 있었으나
+    #   사실이 아니다. 보호 대상 2개 파일은 모두 git 추적 중이고, 3차 리뷰가 실제로 파괴했을
+    #   때도 `git restore`로 되돌렸다. 진짜 위험은 "복구 불가"가 아니라 **파괴가 exit 0으로
+    #   조용히 지나가 아무도 복구를 시도하지 않는 것**이다. 같은 검사가 capture() 진입부에도
+    #   있다 — main()을 거치지 않는 직접 호출이 실제 파괴 경로이기 때문이다(B9).
     if Path(args.out).resolve() in _PROTECTED_BASELINES:
         ap.error(
             f"--out이 커밋된 G2 비교 기준선({args.out})을 가리킵니다 — 덮어쓰면 회귀 판정의 "
-            "기준점이 사라집니다. 날짜형 경로(예: docs/g2-capture-YYYY-MM-DD.json)를 쓰세요."
+            "기준점이 사라집니다. 날짜형 캡처 경로(예: docs/g2-exit-gate-YYYY-MM-DD.json — "
+            "이 리포가 실제로 쓰는 이름)를 쓰세요."
         )
 
     subset = None

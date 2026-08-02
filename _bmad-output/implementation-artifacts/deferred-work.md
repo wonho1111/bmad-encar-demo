@@ -4286,3 +4286,66 @@ source_spec: `spec-13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-213104-8dec; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-634: SM3 ①② 게이트에는 노드 식별 단언이 없어 `SQL→hybrid` 오배선이 초록으로 지나간다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — adversarial 렌즈가 뮤테이션으로 실증, 오케스트레이터가 코드로 재확인
+location: `api/tests/test_demo_acceptance.py`(`test_sm3_pathA_returns_listings`·`test_sm3_pathB_returns_listings`) · `api/docs/ai-demo-queries.md`(SM3 매핑 표 ①②행)
+severity: medium
+reason: 3차 리뷰가 회색지대 테스트에는 노드별 카드 id(`s1`/`h1`) 단언을 넣어 분기 오배선을 잡게 만들었지만, 같은 파일의 ① 게이트는 여전히 `assert out["listings"]`(비어있지 않음)만 본다. **실증**: `conditional_edges`를 `"SQL" → hybrid`로 오배선해도 ① 게이트 4건이 전부 초록이다(회색지대 테스트는 red가 되므로 리포 전체로는 탐지되지만, `ai-demo-queries.md`의 SM3 매핑 표가 ① 행의 검사로 지목하는 것은 이 테스트다). 즉 문서가 "이 검사가 ①을 지킨다"고 적은 것과 실제 탐지 범위가 다르다. `_patch_route`가 이미 노드별로 구분되는 카드 id를 주입하므로 각 테스트에 한 줄 추가하면 닫힌다. **이 스토리(13.8)가 만든 결함은 아니다** — ①② 테스트는 13.8 이전부터 이 형태였고, 3차 리뷰가 회색지대만 보강하면서 비대칭이 드러난 것이다.
+trigger: **Story 13.9(라우팅 안정화)의 인수조건으로 함께 확인한다** — 13.9는 라우터 분류를 바꾸는 스토리라 분기 오배선 탐지가 정확히 그 자리에서 필요하다. `test_sm3_pathA_returns_listings`에 `assert out["listings"][0]["id"] == "s1"`, `pathB`는 이미 `clarify` 페이로드를 단언하므로 유지. 넣은 뒤 일부러 오배선해 red를 확인한다(B4).
+status: open
+
+### DW-635: `score_ab.py --out`에는 기준선 보호 검사가 없고, 자기 독스트링 예시가 커밋된 리포트를 가리킨다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — adversarial·edge-case 두 렌즈 독립 지적
+location: `api/scripts/score_ab.py`(`--out` 인자 · 독스트링 1파일 모드 예시) · `api/docs/g2-baseline-report.json`
+severity: medium
+reason: 13.8 3차 리뷰가 `run_phase_b.py`에 `_PROTECTED_BASELINES` 가드를 넣었고 4차 리뷰가 그것을 `capture()` 층까지 내렸지만, **쌍둥이 스크립트인 `score_ab.py`에는 같은 보호가 전혀 없다.** `--out`은 필수도 아니고(기본값 `docs/ab-eval-report.json`), 독스트링의 1파일 모드 예시가 `--out docs/g2-baseline-report.json`을 그대로 제시한다. 그 파일은 AC2의 **Manual checks가 대조하는 유일한 기준 수치**(54/57·0.8936·12/13·9/9)를 담고 있고, DW-626이 확인했듯 `routing_correct`·`doc_hit_n`·`clarify_ok_n` 세 축은 어떤 자동 게이트도 비교하지 않으므로 이 파일이 세 축의 유일한 기준점이다. 부분 캡처로 한 번 채점하면 47항목 기준이 3항목 리포트로 바뀐다. 가드를 한쪽 스크립트에만 넣은 탓에 보호 범위가 **사람 눈으로만 확인되는 축이 시작되는 바로 그 지점에서 끊긴다.**
+trigger: **`score_ab.py`를 다음에 손댈 때**(DW-626이 예정한 13.9 재기준선 작업에서 `regression_block`에 세 축을 합치는 그 자리) — `run_phase_b.py`의 보호 검사를 공용 헬퍼로 빼서 두 스크립트가 함께 부르게 하고, 독스트링 예시의 `--out`을 날짜형 경로로 바꾼다.
+status: open
+
+### DW-636: 0건 캡처가 "캡처 완료" + exit 0이고, 커밋된 증거 아티팩트는 보호 밖이다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case·adversarial 두 렌즈 실증
+location: `api/scripts/run_phase_b.py`(`main()`의 종료 처리 — `errored`만 exit 1을 만든다) · `api/scripts/run_phase_b.py`의 `_PROTECTED_BASELINES`(2개 파일만 등록) · `api/docs/g2-exit-gate-2026-08-02.json`
+severity: medium
+reason: 두 사실이 겹쳐 하나의 조용한 파괴 경로가 된다. (1) `--queryset` 오타나 매칭 0인 `--subset`이면 `capture()`가 루프 진입 전 `_flush()`로 대상 파일을 빈 상태로 만들고 `main()`은 `0개 item 캡처 완료(실패 0건)` + **exit 0**을 낸다 — 이 파일 독스트링이 스스로 세운 원칙("체인이 조용히 진행되지 않게 0이 아닌 코드로 종료")과 어긋난다. (2) `_PROTECTED_BASELINES`는 `g2-baseline.json`·`g2-baseline-partial.json` 2개만 덮고, **13.8의 AC2 증거인 `g2-exit-gate-2026-08-02.json`은 보호 밖**인데 스펙 Verification 커맨드 2번이 `--out`으로 정확히 그 경로를 가리킨다. 즉 13.9가 그 커맨드를 복붙해 돌리다 실패하면 증거가 0항목이 되고 종료코드는 0이다. 보호 집합에 그냥 추가할 수는 없다 — 그러면 문서화된 재캡처 커맨드 자체가 거부된다. 필요한 것은 파일명 열거가 아니라 "git이 추적 중인 캡처는 새 날짜 경로로만 쓴다"는 규칙이다. (복구 자체는 `git restore`로 가능하다 — 진짜 문제는 exit 0이라 아무도 복구를 시도하지 않는 것이다.)
+trigger: **DW-621/DW-626이 예정한 13.9 재기준선 작업의 커맨드를 짤 때** — ① `if not raw["results"]: sys.exit(1)`로 0건 캡처를 실패로 만들고, ② 보호를 "`git ls-files api/docs/*.json`에 잡히는 경로면 거부"로 바꿔 날짜형 새 경로만 허용한 뒤, ③ 스펙/독스트링의 재캡처 커맨드를 그 새 경로 규칙에 맞춘다.
+status: open
+
+### DW-637: G2 회귀 판정의 **방향**이 `--raw` 인자 순서로만 정해지고 리포트에 그 순서가 안 남는다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case 렌즈가 양방향 채점으로 실증, 오케스트레이터가 코드·리포트로 재확인
+location: `api/scripts/score_ab.py`(`baseline, candidate = summaries[0], summaries[1]` · `report = {"baseline": baseline["name"], "candidate": candidate["name"], …}`) · `api/docs/g2-exit-gate-report.json`
+severity: medium
+reason: DW-626은 "네 축 중 한 축만 비교한다"를 다루는데, 그 **한 축조차 방향이 검증되지 않는다**. `regression = candidate["result_mean"] < baseline["result_mean"]`이고 둘의 배정은 오직 `--raw`에 준 파일 순서다. **실증**: 결과집합을 훼손한 저하판을 만들어 `--raw <기준선> <저하판>`으로 채점하면 `regression_block:true`, 순서만 뒤집으면 **`regression_block:false`**로 통과한다(result_mean 0.894 vs 0.269). 그런데 리포트의 `baseline`/`candidate` 필드에 들어가는 것은 **파일 경로가 아니라 모델명**이고, 13.8은 같은 모델을 자기 자신과 비교하므로 양쪽 다 `gemini-3.1-flash-lite`다 — 즉 **산출된 아티팩트만 봐서는 어느 파일이 기준선이었는지 알 방법이 전혀 없다**(커밋된 `g2-exit-gate-report.json`에서 직접 확인). 13.9가 재기준선을 뜨면 두 캡처가 서로 다른 코드 상태가 되므로 순서 실수의 대가가 지금보다 커진다(그때는 진짜 회귀가 통과할 수 있다). DW-631(캡처에 시각·커밋 해시 없음)과 인접하지만 같지 않다 — 그건 캡처 파일의 출처, 이건 채점 리포트의 역할 배정이다.
+trigger: **DW-626·DW-631을 처리하는 13.9 재기준선 작업과 같은 자리** — 리포트에 `baseline_raw`/`candidate_raw`(원본 파일 경로)를 함께 싣고, 두 raw의 `model`이 같으면 `--baseline`/`--candidate` 명시를 요구하거나 최소한 경고를 찍는다. 순서를 바꿔도 같은 리포트가 나오지 않는지 확인하는 결정론 테스트를 `test_ab_scoring.py`에 함께 넣는다(B4).
+status: open
+
+### DW-638: `--subset`이 id 없는 큐리셋 항목을 만나면 친절한 검증 전에 맨 `KeyError`로 죽는다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case 렌즈
+location: `api/scripts/run_phase_b.py`(`main()`의 `missing = set(subset) - {it["id"] for it in queryset["items"]}`) · 같은 파일 `capture()`의 `missing item id at index {idx}` 사전검증
+severity: low
+reason: `capture()`는 review pass 5에서 "id 없는 item은 원인을 말해주는 ValueError로 거부"하도록 고쳐졌지만, `main()`의 `--subset` 검증이 **그보다 먼저** `{it["id"] for it in ...}`로 색인하므로 `--subset`을 쓰는 경로에서는 여전히 맨 `KeyError: 'id'`가 난다. 그 수정이 없애려던 증상(어느 item이 문제인지 알 수 없음)이 한 갈래에 그대로 남아 있다. 큐리셋을 손으로 편집하는 작업(13.9가 `acceptable_paths`를 좁히며 하게 된다)에서 마주칠 자리다.
+trigger: **큐리셋(`ai-ab-test-queryset.json`)을 편집하는 다음 작업 시**(13.9 라우팅 안정화가 `acceptable_paths`를 조정하는 자리) — `main()`의 subset 검증 앞에 `capture()`와 같은 id 존재 검사를 두거나, subset 필터링을 `capture()` 안으로 밀어 검증 순서를 하나로 만든다.
+status: open
+
+### DW-639: `epic-13-context.md`가 "47개 질의" 사본을 새로 심었다 — 같은 커밋이 다른 곳의 하드코딩 수치를 뺀 이유와 정면으로 어긋난다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — adversarial 렌즈, git으로 신규 추가임을 확인(5fd4b67엔 없음)
+location: `_bmad-output/implementation-artifacts/epic-13-context.md`(실측 기준선 서술의 "47개 질의") · 대조: `api/scripts/run_phase_b.py`의 `--subset` help(같은 커밋이 "전량(47개)"에서 수치를 뺐다)
+severity: low
+reason: 13.8의 명시 목적 중 하나가 "수치 사본은 늙는다"(13-7 리뷰가 지적한 패턴)를 고치는 것이었고, 3차 리뷰는 그 이유로 `--subset` help에서 하드코딩된 개수를 제거했다. 그런데 **같은 커밋이 epic 컨텍스트에는 새 수치 사본을 넣었다**. 하필 그 파일은 **Story 13.9의 스펙이 만들어지는 문서**이고, 13.9는 **기준선을 재캡처하는 스토리**라 질의 수가 바뀔 수 있는 바로 그 작업이다. 지금은 값이 맞으므로 코드 동작에 영향은 없다.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** — 수치를 빼고 `api/docs/ai-ab-test-queryset.json`을 정본으로 가리키는 포인터만 남긴다(`--subset` help가 이미 그렇게 한다). 재캡처로 질의 수가 바뀌면 이 한 줄을 고치는 대신 사본이 애초에 없게 만든다.
+status: open
+
+### DW-640: 열린 장부 항목 4건의 `trigger:`가 예정에 없는 스토리에 걸려 있어 영영 발화하지 않을 수 있다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case 렌즈가 장부 전수 대조로 발견
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-620·DW-625·DW-627·DW-632 `trigger:` 줄 · 대조: DW-621·DW-626·DW-630·DW-631(실재하는 Story 13.9에 묶여 건전)
+severity: medium
+reason: CLAUDE.md B8은 미룬 항목에 "언제·어디서 고칠지"를 적으라고 요구하는데, 네 항목의 트리거는 **백로그에 존재하지 않는 스토리**를 조건으로 건다 — DW-625·DW-627은 "CM-B류 전수 확인을 수행하는 다음 스토리 착수 시", DW-632는 DW-576에 체인(그 DW-576은 `status:` 값 자체가 sweep 문법 밖이라 DW-623이 열려 있다), DW-620은 문서 드리프트 일반. 그중 **DW-627은 3차 리뷰가 `(status='on_sale' OR true)` 뮤테이션으로 실증한 FR11 보안 공백**(CM-B 커맨드 전량이 초록이었다)이고 severity가 medium인데, 그걸 고칠 담당 스토리가 없다. 반면 같은 패스에서 나온 DW-621·626·630·631은 실재하는 13.9(이미 G2 재캡처를 인수조건으로 가짐)에 묶여 있다 — 즉 이 문제는 장부 전체가 아니라 **이 네 건에 한정된 것**이다. 기존 항목 수정이 이번 실행에서 금지돼 있어 신규 등재로 남긴다.
+trigger: **오케스트레이터가 다음 sweep을 돌릴 때** DW-623·DW-624와 함께 처리한다 — 네 항목의 트리거를 실재하는 Story 13.9의 인수조건(체크박스)으로 재지정하고, 지정한 그 자리에도 실제로 심는다(CLAUDE.md B5·B8: "회고 약속은 회고 문서에만 두면 이행되지 않는다"). 특히 **DW-627은 보안 축이므로 13.9 인수조건으로 올리는 것을 기본값으로 본다**.
+status: open

@@ -497,12 +497,18 @@ def test_main_refuses_to_overwrite_committed_baseline(
     독스트링이 ⚠️로 금지하고 있었지만 주석은 실행되지 않는다(CLAUDE.md B9). 그리고
     capture()는 루프 진입 **전에** 첫 flush를 하므로, 라이브 호출 0회로 죽는 실행조차
     대상 파일을 이미 비운다 — 즉 "실행하다 실패했으니 괜찮겠지"가 성립하지 않는다.
-    복구 수단은 유료 47문항 재캡처뿐이라 되돌리기가 없다.
+
+    ✎ 13.8 4차 리뷰: 이 테스트는 **실제 커밋된 기준선 경로**로 main()을 부른다. 그래서
+      main()의 가드가 회귀하면(=이 테스트가 잡아야 할 바로 그 상황) 테스트 실행 자체가
+      두 기준선을 0항목으로 비우는 부작용이 있었다(실측: md5 변화 확인). 지금은 같은 검사가
+      capture() 진입부에도 있어, main()의 가드가 사라져도 capture()가 쓰기 전에 ValueError로
+      죽는다 — 즉 **red는 그대로 뜨되 파일은 안 다친다**. 아래 사후 단언이 그걸 못박는다.
     """
     monkeypatch.setenv("RUN_LIVE_SMOKE", "1")
     qs_path = tmp_path / "qs.json"
     qs_path.write_text(json.dumps({"items": []}), encoding="utf-8")
     protected = run_phase_b.API_ROOT / "docs" / baseline_name
+    before = protected.read_bytes()
     monkeypatch.setattr(
         sys, "argv",
         ["run_phase_b.py", "--queryset", str(qs_path), "--out", str(protected)],
@@ -512,20 +518,51 @@ def test_main_refuses_to_overwrite_committed_baseline(
         run_phase_b.main()
     assert exc_info.value.code == 2
     assert "기준선" in capsys.readouterr().err
+    # 파일이 실제로 안 다쳤는지까지 본다 — "거부했다"와 "안 건드렸다"는 다르다(B4).
+    assert protected.read_bytes() == before, f"{baseline_name}이 변경됐다"
+
+
+def test_capture_refuses_protected_baseline_out_path(tmp_path):
+    """main()을 거치지 않는 직접 호출도 거부한다 — 실제 파괴가 일어나는 층은 capture()다.
+
+    ✎ 13.8 4차 리뷰: 가드가 main()의 argparse에만 있을 때, capture()를 직접 부르면
+      (테스트·다른 스크립트가 실제로 그렇게 한다) 라이브 호출 0회로도 기준선이 0항목이
+      됐다. 검사는 파괴가 일어나는 자리에 있어야 한다(CLAUDE.md B9).
+    """
+    protected = run_phase_b.API_ROOT / "docs" / "g2-baseline.json"
+    before = protected.read_bytes()
+
+    with pytest.raises(ValueError, match="기준선"):
+        run_phase_b.capture(
+            {"items": []}, None, "m", lambda *a, **k: None, out_path=str(protected)
+        )
+    assert protected.read_bytes() == before, "g2-baseline.json이 변경됐다"
 
 
 def test_main_allows_non_baseline_out_path(monkeypatch, tmp_path):
-    """과차단 대조군 — 날짜형 캡처 경로는 그대로 통과해야 한다(가드가 정상 사용을 막지 않음)."""
+    """과차단 대조군 — 날짜형 캡처 경로는 그대로 통과해야 한다(가드가 정상 사용을 막지 않음).
+
+    ✎ 13.8 4차 리뷰: 이전엔 `API_ROOT/docs/...`를 계산해 놓고 정작 `tmp_path`에 썼다(죽은
+      식). 그래서 가드가 `docs/` 전체를 막도록 회귀해도 이 대조군은 초록이었다(실측) — 즉
+      과차단을 못 잡는 과차단 대조군이었다. 기준선과 **같은 디렉터리**의 날짜형 경로를 실제로
+      써야 대조군 구실을 한다. 뒷정리는 finally에서 한다.
+    """
     monkeypatch.setenv("RUN_LIVE_SMOKE", "1")
     qs_path = tmp_path / "qs.json"
     qs_path.write_text(json.dumps({"items": []}), encoding="utf-8")
-    out_path = run_phase_b.API_ROOT / "docs" / "g2-capture-2026-08-02.json"
+    out_path = run_phase_b.API_ROOT / "docs" / "g2-exit-gate-testtmp.json"
+    assert not out_path.exists(), "대조군 임시 경로가 이미 존재한다 — 이름을 바꿔라"
     monkeypatch.setattr(
         sys, "argv",
-        ["run_phase_b.py", "--queryset", str(qs_path), "--out", str(tmp_path / out_path.name)],
+        ["run_phase_b.py", "--queryset", str(qs_path), "--out", str(out_path)],
     )
 
-    run_phase_b.main()  # 거부되지 않고 정상 종료
+    try:
+        run_phase_b.main()  # 거부되지 않고 정상 종료
+        assert out_path.exists(), "정상 경로인데 파일이 안 만들어졌다"
+    finally:
+        out_path.unlink(missing_ok=True)
+        Path(str(out_path) + ".tmp").unlink(missing_ok=True)
 
 
 # ── review pass 5 — 0건 매칭이 낡은 --out을 남기면 안 된다 ────────────────

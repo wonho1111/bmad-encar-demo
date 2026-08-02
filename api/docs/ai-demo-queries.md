@@ -6,12 +6,16 @@
 
 - **SQL (구조형, FR13/FR14)**: 가격·차종·연식·색상·지역·주행거리·연료 등 **명시적 조건만** → Text-to-SQL.
 - **HYBRID (조합형, FR44)**: 명시적 조건 + 용도·느낌 조건이 **함께** → 구조조건 추출 + 벡터검색(가이드 인용).
-- **CLARIFY (질적형/애매형, FR15/FR46)**: 명시적 조건 없이 용도·느낌만 있거나(질적형) 조건이 흐릿한
-  회색지대(애매형) → **되묻기(clarify), 매물 아님**.
+- **CLARIFY (질적형, FR15/FR46)**: 명시적 조건 없이 용도·느낌만 있다 → **되묻기(clarify), 매물 아님**.
 - **REJECT (매물 무관, FR16)**: 중고차 검색과 무관한 잡담·상식(금융·세금·보험 일반지식 포함) →
   **정중한 거절 + 검색 유도**(listings 빈 목록).
 
-회색지대(차 얘기인데 조건이 흐릿)는 **CLARIFY로 보내 되묻는다**(빈손보다 되묻기가 낫다, 13.4).
+회색지대(LLM 판정이 갈릴 수 있는 경계 케이스)는 **하나의 경로로 정해지지 않는다** — 허용 경로가
+행마다 다르므로 아래 표 ③을 정본으로 본다. 명시 조건이 전혀 없을 때만 CLARIFY로 되묻는 것이고
+(빈손보다 되묻기가 낫다, 13.4), 가격·인승 같은 조건이 이미 있으면 SQL/HYBRID가 정답이다.
+(✎ 13.8 4차 리뷰 정정 — 여기 "회색지대는 CLARIFY로 보내 되묻는다"라고 무조건으로 적혀 있었으나
+표 ③의 3행 중 2행은 CLARIFY가 **오답**이라 같은 문서 안에서 값이 갈렸다. 구어휘 시절의
+"회색지대 → B" 문장을 기계적으로 번역하면서 생긴 모순이다.)
 
 응답 계약은 모든 경로 공통으로 `{answer, listings, route, narrowed_by?, clarify?}`다(정본은 `docs/conventions.md` §4).
 `clarify`는 route=CLARIFY 전용이다. 0건이어도 빈손이 아니라 조건 완화/재질문 안내를 준다(FR17).
@@ -124,7 +128,7 @@
 |---|---|---|---|
 | SM3 | ① 구조형(SQL) | SQL 경로가 매물 카드 반환(빈손 아님) | `test_demo_acceptance.py::test_sm3_pathA_returns_listings` |
 | SM3 | ② 질적형(CLARIFY) | CLARIFY 경로가 되묻기(clarify 페이로드) 반환(13.4 — 매물 아님) | `test_demo_acceptance.py::test_sm3_pathB_returns_listings` |
-| SM3 | ③ 회색지대 | **질의별 허용 경로**(표 ③ = `GRAY_ALLOWED`)에서만 합격 — SQL/HYBRID는 매물, CLARIFY는 되묻기 칩, REJECT는 거절 문구+빈 목록. 허용 밖 경로는 불합격 | `test_demo_acceptance.py::test_sm3_gray_zone_returns_listings_either_route` |
+| SM3 | ③ 회색지대 | **질의별 허용 경로**(표 ③ = `GRAY_ALLOWED`)에서만 합격 — SQL/HYBRID는 매물, CLARIFY는 되묻기 칩, REJECT는 거절 문구+빈 목록. 허용 밖 경로는 불합격 | `test_demo_acceptance.py::test_sm3_gray_zone_allowed_routes_are_not_dead_ends`, `::test_gray_allowed_matches_shipped_queryset` |
 | SM3 | SQL 가드 통과 | 세단 IN-매핑 SQL이 sql_guard를 실제 통과 | `test_demo_acceptance.py::test_sm3_pathA_real_guard_passes_generated_sql` |
 | CM1 | ④ 무관(REJECT) | 전부 빈 목록 + 정중한 거절 문구 | `test_demo_acceptance.py::test_cm1_unrelated_rejected_via_graph`, `test_cm1_count_all_unrelated_rejected` |
 | CM2 | 위반 SQL 코퍼스 | 범위밖 SQL 0건 통과(전부 실행 전 차단) | `test_demo_acceptance.py::test_cm2_violating_sql_is_blocked`, `test_cm2_zero_violations_pass_through` |

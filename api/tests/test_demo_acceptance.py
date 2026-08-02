@@ -87,35 +87,69 @@ def test_sm3_pathB_returns_listings(monkeypatch, query):
     assert out["answer"].strip()
 
 
+# 큐리셋의 단일턴 `category: gray` 항목 중 표 ③에 **싣지 않기로 한 것**. R7·R8은 지식형
+# 질문이라 문서에선 표 ④(REJECT)가 다룬다. 큐리셋에 새 gray 질의가 들어오면 아래 검사가
+# red가 되어 "표 ③에 넣을지 여기 적을지"를 강제로 결정하게 만든다 — 그냥 두면 새 질의가
+# 결정론 게이트에서 영원히 안 보인다.
+_GRAY_NOT_IN_DOC_TABLE = frozenset({"R7", "R8"})
+
+
 def test_gray_allowed_matches_shipped_queryset():
-    """③ 표·`GRAY_ALLOWED`·큐리셋 `acceptable_paths` 셋이 어긋나면 red.
+    """`GRAY_ALLOWED` ↔ 큐리셋 `acceptable_paths`가 어긋나면 red(양방향).
 
     13.8 후속리뷰가 `GRAY_ALLOWED`를 큐리셋과 1:1로 맞췄지만 강제하는 검사는 없어서,
     "지금은 맞다"는 산문 주장뿐이었다(스펙 잔여 리스크가 "표면이 3행뿐이라 과설계"라 적었으나
     큐리셋 로더는 `test_ab_scoring.py`에 이미 있어 3줄이면 된다 — B9). 바로 다음 스토리
     13.9가 라우팅을 바꾸며 `acceptable_paths`를 좁히면 이 사본만 옛 집합을 계속 정답으로
     단언하고 양쪽 다 초록이다 — 방금 없앤 "허용 밖 경로가 합격" 결함이 그대로 되살아난다.
+
+    ✎ 13.8 4차 리뷰 — 원래 이 검사는 큐리셋을 `if it.get("query") in GRAY_ALLOWED`로 **먼저
+      걸러서** 기대집합을 만들었다. 그래서 `GRAY_ALLOWED`에서 행을 지우면 양쪽이 같이 줄어
+      초록이었고(3행→1행이어도 전량 초록, 3개 리뷰 레이어가 각각 뮤테이션으로 실증), 큐리셋에
+      gray 질의가 추가돼도 초록이었다. 즉 이 검사가 막겠다고 적어 둔 두 방향 중 잡히는 건
+      "기존 행의 허용 경로가 좁아지는" 한 방향뿐이었다. 지금은 큐리셋에서 gray 항목을
+      **독립적으로** 뽑아 세 방향을 전부 본다(행 수는 `demo_queries.py`가 import 시점에 고정).
+
+    ⚠️ 이 검사가 대조하는 것은 **두 곳**(`GRAY_ALLOWED` ↔ 큐리셋)뿐이다. `ai-demo-queries.md`
+      표 ③은 어떤 코드도 읽지 않으므로 사람이 함께 고쳐야 한다(문서는 기계가 안 읽는다).
     """
     queryset = json.loads(
         (Path(__file__).resolve().parent.parent / "docs" / "ai-ab-test-queryset.json")
         .read_text(encoding="utf-8")
     )
-    # 멀티턴 item은 `query` 대신 `turns`를 갖는다 — 회색지대 3행은 전부 단일턴이다.
-    shipped = {
-        it["query"]: set(it["acceptable_paths"])
+    # 멀티턴 item은 `query` 대신 `turns`를 갖는다 — 회색지대 표 ③ 3행은 전부 단일턴이다.
+    gray_by_query = {
+        it["query"]: it
         for it in queryset["items"]
-        if it.get("query") in GRAY_ALLOWED
+        if it.get("category") == "gray" and "query" in it
     }
-    assert shipped == {q: set(routes) for q, routes in GRAY_ALLOWED.items()}, (
+
+    # ① 표 ③의 모든 행이 큐리셋에 gray 항목으로 실재한다(문자열 드리프트·오타를 잡는다).
+    missing = set(GRAY_ALLOWED) - set(gray_by_query)
+    assert not missing, f"표 ③ 질의가 큐리셋의 gray 항목에 없다: {sorted(missing)}"
+
+    # ② 허용 경로가 정확히 일치한다(13.9가 acceptable_paths를 좁히면 여기서 red).
+    assert {q: set(r) for q, r in GRAY_ALLOWED.items()} == {
+        q: set(gray_by_query[q]["acceptable_paths"]) for q in GRAY_ALLOWED
+    }, (
         "GRAY_ALLOWED가 큐리셋 acceptable_paths와 어긋났다 — "
         "ai-demo-queries.md 표 ③까지 세 곳을 함께 고쳐야 한다"
     )
 
+    # ③ 반대 방향 — 큐리셋에 새 gray 질의가 생겼는데 표 ③에도 예외 목록에도 없으면 red.
+    undocumented = {
+        it["id"]
+        for q, it in gray_by_query.items()
+        if q not in GRAY_ALLOWED and it["id"] not in _GRAY_NOT_IN_DOC_TABLE
+    }
+    assert not undocumented, (
+        f"큐리셋에 표 ③에 없는 gray 질의가 있다: {sorted(undocumented)} — "
+        "표 ③(+GRAY_ALLOWED)에 넣거나 _GRAY_NOT_IN_DOC_TABLE에 사유와 함께 적어라"
+    )
 
-# 빈 파라미터셋은 pytest에서 실패가 아니라 SKIPPED + exit 0이다(실측). 허용 경로가 비면
-# 회색지대 게이트가 조용히 사라지므로, 수집 시점에 막는다(이 스토리의 주제 그대로 —
-# 스킵은 통과가 아니다).
-assert GRAY_ALLOWED and all(GRAY_ALLOWED.values()), "GRAY_ALLOWED 행·허용경로가 비면 게이트가 사라진다"
+
+# 행 수·허용경로 비어있음 검사는 `demo_queries.py`가 `GRAY_ALLOWED` 바로 옆에서 import 시점에
+# 건다(13.8 4차 리뷰 — 사본을 늘리지 않으려 이 자리의 중복 assert를 그리로 옮겼다).
 
 
 @pytest.mark.parametrize(
