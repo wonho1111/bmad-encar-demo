@@ -4152,7 +4152,8 @@ origin: review-budget-followup
 source_spec: `spec-13-7-langsmith-트레이싱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-165936-4495; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-08-03
+resolution: 독립 후속 리뷰를 실제로 수행했다(2026-08-03, 새 세션·opus, 커밋 `6e427e7`). 3차 패스가 고쳤다고 주장한 high 2건(노드 스팬 이중 계수·견본의 틀린 우선순위 주장)을 **라이브와 돌연변이 양쪽으로 재현해 실제로 고쳐져 있음을 확인**했다 — 그래프 노드 스팬만 제거하면 라이브 테스트가 FAILED가 되어 초록을 얻을 수 없다. 이번 패스가 새로 찾은 것: ① env 계약 검사에 "빈 값·공백은 미설정으로 보고 다음 후보로 내려간다" 규칙을 지키는 검사가 없었다(가짜 SDK를 끼워도 10건 전부 초록 — 3차가 잡은 "한 갈래를 두 번 세기"와 같은 종류) → 검사 신규 추가. ② DW-616이 적어둔 해법(두 `.env.example`의 키 집합 일치 단언)은 그대로 쓰면 첫 실행부터 red다(`api/.env.example`에만 `CORS_ORIGINS`·`CORS_ORIGIN_REGEX` 2개가 더 있음 — 루트 9 vs api 11 실측) → 측정된 비대칭 2건을 **동결**하는 양방향 파리티 검사로 대체. ③ 스펙 `## Verification` 3번 명령이 새 셸에서 401로 죽었다(앞 명령의 `source .env`가 남아 있다는 숨은 전제 — 이 스토리가 없애려던 "파일에 값이 있음 ≠ 프로세스에 노출됨" 함정 그 자체) → 명령 정정. 테스트 399→**402 passed**·85 skipped, 회귀 0. 리뷰 판단은 "추가 패스 불필요"이며 남은 low 2건은 DW-641로 13.9에 묶었다. 이 항목을 닫는다.
 
 ### DW-619: `docs/conventions.md` §6 FR11 강제 지점 목록에 하이브리드 벡터검색(`hybrid_rag_node`)이 등록되지 않았다
 
@@ -4170,6 +4171,7 @@ location: `_bmad-output/implementation-artifacts/epic-13-context.md`(Requirement
 severity: low
 reason: "12개"라는 수치는 13.8 이전부터(적어도 13.1~13.6 시점부터) 계획 문서·epic 컨텍스트에 반복돼 온 것으로, 13.8의 diff가 새로 만든 오차가 아니다 — epic-13-context.md 재컴파일(13.8 step-01)도 원본 그대로 옮겼을 뿐이다. 실제로 `doc_rag_node`/`hybrid_rag_node`가 로드하는 코퍼스는 10개뿐이고, 채점 도구의 인용 매핑도 10개와 일치한다. 같은 문단이 청킹 도입 임계값을 "문서 ≥20개"로 적어 두므로, 활성 문서 수를 정확히 아는 게 그 임계값과의 거리 판단에 실질적으로 영향을 준다.
 trigger: 가이드 코퍼스 문서를 추가·제외하는 다음 작업(corpus/ 디렉터리를 손대는 스토리) 착수 시 — 그때 "12개"를 "10개(활성) / 12개(전체, 2개 제외)"로 명확히 하거나, `_excluded/`의 2개를 아예 코퍼스 계획에서 제외 확정한다.
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
 status: open
 
 ### DW-621: G2 exit-gate는 실행된 형태상 "회귀 검사"가 아니라 "재현성 검사"다
@@ -4215,6 +4217,7 @@ location: `_bmad-output/implementation-artifacts/spec-13-8-...md`(Always절·AC3
 severity: low
 reason: 13.8의 CM-B는 "판매완료 매물이 **4개 지점 어디서도** 노출되지 않음"을 실DB로 확인했다고 적었는데, 그 4개는 §6의 축 분류가 아니라 이 스펙이 따로 세운 목록이었다. §6이 등록한 **SECURITY DEFINER 함수 축**(`get_seller_public_summary` — 정의자 함수 안에선 RLS가 안 걸려 **함수 본문 인라인 조건이 유일한 강제 지점**인, 가장 새기 쉬운 축)은 스펙의 Verification 커맨드 어디에도 없었다. 로스터를 정본 문서에서 뽑지 않고 손으로 나열하면 이런 누락이 조용히 생긴다. **실제 위험은 확인 결과 없다** — 이번 후속 리뷰에서 `test_seller_summary_real_db.py`를 실DB로 돌려 **5 passed**(sold 매물이 몇 건이 추가돼도 카운트에서 계속 빠짐)를 확인했다. 남는 건 "다음 번 CM-B류 검증도 같은 방식으로 축을 빠뜨릴 수 있다"는 절차 결함이다.
 trigger: **CM-B(또는 FR11 전수 확인)를 다시 수행하는 다음 스토리 착수 시** — 강제지점 로스터를 손으로 적지 말고 `docs/conventions.md` §6의 축 목록에서 뽑아 세 축을 모두 실행 대상에 넣는다. DW-619(§6에 `hybrid_rag_node` 미등록)를 먼저 처리하면 §6이 정확한 정본이 되어 이 방식이 성립한다.
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
 status: open
 
 ### DW-626: G2 회귀 게이트가 네 축 중 `result_mean` 하나만 baseline과 비교한다 — 13.4·13.6 기능이 전멸해도 초록
@@ -4233,6 +4236,7 @@ location: `api/tests/test_doc_rag_node.py`(`assert "status = 'on_sale'" in listi
 severity: medium
 reason: `doc_rag_node`의 매물 의미검색은 **sql_guard를 거치지 않고**(자기 독스트링이 명시), `listings`의 ai_readonly RLS 정책이 `using(true)`라 행 필터도 걸리지 않는다 — 즉 그 `WHERE status = 'on_sale'` 한 줄이 **유일한 FR11 강제 지점**이다. 그런데 그걸 지키는 검사는 생성된 SQL 문자열에 그 글자가 들어 있는지 보는 단위테스트뿐이다. **실증**: `WHERE (status = 'on_sale' OR true)`로 바꾼 뒤 13.8 스펙의 CM-B 커맨드 전량을 그대로 실행하니 유닛 5파일 149 passed·FR11 실DB 1 passed·전체 394 passed로 **스펙에 기록된 수치와 완전히 동일**했다(수행 후 `git checkout` 원복, `grep "OR true" api/app/graph/` 0건 확인). 대조군으로 `hybrid_rag_node`에 같은 변형을 넣으면 14건이 red가 된다 — 그 축은 조립 SQL 전문을 단언하므로 실제로 보호된다. 이 경로는 CLARIFY 상한 초과 강제 제시와 하이브리드 구조조건 추출 실패 폴백이 타므로 죽은 코드가 아니다. FR11은 보안 블로커 등급이고, `test_listing_cards.py`가 자기 독스트링에 "가짜 DB는 조건을 **지우면** 잡지만 **무력화하면**(`OR true`·`AND false`) 전부 초록"이라고 이미 적어 둔 바로 그 한계다.
 trigger: **FR11 강제지점을 다시 손대거나 CM-B류 전수 확인을 수행하는 다음 스토리 착수 시**(DW-625와 같은 자리) — `tests/integration/test_fr11_cover_images_real_db.py`와 같은 층(실 Postgres + sold 1건·on_sale 1건 시드)에서 `doc_rag_node`의 매물 쿼리를 실행해 sold id가 결과에 없음을 단언하는 통합 테스트를 추가한다. 문자열 검사는 그대로 두고 층을 하나 얹는 것이다.
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
 status: open
 
 ### DW-628: `test_readonly.py`(ai_readonly 롤 격리)를 실행하는 CI 잡이 하나도 없다
@@ -4278,6 +4282,7 @@ location: `api/docs/ai-demo-queries.md`(표 ①②④) · `api/tests/demo_querie
 severity: low
 reason: 이 문서는 스스로를 라우터 기대동작의 "단일출처"라 선언하고 각 행의 "기대 분류"는 *라우터가 그 질의를 어디로 보내는가*에 대한 주장이다. 실측 대조 결과 근거가 있는 것은 4행뿐이다 — `3천만원 이하 흰색 SUV`(SQL)·`패밀리카로 무난한 거`(CLARIFY)·`오늘 날씨 어때?`(REJECT)는 `test_live_smoke.py`가 라이브로 route를 단언하고, `출퇴근용으로 편한 차 추천해줘`는 큐리셋 CL4와 같은 문자열이다. 나머지 8행(`2020년 이후 제네시스`·`10만km 미만 디젤`·`서울 경차 보여줘`·`초보운전자에게 좋은 차`·`가성비 좋은 차 없을까?`·`파이썬 코드 짜줘`·`안녕`·`1+1은 뭐야?`)은 큐리셋에도 라이브 테스트에도 없고, 결정론 테스트는 `_patch_route`로 경로를 강제 주입하므로 실제 분류를 보지 않는다. **3차 리뷰에서 표 앞에 근거 강도를 밝히는 주석을 달아 오해는 막았지만**(어느 4행이 실측인지 명시), 8행의 기대값 자체를 실측으로 뒷받침하는 일은 남는다. 이건 DW-576(SM3가 라우팅을 강제 주입해 실제 라우팅을 보장하지 못함)의 문서 쪽 표면이다.
 trigger: **DW-576(회색지대 route 강제 주입)을 구조적으로 해소하는 그 작업에서 함께** — 라이브 라우터 결과 기반 판정을 도입한다면 그 대상 목록이 곧 이 12행이 된다. 그 전에 데모 시연이 잡히면 그때 8행을 한 번 라이브로 돌려 실측 라우트를 표에 병기한다(비용은 질의 8건).
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
 status: open
 
 ### DW-633: Follow-up review still recommended for 13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b after the review budget was exhausted
@@ -4285,7 +4290,8 @@ origin: review-budget-followup
 source_spec: `spec-13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-213104-8dec; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+status: done 2026-08-03
+resolution: 독립 후속 리뷰(4차)를 실제로 수행했다(2026-08-03, 새 세션·opus, 커밋 `ebf4d8a`·`86e4fb4`). 3차가 남긴 신규 14건(DW-619~632)을 코드·CI 설정과 하나씩 대조해 **틀리거나 과장되거나 이미 해결된 항목 0건**임을 확인했다. 새로 나온 high 2건은 둘 다 **3차가 "일부러 깨서 red를 봤다"고 기록한 검사 자신의 결함**이었다(기록은 사실이었고, 문제는 **한 방향으로만 깨본 것**): ① 회색지대 락스텝 검사가 질의셋을 표의 키로 먼저 걸러 비교해, 표에서 행을 지우면 양쪽이 같이 줄어 통과했다(3행 게이트를 1행으로 잘라도 전량 초록 — 세 레이어가 각각 독립 실증) → 반대 방향까지 보게 수정. ② 기준선 거부 테스트가 **실제 기준선 경로**로 스크립트를 호출해, 가드가 회귀하는 바로 그 순간 `pytest` 한 번이 47문항 기준선을 0으로 비웠다(md5 실측) → 검사를 파괴가 일어나는 층으로 내리고 사후 바이트 대조 추가. 그 외 `## Verification`의 G2 채점 명령이 `DATABASE_URL` 누락으로 실행조차 안 됐고(2차가 같은 유형을 이미 잡았는데 네 번째 명령에 남아 세 패스가 놓침), `ai-demo-queries.md` 서두의 "회색지대는 CLARIFY"가 같은 문서 표 3행 중 2행과 모순이었다. 399 passed·85 skipped, 앱 코드 무변경. 리뷰 권고는 "5차 패스보다 13.9에서 게이트를 실행되는 검사로 바꾸고 양방향 뮤테이션을 관례화하라"이며 이를 13.9 인수조건으로 심었다. 이 항목을 닫는다.
 
 ### DW-634: SM3 ①② 게이트에는 노드 식별 단언이 없어 `SQL→hybrid` 오배선이 초록으로 지나간다
 
