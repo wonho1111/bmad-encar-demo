@@ -91,6 +91,10 @@ def _run_single(item: dict, run_search) -> dict:
         "route_last": out.get("route", ""),
         "ids_last": [_card_id(c) for c in out.get("listings", [])],
         "answer_last": out.get("answer", ""),
+        # 되묻기 페이로드({question, chips})를 그대로 남긴다(DW-609) — 질문 문구만 캡처하면
+        # "칩을 눌러도 된다"고 말해 놓고 칩이 0개인 상태를 채점기가 볼 수 없다. score_ab의
+        # CLARIFY 채점이 이 키의 유무로 "칩까지 검사할 수 있는 캡처인가"를 판단한다.
+        "clarify_last": out.get("clarify"),
         # run_search()가 토큰 사용량을 노출하지 않아 항상 0(placeholder)이다. 여기에 별도의
         # "측정 안 함" 플래그는 찍지 않는다(review pass 5) — score_ab.score_model()은 플래그가
         # 아니라 토큰 합계가 0인지로 직접 판단하고(그 이유는 그쪽 주석 참조), 아무도 안 읽는
@@ -112,6 +116,7 @@ def _run_multiturn(item: dict, run_search) -> dict:
     turns_out: list[dict] = []
     total_ms = 0.0
     last_route, last_ids, last_answer = "", [], ""
+    last_clarify = None
     for turn in item["turns"]:
         t0 = time.monotonic()
         out = run_search(turn["query"], context or None)
@@ -119,16 +124,18 @@ def _run_multiturn(item: dict, run_search) -> dict:
         ids = [_card_id(c) for c in out.get("listings", [])]
         route = out.get("route", "")
         answer = out.get("answer", "")
-        turns_out.append({"route": route, "ids": ids, "answer": answer})
+        clarify = out.get("clarify")  # 턴별 되묻기 페이로드(DW-609 — _run_single 주석 참조)
+        turns_out.append({"route": route, "ids": ids, "answer": answer, "clarify": clarify})
         context = context + [
             {"role": "user", "content": turn["query"]},
             {"role": "assistant", "content": answer},
         ]
-        last_route, last_ids, last_answer = route, ids, answer
+        last_route, last_ids, last_answer, last_clarify = route, ids, answer, clarify
     return {
         "route_last": last_route,
         "ids_last": last_ids,
         "answer_last": last_answer,
+        "clarify_last": last_clarify,
         "turns": turns_out,
         "tokens_in": 0,
         "tokens_out": 0,  # 위 _run_single과 동일(플래그 없이 합계 0으로 판단)

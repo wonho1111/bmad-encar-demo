@@ -93,9 +93,10 @@ def test_capture_multiturn_item_shape_tracks_context_and_last_turn():
     assert run["ids_last"] == ["s3"]
     assert run["answer_last"] == "최저가 1건"
     assert len(run["turns"]) == 3
-    assert run["turns"][0] == {"route": "A", "ids": ["s1"], "answer": "SUV 5건"}
-    assert run["turns"][1] == {"route": "A", "ids": ["s2"], "answer": "서울만 2건"}
-    assert run["turns"][2] == {"route": "A", "ids": ["s3"], "answer": "최저가 1건"}
+    # clarify는 CLARIFY 경로에서만 채워지는 되묻기 페이로드다(DW-609) — 이 fake는 안 내므로 None.
+    assert run["turns"][0] == {"route": "A", "ids": ["s1"], "answer": "SUV 5건", "clarify": None}
+    assert run["turns"][1] == {"route": "A", "ids": ["s2"], "answer": "서울만 2건", "clarify": None}
+    assert run["turns"][2] == {"route": "A", "ids": ["s3"], "answer": "최저가 1건", "clarify": None}
     # context는 "직전 턴만"이 아니라 매 턴 누적이다(FR18 맥락 누적) — 3번째 호출이 그 구분점이다.
     assert seen_contexts[0] is None
     assert seen_contexts[1] == [
@@ -150,16 +151,15 @@ def test_main_end_to_end_with_mocked_run_search_feeds_score_ab_single_mode(monke
     qs_path = tmp_path / "qs.json"
     qs_path.write_text(json.dumps({
         "items": [
-            {"id": "C1", "kind": "single", "category": "clean",
-             "query": "오늘 날씨 어때?", "primary_path": "C", "acceptable_paths": ["C"]},
+            {"id": "R1", "kind": "single", "category": "clean",
+             "query": "오늘 날씨 어때?", "primary_path": "REJECT", "acceptable_paths": ["REJECT"]},
         ],
     }, ensure_ascii=False), encoding="utf-8")
 
     out_path = tmp_path / "raw.json"
 
     def fake_run_search(query, context=None):
-        # 13.2 이후 실제 run_search가 내는 route는 항상 신버전 어휘다 — queryset의
-        # primary_path="C"(구버전, 이 스토리는 데이터를 손대지 않는다)는 route_ok가 번역해 비교한다.
+        # 큐리셋 골든 라벨과 실제 route가 같은 신 4값 어휘다(DW-609 — 번역 계층 제거).
         return {"answer": "그건 못 도와드려요.", "listings": [], "route": "REJECT"}
 
     # main()이 `from app.graph.graph import run_search`로 늦게 import하므로, 모듈 속성 자체를
@@ -169,13 +169,13 @@ def test_main_end_to_end_with_mocked_run_search_feeds_score_ab_single_mode(monke
     monkeypatch.setattr(real_graph_module, "run_search", fake_run_search)
     monkeypatch.setattr(
         sys, "argv",
-        ["run_phase_b.py", "--queryset", str(qs_path), "--subset", "C1", "--out", str(out_path)],
+        ["run_phase_b.py", "--queryset", str(qs_path), "--subset", "R1", "--out", str(out_path)],
     )
 
     run_phase_b.main()
 
     raw = json.loads(out_path.read_text(encoding="utf-8"))
-    assert raw["results"]["C1"][0]["route_last"] == "REJECT"
+    assert raw["results"]["R1"][0]["route_last"] == "REJECT"
 
     # 이 raw를 score_ab.py의 1파일 모드로 실제 채점(DB 불필요 — C경로는 골든 SQL을 안 씀).
     report_path = tmp_path / "report.json"

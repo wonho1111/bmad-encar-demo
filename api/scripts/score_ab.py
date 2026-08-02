@@ -188,8 +188,35 @@ def score_path_a(returned_ids: list[str], golden_ids: set, predicate: dict) -> d
             "jaccard": j, "returned_n": len(rset), "golden_n": len(golden)}
 
 
+def score_path_hybrid(returned_ids: list[str], golden_ids: set) -> dict:
+    """경로 HYBRID 결과집합 채점 — 항상 precision(보여준 게 전부 정답 집합 안인가).
+
+    경로 A와 달리 F1/재현율을 쓰지 않는 이유: 하이브리드는 조건을 만족하는 매물 중
+    **질의와 의미가 가까운 순으로 상위 N건만** 보여주는 것이 정상 동작이다(예: 조건에
+    36건이 맞아도 5건만 반환). 재현율을 섞으면 정상 동작이 항상 감점돼 신호가 죽는다.
+
+    큐리셋의 HYBRID predicate는 "가이드가 제시하는 구조조건까지 반영한 좁혀진 집합"이다.
+    따라서 precision이 곧 **가이드가 실제로 결과를 좁혔는가**의 척도다 — 가이드를 못
+    쓰면 같은 가격대의 엉뚱한 차종(경차·화물차 등)이 섞여 값이 떨어진다. 모델이 정답
+    집합보다 **더 좁게** 뽑는 것(부분집합)은 감점하지 않는다.
+    """
+    returned = set(returned_ids)
+    golden = set(golden_ids)
+    if not returned:
+        # 0건 반환: 정답도 0건이면 정상, 정답이 있는데 못 찾았으면 0점.
+        return {"mode": "hybrid_precision", "result": 1.0 if not golden else 0.0,
+                "returned_n": 0, "golden_n": len(golden)}
+    p = len(returned & golden) / len(returned)
+    return {"mode": "hybrid_precision", "result": p, "precision": p,
+            "returned_n": len(returned), "golden_n": len(golden)}
+
+
 def doc_hit(answer: str, doc_refs: list[str]) -> bool:
-    """B경로: answer의 '(참고: <title>)'에 기대 가이드 제목이 들어있나(인용 recall)."""
+    """HYBRID 경로: answer의 '(참고: <title>)'에 기대 가이드 제목이 들어있나(인용 recall).
+
+    hybrid_rag_node는 거리 컷오프(FR49) 이내 가이드를 채택했을 때만 이 접미사를 붙이므로,
+    이 값이 곧 "가이드 문서가 실제로 쓰였나"의 관측점이다(FR44).
+    """
     titles = [DOC_STEM_TO_TITLE.get(s, s) for s in (doc_refs or [])]
     return any(t and t in (answer or "") for t in titles)
 
@@ -198,47 +225,61 @@ def is_redirect(answer: str) -> bool:
     return any(m in (answer or "") for m in REDIRECT_MARKERS)
 
 
-# 큐리셋(ai-ab-test-queryset.json)의 primary_path/acceptable_paths는 구버전 A/B/C 어휘로
-# 고정돼 있다(13.2가 이 파일 데이터는 손대지 않기로 함 — Never 절). 라우터가 신버전
-# REJECT/CLARIFY/SQL/HYBRID만 내는 지금, 번역 없이 비교하면 44개 전량이 오판된다(DW-562).
+# 되묻기(CLARIFY)가 실제로 발동했는지 판정할 고정 문구 — clarify_node._CLARIFY_QUESTION의
+# 앞부분이다. 이 노드는 LLM을 쓰지 않고 이 문자열을 그대로 돌려주므로 부분 일치로 충분하다.
+# 아래 tests/test_ab_scoring.py가 실제 노드 상수를 import해 이 마커가 여전히 맞는지 못박는다
+# (주석은 계약이 아니다 — 문구가 바뀌면 검사가 먼저 깨져야 한다).
+CLARIFY_QUESTION_MARKER = "조건을 조금만 좁혀볼게요"
+
+
+def clarify_question_ok(answer: str) -> bool:
+    """되묻기 고정 질문이 answer에 실제로 나왔나."""
+    return CLARIFY_QUESTION_MARKER in (answer or "")
+
+
+def clarify_chips_ok(clarify: dict | None) -> bool:
+    """되묻기 페이로드에 누를 칩이 실제로 담겼나(빈 배열·None이면 False).
+
+    "칩을 눌러도 되고"라고 말해 놓고 칩이 0개면 사용자에겐 막다른 길이다 — 질문 문구만
+    보는 검사는 그 상태를 통과시킨다. 러너가 `clarify_last`를 캡처한 경우에만 채점한다.
+    """
+    return bool((clarify or {}).get("chips"))
+
+
+# 큐리셋 골든 라벨의 유일한 어휘(DW-609, 2026-08-02 재설계) — 라우터가 실제로 내는 값과
+# 글자 그대로 같다. 이전에는 큐리셋이 구어휘(A/B/C)로 고정돼 있고 채점기가 A→SQL·B→CLARIFY·
+# C→REJECT로 **번역해서** 비교했는데, 그 번역 계층이 "라벨과 실제 동작이 어긋나는" 문제를
+# 반복 생산했다(DW-562·572·575·580·588·605·607). 큐리셋을 신어휘로 옮기면서 번역 계층을
+# 걷어냈다 — 골든 라벨과 실제 route는 이제 같은 어휘라 중간 변환이 없다.
+ROUTE_LABELS = ("SQL", "HYBRID", "CLARIFY", "REJECT")
+
+# 이미 캡처된 **raw 파일**의 route 값을 올리는 별칭표는 남긴다(아래 captured_route 참조) —
+# 큐리셋 어휘와 달리, 리포에 커밋된 옛 캡처 파일은 여전히 A/B/C로 적혀 있기 때문이다.
 _LEGACY_ROUTE_ALIASES = {"A": "SQL", "B": "CLARIFY", "C": "REJECT"}
 
-# route_ok() 전용 집합 번역(DW-572/575, Story 13.3) — 13.2가 구 `A`(구조형)를 `SQL`과
-# `HYBRID` 둘로 쪼갰는데 위 1:1 매핑은 여전히 `A→SQL`뿐이라, 라우터가 **정확히 맞게**
-# HYBRID로 분류해도 라우팅 오답으로 집계된다(실측: route_ok("HYBRID","A",["A"])=False).
-# `B`(→CLARIFY)·`C`(→REJECT)는 13.2에서 이미 taxonomy가 안 갈라졌으므로 1개 값 그대로 둔다.
-# 이 확장이 "진짜 SQL을 HYBRID로 오분류"하는 버그를 가려버릴 여지(legacy `A` 44개 중
-# 구조전용 항목도 이제 `HYBRID` actual을 허용)는 알려진 트레이드오프다 — 큐리셋을 안
-# 건드리는 쪽을 우선했다(13.2 Never 절 승계, spec-13-3 Design Notes 참조).
-_LEGACY_ROUTE_ALIASES_SET: dict[str, set[str]] = {
-    "A": {"SQL", "HYBRID"}, "B": {"CLARIFY"}, "C": {"REJECT"},
-}
 
-
-def _require_legacy_paths(primary: str, acceptable: list[str] | None, where: str) -> str:
-    """큐리셋 골든 라벨(primary + acceptable 원소 전부)이 구어휘(A/B/C)인지 확인한다.
+def _require_route_labels(primary: str, acceptable: list[str] | None, where: str) -> str:
+    """큐리셋 골든 라벨(primary + acceptable 원소 전부)이 신 4값 어휘인지 확인한다.
 
     `acceptable_paths`도 함께 보는 이유(review-5 실측): 이 검사가 `primary`만 볼 때
-    `route_ok("SQL", "A", ["A", "BB_TYPO"])`가 True를 돌려준다 — 오타 한 글자가
+    `route_ok("SQL", "SQL", ["SQL", "SQLL_TYPO"])`가 True를 돌려준다 — 오타 한 글자가
     허용집합에서 조용히 무시되고, 리포트 어디에도 흔적이 안 남는다. 골든 라벨은
     우리가 쓴 데이터이므로 두 자리를 같은 기준으로 막는다(B9).
 
-    `route_ok()`만 어휘 번역을 얻었고, 결과집합·doc_hit·redirect 채점 분기는 여전히
-    `primary == "A"/"B"/"C"` 리터럴로 갈라진다. 그래서 큐리셋에 신어휘 라벨을 하나만
-    넣어도 **라우팅은 계속 맞다고 세면서 결과집합 채점만 조용히 0건이 된다**(review-4
-    실측: primary_path를 'A'→'SQL'로만 바꾸면 routing 1/1 그대로, result_n 1→0,
-    result_mean 1.0→0.0, 경고 없음). DW-571이 13.3에 지시한 작업이 정확히 "큐리셋에
-    HYBRID 예시 추가"라 그 지시를 따르는 순간 이 함정을 밟는다 — 조용한 오답 대신
-    "여기도 같이 고쳐라"라고 알려주는 편이 싸다(B9: 규칙은 어길 수 없는 자리에).
+    구어휘(A/B/C)는 여기서 fail-loud로 거부한다. 아래 `score_model()`의 채점 분기는
+    이제 신어휘 리터럴(`"SQL"`/`"HYBRID"`/`"CLARIFY"`/`"REJECT"`)로만 갈라지므로,
+    구어휘 큐리셋을 그대로 먹이면 **라우팅은 계속 맞다고 세면서 결과집합·인용 채점만
+    조용히 0건이 된다**(구 버전에서 실측된 함정을 방향만 바꿔 되풀이하는 자리다).
+    조용한 오답 대신 "큐리셋을 신어휘로 옮겨라"라고 말해 주는 편이 싸다.
     """
     for field, value in [("primary_path", primary)] + [
         ("acceptable_paths 원소", a) for a in (acceptable or [])
     ]:
-        if value not in _LEGACY_ROUTE_ALIASES:
+        if value not in ROUTE_LABELS:
             raise ValueError(
-                f"{where}: {field}={value!r}는 구어휘(A/B/C)가 아니다. 큐리셋을 신어휘로 "
-                f"옮기려면 score_model()의 결과집합·doc_hit·redirect 분기(primary == 'A'/'B'/'C')도 "
-                f"함께 신어휘로 옮겨야 한다 — 안 그러면 결과집합 채점이 조용히 0건이 된다."
+                f"{where}: {field}={value!r}는 신 4값 어휘가 아니다(허용: {list(ROUTE_LABELS)}). "
+                f"구어휘 A/B/C 큐리셋은 2026-08-02 재설계(DW-609)로 폐기됐다 — "
+                f"docs/ai-ab-test-queryset.json을 신어휘로 옮긴 판본으로 채점하라."
             )
     return primary
 
@@ -261,23 +302,17 @@ def captured_route(value: str) -> str:
 
 
 def route_ok(actual: str, primary: str, acceptable: list[str] | None) -> bool:
-    """actual(캡처된 실제 route, 항상 신버전)과 primary/acceptable(큐리셋, 구버전 A/B/C)을 비교.
+    """actual(캡처된 실제 route)과 primary/acceptable(큐리셋 골든 라벨)을 그대로 비교한다.
 
-    primary·acceptable만 구버전→신버전으로 번역하고 actual은 그대로 둔다(DW-562, 13.2
-    Design Notes — actual은 이 스토리 이후로 항상 신버전 어휘만 나온다). 구어휘로
-    캡처된 옛 raw는 호출 전에 `captured_route()`로 올려서 넣는다.
+    양쪽이 같은 신 4값 어휘를 쓰므로 번역이 없다(DW-609 재설계). 구어휘로 캡처된 옛 raw만
+    호출 전에 `captured_route()`로 올려서 넣는다 — 그건 큐리셋 어휘가 아니라 "입력 파일의
+    성질"이라 읽는 지점에서 한 번 정규화하는 것이 맞다.
 
-    번역은 1:1이 아니라 **집합**이다(DW-572/575, Story 13.3) — legacy `A`는 `{"SQL",
-    "HYBRID"}` 둘 다로 번역되므로, 라우터가 옛 `A` 질의를 HYBRID로 정확히 분류해도
-    라우팅 오답으로 잘못 집계되지 않는다. `B`·`C`는 여전히 1개 값(`captured_route`/
-    `_require_legacy_paths`가 쓰는 `_LEGACY_ROUTE_ALIASES`와는 별개 상수).
+    두 경로가 모두 제품상 타당한 gray 케이스는 큐리셋의 `acceptable_paths`로 명시한다 —
+    예전처럼 `A → {SQL, HYBRID}` 같은 **일괄** 번역으로 넓히지 않는다. 그 일괄 확장은
+    "진짜 SQL 질의를 HYBRID로 오분류하는 버그"까지 정답으로 세어 가려버렸다.
     """
-    def _translate(v: str) -> set[str]:
-        return _LEGACY_ROUTE_ALIASES_SET.get(v, {v})
-
-    allowed: set[str] = set()
-    for v in [primary, *(acceptable or [primary])]:
-        allowed |= _translate(v)
+    allowed = {primary, *(acceptable or [primary])}
     return actual in allowed
 
 
@@ -395,9 +430,21 @@ def score_model(queryset: dict, raw: dict) -> dict:
     model = raw["model"]
     per_item: list[dict] = []
 
-    result_scores_clean_A: list[float] = []
+    # clean 카테고리의 SQL + HYBRID 결과집합 점수(사전식 ① 축). HYBRID를 여기 포함시키는 것이
+    # DW-609 재설계의 핵심이다 — 전엔 A(구조형)만 세서, 13.6이 만든 가이드 질의확장이 회귀
+    # 지표에 전혀 반영되지 않았다(게이트가 초록이어도 그 기능은 보고 있지 않았다).
+    result_scores_clean: list[float] = []
     routing_correct = 0
     routing_total = 0
+    # 가이드 인용(FR44) 관측 — HYBRID 문항에서만 센다. doc_hit_total이 0이면 그건 "인용이
+    # 없다"가 아니라 "인용을 볼 문항이 없다"는 뜻이므로 요약에 분모까지 같이 남긴다.
+    doc_hit_n = 0
+    doc_hit_total = 0
+    # 되묻기(FR46) 관측 — CLARIFY 문항에서만 센다. chips_unobserved는 러너가 clarify 페이로드를
+    # 캡처하지 않은 옛 raw를 채점할 때 증가한다(질문 문구만 보고 판정했다는 표시).
+    clarify_ok_n = 0
+    clarify_total = 0
+    clarify_chips_unobserved = 0
     flaky_n = 0
     flaky_measured = False  # N>1로 실제 반복 실행된 item이 하나라도 있어야 True(review pass 4)
     errored_n = 0
@@ -447,7 +494,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
 
         if item["kind"] == "single":
             acc = item.get("acceptable_paths")
-            primary = _require_legacy_paths(item["primary_path"], acc, rid)
+            primary = _require_route_labels(item["primary_path"], acc, rid)
             r_ok = route_ok(captured_route(rep["route_last"]), primary, acc)
             rec["route"] = rep["route_last"]
             rec["route_ok"] = r_ok
@@ -455,15 +502,38 @@ def score_model(queryset: dict, raw: dict) -> dict:
             if r_ok:
                 routing_correct += 1
 
-            if primary == "A":
+            if primary == "SQL":
                 golden = run_golden_ids(item["predicate"])
                 sc = score_path_a(rep["ids_last"], golden, item["predicate"])
                 rec["score"] = sc
                 if not gray:
-                    result_scores_clean_A.append(sc["result"])
-            elif primary == "B":
-                rec["doc_hit"] = doc_hit(rep["answer_last"], item.get("doc_refs"))
-            elif primary == "C":
+                    result_scores_clean.append(sc["result"])
+            elif primary == "HYBRID":
+                # 결과집합(가이드가 실제로 좁혔나) + 인용(가이드가 실제로 쓰였나) 둘 다 본다.
+                # 라우터가 다른 경로로 새서 매물이 0건이면 precision이 0이 되어 그대로 감점된다.
+                golden = run_golden_ids(item["predicate"])
+                sc = score_path_hybrid(rep["ids_last"], golden)
+                rec["score"] = sc
+                if not gray:
+                    result_scores_clean.append(sc["result"])
+                hit = doc_hit(rep["answer_last"], item.get("doc_refs"))
+                rec["doc_hit"] = hit
+                doc_hit_total += 1
+                doc_hit_n += int(hit)
+            elif primary == "CLARIFY":
+                q_ok = clarify_question_ok(rep["answer_last"])
+                clarify_total += 1
+                if "clarify_last" in rep:
+                    c_ok = q_ok and clarify_chips_ok(rep["clarify_last"])
+                    rec["clarify_chips"] = (rep["clarify_last"] or {}).get("chips")
+                else:
+                    # 옛 캡처(칩 미기록) — 질문 문구만으로 판정하고, 그 사실을 남긴다.
+                    c_ok = q_ok
+                    clarify_chips_unobserved += 1
+                    rec["clarify_chips_unobserved"] = True
+                rec["clarify_ok"] = c_ok
+                clarify_ok_n += int(c_ok)
+            elif primary == "REJECT":
                 red = is_redirect(rep["answer_last"])
                 rec["redirect"] = red
                 if item.get("expect_redirect") and not red:
@@ -481,7 +551,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
             for ti, turn in enumerate(item["turns"]):
                 tr = rep["turns"][ti]
                 turn_acc = turn.get("acceptable_paths")
-                primary = _require_legacy_paths(turn["primary_path"], turn_acc, f"{rid}.t{ti}")
+                primary = _require_route_labels(turn["primary_path"], turn_acc, f"{rid}.t{ti}")
                 r_ok = route_ok(captured_route(tr["route"]), primary, turn_acc)
                 routing_total += 1
                 if r_ok:
@@ -518,18 +588,41 @@ def score_model(queryset: dict, raw: dict) -> dict:
                     if sv:
                         trec["soft_pricey"] = sv
                         soft_obs += 1
-                # dead-end(C 턴)
-                if primary == "C" and turn.get("expect_redirect"):
+                # dead-end(REJECT 턴)
+                if primary == "REJECT" and turn.get("expect_redirect"):
                     if not is_redirect(tr["answer"]):
                         deadend += 1
                         trec["deadend"] = True
-                # 마지막 A턴이면 결과집합도(클린만 본셋)
-                if primary == "A" and turn.get("predicate"):
+                # 되묻기 턴(CLARIFY) — 단일 문항과 같은 기준으로 센다.
+                if primary == "CLARIFY":
+                    q_ok = clarify_question_ok(tr["answer"])
+                    clarify_total += 1
+                    if "clarify" in tr:
+                        c_ok = q_ok and clarify_chips_ok(tr["clarify"])
+                        trec["clarify_chips"] = (tr["clarify"] or {}).get("chips")
+                    else:
+                        c_ok = q_ok
+                        clarify_chips_unobserved += 1
+                        trec["clarify_chips_unobserved"] = True
+                    trec["clarify_ok"] = c_ok
+                    clarify_ok_n += int(c_ok)
+                # 결과집합 — SQL 턴은 경로 A 채점, HYBRID 턴은 precision + 인용 채점.
+                if primary == "SQL" and turn.get("predicate"):
                     golden = run_golden_ids(turn["predicate"])
                     sc = score_path_a(tr["ids"], golden, turn["predicate"])
                     trec["score"] = sc
                     if not gray:
-                        result_scores_clean_A.append(sc["result"])
+                        result_scores_clean.append(sc["result"])
+                elif primary == "HYBRID" and turn.get("predicate"):
+                    golden = run_golden_ids(turn["predicate"])
+                    sc = score_path_hybrid(tr["ids"], golden)
+                    trec["score"] = sc
+                    if not gray:
+                        result_scores_clean.append(sc["result"])
+                    hit = doc_hit(tr["answer"], turn.get("doc_refs"))
+                    trec["doc_hit"] = hit
+                    doc_hit_total += 1
+                    doc_hit_n += int(hit)
                 turn_recs.append(trec)
             rec["turns"] = turn_recs
 
@@ -537,7 +630,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
 
     pin, pout = PRICE_PER_M.get(model, (0.0, 0.0))
     cost = total_in / 1e6 * pin + total_out / 1e6 * pout
-    result_mean = sum(result_scores_clean_A) / len(result_scores_clean_A) if result_scores_clean_A else 0.0
+    result_mean = sum(result_scores_clean) / len(result_scores_clean) if result_scores_clean else 0.0
 
     # tokens_measured는 run 딕셔너리의 "tokens_measured" 키가 아니라 실측 합계에서 직접
     # 도출한다(review pass 4 재수정). 커밋된 g2-baseline-partial.json은 이 플래그가 생기기
@@ -559,9 +652,17 @@ def score_model(queryset: dict, raw: dict) -> dict:
     return {
         "name": model,
         "result_mean": result_mean,
-        "result_n": len(result_scores_clean_A),
+        "result_n": len(result_scores_clean),
         "routing_correct": routing_correct,
         "routing_total": routing_total,
+        # 가이드 인용·되묻기 관측(DW-609) — 게이트 판정에는 넣지 않고 지표로만 남긴다.
+        # 분모(_total)를 함께 남기는 이유: 0/0과 0/12는 전혀 다른 상태인데 비율만 보면
+        # 둘 다 0으로 읽힌다. 구셋이 정확히 그 상태였다(HYBRID 문항 0건 → 인용률 영구 0).
+        "doc_hit_n": doc_hit_n,
+        "doc_hit_total": doc_hit_total,
+        "clarify_ok_n": clarify_ok_n,
+        "clarify_total": clarify_total,
+        "clarify_chips_unobserved": clarify_chips_unobserved,
         "flaky_n": flaky_n,
         "flaky_measured": flaky_measured,
         "contamination": contamination,
@@ -589,6 +690,23 @@ def score_model(queryset: dict, raw: dict) -> dict:
         "is_partial": scored_n < queryset_total,
         "per_item": per_item,
     }
+
+
+def _observability_line(s: dict) -> str:
+    """가이드 인용률·되묻기 발동률을 콘솔 한 줄로 — 분모가 0이면 "관측 대상 없음"이라고 말한다.
+
+    "0%"와 "볼 문항이 없음"을 같은 화면 글자로 찍으면, 지표가 죽어 있는 상태가 정상처럼
+    읽힌다(구셋이 정확히 그 상태였다 — DW-607/609). 사람이 보는 자리에서 구분한다.
+    """
+    def _ratio(n: int, total: int, zero_msg: str) -> str:
+        return f"{n}/{total}" if total else zero_msg
+
+    doc = _ratio(s.get("doc_hit_n", 0), s.get("doc_hit_total", 0), "해당 문항 없음 ⚠")
+    clar = _ratio(s.get("clarify_ok_n", 0), s.get("clarify_total", 0), "해당 문항 없음 ⚠")
+    line = f"  가이드 인용(HYBRID): {doc} | 되묻기 발동(CLARIFY): {clar}"
+    if s.get("clarify_chips_unobserved"):
+        line += f"  (칩 미캡처 {s['clarify_chips_unobserved']}건 — 질문 문구만으로 판정)"
+    return line
 
 
 def main() -> None:
@@ -635,8 +753,9 @@ def main() -> None:
             f"(실패 {cov['errored_n']} · 미캡처 {cov['missing_n']})"
             f"{'  ⚠ 부분 캡처' if baseline_only['is_partial'] else ''}"
         )
-        print(f"  결과집합정확도(clean A, n={baseline_only['result_n']}): {baseline_only['result_mean']:.3f}")
+        print(f"  결과집합정확도(clean SQL+HYBRID, n={baseline_only['result_n']}): {baseline_only['result_mean']:.3f}")
         print(f"  라우팅: {baseline_only['routing_correct']}/{baseline_only['routing_total']}")
+        print(_observability_line(baseline_only))
         print(
             f"  flaky: {baseline_only['flaky_n']} | 오염(하드): {baseline_only['contamination']} | "
             f"소프트관찰: {baseline_only['soft_obs']} | dead-end: {baseline_only['deadend']} | "
@@ -664,8 +783,9 @@ def main() -> None:
     print("=" * 70)
     for s in summaries:
         print(f"[{s['name']}]")
-        print(f"  결과집합정확도(clean A, n={s['result_n']}): {s['result_mean']:.3f}")
+        print(f"  결과집합정확도(clean SQL+HYBRID, n={s['result_n']}): {s['result_mean']:.3f}")
         print(f"  라우팅: {s['routing_correct']}/{s['routing_total']}")
+        print(_observability_line(s))
         print(f"  flaky: {s['flaky_n']} | 오염(하드): {s['contamination']} | 소프트관찰: {s['soft_obs']} | dead-end: {s['deadend']} | 게이트: {'PASS' if s['gate_pass'] else 'FAIL'}")
         print(f"  토큰 in/out: {s['tokens_in']}/{s['tokens_out']} | 비용 ${s['cost_usd']:.4f} | 지연 {s['latency_ms_mean']:.0f}ms")
     print("-" * 70)
