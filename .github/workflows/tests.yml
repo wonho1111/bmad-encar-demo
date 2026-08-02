@@ -12,8 +12,10 @@ name: Tests
 # ⚠️ secrets를 넣지 마라. 그게 이 게이트의 안전장치다.
 #   · api/tests/test_readonly.py (2건) — DATABASE_URL이 있으면 **운영 Supabase에 실제 접속**한다.
 #     없으면 자동 skip. 넣지 마라.
-#   · api/tests/test_live_smoke.py (4건) — RUN_LIVE_SMOKE=1이면 **진짜 Gemini를 호출(과금)**한다.
-#     켜지 마라.
+#   · api/tests/test_live_smoke.py (파일 전체) — RUN_LIVE_SMOKE=1이면 **진짜 Gemini를 호출(과금)**한다.
+#     여기에 LangSmith env까지 노출되면 계측은 프로세스 전역이라 **이 파일의 모든 테스트가**
+#     무료 티어 trace 쿼터를 함께 소모한다(1건만이 아니다). 켜지 마라.
+#     (건수를 적지 않는 이유: 이 줄의 옛 "4건"은 실제 5건일 때 이미 틀려 있었다 — 수치 사본은 늙는다.)
 #   넣는 순간 이 게이트는 결정론적 검사에서 라이브·과금·비결정 검사로 바뀐다.
 #
 # 이 게이트가 안 보는 것 (추측 아니라 실측):
@@ -76,7 +78,8 @@ jobs:
       # 재발하지 않게 설치 경로를 여기 못박는다.
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[ai,dev]"
-      # secrets 없음 → test_readonly(2) · test_live_smoke(4)은 자동 skip, 나머지 167건 검증.
+      # secrets 없음 → test_readonly · test_live_smoke는 자동 skip, 나머지 다수 검증.
+      # (test_langsmith_env_contract는 네트워크·키가 필요 없어 여기서 실제로 돈다.)
       # tests/integration도 TEST_DATABASE_URL이 없어 skip된다 — 실행은 아래 api-db 잡의 몫.
       - run: python -m pytest -q
 

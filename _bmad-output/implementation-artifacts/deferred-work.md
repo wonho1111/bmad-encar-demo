@@ -4041,3 +4041,70 @@ source_spec: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-180320-15df; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-613: Story 13.9 초안(epic-13-context.md·epics-increment)에 DW-611/612가 안 덮는 인접 엣지케이스 6건이 남아있다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 리뷰 패스(edge-case-hunter 렌즈) — epic-13-context.md 재캡파일이 이번 diff에 포함되면서 곁다리로 발견됨. LangSmith 트레이싱과는 무관하고, 전적으로 Story 13.9(라우팅 안정화) 초안의 완성도 문제.
+source_spec: `epic-13-context.md`(요건 문단) · `epics-increment-2026-07-12.md`(Epic 13, Story 13.9)
+severity: low
+reason: Story 13.9 AC가 다루는 "최상급·교체요청·맥락재작성" 범주 안에서, DW-611(가격 최상급)·DW-612(명시 차종 교체)가 좁게 실측·확정한 케이스의 인접 변형이 AC 문구에 아직 안 잡혀 있다 — 각각 실측 없이 발견됐으므로 재현 확인 전까지는 "다뤄야 할 후보"로만 취급한다.
+  1. 가격처럼 정렬 가능한 컬럼이 없는 주관적 최상급("제일 좋은 차")이 구조조건인지 되묻기인지 AC에 없음.
+  2. 차종을 명시하지 않은 교체 요청("다른 거 보여줘")의 기대 라우팅이 AC에 없음(DW-612는 차종이 명시된 경우만 다룸).
+  3. RESET 오염 게이트의 반대 방향(정상 세션을 오탐 차단하는 경우)이 AC 검증 항목에 없음(DW-612는 게이트가 안 걸리는 방향만 다룸).
+  4. `contextualize_query`가 예외 없이 "성공"하지만 조건을 잘못 접어넣는 경우(DW-611은 "재작성을 안 함" 케이스만 다룸)의 폴백 조건이 AC에 없음.
+  5. epic-13-context.md의 "13.9는 13.8 완료 후 착수" 문구가 "13.8 스토리 종료"와 "13.8이 요구하는 G2 게이트 통과" 중 무엇을 뜻하는지 모호함.
+  6. 13.9 완료 후 재캡처한 기준선이 13.8의 G2 게이트 재실행에서 다시 불합격하면 다음 행동(재작업·롤백·에픽 보류)이 문서에 없음.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** 위 6항목을 인수조건 후보로 검토한다 — 13.9는 13.8 완료 후에만 착수하므로 그 전까지는 열어만 둔다.
+status: open
+
+### DW-614: Story 13.9 초안에 "적힌 내용 자체가 성립하지 않는" 논리 결함 7건이 있다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 **후속 리뷰 패스**(adversarial·edge-case-hunter 렌즈 독립 수렴) — epic-13-context.md 재캡파일이 diff에 포함되며 발견. LangSmith와 무관.
+source_spec: `epic-13-context.md`(Requirements·Technical Decisions·Dependencies) · `epics-increment-2026-07-12.md`(Epic 13, Story 13.9)
+severity: medium
+reason: DW-613과 **층위가 다르다** — DW-613은 "AC가 안 다룬 인접 케이스"(빠진 것)이고, 이 항목은 "문서에 적힌 지시가 서로 모순되거나 실행하면 목적을 배반하는 것"(틀린 것)이다. 중복 없음.
+  1. **G2 재실행이 자기참조라 항상 통과한다.** "완료 시 기준선을 재캡처해 13.8의 G2 게이트를 다시 실행해 통과를 확인한다"는 순서상, 변경 후 코드로 캡처한 기준선과 변경 후 코드를 비교하게 된다 — 회귀가 얼마든 나도 동률이라 통과. 에픽의 유일한 회귀 게이트가 하필 그걸 가장 깨기 쉬운 스토리에서 무력화된다. (DW-613 #6은 "재캡처 후 불합격 시 행동 부재"만 다뤄 이 반대 갈래를 안 덮는다.)
+  2. **"조건 추출 우선" 대안 구조를 택하면 REJECT 분기가 붕괴한다.** 무관/법적 질의는 정의상 구조조건이 0개라 "추출 실패=되묻기" 규칙에서 CLARIFY로 떨어진다 — 같은 문장이 지키라고 못박은 13.2 4분기 인수조건과 `test_live_smoke_pathC`(route==REJECT)를 동시에 깬다.
+  3. **같은 대안 구조에서 SQL/HYBRID 경계가 미정의다.** "추출 실패=되묻기" 한 갈래만 정의하고, 추출 성공 이후 두 갈래를 가르는 기준이 없다(4분기 중 2개의 경계가 빈다).
+  4. **최상급 × 하이브리드는 정렬을 표현할 자리가 없다.** 요건은 최상급을 "구조조건으로 SQL 라우팅"까지만 규정하는데, 의미조건이 섞이면 HYBRID이고 그 경로의 `ORDER BY`는 벡터 거리절이 점유한다. `api/app/db/sql_guard.py`(L266~275, DW-555 근거 주석)가 2차 정렬키(`... ::vector, price`)를 **명시적으로 차단**한다 — 실물 확인함. "제일 싼 패밀리카"류에서 최상급이 조용히 버려질 수 있다.
+  5. **에픽 종료조건이 재정의되지 않았다.** 13.8이 "exit-gate(G2 미통과 시 에픽 종료 불가)"인데 13.9가 그 뒤로 배치됐다 — 이제 무엇이 종료 판정인지 문서에 없다. (DW-613 #5는 "13.9 *착수* 시점"의 모호함이고, 이건 "에픽 *종료* 시점".)
+  6. **"결정론적 단위테스트가 프롬프트 흔들림을 먼저 잡는다"는 요건이 성립 불가.** api 단위테스트의 표준은 LLM을 fake로 교체하는 것(project-context 규칙 12)이라 fake 응답은 프롬프트 변경에 반응하지 않는다. 트리거 조건이 정의상 발동하지 않는 검사를 요건이 요구하고 있다.
+  7. **RESET 오염 데이터의 정리·격리가 미규정.** "실제 오염 데이터를 넣어 검사가 실패로 잡히는지 확인"만 있고 teardown이 없다 — 같은 에픽이 공용 DB에서 G2 기준선을 재캡처하므로 잔존 행이 그 캡처에 섞인다.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** 위 7항목을 먼저 해소한다 — 특히 1번은 스펙에 "G2는 13.9 이전 기준선으로 판정하고, 통과한 뒤에만 기준선을 갱신한다"는 두 단계 순서로 못박아야 한다.
+status: open
+
+### DW-615: langchain 계열 버전이 안 고정돼 있어, 자동 계측이 조용히 깨질 수 있고 그걸 잡을 검사는 CI에서 안 돈다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 후속 리뷰 패스(verification-gap·adversarial 렌즈) — Story 13.7이 추가한 트레이싱 회귀 테스트가 "실제로는 아무것도 자동으로 지키지 못한다"는 지적에서 나온 근본 원인. Story 13.7 자체의 결함이 아니라 저장소 전반의 의존성 정책 문제.
+source_spec: `api/requirements.txt` · `api/pyproject.toml` · `api/Dockerfile` · `.github/workflows/tests.yml`
+severity: medium
+reason: 실물 확인함 — (a) `langchain-google-genai`가 두 매니페스트 모두에서 **버전 무고정**이고 `langsmith`는 아예 미선언(`langchain-core`의 전이 의존 `langsmith<1.0.0,>=0.3.45`로만 들어온다), (b) `api/Dockerfile`은 `pip install --no-cache-dir -r requirements.txt`라 **컨테이너를 다시 빌드할 때마다 재해석**된다, (c) 저장소에 커밋된 `api/uv.lock`은 CI·Dockerfile·스크립트 어디에서도 쓰이지 않는다(`uv sync`/`uv pip`/`uv.lock` 전체 검색 0건). 즉 LangSmith 자동 계측(FR51)이 의존성 업그레이드로 끊겨도 배포는 초록으로 통과하고, 유일한 검사(`test_live_smoke_langsmith_tracing`)는 라이브·과금 테스트라 CI에서 의도적으로 안 돈다(project-context 규칙 12 — 이 절충 자체는 유지가 맞다).
+trigger: **다음번 api 의존성 작업(패키지 추가·업그레이드) 또는 Cloud Run 재배포 준비 시.** 선택지: langchain 계열 3종을 핀 고정하거나, `uv.lock`을 CI·Dockerfile에 실제로 배선한다. 둘 다 안 할 거면 "재빌드마다 계측이 갈릴 수 있음"을 배포 런북에 명시한다.
+status: open
+
+### DW-616: 루트/api `.env.example` 락스텝이 "관례"로만 존재하고 검사로 강제되지 않는다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 후속 리뷰 패스(adversarial·verification-gap 렌즈) — 두 번의 리뷰 패스가 "두 파일 주석 복붙" 지적을 **"의도된 락스텝 관례"라는 근거로 기각**했는데, 정작 그 락스텝을 지키는 장치가 없다는 것이 드러남.
+source_spec: `.env.example` · `api/.env.example`
+severity: low
+reason: CLAUDE.md B9("지켜야 하는 규칙이면 실행되는 검사로 바꾼다") 위반. 두 파일은 이미 문구·경로(`source api/.env` vs `source .env`)·배치가 다르므로 단순 동일성 비교로는 안 되고, **키 이름 집합의 일치**를 보는 검사여야 한다. 이 스토리가 만든 검사들과 달리 이 검사는 secrets·네트워크 없이 CI(api 잡)에서 실제로 돌 수 있는 유일한 종류다. 실패 모드는 "트레이싱을 설정했는데 트레이스가 안 남는다" — 이 스토리가 없애려던 바로 그 함정이다.
+trigger: **`.env.example`에 키를 추가·변경하는 다음 스토리 착수 시** 파리티 테스트(`api/tests/`에 루트 견본의 api 섹션 키 집합 == `api/.env.example` 키 집합 단언)를 함께 넣는다.
+status: open
+
+### DW-617: Story 13.9 초안에 라우팅 사분면 충돌·맥락 재작성 경계 2건이 더 있다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 **3차 리뷰 패스**(edge-case-hunter 렌즈) — epic-13-context.md 재캡파일이 이번 diff에 포함되며 발견. LangSmith와 무관.
+source_spec: `epic-13-context.md`(Requirements, 13.9 라우팅 요건 2개 문단)
+severity: low
+reason: DW-613(AC가 안 다룬 인접 케이스)·DW-614(적힌 지시가 성립하지 않음)와 층위가 또 다르다 — 이건 **새 요건 두 문장이 각각 기존 계약과 충돌하거나 경계를 안 정한 것**이다.
+  1. **교체 요청 + 의미조건이 겹치면 어느 사분면인가.** 새 요건은 "명시 차종이 든 교체 요청은 SQL로 라우팅되어야 한다"를 무조건으로 적었는데, 13.2의 4분기 계약은 구조조건+의미조건이 섞이면 HYBRID다. "가족이 타기 좋은 SUV로 바꿔줘"가 두 규칙을 동시에 만족하며 서로 다른 답을 낸다. 같은 문단이 "13.2의 4분기 인수조건은 깨지 않아야 한다"고 못박아 둔 터라 구현자는 둘 중 하나를 반드시 어긴다. (DW-614 #4는 HYBRID **안에서의 정렬 표현** 문제라 이 사분면 귀속 문제와 다르다.)
+  2. **이어받을 조건이 없는 턴·조건 폐기 규칙이 없다.** 새 요건은 `contextualize_query`가 "이전 조건을 접어 넣는" 방향만 정의한다. (a) 직전 턴이 CLARIFY/REJECT라 확정 조건이 0개인 상태 — `run_search`가 context를 무조건 넘기므로 실제로 도달 가능한 상태다(`api/app/graph/graph.py` 확인), (b) 같은 축을 다시 명시하는 후속 질의("아니 5천만원대로")에서 이전 값을 **누적할지 대체할지**가 미정의다. DW-613 #4는 "재작성이 성공하지만 잘못 접어넣는" 폴백 얘기라 이 두 갈래를 안 덮는다.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** DW-613·614와 함께 검토한다 — 특히 1번은 "교체 요청도 의미조건이 섞이면 HYBRID"인지 아닌지를 인수조건에 한 줄로 확정해야 구현자가 계약을 안 어긴다.
+status: open
+
+### DW-618: Follow-up review still recommended for 13-7-langsmith-트레이싱 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-7-langsmith-트레이싱.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-165936-4495; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

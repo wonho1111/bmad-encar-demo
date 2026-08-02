@@ -183,7 +183,7 @@ development_status:
   13-4-조건-좁혀-되묻기-clarify: done
   13-5-부드러운-거절: done
   13-6-가이드-문서-content-활용-거리-컷오프: done
-  13-7-langsmith-트레이싱: backlog
+  13-7-langsmith-트레이싱: done
   13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b: backlog
   # 13-9는 13-8 이후에 착수한다(라우팅을 바꾸면 2026-08-02 기준선의 기준이 흐려진다 — DW-611·612).
   13-9-라우팅-안정화-최상급-교체요청-맥락재작성: backlog
