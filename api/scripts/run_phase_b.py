@@ -35,10 +35,11 @@
 실행 — 일부만(디버깅·재캡처용):
   ... --subset S1,H1,CL1 --out docs/g2-exit-gate-YYYY-MM-DD-partial.json
 
-⚠️ `--out`을 `docs/g2-baseline.json`·`docs/g2-baseline-partial.json`으로 주지 말 것 — 그 둘은
-  **커밋된 비교 기준선**이고 G2 게이트가 대조 대상으로 읽는다. 덮어쓰면 회귀 판정의 기준점이
-  사라지고, 그게 바로 위에서 `--out`을 필수로 만든 이유다. 이 규칙은 산문이 아니라 실행되는
-  검사다 — `main()`의 argparse와 `capture()` 진입부 양쪽에서 거부한다(CLAUDE.md B9).
+⚠️ `--out`을 `scripts/baseline_guard.py`의 `PROTECTED_BASELINES` 목록(커밋된 G2 raw 캡처·
+  채점 리포트)으로 주지 말 것 — 그 목록은 G2 게이트가 대조 대상으로 읽는 커밋된 비교 근거다.
+  덮어쓰면 회귀 판정의 기준점이 사라지고, 그게 바로 위에서 `--out`을 필수로 만든 이유다. 이
+  규칙은 산문이 아니라 실행되는 검사다 — `main()`의 argparse와 `capture()` 진입부 양쪽에서
+  거부한다(CLAUDE.md B9). 목록을 score_ab.py와 공유하는 이유·경위는 DW-635 참조.
   기준선을 의도적으로 다시 뜨는 것(re-baselining)은 별도 결정으로 다룬다.
   (✎ 13.8 4차 리뷰 정정: 여기 "되돌리려면 유료 라이브 재캡처밖에 없다"고 적혀 있었으나 두
    파일 모두 git 추적 중이라 `git restore`로 복구된다. 위험한 건 복구 불가가 아니라 파괴가
@@ -58,10 +59,8 @@ API_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(API_ROOT))
 
 # G2 게이트가 비교 대상으로 읽는 커밋된 기준선 — --out으로 지목하면 거부한다(main() 참조).
-_PROTECTED_BASELINES = frozenset({
-    (API_ROOT / "docs" / "g2-baseline.json").resolve(),
-    (API_ROOT / "docs" / "g2-baseline-partial.json").resolve(),
-})
+# 목록은 score_ab.py와 공유한다(DW-635) — api/scripts/baseline_guard.py가 단일출처.
+from scripts.baseline_guard import is_protected  # noqa: E402
 
 
 def _card_id(card) -> str:
@@ -202,7 +201,7 @@ def capture(
         # _flush()다 — capture()는 공개 함수라 테스트·스크립트가 main()을 거치지 않고 직접
         # 부른다(13.8 4차 리뷰 실측: 직접 호출로 47항목 기준선이 0항목이 됐다). 검사는
         # 파괴가 일어나는 층에 둔다(CLAUDE.md B9).
-        if Path(out_path).resolve() in _PROTECTED_BASELINES:
+        if is_protected(out_path):
             raise ValueError(
                 f"out_path가 커밋된 G2 비교 기준선({out_path})을 가리킵니다 — "
                 "덮어쓰면 회귀 판정의 기준점이 사라집니다."
@@ -285,7 +284,7 @@ def main() -> None:
     #   때도 `git restore`로 되돌렸다. 진짜 위험은 "복구 불가"가 아니라 **파괴가 exit 0으로
     #   조용히 지나가 아무도 복구를 시도하지 않는 것**이다. 같은 검사가 capture() 진입부에도
     #   있다 — main()을 거치지 않는 직접 호출이 실제 파괴 경로이기 때문이다(B9).
-    if Path(args.out).resolve() in _PROTECTED_BASELINES:
+    if is_protected(args.out):
         ap.error(
             f"--out이 커밋된 G2 비교 기준선({args.out})을 가리킵니다 — 덮어쓰면 회귀 판정의 "
             "기준점이 사라집니다. 날짜형 캡처 경로(예: docs/g2-exit-gate-YYYY-MM-DD.json — "

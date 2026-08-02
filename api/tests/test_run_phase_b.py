@@ -7,7 +7,9 @@
 """
 
 import importlib.util
+import inspect
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -488,7 +490,23 @@ def test_main_requires_out_argument(monkeypatch, tmp_path, capsys):
 
 
 # ── 13.8 3차 리뷰 — 커밋된 기준선을 --out으로 지목하면 거부한다 ──────────
-@pytest.mark.parametrize("baseline_name", ["g2-baseline.json", "g2-baseline-partial.json"])
+# g2-exit-gate-2026-08-02.json·g2-exit-gate-report.json은 13.9가 baseline_guard.py 공용
+# 목록으로 확장하며 새로 추가했다(DW-636 — 이전엔 이 두 파일이 보호 밖이었다).
+# g2-recapture-2026-08-03.json·g2-recapture-report.json은 13.9 자신의 AC 증거이며, 같은
+# 이유(코드리뷰 정정)로 추가됐다 — 스토리가 끝난 뒤에도 이 커밋된 증거가 실수로
+# 덮어써지면 안 된다.
+# g2-baseline-pre-13-9.json은 그 재기준선의 **before** 쪽 raw다(P5 — 원래 세션 스크래치패드에만
+# 있어서, 리포지토리만으로는 "0.894 → 0.954" 방향을 재계산할 수 없었다). 리포로 들여온 이상
+# 나머지 증거 파일과 같은 보호를 받아야 한다.
+@pytest.mark.parametrize(
+    "baseline_name",
+    [
+        "g2-baseline.json", "g2-baseline-partial.json",
+        "g2-baseline-pre-13-9.json",
+        "g2-exit-gate-2026-08-02.json", "g2-exit-gate-report.json",
+        "g2-recapture-2026-08-03.json", "g2-recapture-report.json",
+    ],
+)
 def test_main_refuses_to_overwrite_committed_baseline(
     monkeypatch, tmp_path, capsys, baseline_name
 ):
@@ -604,3 +622,25 @@ def test_capture_rejects_item_without_id(tmp_path):
 
     with pytest.raises(ValueError, match="missing item id"):
         run_phase_b.capture(queryset, None, "test-model", run_search)
+
+
+# ── P1 — 문서화된 명령이 스스로 거부하는 죽은 명령이면 안 된다(반대 방향 검사, score_ab.py와
+# 동일한 회귀를 여기서도 확인한다 — 두 스크립트가 PROTECTED_BASELINES를 공유하므로 같은 종류의
+# dead-end가 이쪽에도 생길 수 있다. 실측 결과 이 스크립트는 처음부터 템플릿 날짜(YYYY-MM-DD)를
+# 써서 걸리지 않았지만, 그 사실 자체를 실행되는 검사로 고정해 다음에 실수로 실제 날짜를
+# 박아 넣어도(예: 2026-08-02) 곧바로 잡히게 한다).
+def test_docstring_out_examples_are_not_protected():
+    paths = re.findall(r"--out\s+(docs/\S+\.json)", run_phase_b.__doc__ or "")
+    assert paths, "독스트링에서 --out 예시를 하나도 못 찾음(테스트 자체가 무력화되지 않았는지 확인)"
+    for p in paths:
+        assert run_phase_b.is_protected(p) is False, f"독스트링 예시 {p!r}가 보호 목록에 걸림(죽은 명령)"
+
+
+def test_ap_error_suggested_out_path_is_not_protected():
+    source = inspect.getsource(run_phase_b.main)
+    m = re.search(r"예:\s*(docs/\S+?\.json)", source)
+    assert m, "main()의 ap.error 메시지에서 제안 경로(예: ...)를 못 찾음"
+    suggested = m.group(1)
+    assert run_phase_b.is_protected(suggested) is False, (
+        f"ap.error 제안 경로 {suggested!r}가 보호 목록에 걸림(스스로 거부하는 죽은 안내)"
+    )

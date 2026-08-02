@@ -20,7 +20,20 @@
   api/ 에서  .venv/Scripts/python.exe scripts/score_ab.py \
           --queryset docs/ai-ab-test-queryset.json \
           --raw docs/g2-baseline-partial.json \
-          --out docs/g2-baseline-report.json
+          --out docs/g2-recapture-<YYYY-MM-DD>-report.json
+
+⚠️ `--out`을 커밋된 채점 리포트(`docs/g2-baseline-report.json` 등, `scripts/baseline_guard.py`의
+  `PROTECTED_BASELINES` 목록)로 주지 말 것 — 그 파일은 사람이 눈으로 대조하는 세 축(라우팅·
+  가이드인용·되묻기)의 유일한 기준점이라 부분 캡처로 덮어쓰면 조용히 사라진다(DW-635). 위
+  예시(`<YYYY-MM-DD>`는 실제 날짜로 치환)는 그래서 날짜형 재캡처 경로를 쓴다 — 단, **이미
+  커밋된 날짜형 증거 파일(예: `g2-recapture-2026-08-03.json`류)은 그 자체가 보호 목록에
+  들어가므로 `--out`으로 재사용하지 말 것**, 매번 새 날짜로 써야 한다. `main()`이 이 목록을
+  실제로 거부한다(CLAUDE.md B9).
+
+종료 코드(2파일 모드): top-level `gate_pass`가 false면 **1**로 끝난다(회귀·검증불가·개별
+  summary FAIL 어느 쪽이든). 위 실행 예시처럼 `run_phase_b.py … && score_ab.py …`로 이어
+  붙일 때 체인이 조용히 진행되지 않게 하기 위해서다(run_phase_b.py와 같은 규칙).
+  리포트 파일과 콘솔 요약은 종료 전에 이미 다 쓴다 — 게이트가 떨어져도 산출물은 남는다.
 """
 
 from __future__ import annotations
@@ -32,6 +45,9 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(API_ROOT))
+
+# 커밋된 G2 비교 근거(raw 캡처·채점 리포트) 보호 — run_phase_b.py와 목록을 공유한다(DW-635).
+from scripts.baseline_guard import is_protected  # noqa: E402
 
 # 앱 기본 매물 개수(경로 A/B 공통 LIMIT). 결과집합 채점에서 "보여준 개수 상한"으로 쓴다.
 try:
@@ -714,6 +730,26 @@ def _observability_line(s: dict) -> str:
     return line
 
 
+def _resolve_evidence_path(raw_path: str) -> str:
+    """리포트에 기록할 raw 경로를 해석한다(P7) — 스크래치패드 등 세션 한정 상대경로를 그대로
+    남기면 그 세션이 끝난 뒤엔 산출물만 봐도 어느 파일을 가리키는지 되짚을 수 없다(DW-637
+    "산출물만 봐도 방향을 되짚을 수 있어야 한다"는 목적 위반). resolve()해 API_ROOT(이 파일의
+    api/ 루트) 기준 상대경로로 표현 가능하면 그걸 쓰고(리포 안 파일이 흔한 경우이므로 짧고
+    이식성 있음), 리포 밖 경로(예: /tmp)면 해석된 절대경로 그대로 남긴다(폴백).
+
+    ⚠️ repo-relative 표현은 항상 `/` 구분자로 낸다(P8) — `str(PurePath)`는 OS 네이티브
+    구분자라 이 모듈의 독스트링이 문서화한 Windows(`.venv/Scripts/python.exe`)에서는
+    `docs\\g2-baseline.json`이 나온다. 리포트는 OS를 건너 공유되는 커밋 산출물이고
+    테스트도 `docs/g2-baseline.json`으로 못박혀 있으므로, 구분자를 플랫폼에 맡기지 않는다.
+    (폴백인 리포 밖 절대경로는 그 OS의 실제 경로여야 의미가 있으므로 그대로 둔다.)
+    """
+    resolved = Path(raw_path).resolve()
+    try:
+        return resolved.relative_to(API_ROOT).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
 def main() -> None:
     # Windows 콘솔(cp949)이 한글·em-dash를 못 찍어 죽지 않게 stdout을 UTF-8로 고정.
     try:
@@ -731,6 +767,14 @@ def main() -> None:
 
     if len(args.raw) not in (1, 2):
         ap.error("--raw는 1개(베이스라인 단독) 또는 2개(베이스라인 후보)만 허용합니다.")
+
+    # --out이 커밋된 G2 비교 근거를 가리키면 거부한다(DW-635 — run_phase_b.py와 목록 공유).
+    if is_protected(args.out):
+        ap.error(
+            f"--out이 커밋된 G2 비교 근거({args.out})를 가리킵니다 — 덮어쓰면 채점 기준점이 "
+            "사라집니다. 날짜형 리포트 경로(예: docs/g2-recapture-<YYYY-MM-DD>-report.json, "
+            "실제 날짜로 치환)를 쓰세요 — 이미 커밋된 날짜형 파일은 재사용하지 마세요."
+        )
 
     queryset = json.loads(Path(args.queryset).read_text(encoding="utf-8"))
     raws = [json.loads(Path(p).read_text(encoding="utf-8")) for p in args.raw]
@@ -773,11 +817,70 @@ def main() -> None:
     baseline, candidate = summaries[0], summaries[1]
 
     verdict = lexicographic_winner(baseline, candidate)
-    # 베이스라인 회귀 게이트 — 후보가 베이스라인보다 결과정확도 하락 시 채택 불가.
-    regression = candidate["result_mean"] < baseline["result_mean"] - 1e-9
+    # 베이스라인 회귀 게이트(DW-626) — 예전엔 result_mean 한 축만 봤다. 13.4(되묻기)·13.6
+    # (가이드 인용)이 통째로 죽어도 그 축들은 사람이 눈으로만 대조했다(리뷰가 뮤테이션으로
+    # 실증: 인용 전량 제거·CLARIFY 전량 SQL 치환 둘 다 gate_pass:true로 통과했다). 이제 네
+    # 축 전부를 자동 비교한다 — 하나라도 하락하면 regression_block이다.
+    #
+    # ⚠️ 세 축(routing_correct·doc_hit_n·clarify_ok_n)은 **원시 개수**다(코드리뷰 정정) —
+    # result_mean처럼 문항 수로 나눈 평균이 아니다. baseline·candidate가 서로 다른 개수의
+    # 문항을 채점했다면(부분 재캡처 등, coverage.scored_n 참조) 후보가 더 적게 채점됐다는
+    # 이유만으로 이 세 개수가 항상 더 낮아 보여 실제로는 회귀가 아닌데 regression_block이
+    # 뜬다. scored_n이 같을 때만 이 세 축을 신뢰하고, 다르면 "하락 아님"으로 조용히 넘기지
+    # 않고 리포트에 검증 불가로 명시한다.
+    coverage_matches = (
+        baseline["coverage"]["scored_n"] == candidate["coverage"]["scored_n"]
+    )
+    # result_mean도 같은 종류의 커버리지 함정이 있다(코드리뷰 정정, P6) — 분모가 scored_n이
+    # 아니라 result_n(clean SQL+HYBRID 채점 문항 수)이고, 그 값은 정확히 라우팅 스토리가
+    # 흔드는 값이다(HYBRID로 새로 라우팅되는 문항이 늘면 result_n도 함께 늘어난다). result_n이
+    # 다르면 평균끼리 비교해도 "더 많이/적게 채점된 평균"을 섞어 비교하는 셈이라, coverage_matches
+    # 와 별도로 result_n도 확인한다.
+    result_n_matches = baseline["result_n"] == candidate["result_n"]
+    _count_axes = {
+        "routing_correct": candidate["routing_correct"] < baseline["routing_correct"],
+        "doc_hit_n": candidate["doc_hit_n"] < baseline["doc_hit_n"],
+        "clarify_ok_n": candidate["clarify_ok_n"] < baseline["clarify_ok_n"],
+    }
+    regression_axes: dict = {}
+    unverifiable_axes: list[str] = []
+    if result_n_matches:
+        regression_axes["result_mean"] = candidate["result_mean"] < baseline["result_mean"] - 1e-9
+    else:
+        unverifiable_axes.append("result_mean")
+    if coverage_matches:
+        regression_axes.update(_count_axes)
+    else:
+        unverifiable_axes.extend(_count_axes.keys())
+    # ⚠️ 비교 축이 하나도 없는 경우(P4) — coverage_matches·result_n_matches가 **둘 다** 거짓이면
+    #   네 축 전부가 unverifiable_axes로 빠져 regression_axes가 빈 dict가 된다. `any({})`는
+    #   False라 그대로 두면 커밋된 리포트에 `regression_block: false`가 박히는데, 그건 "회귀를
+    #   찾지 못했다"가 아니라 "아무것도 비교하지 못했다"이다 — 산출물만 읽는 다음 사람에게
+    #   정반대로 읽힌다. 그 경우만 None(JSON에선 null = 판정 불가)으로 명시한다.
+    #   gate_pass는 이미 unverifiable_axes로 걸러 False지만, regression_block 자체가 거짓말을
+    #   하면 안 된다(B8 — 대장은 "안 한 것"과 "했는지 모르는 것"을 구별해야 한다).
+    regression = any(regression_axes.values()) if regression_axes else None
+    # DW-637 — 리포트의 baseline/candidate는 모델명 문자열이라, 같은 모델을 자기 자신과
+    # 비교하면(13.9 재기준선처럼) 어느 파일이 baseline이었는지 산출물만으로 알 수 없다.
+    # 원본 파일 경로를 함께 실어 순서(=방향)를 항상 되짚을 수 있게 한다.
+    self_comparison = baseline["name"] == candidate["name"]
     report = {
         "baseline": baseline["name"], "candidate": candidate["name"],
+        "baseline_raw": _resolve_evidence_path(args.raw[0]),
+        "candidate_raw": _resolve_evidence_path(args.raw[1]),
+        "self_comparison": self_comparison,
         "verdict": verdict, "regression_block": regression,
+        "regression_axes": regression_axes, "unverifiable_axes": unverifiable_axes,
+        # 위(4축) 회귀가 전부 없어도, 개수 축이 커버리지 불일치로 검증 불가 상태(unverifiable_axes)
+        # 이거나 개별 summary 자체가 자기 게이트(오염·dead-end·미측정)에서 FAIL이면 top-level도
+        # PASS라고 말하면 안 된다(P2) — 예전엔 `not regression`만 봐서 (a) 부분 재캡처로 세 축이
+        # 전부 unverifiable이 돼도, (b) gray 문항의 오염처럼 result_mean에 안 잡히는 개별
+        # summary 실패가 있어도 top-level gate_pass가 True로 나갔다(실측: RESET 오염이 gray
+        # M6류 항목에서만 터지면 result_mean이 안 움직여 네 축 전부 초록인데 그 summary
+        # 자신은 "게이트: FAIL"을 찍는 모순).
+        "gate_pass": (not regression) and not unverifiable_axes and all(
+            s["gate_pass"] for s in summaries
+        ),
         "summaries": [
             {k: v for k, v in s.items() if k != "per_item"} for s in summaries
         ],
@@ -786,6 +889,27 @@ def main() -> None:
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("=" * 70)
+    if self_comparison:
+        print(
+            f"⚠️ baseline·candidate 모델명이 같습니다({baseline['name']}) — 파일 경로로만 "
+            f"방향을 구분할 수 있습니다: baseline_raw={report['baseline_raw']}, "
+            f"candidate_raw={report['candidate_raw']}"
+        )
+    if unverifiable_axes:
+        print(f"⚠️ 검증 불가 축: {', '.join(unverifiable_axes)}")
+        if not coverage_matches:
+            print(
+                f"  · 채점 문항 수가 다릅니다(baseline scored_n="
+                f"{baseline['coverage']['scored_n']} vs candidate scored_n="
+                f"{candidate['coverage']['scored_n']}) — 개수 기반 축(routing_correct·"
+                "doc_hit_n·clarify_ok_n)은 부분 캡처를 회귀로 오판하지 않기 위해 판정에서 제외."
+            )
+        if not result_n_matches:
+            print(
+                f"  · result_mean 분모(result_n)가 다릅니다(baseline={baseline['result_n']} "
+                f"vs candidate={candidate['result_n']}) — 라우팅 변화로 채점 대상 문항 수 자체가"
+                " 달라져 평균을 직접 비교할 수 없으므로 result_mean도 판정에서 제외."
+            )
     for s in summaries:
         print(f"[{s['name']}]")
         print(f"  결과집합정확도(clean SQL+HYBRID, n={s['result_n']}): {s['result_mean']:.3f}")
@@ -798,7 +922,13 @@ def main() -> None:
     # 최종 채택 = 회귀 게이트가 후보를 거부하면 베이스라인 유지(사전식이 후보 손을 들어도).
     if regression:
         final = baseline["name"]
-        print(f"⚠️ 회귀 게이트 발동: 후보 결과정확도({candidate['result_mean']:.3f}) < 베이스라인({baseline['result_mean']:.3f}) → 후보 채택 불가")
+        regressed = [axis for axis, hit in regression_axes.items() if hit]
+        print(f"⚠️ 회귀 게이트 발동(하락 축: {', '.join(regressed)}) → 후보 채택 불가")
+        print(f"➡️ 최종 채택: {final} (베이스라인 유지)")
+    elif regression is None:
+        # 위 P4 — 비교한 축이 0개다. "회귀 없음"이 아니라 "판정 불가"이므로 후보를 올리지 않는다.
+        final = baseline["name"]
+        print("⚠️ 비교 가능한 축이 0개(regression_block=null) → 회귀 여부를 판정하지 못함, 후보 채택 불가")
         print(f"➡️ 최종 채택: {final} (베이스라인 유지)")
     else:
         final = verdict["winner"] or baseline["name"]
@@ -807,6 +937,13 @@ def main() -> None:
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"리포트: {args.out}")
     print("=" * 70)
+
+    # 게이트 탈락은 0이 아닌 코드로 종료한다(P3) — 예전엔 경고만 찍고 항상 0으로 끝나서,
+    # 문서화된 `run_phase_b.py … && score_ab.py …` 체인이 진짜 회귀를 만나고도 그대로 다음
+    # 단계로 넘어갔다(run_phase_b.py는 이미 같은 규칙으로 1을 낸다). 리포트 파일 쓰기와 콘솔
+    # 요약은 위에서 끝났으므로 **산출물은 항상 남는다** — 종료 코드만 사실을 말하게 한다.
+    if not report["gate_pass"]:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

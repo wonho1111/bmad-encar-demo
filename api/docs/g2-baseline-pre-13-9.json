@@ -15,7 +15,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2445.640973994159
+        "latency_ms": 1853.9851440000348
       }
     ],
     "S2": [
@@ -30,7 +30,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1972.3107190002338
+        "latency_ms": 1640.4985460003445
       }
     ],
     "S3": [
@@ -47,7 +47,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1777.1090470050694
+        "latency_ms": 1902.4214729997766
       }
     ],
     "S4": [
@@ -64,7 +64,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1688.1594570004381
+        "latency_ms": 1571.2500849995195
       }
     ],
     "S5": [
@@ -80,24 +80,25 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1788.0308179956046
+        "latency_ms": 1856.6157949999251
       }
     ],
     "S6": [
       {
-        "route_last": "SQL",
-        "ids_last": [
-          "fc084a8f-bb65-47e5-8268-6a1ddc603291",
-          "5d0d1114-10a8-4347-b6fa-ec308fbcb6fa",
-          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
-          "3108f2b3-2b67-44c9-91ef-00138b644690",
-          "28602cdc-22b8-4cb7-9d24-50d6ed30510a"
-        ],
-        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
-        "clarify_last": null,
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1684.5496379974065
+        "latency_ms": 975.5240900003628
       }
     ],
     "S7": [
@@ -110,7 +111,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1692.8638419994968
+        "latency_ms": 1789.365749999888
       }
     ],
     "S8": [
@@ -127,7 +128,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1796.0272499985876
+        "latency_ms": 1681.047712999316
       }
     ],
     "S9": [
@@ -144,7 +145,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1670.734760002233
+        "latency_ms": 1784.879390000242
       }
     ],
     "S10": [
@@ -161,7 +162,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1586.8645310038119
+        "latency_ms": 1779.7483490003287
       }
     ],
     "S11": [
@@ -176,7 +177,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1782.8413829993224
+        "latency_ms": 1863.731411000117
       }
     ],
     "S12": [
@@ -192,7 +193,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1592.105691001052
+        "latency_ms": 1877.9947560005894
       }
     ],
     "H1": [
@@ -209,7 +210,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2384.2597089969786
+        "latency_ms": 2080.0342580005236
       }
     ],
     "H2": [
@@ -226,7 +227,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2175.5732849997003
+        "latency_ms": 2170.124346999728
       }
     ],
     "H3": [
@@ -243,7 +244,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2087.2055620056926
+        "latency_ms": 2469.0491150004164
       }
     ],
     "H4": [
@@ -260,7 +261,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2076.624435998383
+        "latency_ms": 2074.8138790004305
       }
     ],
     "H5": [
@@ -277,7 +278,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2286.868783994578
+        "latency_ms": 2176.5550009995422
       }
     ],
     "H6": [
@@ -294,7 +295,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1683.8273130051675
+        "latency_ms": 1957.2996159995455
       }
     ],
     "H7": [
@@ -311,7 +312,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2084.543240001949
+        "latency_ms": 2094.2288249998455
       }
     ],
     "H8": [
@@ -328,7 +329,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2179.68992999522
+        "latency_ms": 2323.7901250004143
       }
     ],
     "H9": [
@@ -345,7 +346,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2073.343694995856
+        "latency_ms": 2176.876436999919
       }
     ],
     "H10": [
@@ -362,7 +363,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2088.995182995859
+        "latency_ms": 2281.5543830001843
       }
     ],
     "H11": [
@@ -379,7 +380,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2001.2080409942428
+        "latency_ms": 2177.735589999429
       }
     ],
     "H12": [
@@ -396,7 +397,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2261.141276998387
+        "latency_ms": 2372.600790999968
       }
     ],
     "CL1": [
@@ -414,7 +415,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1082.5683419971028
+        "latency_ms": 1070.7337060002828
       }
     ],
     "CL2": [
@@ -432,7 +433,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1090.314049004519
+        "latency_ms": 991.0573790002672
       }
     ],
     "CL3": [
@@ -450,7 +451,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 889.7837440017611
+        "latency_ms": 786.076005000723
       }
     ],
     "CL4": [
@@ -468,7 +469,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 991.2025710000307
+        "latency_ms": 895.5957769994711
       }
     ],
     "CL5": [
@@ -486,7 +487,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 910.8618220052449
+        "latency_ms": 1092.6878640002542
       }
     ],
     "CL6": [
@@ -504,7 +505,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 873.9162070050952
+        "latency_ms": 791.1335180006063
       }
     ],
     "CL7": [
@@ -522,7 +523,7 @@
         },
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 982.905265998852
+        "latency_ms": 898.3269860000291
       }
     ],
     "R1": [
@@ -533,7 +534,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 917.0035990027827
+        "latency_ms": 988.6847029993078
       }
     ],
     "R2": [
@@ -544,7 +545,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 876.7789669946069
+        "latency_ms": 794.0556940002352
       }
     ],
     "R3": [
@@ -555,7 +556,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 907.9314050031826
+        "latency_ms": 974.7364429995287
       }
     ],
     "R4": [
@@ -566,7 +567,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 993.0800759975682
+        "latency_ms": 791.3005240006896
       }
     ],
     "R5": [
@@ -577,7 +578,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 868.2655100055854
+        "latency_ms": 1996.1600659999021
       }
     ],
     "R6": [
@@ -588,7 +589,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1008.6169930000324
+        "latency_ms": 875.7080319992383
       }
     ],
     "R7": [
@@ -599,7 +600,7 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 873.8691760008805
+        "latency_ms": 889.7726010000042
       }
     ],
     "R8": [
@@ -610,17 +611,22 @@
         "clarify_last": null,
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 1012.6332550062216
+        "latency_ms": 893.6105440006941
       }
     ],
     "M1": [
       {
-        "route_last": "SQL",
-        "ids_last": [
-          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
-        ],
-        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
-        "clarify_last": null,
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
         "turns": [
           {
             "route": "SQL",
@@ -645,17 +651,22 @@
             "clarify": null
           },
           {
-            "route": "SQL",
-            "ids": [
-              "232262ab-4f7d-47b0-94cc-9e86c5cac059"
-            ],
-            "answer": "조건에 맞는 매물 1건을 찾았어요.",
-            "clarify": null
+            "route": "CLARIFY",
+            "ids": [],
+            "answer": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+            "clarify": {
+              "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+              "chips": [
+                "3천만원 이하",
+                "SUV",
+                "전기차"
+              ]
+            }
           }
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 7265.302048996091
+        "latency_ms": 5439.6735959999205
       }
     ],
     "M2": [
@@ -710,7 +721,7 @@
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 6371.85585599218
+        "latency_ms": 6750.38948800011
       }
     ],
     "M3": [
@@ -755,7 +766,7 @@
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2655.585695996706
+        "latency_ms": 2850.9488820000115
       }
     ],
     "M4": [
@@ -799,7 +810,7 @@
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 3978.9020890020765
+        "latency_ms": 13080.996290001167
       }
     ],
     "M5": [
@@ -842,17 +853,22 @@
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 5280.038926997804
+        "latency_ms": 6422.025017000124
       }
     ],
     "M6": [
       {
-        "route_last": "SQL",
-        "ids_last": [
-          "3345a3cc-731e-4385-97bf-5fa4df1398c5"
-        ],
-        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
-        "clarify_last": null,
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
         "turns": [
           {
             "route": "SQL",
@@ -867,17 +883,22 @@
             "clarify": null
           },
           {
-            "route": "SQL",
-            "ids": [
-              "3345a3cc-731e-4385-97bf-5fa4df1398c5"
-            ],
-            "answer": "조건에 맞는 매물 1건을 찾았어요.",
-            "clarify": null
+            "route": "CLARIFY",
+            "ids": [],
+            "answer": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+            "clarify": {
+              "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+              "chips": [
+                "3천만원 이하",
+                "SUV",
+                "전기차"
+              ]
+            }
           }
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 3554.0665489970706
+        "latency_ms": 2768.9525799996773
       }
     ],
     "M7": [
@@ -920,7 +941,7 @@
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 4070.0851639994653
+        "latency_ms": 4269.542342999557
       }
     ],
     "M8": [
@@ -951,7 +972,7 @@
         ],
         "tokens_in": 0,
         "tokens_out": 0,
-        "latency_ms": 2569.5500540023204
+        "latency_ms": 2564.906095999504
       }
     ]
   }

@@ -1,36 +1,89 @@
 {
-  "baseline_summary": {
-    "name": "gemini-3.1-flash-lite",
-    "result_mean": 0.9542087542087543,
-    "result_n": 33,
-    "routing_correct": 57,
-    "routing_total": 57,
-    "doc_hit_n": 12,
-    "doc_hit_total": 13,
-    "clarify_ok_n": 9,
-    "clarify_total": 9,
-    "clarify_chips_unobserved": 0,
-    "flaky_n": 0,
-    "flaky_measured": false,
-    "contamination": 0,
-    "soft_obs": 0,
-    "deadend": 0,
-    "gate_pass": true,
-    "tokens_in": 0,
-    "tokens_out": 0,
-    "tokens_measured": false,
-    "cost_usd": 0.0,
-    "latency_ms_mean": 2061.396509169928,
-    "errored_n": 0,
-    "coverage": {
-      "queryset_total": 47,
-      "scored_n": 47,
-      "errored_n": 0,
-      "missing_n": 0,
-      "missing_ids": []
-    },
-    "is_partial": false
+  "baseline": "gemini-3.1-flash-lite",
+  "candidate": "gemini-3.1-flash-lite",
+  "baseline_raw": "docs/g2-baseline-pre-13-9.json",
+  "candidate_raw": "docs/g2-recapture-2026-08-03.json",
+  "self_comparison": true,
+  "verdict": {
+    "winner": "gemini-3.1-flash-lite",
+    "reason": "지연 2251ms vs 2061ms",
+    "tier": "latency"
   },
+  "regression_block": false,
+  "regression_axes": {
+    "result_mean": false,
+    "routing_correct": false,
+    "doc_hit_n": false,
+    "clarify_ok_n": false
+  },
+  "unverifiable_axes": [],
+  "gate_pass": true,
+  "summaries": [
+    {
+      "name": "gemini-3.1-flash-lite",
+      "result_mean": 0.8936026936026936,
+      "result_n": 33,
+      "routing_correct": 54,
+      "routing_total": 57,
+      "doc_hit_n": 12,
+      "doc_hit_total": 13,
+      "clarify_ok_n": 9,
+      "clarify_total": 9,
+      "clarify_chips_unobserved": 0,
+      "flaky_n": 0,
+      "flaky_measured": false,
+      "contamination": 0,
+      "soft_obs": 0,
+      "deadend": 0,
+      "gate_pass": true,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_measured": false,
+      "cost_usd": 0.0,
+      "latency_ms_mean": 2251.2510426170575,
+      "errored_n": 0,
+      "coverage": {
+        "queryset_total": 47,
+        "scored_n": 47,
+        "errored_n": 0,
+        "missing_n": 0,
+        "missing_ids": []
+      },
+      "is_partial": false
+    },
+    {
+      "name": "gemini-3.1-flash-lite",
+      "result_mean": 0.9542087542087543,
+      "result_n": 33,
+      "routing_correct": 57,
+      "routing_total": 57,
+      "doc_hit_n": 12,
+      "doc_hit_total": 13,
+      "clarify_ok_n": 9,
+      "clarify_total": 9,
+      "clarify_chips_unobserved": 0,
+      "flaky_n": 0,
+      "flaky_measured": false,
+      "contamination": 0,
+      "soft_obs": 0,
+      "deadend": 0,
+      "gate_pass": true,
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "tokens_measured": false,
+      "cost_usd": 0.0,
+      "latency_ms_mean": 2061.396509169928,
+      "errored_n": 0,
+      "coverage": {
+        "queryset_total": 47,
+        "scored_n": 47,
+        "errored_n": 0,
+        "missing_n": 0,
+        "missing_ids": []
+      },
+      "is_partial": false
+    }
+  ],
   "detail": {
     "gemini-3.1-flash-lite": [
       {
@@ -888,5 +941,6 @@
         ]
       }
     ]
-  }
+  },
+  "final_adopt": "gemini-3.1-flash-lite"
 }

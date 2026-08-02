@@ -21,8 +21,13 @@ import time
 import pytest
 
 # 기본 skip 게이트 — RUN_LIVE_SMOKE=1 일 때만 수집·실행한다.
+# 라이브 호출이 실제로 있는 테스트 각각에 붙인다(DW-641). 이 파일에는 그런 테스트만 두므로,
+# RUN_LIVE_SMOKE 없이 돌리면 **0 passed, 전부 skip**이 된다 — 이 파일이 SM-F/SM-G 게이트의
+# 증거라서, 라이브 커버리지 0인 실행이 초록 통과처럼 보이면 안 되기 때문이다(DW-630, P6).
+# `_missing_span_kinds`의 순수 함수 단위테스트는 `tests/test_live_smoke_helpers.py`로 분리했다
+# (거기서는 환경과 무관하게 항상 돈다 — DW-641 요건은 그대로 유지된다).
 _LIVE = os.getenv("RUN_LIVE_SMOKE") == "1"
-pytestmark = pytest.mark.skipif(
+_live_only = pytest.mark.skipif(
     not _LIVE,
     reason="라이브 스모크 비활성(쿼터 보호). 켜려면 RUN_LIVE_SMOKE=1 설정.",
 )
@@ -43,6 +48,31 @@ def _run_or_skip(query, context=None):
         raise  # 그 외 진짜 오류는 그대로 드러낸다
 
 
+def _missing_span_kinds(runs: list, node_names: set[str]) -> list[str]:
+    """트레이스 run 목록에서 기대하는 계측 종류 중 빠진 것을 반환한다(DW-641).
+
+    라이브 폴링 결과(LangSmith run 객체 목록)와 그래프 노드 이름 집합만 받는 순수 함수라,
+    실제 LangSmith 호출 없이 가짜 run 객체로 결정론 단위테스트가 가능하다(아래
+    `test_missing_span_kinds_*`). 이전엔 이 판정이 `test_live_smoke_langsmith_tracing`
+    본문에 인라인이라, "노드 계측이 죽으면 red가 되는가"를 확인하려면 매번 손으로
+    돌연변이를 만들어야 했다(3차·4차 리뷰가 각각 따로 손으로 했다).
+
+    빈 리스트 = 전부 있음. "run 자체가 0건"·"llm 스팬 없음"·"노드 스팬 없음"을 각각
+    구분해 반환한다 — 셋을 하나의 bool로 뭉치면 3차 리뷰가 잡았던 "한 갈래를 두 번
+    세는" 착시(개수만 보고 어느 갈래가 죽었는지 못 봄)가 재발할 수 있다.
+    """
+    if not runs:
+        return ["root"]
+    missing = []
+    run_types = {r.run_type for r in runs}
+    if "llm" not in run_types:
+        missing.append("llm")
+    if not any(r.name in node_names for r in runs):
+        missing.append("node")
+    return missing
+
+
+@_live_only
 def test_live_smoke_pathA():
     """경로 A 대표 1건 — 구조형 질의가 매물(또는 FR17 0건 안내)을 돌려주는지(SM3)."""
     out = _run_or_skip("3천만원 이하 흰색 SUV")
@@ -51,6 +81,7 @@ def test_live_smoke_pathA():
     assert out["route"] == "SQL"
 
 
+@_live_only
 def test_live_smoke_pathB():
     """경로 B 대표 1건 — CLARIFY가 실제로 되묻기 페이로드를 돌려주는지(13.4, SM3).
 
@@ -66,6 +97,7 @@ def test_live_smoke_pathB():
     assert out["clarify"]["chips"]
 
 
+@_live_only
 def test_live_smoke_clarify_cap_forces_results():
     """되묻기 상한 초과 시 서버가 실제로 clarify 없이 결과를 강제 제시하는지(13.4 DW-563, B4).
 
@@ -90,6 +122,7 @@ def test_live_smoke_clarify_cap_forces_results():
         assert _CLARIFY_CAP_NOTICE in out["answer"]
 
 
+@_live_only
 def test_live_smoke_pathC():
     """경로 C 대표 1건 — 무관 질의가 거절+빈 목록인지(CM1). guard는 LLM 호출 없음.
 
@@ -103,6 +136,7 @@ def test_live_smoke_pathC():
     assert out["narrowed_by"]
 
 
+@_live_only
 def test_live_smoke_hybrid(caplog):
     """조합형(구조+의미) 대표 1건 — HYBRID로 분류되고 hybrid_rag_node가 실제 단일쿼리로
     응답하는지(Story 13.3 AC — 직접 실행·관찰, B4)."""
@@ -142,6 +176,7 @@ def test_live_smoke_hybrid(caplog):
     # 나오지 않는다. 그래서 다음으로 가까운 관측 지점인 추출 조건 로그를 쓴다.
 
 
+@_live_only
 def test_live_smoke_langsmith_tracing():
     """LangSmith 트레이싱(FR51, Story 13.7)이 실제로 트레이스를 남기는지(B4 — 존재 확인이 아니라
     작동 확인). RUN_LIVE_SMOKE=1만으로는 부족해 별도 게이트를 둔다: LangSmith 계측 env는
@@ -214,7 +249,8 @@ def test_live_smoke_langsmith_tracing():
     # 서버 색인 지연 실측(2026-08-02): t=3s엔 0건, t≈6s에 8건. 루트가 먼저 색인되고 자식
     # 스팬이 뒤따를 수 있으므로 "루트가 보이면 중단"이 아니라 **세 조건이 다 설 때까지**
     # 기다린다 — 아니면 색인 도중 상태를 "계측이 끊겼다"로 오진한다(false red).
-    mine, run_types, node_spans = [], set(), []
+    mine: list = []
+    missing: list[str] = ["root"]
     deadline = time.time() + 30
     while True:
         found = {}
@@ -225,9 +261,8 @@ def test_live_smoke_langsmith_tracing():
             except LangSmithNotFoundError:
                 pass  # 프로젝트가 아직 생성 전 — 예산 안에서 재시도한다
         mine = list(found.values())
-        run_types = {r.run_type for r in mine}
-        node_spans = [r for r in mine if r.name in node_names]
-        if mine and "llm" in run_types and node_spans:
+        missing = _missing_span_kinds(mine, node_names)  # 판정 로직은 순수 함수(DW-641)
+        if not missing:
             break
         if time.time() >= deadline:
             break
@@ -238,12 +273,19 @@ def test_live_smoke_langsmith_tracing():
         f"({sorted(str(i) for i in candidate_ids)})가 기록되지 않았다"
         "(설정은 있는데 실제로 작동하지 않는 상태 — B4)"
     )
+    # `_missing_span_kinds`가 runs 자체가 없을 때 반환하는 "root"는 지금 위 `assert mine`이
+    # 우연히 대신 잡아준다 — 둘 다 같은 사실(트레이스 자체가 없음)을 보는 것뿐이라 논리적으로는
+    # 안전하지만, 나중에 누군가 `assert mine`을 "중복"이라 보고 지우면 이 대칭이 조용히
+    # 깨진다(코드리뷰 정정). llm/node와 같은 층에서 명시적으로 한 번 더 잠근다.
+    assert "root" not in missing, (
+        f"run_search({query!r}) 실행 후 트레이스가 하나도 수집되지 않았다: {missing}"
+    )
     # 자동 계측은 두 갈래로 독립이다: LangGraph 노드 스팬과 LLM 콜백 스팬.
     # 개수만 세면 한쪽이 통째로 죽어도 통과하므로 두 갈래를 각각 못박는다.
-    assert "llm" in run_types, (
-        f"LLM 스팬이 없다 — ChatGoogleGenerativeAI 계측이 끊겼다: {sorted(run_types)}"
+    assert "llm" not in missing, (
+        f"LLM 스팬이 없다 — ChatGoogleGenerativeAI 계측이 끊겼다: {sorted(r.run_type for r in mine)}"
     )
-    assert node_spans, (
+    assert "node" not in missing, (
         "그래프 노드 스팬이 없다 — LangGraph 노드 계측이 끊겼다"
         f"(기대한 노드 {sorted(node_names)} 중 하나도 없음, 실제: {sorted(r.name for r in mine)})"
     )
