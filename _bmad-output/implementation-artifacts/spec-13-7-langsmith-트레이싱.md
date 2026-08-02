@@ -150,6 +150,28 @@ warnings: ['oversized']
 - I/O 매트릭스 2·3행에 저장소 검사가 없다 — 3행("파일엔 있으나 미노출")은 게이트 skip이 곧 그 상태의 관측이고, 2행(OFF 회귀)은 기존 스위트가 env 무관이라는 사실 자체가 근거다.
 - 트레이스 식별에 nonce를 심어라 — `collect_runs` 기반 run id 교체(patch 4)가 더 강한 식별을 제공하므로 질의문 변조 불필요.
 
+### 2026-08-03 — 독립 후속 리뷰 패스 (DW-618 소진)
+
+새 세션(직전 세 패스의 문맥 없음)에서 "done이니까 맞다"를 가정하지 않고 **전부 다시 돌려** 확인했다. 기준선: 전체 스위트 **399 passed, 85 skipped**.
+
+- intent_gap: 0 / bad_spec: 0 / patch: 3 (high 0, medium 2, low 1) / defer: 2 (low)
+
+**먼저 확인한 것 — 3차 패스가 "고쳤다"고 선언한 것이 진짜인가(라이브 재현):**
+- `test_live_smoke_langsmith_tracing`의 노드 스팬 단언을 **라이브에서 양방향으로** 검증했다. 3차 패스는 합성 스팬 집합으로만 확인했으므로 실제 테스트가 통째로 도는 상태에서 다시 쟀다. (a) 그대로 실행 → **PASSED**(9.4초). (b) `Client.list_runs` 결과에서 그래프 노드 이름(`answer·clarify·guard·hybrid·router·sql`) 스팬만 걸러내 "LangGraph 노드 계측만 죽은 상태"를 재현 → **FAILED**(`assert node_spans`, 38.6초 = 30초 예산 소진 후 실패). **3차의 수정은 실재한다** — 노드 계측을 죽이고 초록을 얻을 수 없다.
+- 노드 이름이 langchain-core가 만드는 스팬 이름과 겹치지 않는지도 확인(`add_node` 6개 = `router·sql·hybrid·clarify·guard·answer` vs 계측 산물 `RunnableSequence·ChatGoogleGenerativeAI·PydanticOutputParser·_route_decision`) — 3차가 잡은 "한 갈래를 두 번 세는" 구조가 재발할 자리는 현재 없다.
+
+**addressed_findings:**
+  - `[medium]` `[patch]` `test_langsmith_env_contract.py`에 **아무도 지키지 않는 규칙이 하나 있었다** — "빈 값·공백-only는 미설정으로 취급되어 다음 후보로 내려간다". 돌연변이 검사로 실측: `langsmith.utils.get_env_var`에서 `value.strip() != ""` 조건만 뺀 가짜 SDK를 끼워도 **기존 10건이 전부 초록**이었다. 파라미터 검사의 `("", False)`가 그 자리를 덮는 것처럼 보이지만 그건 `"" != "true"`라서 통과하는 것이고, "빈 값이면 자리를 비워 다음 후보로 내려간다"와 "빈 값이 자리를 막는다"를 **구분하지 못한다**(3차가 잡은 "두 번 센다"와 같은 종류의 착시). 이 규칙에 매달린 것이 둘: 견본 주석의 "안 쓸 거면 반드시 비워 둬라"(견본은 실제로 두 키를 빈 값으로 커밋한다)와 라이브 게이트의 `not get_env_var("API_KEY")`. `test_빈값과_공백만_있는_값은_미설정으로_취급된다` 신규 — 같은 가짜 SDK에 **FAILED**, 실제 SDK로 **11 passed**.
+  - `[medium]` `[patch]` DW-616(두 견본의 락스텝이 관례로만 존재)을 재확인하다가 **DW-616이 제안한 해법 자체가 성립하지 않는다**는 것을 실측했다 — 두 파일의 키 집합은 이미 일치하지 않는다(`api/.env.example`에만 `CORS_ORIGINS`·`CORS_ORIGIN_REGEX`). "키 집합의 일치"를 그대로 단언하면 첫 실행부터 red다. `api/tests/test_env_example_parity.py` 신규: 측정한 비대칭 2건을 `_KNOWN_API_ONLY`로 **동결**하고(면제가 아니라 동결 — 새 비대칭은 어느 방향이든 red), 양방향으로 검사한다. 일부러 깨서 확인: 루트에만 키 추가 → FAILED, api에만 키 추가 → FAILED, api 견본에서 LangSmith 키 제거 → 2건 FAILED, 원복 → 2 passed. 네트워크·키 없음 → CI의 api 잡에서 실제로 돈다.
+  - `[low]` `[patch]` Verification 3번 명령이 **적힌 대로 실행하면 죽는다** — 새 셸에서 그대로 돌려 확인: `LangSmithAuthError: 401`. 앞 명령의 `source .env`가 같은 셸에 남아 있다는 숨은 전제였고, 이 스토리가 없애려는 "파일에 있음 ≠ 노출됨" 함정과 정확히 같은 종류다(13.8 후속 리뷰가 `DATABASE_URL` 누락으로 잡은 것과 동형). `set -a && source .env && set +a`를 그 줄에도 붙이고 이유를 남겼다 — 붙인 뒤 실행하면 방금 기록된 run 3건이 조회된다.
+
+**확인했으나 손대지 않은 것:**
+- DW-615(langchain 계열 버전 미고정) — 실물 재확인: `requirements.txt`·`pyproject.toml` 둘 다 `langchain-google-genai` 무버전, `langsmith` 미선언, `api/Dockerfile`은 `pip install -r requirements.txt`, 커밋된 `api/uv.lock`(git 추적됨)은 CI·Dockerfile·스크립트 어디서도 안 쓰인다. **장부의 서술이 전부 정확하다.** 의존성 정책 변경은 이 리뷰(테스트·문서·CI 한정)의 권한 밖이라 그대로 둔다.
+- 견본 주석이 "CI에서 실제로 검사한다"고 주장하는 부분 — `.github/workflows/tests.yml`의 api 잡이 `working-directory: api`에서 `python -m pytest -q`(전체)를 돌리므로 그 주장은 참이다(존재 확인이 아니라 배선 확인).
+
+**Deferred (2건 → DW-641 신규 등재, 기존 항목 무수정):**
+- DW-641(low, 2건) — (1) 라이브 테스트의 단언 로직이 테스트 함수 본문에 인라인이라 결정론으로 재검증할 방법이 없다(3차·이번 패스 모두 매번 손으로 돌연변이를 만들어 확인했다), (2) `_KNOWN_API_ONLY`의 CORS 비대칭이 의도인지 누락인지 미확인.
+
 ## Design Notes
 
 `api/app/config.py`의 pydantic `Settings(env_file=".env")`는 `.env` 파일을 읽어 **자신이 선언한 필드만** 채운다 — `load_dotenv()`처럼 파일 내용을 통째로 `os.environ`에 반영하지 않는다(직접 실행해 확인: `Settings()` 인스턴스화 후에도 `os.environ`엔 `LANGCHAIN_TRACING_V2`가 없다). `langsmith`/`langchain-core`의 자동 계측은 `os.environ`을 직접 읽으므로, `api/.env`에 값을 적어 넣는 것과 "트레이싱이 실제로 켜지는 것" 사이엔 이 프로젝트에 한해 괴리가 있다. Cloud Run은 컨테이너 프로세스 env로 직접 값을 주입해 이 괴리가 없고, 로컬은 실행 전 `source`(또는 인라인 prefix)가 필요하다 — 이 문서화가 이 스토리의 실질적인 산출물이다.
@@ -159,7 +181,7 @@ warnings: ['oversized']
 **Commands:**
 - `cd api && .venv/bin/python -m pytest tests/ -q` -- expected: 기존과 동일하게 전량 통과(회귀 없음, 이 변경이 `.env.example` 문서 2건뿐임을 뒷받침).
 - `cd api && set -a && source .env && set +a && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -c "from app.graph.graph import run_search; print(run_search('가장 저렴한 SUV 보여줘')['route'])"` -- expected: 정상 라우팅 결과 출력(로컬 Supabase 필요).
-- 위 명령 직후 `cd api && .venv/bin/python -c "from langsmith import Client; from langsmith.utils import get_tracer_project; c=Client(); runs=list(c.list_runs(project_name=get_tracer_project(), limit=3)); print([(r.name, str(r.start_time)) for r in runs])"` -- expected: 방금 실행한 타임스탬프에 해당하는 새 run이 조회된다(트레이스 실제 기록 확인). 조회 프로젝트를 `'default'`로 하드코딩하지 않는 이유: `LANGSMITH_PROJECT`가 설정된 셸에선 전송 대상과 어긋나 "계측이 죽었다"고 오진한다.
+- 위 명령 직후 `cd api && set -a && source .env && set +a && .venv/bin/python -c "from langsmith import Client; from langsmith.utils import get_tracer_project; c=Client(); runs=list(c.list_runs(project_name=get_tracer_project(), limit=3)); print([(r.name, str(r.start_time)) for r in runs])"` -- expected: 방금 실행한 타임스탬프에 해당하는 새 run이 조회된다(트레이스 실제 기록 확인). 조회 프로젝트를 `'default'`로 하드코딩하지 않는 이유: `LANGSMITH_PROJECT`가 설정된 셸에선 전송 대상과 어긋나 "계측이 죽었다"고 오진한다. `set -a && source .env && set +a`를 이 줄에도 반복하는 이유(✎ 2026-08-03 후속 리뷰, 실행해서 확인): 이게 없으면 `LANGCHAIN_API_KEY`가 프로세스에 없어 `LangSmithAuthError: 401`로 죽는다 — 앞 명령의 셸 상태를 물려받는다는 숨은 전제였고, 하필 이 스토리가 없애려는 "파일에 있음 ≠ 노출됨" 함정 그 자체다.
 - 대조군: 위 `source .env` 없이(트레이싱 env 미노출 상태로) 같은 `run_search` 명령을 실행 -- expected: 동일한 라우팅 결과, LangSmith에 새 run 없음(OFF 회귀 없음 + "파일에 있음 ≠ 켜짐" 실측 증거).
 
 **Manual checks (if no CLI):**

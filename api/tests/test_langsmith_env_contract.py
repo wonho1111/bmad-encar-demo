@@ -98,6 +98,40 @@ def test_api_key는_langsmith_네임스페이스가_이긴다(env):
     assert get_env_var("API_KEY") == "k-견본"
 
 
+def test_빈값과_공백만_있는_값은_미설정으로_취급된다(env):
+    """견본이 **실제로 배포하는 상태**를 못박는다 — 이 파일의 두 키는 값이 빈 채로 커밋돼 있다.
+
+    왜 따로 있나(2026-08-03 후속 리뷰, B4): 위 파라미터 검사에 `("", False)`가 있어 빈 값이
+    덮인 것처럼 보였지만, 그건 `"" != "true"`라서 통과하는 것이지 **"빈 값은 미설정으로
+    보고 다음 후보로 내려간다"를 확인하는 게 아니다**. 실측으로 확인: `get_env_var`에서
+    `value.strip() != ""` 조건만 빼낸 가짜 SDK를 끼워도 기존 10건이 전부 통과했다
+    (= 이 규칙을 지키는 검사가 하나도 없었다).
+
+    이 규칙에 매달려 있는 것 두 가지 — 둘 다 이 스토리의 산출물이다:
+      · 견본 주석의 "안 쓸 거면 반드시 비워 둬라" — 빈 값이 미설정으로 넘어가야만 참이다.
+      · `test_live_smoke_langsmith_tracing`의 게이트 `not get_env_var("API_KEY")` —
+        공백만 든 키를 "설정됨"으로 보면 게이트가 통과해 401로 시끄럽게 죽는다.
+    """
+    # 빈 값은 그 자리를 비운 것과 같다 → 다음 후보(TRACING 자리)로 내려간다
+    env(LANGCHAIN_TRACING_V2="", LANGSMITH_TRACING="true")
+    assert tracing_is_enabled() is True
+
+    # 공백만 든 값도 마찬가지 — source가 실수로 실어 보낸 공백이 자리를 막지 않는다
+    env(LANGCHAIN_TRACING_V2="   ", LANGSMITH_TRACING="true")
+    assert tracing_is_enabled() is True
+
+    # 반대 방향: 값이 실제로 들어 있으면 그 자리를 막는다(위 두 건이 "무조건 True"가 아님)
+    env(LANGCHAIN_TRACING_V2="false", LANGSMITH_TRACING="true")
+    assert tracing_is_enabled() is False
+
+    # API_KEY 자리도 같은 규칙 — 공백-only는 미설정이라 다음 네임스페이스로 내려간다
+    env(LANGSMITH_API_KEY="  ", LANGCHAIN_API_KEY="k-견본")
+    assert get_env_var("API_KEY") == "k-견본"
+
+    env(LANGCHAIN_API_KEY="   ")
+    assert not get_env_var("API_KEY"), "공백-only 키가 '설정됨'으로 보이면 라이브 게이트가 뚫린다"
+
+
 def test_tracing만_켜고_api_key가_없어도_켜진_것으로_보인다(env):
     """견본 주석의 '두 값은 함께 채워야 한다' 경고의 근거.
 
