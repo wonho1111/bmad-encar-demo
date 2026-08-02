@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-08-02'
 status: 'done'
 baseline_revision: '5fd4b67232a084cb671e06c3937b59581679fef5'
-final_revision: '356dc498ba8e87c3ce61876d2f9b5412bc1e94fc'
+final_revision: 'ebf4d8a30c3dadf9974c84c3a9faa34a25dc440c'
 review_loop_iteration: 0
 followup_review_recommended: true
 context: ['{project-root}/api/docs/ai-ab-test-queryset.json', '{project-root}/api/docs/g2-baseline-report.json']
