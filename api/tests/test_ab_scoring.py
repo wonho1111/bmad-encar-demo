@@ -656,11 +656,13 @@ def test_flaky_measured_true_when_repeated_runs_present():
 
 
 # ── 구어휘로 캡처된 옛 raw 재채점 (DW-562 후속, review-4) ──────────────────────
-# 13.1이 캡처해 리포에 커밋한 docs/g2-baseline.json(44개 전량)은 구어휘 A/B/C다.
-# route_ok가 primary/acceptable만 번역하고 actual은 그대로 두던 동안, 그 파일을 재채점하면
-# 라우팅이 50/55 → 0/55로 무너지고(저장된 g2-baseline-report.json과 직접 모순) 멀티턴 하드
-# 오염 게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과했다. DW-562가 막으려던
+# 구어휘 A/B/C로 캡처된 raw를 신어휘 코드로 재채점하면, route_ok가 primary/acceptable만
+# 번역하고 actual은 그대로 두던 동안 라우팅이 50/55 → 0/55로 무너지고 멀티턴 하드 오염
+# 게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과했다. DW-562가 막으려던
 # "전량 오판"이 방향만 바뀌어 되살아난 것이라, 캡처 어휘를 읽는 지점에서 올린다.
+# ⚠️ 13.8 3차 리뷰 정정: 이 주석은 "커밋된 docs/g2-baseline.json(44개 전량)이 구어휘"라고
+#   적었으나 지금은 거짓이다 — DW-609의 2026-08-02 재캡처로 그 파일은 47항목·전부 신어휘다
+#   (실측). 별칭표는 리포에 남은 구어휘 raw가 아니라 **외부에서 들어올 옛 raw** 대비책이다.
 
 def test_captured_route_upgrades_legacy_and_passes_new_through():
     assert score_ab.captured_route("A") == "SQL"

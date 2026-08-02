@@ -3484,7 +3484,14 @@ location: `api/scripts/run_phase_b.py`(`main()`, `model_name = args.model or set
 severity: low
 reason: 이 스토리는 baseline 단독 캡처만 다루므로 `--model` 생략이 지금은 안전하다(항상 현재 baseline 모델로 정확히 라벨링됨). 하지만 이 스크립트의 docstring이 이미 명시하듯 Story 13.8이 후보 모델 캡처에 이 스크립트를 재사용할 가능성이 있는데, 그때 `--model`을 깜빡하면 후보 결과가 baseline 모델명으로 조용히 오라벨링돼 A/B 비교 전체가 오염될 수 있다.
 trigger: Story 13.8이 후보 모델 캡처를 이 스크립트로 실행하기 직전 — 그 시점에 `--model`을 필수 인자로 바꿀지 검토한다.
-status: open
+status: done 2026-08-02
+resolution: **13.8 범위 밖으로 종결(모델 비교 아님)** — `spec-13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b.md`가
+  정정한 전제다. 이 항목은 "Story 13.8 = 후보 모델 A/B 채택 판단"을 전제로 defer됐으나,
+  `epics-increment-2026-07-12.md`의 실제 13.8 AC(967~1130줄)엔 모델 비교가 없다 — SM-F/SM-G/G2/CM-B
+  네 게이트(단일 코드 상태 post-13.7의 회귀 확인)뿐이다. 실제로 13.8은 `run_phase_b.py`를
+  `--model` 인자 없이(=현재 baseline 모델 그대로 라벨링) 오늘(2026-08-02) 47문항 재캡처에만
+  썼다 — 후보 모델 캡처는 이번에도 하지 않았다. 모델 후보 비교가 실제로 생기면 그때 이 항목을
+  다시 열어 `--model` 필수화를 검토한다.
 
 ### DW-557: `status='on_sale'` 강제가 "존재 확인"뿐이어서 `NOT status='on_sale'`로 판매완료 매물이 노출된다 (FR11 우회, 실측)
 
@@ -3570,7 +3577,22 @@ location: `api/scripts/score_ab.py`(`lexicographic_winner()` 1순위 `result_mea
 severity: medium
 reason: 사전식 승부는 `routing_correct`를 **절대 개수**로, `result_mean`을 **서로 다른 분모의 평균**으로 비교한다. 실측: 3/44 부분 baseline(라우팅 3/3 완벽)과 44/44 후보(라우팅 44/44 완벽)를 붙이면 "라우팅 정답 3 vs 44"로 후보가 이긴다 — 두 모델 다 완벽한데 승부가 커버리지 차이만으로 갈린다. `regression` 게이트도 같은 축에서 반대 방향으로 틀릴 수 있다. 리뷰 pass 4가 `coverage`/`is_partial`을 요약에 기록했지만 이 비교 함수는 그 값을 읽지 않는다. 정확히 DW-554(44건 전량 캡처 후 13.8이 후보와 비교)가 만드는 구도다.
 trigger: Story 13.8 스펙 작성 시(또는 DW-554 전량 캡처 직후 첫 A/B 비교 직전) — 두 요약의 채점된 id 집합이 다르면 비교를 거부할지, 교집합으로 재채점할지, 비율로 비교할지를 그 스펙에서 정하고 `lexicographic_winner()`에 반영한다.
-status: open
+status: done 2026-08-02
+resolution: **13.8 범위 밖으로 종결(모델 비교 아님, 위 DW-556과 동일 근거)**. `lexicographic_winner()`는
+  후보 모델 채택 판단(2파일 모드)에서만 쓰이는데, 13.8이 실제로 실행한 `score_ab.py` 호출은
+  baseline(`docs/g2-baseline.json`)과 오늘 재캡처(`docs/g2-exit-gate-2026-08-02.json`)를 함께
+  넣긴 했지만 둘 다 **같은 코드 상태·같은 큐리셋 47/47 완전 커버리지**(`is_partial:false` 양쪽)라
+  이 항목이 우려하는 "커버리지가 다른 두 요약의 절대 개수 비교" 왜곡이 애초에 발생할 조건이
+  아니었다(실측: 두 요약이 `routing_correct=54/57`·`result_mean=0.894`로 완전 동일 — 재현성
+  확인이지 커버리지가 다른 후보 비교가 아니다). 판정도 `lexicographic_winner()`의 랭킹이 아니라
+  `regression_block`(단일 불리언, `candidate.result_mean < baseline.result_mean` → False)만 게이트로
+  썼다. 모델 후보 비교가 실제로 생기면(커버리지가 다른 두 캡처를 비교하게 되면) 그때 다시 연다.
+  ✎ 리뷰(verification-gap 렌즈)가 "요약 수치가 같다"만으로는 파일을 복사한 것과 구분 안 된다는
+  의심을 실제로 검증했다 — `docs/g2-baseline.json`과 `docs/g2-exit-gate-2026-08-02.json`을
+  `latency_ms` 필드만 제외하고 diff한 결과 route·id·answer·clarify 페이로드는 전부 바이트
+  단위로 동일하되 `latency_ms`는 항목마다 다르게 나왔다(진짜 독립된 라이브 재실행이라는
+  증거 — 값을 복사했다면 latency까지 같았을 것이다). 요약 수치의 완전 동일은 파일 재사용이
+  아니라 진짜 재현성으로 확인됐다.
 
 ### DW-565: 유일한 raw 캡처 러너가 구조적으로 N=1·토큰 0이라 사전식 3·4순위(flaky·비용)가 영구 미측정이다
 
@@ -3579,7 +3601,15 @@ location: `api/scripts/run_phase_b.py`(`_run_single`/`_run_multiturn` — 1회 �
 severity: medium
 reason: 리뷰 pass 4가 "미측정 축이 승부를 내지 않게" 두 tier를 건너뛰도록 고친 것 자체는 옳다. 다만 이 레포가 실제로 만들 수 있는 유일한 raw는 이 러너의 출력뿐이고 그건 항상 N=1·토큰 0이므로, 두 tier가 **영원히 실행되지 않는다** — 사전식 승부는 사실상 결과집합·라우팅·지연 3축으로 줄었고, 그중 지연은 로컬 컨테이너 기준이라 모델 선택 신호로 검증된 적이 없다. 즉 "조작된 값이 결정한다"는 문제는 "결정 근거가 없다"로 옮겨갔을 뿐이다.
 trigger: Story 13.8(모델 A/B 채택 판단) 스펙 작성 시 — N>1 반복 실행과 토큰 실측을 러너에 넣을지, 아니면 두 tier를 걷어내고 사전식 기준을 명시적으로 3축으로 줄일지 결정한다.
-status: open
+status: done 2026-08-02
+resolution: **13.8 범위 밖으로 종결(모델 비교 아님, 위 DW-556/564와 동일 근거)**. N>1 반복 실행·토큰
+  실측 확장은 "사전식 3·4순위(flaky·비용)로 후보 모델을 가른다"는 전제에서만 의미가 있는데,
+  13.8은 단일 코드 상태(post-13.7)의 회귀만 확인하므로 flaky·비용 축 자체가 판정에 관여하지
+  않는다 — G2 게이트 정의는 `contamination==0 and deadend==0 and errored_n==0 and scored_n>0` +
+  `result_mean` 비하락뿐이다(Design Notes). 오늘 재캡처도 러너를 그대로(N=1·토큰 0) 썼고
+  `flaky_measured:false`·`tokens_measured:false`로 정직하게 남았다(미측정이지 "흔들림 없음"이
+  아님 — DW-554 resolution과 동일 주의). 모델 후보 비교가 실제로 생기면 그때 N>1·토큰 실측
+  확장을 결정한다.
 
 ### DW-566: 러너 테스트가 `RUN_LIVE_SMOKE=1`을 켠 채 돌아, 쿼터 보호가 모킹 대상 1곳에만 의존한다
 
@@ -3717,7 +3747,9 @@ location: `api/tests/demo_queries.py`(`SEMANTIC_B` 목록) · `api/tests/test_de
 severity: medium
 reason: 13.2의 새 프롬프트는 "명시 조건 + 용도·느낌 조건이 둘 다면 HYBRID(최우선)"인데, ② 목록의 `연비 좋은 전기차 추천`은 전기차(=연료, 명시 조건) + `연비 좋은`(느낌)이라 이 규칙대로 HYBRID로 간다. 실측(라이브 LLM): ② 4개 중 `연비 좋은 전기차 추천`만 **HYBRID**, 나머지 3개는 CLARIFY. ③ 회색지대 3개 중 `너무 비싸지 않은 중형차`도 **HYBRID**. 그런데 `test_sm3_pathB_returns_listings`는 `_patch_route(monkeypatch, "CLARIFY")`로 route를 **강제 주입**하므로, 라우터가 실제로 그 질의를 어디로 보내든 게이트는 초록이다 — 즉 SM3(데모 인수)가 이 질의에 대해 아무것도 보장하지 않는다. DW-573은 같은 파일의 "구어휘·죽은 상수·문서가 정본으로 가리킴"을 다루지만, **② 목록 자체의 소속이 실측과 다르다**는 이 사실은 그 항목에 없다.
 trigger: DW-573을 손대는 같은 작업에서 함께(`api/docs/ai-demo-queries.md`를 신어휘로 옮길 때) — 그때 ②·③ 목록을 실측 분류로 재배치하고, `test_sm3_pathB_returns_listings`가 route를 강제 주입하는 대신 목록별 기대 route를 받도록 바꿀지 정한다. 데모 시연 전이라면 그 전에 한다(데모 당일 이 질의가 문서와 다른 경로를 탄다).
-status: open
+status: open (부분 해소, 2026-08-02)
+✎ 2026-08-02 부분 해소(story 13-8, intent-alignment 리뷰가 발견) — ①②④ 목록을 4분기 어휘로 옮기는 작업(13.8)에서 ②·③의 구체적 질의를 실제로 교체했다: ②에서 `연비 좋은 전기차 추천`(이 항목이 지적한 오분류 질의)을 빼고 `출퇴근하기 편한 차`로, ③ 회색지대 3개도 전부 새 질의로 교체했다 — 이 항목이 근거로 든 구체 질의는 더 이상 파일에 없으므로 그 부분의 실측 증거는 낡았다. 다만 **핵심 결함(route 강제 주입)은 그대로 남는다** — `_patch_route(monkeypatch, route)`는 여전히 라우터를 우회하므로, 새 목록도 실제 분류와 다시 어긋날 수 있고 SM3는 그걸 못 잡는다. 남은 범위를 좁힌다: "②·③ 목록이 실측과 맞는가"는 매번 문서를 고칠 때 수동 확인해야 하고, "SM3가 실제 라우팅을 검증하지 않는다"는 구조적 문제로 남는다.
+trigger(갱신): SM3 판정을 라이브 라우터 결과 기반으로 바꿀지(비용·결정론성 트레이드오프 발생) 결정하는 스토리에서 — 그 전까지는 문서·목록을 고칠 때마다 실측 재분류를 수동으로 병행한다.
 
 ### DW-577: 라이브 스모크 파일이 `route`를 단언하지 않고 HYBRID 질의도 없어, 4갈래 회귀를 재실행 가능한 형태로 잡지 못한다
 
@@ -4120,4 +4152,137 @@ origin: review-budget-followup
 source_spec: `spec-13-7-langsmith-트레이싱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-165936-4495; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-619: `docs/conventions.md` §6 FR11 강제 지점 목록에 하이브리드 벡터검색(`hybrid_rag_node`)이 등록되지 않았다
+
+origin: story 13-8(RAG exit-gate 검증) 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 conventions.md §6 원문으로 확인
+location: `docs/conventions.md`(§6 "매물 축" 불릿, 140~145줄) · `api/app/graph/hybrid_rag_node.py`(코드 자체는 `WHERE status='on_sale'`을 실제로 강제하고 있음 — 실측 결함 아님, 등록 누락)
+severity: medium
+reason: `project-context.md` 규칙7은 "새 조회 경로를 열면 §6의 강제 지점 목록에 반드시 함께 등록한다"고 명시하는데, §6의 "매물 축" 불릿은 여전히 RLS·`sql_guard.py`·문서 RAG 필터 3곳만 나열한다. `hybrid_rag_node`는 13.1~13.3(2026-07-30~31)이 이미 만든, 4번째로 늘어난 FR11 강제 지점인데 그때도 지금(13.8)도 이 목록에 오르지 않았다 — 정확히 규칙7이 경고하는 실패 모드이자, §6 자신이 9.4/9.5/9.6 이미지 축에서 겪었던 것과 같은 종류의 누락(148줄 "이 목록에 한 번도 오른 적이 없었다" 사례와 동형)이다. 코드 자체는 정상 작동한다(13.8의 CM-B 라이브 검증으로 확인) — §6만 읽는 다음 사람이 이 강제 지점의 존재를 모른다는 것이 문제다.
+trigger: `docs/conventions.md`를 다음에 손댈 때, 또는 §6을 참조해 새 AI 검색/조회 경로를 여는 다음 스토리 착수 시 — "매물 축" 불릿에 `hybrid_rag_node`(`api/app/graph/hybrid_rag_node.py`, 코드가 `WHERE status='on_sale'` 절을 템플릿으로 붙임, 강제 장치: `api/tests/test_hybrid_rag_node.py`)를 추가한다.
+status: open
+
+### DW-620: `epic-13-context.md`(및 상위 계획 문서)의 "가이드 문서 12개"가 실제 활성 코퍼스(10개)와 어긋난다
+
+origin: story 13-8(RAG exit-gate 검증) 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 `api/corpus/` 디렉터리로 실측 확인
+location: `_bmad-output/implementation-artifacts/epic-13-context.md`(Requirements) · `api/corpus/`(활성 10개, `_excluded/`에 2개: `08-할부-리스-현금-비교`·`09-보험-세금-기초`) · `api/scripts/score_ab.py`(`DOC_STEM_TO_TITLE` 채점 맵도 10개 항목)
+severity: low
+reason: "12개"라는 수치는 13.8 이전부터(적어도 13.1~13.6 시점부터) 계획 문서·epic 컨텍스트에 반복돼 온 것으로, 13.8의 diff가 새로 만든 오차가 아니다 — epic-13-context.md 재컴파일(13.8 step-01)도 원본 그대로 옮겼을 뿐이다. 실제로 `doc_rag_node`/`hybrid_rag_node`가 로드하는 코퍼스는 10개뿐이고, 채점 도구의 인용 매핑도 10개와 일치한다. 같은 문단이 청킹 도입 임계값을 "문서 ≥20개"로 적어 두므로, 활성 문서 수를 정확히 아는 게 그 임계값과의 거리 판단에 실질적으로 영향을 준다.
+trigger: 가이드 코퍼스 문서를 추가·제외하는 다음 작업(corpus/ 디렉터리를 손대는 스토리) 착수 시 — 그때 "12개"를 "10개(활성) / 12개(전체, 2개 제외)"로 명확히 하거나, `_excluded/`의 2개를 아예 코퍼스 계획에서 제외 확정한다.
+status: open
+
+### DW-621: G2 exit-gate는 실행된 형태상 "회귀 검사"가 아니라 "재현성 검사"다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial·verification-gap·intent-alignment 세 렌즈가 독립적으로 같은 결론, 오케스트레이터가 두 캡처 파일 per-item 대조로 확인
+location: `api/docs/g2-baseline.json` ↔ `api/docs/g2-exit-gate-2026-08-02.json` · `api/scripts/score_ab.py`(`regression = candidate.result_mean < baseline.result_mean`) · `_bmad-output/implementation-artifacts/epic-13-context.md`(게이트 정의: "G2(회귀 — Phase B baseline 이하로 떨어지면 실패)")
+severity: medium
+reason: 에픽 정의상 G2는 "13.1~13.7이 품질을 떨어뜨리지 않았음"을 증명하는 회귀 게이트다. 그런데 비교 대상 baseline은 DW-609가 2026-08-02에 **이미 13.6까지 들어간 코드**로 뜬 것이라, 후보 캡처와 baseline이 **같은 코드 상태**다. 실측: 두 파일의 47개 항목이 `latency_ms`를 빼면 바이트 단위로 동일하고, `git log --since=2026-08-02 -- api/app`은 커밋 0건이다. 즉 `regression_block:false`는 구조적으로 참일 수밖에 없고, 13.1~13.7이 실제로 만든 품질 변화는 양쪽에 똑같이 녹아 있어 이 게이트가 원리적으로 볼 수 없다. 13.8 스펙의 Design Notes는 이 사실을 이미 정직하게 적어 뒀다("어제 캡처와 오늘 재캡처의 재현성 확인이 G2의 실질") — 문제는 **에픽 레벨 게이트 문구는 여전히 "회귀"**라, 이 문서만 읽는 사람은 에픽이 회귀 증거 위에서 닫혔다고 믿는다. 13.8이 만든 결함이 아니라 baseline이 늦게 심긴 데서 온 선재 조건이다(그래서 defer). 재현성 확인 자체는 무가치하지 않다 — 라우팅이 비결정적으로 흔들리지 않음을 증명한다.
+trigger: **Story 13.9 완료 후 기준선을 재캡처할 때** — 13.9는 어차피 baseline을 다시 떠야 하므로(epic-13-context.md Cross-Story Dependencies) 그 자리가 정확히 이 결정을 내릴 지점이다. 그때 (a) 13.9 이전 코드로 뜬 캡처를 baseline으로 고정해 진짜 "이전 vs 이후" 비교를 만들거나, (b) 만들 수 없으면 에픽 게이트 문구를 "재현성"으로 정정해 무엇이 증명됐고 무엇이 안 됐는지를 문서가 정직하게 말하게 한다.
+status: open
+
+### DW-622: 스킵된 보안 테스트가 통과와 구별되지 않는다 — 환경변수 이름 하나로 게이트가 조용히 사라진다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial 렌즈가 발견, 오케스트레이터가 스펙에 적힌 커맨드를 그대로 재실행해 재현
+location: `api/tests/integration/*_real_db.py`(가드 변수 = `TEST_DATABASE_URL`) · `api/tests/test_readonly.py`(가드 변수 = `DATABASE_URL`) · `.github/workflows/tests.yml`(`api-db` 잡만 `TEST_DATABASE_URL`을 준다)
+severity: medium
+reason: 13.8은 CM-B(보안 게이트)를 "실DB로 확인했다"고 기록했지만, 스펙에 적힌 커맨드가 `test_fr11_cover_images_real_db.py`에 `DATABASE_URL`을 넘겼다 — 이 파일이 보는 변수는 `TEST_DATABASE_URL`이라 실제로는 `1 skipped`였고, pytest 종료코드가 0이라 초록으로 읽혔다. 같은 이유로 `test_readonly.py`(ai_readonly 롤 격리) 2건도 스킵된 채 "147 passed, 2 skipped"로 통과 보고됐다. **커맨드는 이번 후속 리뷰에서 고쳤고 세 축 전부 실제로 돌려 green을 확인했다**(FR11 실DB 1 passed · ai_readonly 2 passed · SECURITY DEFINER 5 passed) — 그러나 고친 건 이 스토리의 커맨드 한 줄뿐이고, **"보안 테스트가 스킵되면 눈에 띈다"는 구조적 보장은 여전히 없다.** 두 종류의 실DB 테스트가 서로 다른 변수명을 쓴다는 것 자체가 다음 사람에게 같은 함정을 다시 놓는다. CLAUDE.md B9("규칙은 어길 수 없는 자리에 박는다") 위반이다.
+trigger: **api 테스트 실행 방식이나 CI 잡을 다음에 손댈 때** — 두 변수명을 하나로 합치거나(하나가 다른 하나를 fallback으로 읽게), 보안 표식(`@pytest.mark.security`)이 붙은 테스트가 스킵되면 스위트를 실패시키는 conftest 훅을 넣는다. 최소한 로컬 실행 문서에 두 변수를 모두 적는다.
+status: open
+
+### DW-623: DW-576의 `status:` 값이 sweep 파서 문법 밖이라 장부에서 조용히 사라질 수 있다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial·edge-case 두 렌즈가 독립 발견
+location: `_bmad-output/implementation-artifacts/deferred-work.md`(DW-576 블록의 `status:` 줄, 그리고 같은 블록의 `trigger(갱신):` 줄) · `.claude/skills/bmad-loop-sweep/deferred-work-format.md`(문법 정의) · `.claude/skills/bmad-loop-sweep/automation-mode.md`
+severity: medium
+reason: 13.8이 DW-576을 부분 종결하며 `status: open (부분 해소, 2026-08-02)`로 적었다. 장부 전체에서 이 값 하나만 문법 밖이다(나머지는 전부 `open` 또는 `done <날짜>`). sweep 스킬은 "`status:` 줄이 `open`인 블록"을 고르고, automation-mode는 "open_ids가 장부의 `status: open` 항목과 **정확히** 일치해야 한다"고 요구한다 — 어긋나면 결과 전체가 무효가 되고 재시도를 태운다. 즉 DW-576(회색지대 route가 `_patch_route`로 강제 주입돼 SM3가 실제 라우팅을 보장하지 못하는 **구조적** 결함)이 열린 것도 닫힌 것도 아닌 상태로 빠질 수 있다. 같은 블록에 `trigger:`와 `trigger(갱신):`가 둘 다 있는 것도 표준 키 하나 원칙에서 벗어난다. **이 항목을 직접 고치지 않은 이유**: 이번 실행의 지시가 "기존 장부 항목은 수정·재개봉·재작성하지 말고 신규만 추가하라"였다 — 기존 항목의 상태·해소는 오케스트레이터 소관이다.
+trigger: **오케스트레이터가 다음 sweep을 돌리기 전** — DW-576의 `status:`를 `open`으로 되돌리고 "부분 해소(2026-08-02)"는 본문 주석(`✎`)으로 옮기며, `trigger(갱신):`을 표준 `trigger:` 한 줄로 합친다.
+status: open
+
+### DW-624: 13.8 diff가 기존 장부 항목 6건의 사실관계를 바꿨는데 그 항목들이 갱신되지 않았다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial·edge-case 렌즈 발견, 오케스트레이터가 각 항목 원문과 코드로 대조
+location: `_bmad-output/implementation-artifacts/deferred-work.md` — DW-573 · DW-577 · DW-590 · DW-556 · DW-564 · DW-565
+severity: low
+reason: 세 갈래다. (1) **트리거가 실제로 발동했는데 기록이 없다** — DW-573의 트리거는 "`api/docs/ai-demo-queries.md`를 손대는 다음 작업 시"인데 13.8이 바로 그 파일을 다시 썼고 신어휘 이관도 절반 했지만 항목은 손대지 않은 채 `open`이다(남은 절반: 소비처 0인 죽은 상수 `DEMO_QUERIES`, `docs/learning/06-file-reference.md`의 "단일 출처" 표현). DW-590도 "DW-573/576을 다루는 같은 작업"을 트리거로 적었는데 그 작업이 일어났고 세 항목 전부 미이행이다. (2) **적힌 사실이 이제 거짓이다** — DW-577은 "`test_live_smoke.py`에 `out['route']` 단언 0건, 'HYBRID' 등장 0회"라고 적었는데 현재 그 파일은 SQL/CLARIFY/REJECT/HYBRID 네 route를 전부 단언하고 13.8은 그걸 SM-F/SM-G 증거로 썼다. (3) **닫으면서 다시 열 자리를 안 정했다** — DW-556·564·565는 "모델 후보 비교가 실제로 생기면 그때 다시 연다"는 산문만 남기고 `done`이 됐다. CLAUDE.md B8은 "미룬 항목엔 언제·어디서 고칠지를 대장에 함께 적고, 지정한 곳에도 실제로 심으라"고 요구한다 — 지금 상태면 첫 모델 A/B를 하는 사람이 장부에 "열린 것 없음"을 보고 세 개의 알려진 채점 왜곡 위에서 시작한다. **직접 고치지 않은 이유는 DW-623과 같다**(신규 등재만 허용).
+trigger: **오케스트레이터가 다음 sweep을 돌릴 때** DW-623과 함께 처리한다 — DW-573·590에 부분 해소 주석과 좁힌 잔여 범위를, DW-577에 종결(또는 남은 범위)을, DW-556·564·565에 구체적 재개봉 지점("첫 모델 후보 비교 스토리의 스펙 작성 시")을 적는다.
+status: open
+
+### DW-625: CM-B의 FR11 강제지점 로스터가 `conventions.md` §6이 아니라 임의 목록에서 나왔다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial 렌즈 발견, 오케스트레이터가 §6 원문과 실제 실행으로 확인
+location: `_bmad-output/implementation-artifacts/spec-13-8-...md`(Always절·AC3의 CM-B 로스터) · `docs/conventions.md` §6(축 3개: 매물·이미지·SECURITY DEFINER 함수) · `api/tests/integration/test_seller_summary_real_db.py`
+severity: low
+reason: 13.8의 CM-B는 "판매완료 매물이 **4개 지점 어디서도** 노출되지 않음"을 실DB로 확인했다고 적었는데, 그 4개는 §6의 축 분류가 아니라 이 스펙이 따로 세운 목록이었다. §6이 등록한 **SECURITY DEFINER 함수 축**(`get_seller_public_summary` — 정의자 함수 안에선 RLS가 안 걸려 **함수 본문 인라인 조건이 유일한 강제 지점**인, 가장 새기 쉬운 축)은 스펙의 Verification 커맨드 어디에도 없었다. 로스터를 정본 문서에서 뽑지 않고 손으로 나열하면 이런 누락이 조용히 생긴다. **실제 위험은 확인 결과 없다** — 이번 후속 리뷰에서 `test_seller_summary_real_db.py`를 실DB로 돌려 **5 passed**(sold 매물이 몇 건이 추가돼도 카운트에서 계속 빠짐)를 확인했다. 남는 건 "다음 번 CM-B류 검증도 같은 방식으로 축을 빠뜨릴 수 있다"는 절차 결함이다.
+trigger: **CM-B(또는 FR11 전수 확인)를 다시 수행하는 다음 스토리 착수 시** — 강제지점 로스터를 손으로 적지 말고 `docs/conventions.md` §6의 축 목록에서 뽑아 세 축을 모두 실행 대상에 넣는다. DW-619(§6에 `hybrid_rag_node` 미등록)를 먼저 처리하면 §6이 정확한 정본이 되어 이 방식이 성립한다.
+status: open
+
+### DW-626: G2 회귀 게이트가 네 축 중 `result_mean` 하나만 baseline과 비교한다 — 13.4·13.6 기능이 전멸해도 초록
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈가 커밋된 캡처를 변형해 실증, adversarial 렌즈가 독립적으로 같은 결론
+location: `api/scripts/score_ab.py`(`regression = candidate["result_mean"] < baseline["result_mean"] - 1e-9` · `gate_pass`는 contamination/deadend/errored_n/scored_n만 본다) · `api/scripts/score_ab.py`의 `result_scores_clean` 조립부(primary SQL/HYBRID·non-gray 항목만 들어가 `result_n=33/47`)
+severity: medium
+reason: 에픽 게이트 문구와 13.8 AC2는 G2가 "품질이 baseline 이하로 안 떨어짐"을 보증한다고 읽히지만, 자동 판정에 들어가는 축은 `result_mean` **하나뿐**이고 그조차 47문항 중 33개의 평균이다. `routing_correct`·`doc_hit_n`·`clarify_ok_n`은 리포트에 기록만 될 뿐 baseline과 비교되지 않는다. **실증(리뷰가 실제로 돌림)**: 커밋된 `docs/g2-exit-gate-2026-08-02.json`을 ① 모든 답변에서 가이드 인용 `(참고: …)` 16곳 제거 → doc_hit 12/13 → 0/13, ② `primary_path=CLARIFY`인 7항목을 SQL 응답으로 치환 → routing 54 → 47, clarify_ok 9/9 → 2/9. **두 경우 모두 `gate_pass:true`·`regression_block:false`로 통과**했다. 즉 13.6이 만든 가이드 질의확장과 13.4가 만든 되묻기가 통째로 죽어도 에픽 종료 게이트가 선다. 13.8은 이 세 축을 사람이 두 리포트를 눈으로 대조해 확인했고(이번엔 정확히 일치) 스펙 AC2도 3차 리뷰에서 그렇게 정정했지만, **사람 확인은 다음 재실행에 상속되지 않는다**(CLAUDE.md B9). 열린 DW-621(재현성 vs 회귀)은 baseline 시점 문제만 다루므로 13.9가 기준선을 다시 떠도 이 축 누락은 그대로 남는다.
+trigger: **Story 13.9 완료 후 G2를 재실행하기 직전**(DW-621과 같은 자리 — 그때 기준선을 어차피 다시 뜬다) — `score_ab.py` 2-file 모드의 `regression_block`에 세 축의 비하락을 OR로 합치거나, 두 리포트 JSON을 읽어 네 축을 비교하는 결정론 테스트를 `tests/test_ab_scoring.py`에 넣는다. 어느 쪽이든 "사람이 눈으로 대조"를 실행되는 검사로 바꾸는 것이 요지다.
+status: open
+
+### DW-627: FR11 강제지점 4곳 중 `doc_rag_node` 축은 실DB 검증이 없어 필터 무력화를 못 잡는다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈가 뮤테이션으로 실증(원복 확인), adversarial·intent-alignment가 같은 표면 혼동을 독립 지적
+location: `api/tests/test_doc_rag_node.py`(`assert "status = 'on_sale'" in listing_q` — 문자열 포함 검사) · `api/app/graph/doc_rag_node.py`(매물 의미검색 `WHERE status = 'on_sale' AND embedding IS NOT NULL`) · `api/tests/integration/`(이 축을 보는 실DB 테스트 없음)
+severity: medium
+reason: `doc_rag_node`의 매물 의미검색은 **sql_guard를 거치지 않고**(자기 독스트링이 명시), `listings`의 ai_readonly RLS 정책이 `using(true)`라 행 필터도 걸리지 않는다 — 즉 그 `WHERE status = 'on_sale'` 한 줄이 **유일한 FR11 강제 지점**이다. 그런데 그걸 지키는 검사는 생성된 SQL 문자열에 그 글자가 들어 있는지 보는 단위테스트뿐이다. **실증**: `WHERE (status = 'on_sale' OR true)`로 바꾼 뒤 13.8 스펙의 CM-B 커맨드 전량을 그대로 실행하니 유닛 5파일 149 passed·FR11 실DB 1 passed·전체 394 passed로 **스펙에 기록된 수치와 완전히 동일**했다(수행 후 `git checkout` 원복, `grep "OR true" api/app/graph/` 0건 확인). 대조군으로 `hybrid_rag_node`에 같은 변형을 넣으면 14건이 red가 된다 — 그 축은 조립 SQL 전문을 단언하므로 실제로 보호된다. 이 경로는 CLARIFY 상한 초과 강제 제시와 하이브리드 구조조건 추출 실패 폴백이 타므로 죽은 코드가 아니다. FR11은 보안 블로커 등급이고, `test_listing_cards.py`가 자기 독스트링에 "가짜 DB는 조건을 **지우면** 잡지만 **무력화하면**(`OR true`·`AND false`) 전부 초록"이라고 이미 적어 둔 바로 그 한계다.
+trigger: **FR11 강제지점을 다시 손대거나 CM-B류 전수 확인을 수행하는 다음 스토리 착수 시**(DW-625와 같은 자리) — `tests/integration/test_fr11_cover_images_real_db.py`와 같은 층(실 Postgres + sold 1건·on_sale 1건 시드)에서 `doc_rag_node`의 매물 쿼리를 실행해 sold id가 결과에 없음을 단언하는 통합 테스트를 추가한다. 문자열 검사는 그대로 두고 층을 하나 얹는 것이다.
+status: open
+
+### DW-628: `test_readonly.py`(ai_readonly 롤 격리)를 실행하는 CI 잡이 하나도 없다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — adversarial 렌즈 발견, 오케스트레이터가 `.github/workflows/tests.yml`과 스킵 가드 원문으로 확인
+location: `api/tests/test_readonly.py`(가드 = `settings.database_url`, 즉 `DATABASE_URL`) · `.github/workflows/tests.yml`(`api` 잡은 `DATABASE_URL`을 **의도적으로** 안 준다 — 13줄 주석: "있으면 운영 Supabase에 실제 접속한다" · `api-db` 잡은 `TEST_DATABASE_URL`로 `tests/integration`만 실행)
+severity: medium
+reason: CM-B가 지키는 세 안전장치 중 하나(커넥션 풀 재사용 시 ai_readonly 롤이 누수되지 않음, Epic 8 AC-DB-1)가 **어느 CI 잡에서도 돌지 않는다**. `api` 잡은 운영 DB 접속 위험 때문에 `DATABASE_URL`을 일부러 비우므로 이 파일이 항상 skip되고, `api-db` 잡은 대상 디렉터리가 `tests/integration`으로 한정돼 이 파일을 수집하지 않는다. 두 결정 각각은 옳은데 교집합에서 이 축이 통째로 빠졌다. 13.8이 기록한 "149 passed, 0 skipped"는 사람이 손으로 한 번 친 로컬 실행이고, 롤 격리를 깨는 커밋이 들어와도 CI는 영구히 초록이다. DW-622는 "스킵이 통과와 구별 안 된다"는 가시성 문제를 다루지, "애초에 CI에서 실행되지 않는다"는 이 사실은 다루지 않는다.
+trigger: **CI 워크플로(`tests.yml`)를 다음에 손댈 때**(DW-622와 같은 자리) — `test_readonly.py`를 컨테이너 Postgres에서 돌 수 있게 `TEST_DATABASE_URL`을 읽도록 이식해 `api-db` 잡 범위에 넣는다. 그게 어려우면 최소한 `project-context.md` §12의 "CI에 안 도는 것" 목록에 이 파일을 명시적으로 올린다(지금은 안 올라 있어 돈다고 오해된다).
+status: open
+
+### DW-629: DW-622가 제안한 해법(환경변수 fallback)을 그대로 구현하면 통합 테스트가 운영 DB에 쓴다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — adversarial 렌즈 발견, 오케스트레이터가 워크플로 주석과 통합 테스트 픽스처로 확인
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-622 `trigger:` 줄(두 변수명을 합치거나 "하나가 다른 하나를 fallback으로 읽게") · `api/tests/integration/conftest.py` · `.github/workflows/tests.yml`(13줄)
+severity: medium
+reason: DW-622는 "`TEST_DATABASE_URL`과 `DATABASE_URL` 두 이름이 함정을 만든다"는 옳은 진단을 담았지만, 적어 둔 해법 중 하나가 위험하다 — `tests/integration/*`가 `TEST_DATABASE_URL` 부재 시 `DATABASE_URL`로 폴백하게 만들면, 이 프로젝트에서 `DATABASE_URL`은 **운영 Supabase를 가리키는 변수**다(`tests.yml` 13줄이 명시적으로 그렇게 경고하며 `api` 잡에서 일부러 비운다). 통합 테스트는 사용자·매물을 실제로 INSERT하므로, 개발자 셸에 `DATABASE_URL`이 떠 있는 상태에서 `pytest` 한 번이면 운영 DB에 테스트 데이터가 들어간다. 장부의 산문은 다음 사람이 그대로 구현하는 지시로 읽힌다 — **DW-622의 두 갈래 중 fallback 안은 채택하지 말 것.** (이 항목을 DW-622 본문 수정이 아니라 신규 등재로 남기는 이유: 이번 실행의 지시가 "기존 장부 항목은 수정·재개봉·재작성 금지, 신규만 추가"였다.)
+trigger: **DW-622를 실제로 처리하는 그 작업의 착수 시점** — 두 항목을 같이 읽고, fallback이 아니라 나머지 갈래(보안 표식이 붙은 테스트가 스킵되면 스위트를 실패시키는 conftest 훅)로 방향을 고정한다. 변수명을 합쳐야 한다면 방향은 반대여야 한다 — 통합 테스트가 `DATABASE_URL`을 읽는 게 아니라, 운영을 가리킬 수 있는 변수는 통합 테스트에서 아예 못 읽게 막는 쪽이다.
+status: open
+
+### DW-630: 라이브 스모크가 전부 스킵돼도 exit 0이라 SM-F/SM-G가 거짓 초록이 될 수 있다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈 발견, 오케스트레이터가 스킵 가드 원문으로 확인
+location: `api/tests/test_live_smoke.py`(파일 전체가 `RUN_LIVE_SMOKE != "1"`에서 collect-skip · `_run_or_skip`이 429·quota·RESOURCE_EXHAUSTED·키/DB 부재를 `pytest.skip`으로 흡수) · 13.8 스펙 Verification 커맨드 1
+severity: medium
+reason: SM-F(기존 시연 3종 유지)·SM-G(신규 3분기 실동작) 게이트의 유일한 증거가 이 파일의 라이브 실행인데, `RUN_LIVE_SMOKE`를 빠뜨리거나 쿼터가 마르면 `6 skipped`·exit 0이 나온다. 기대값이 "5건 PASSED"라는 사람이 읽는 문장뿐이라, 다음 재실행자가 초록만 보고 SM-F/SM-G를 통과로 기록할 수 있다. **이건 가설이 아니다** — 이 스토리에서 CM-B의 두 축(FR11 실DB·ai_readonly)이 정확히 그 방식으로 스킵인 채 "통과"로 닫혔다가 후속 리뷰에서야 드러났다(그 사건이 DW-622를 만들었다). 다만 DW-622의 범위는 `*_real_db.py`/`test_readonly.py`의 환경변수명과 보안 표식으로 한정돼 이 라이브 축을 포함하지 않는다. 429 자동 스킵 자체는 의도된 쿼터 보호이므로 없애면 안 되고, 필요한 건 "스킵됐다"가 게이트 판정자에게 **보이게** 만드는 것이다.
+trigger: **SM-F/SM-G를 다시 판정하는 다음 실행(13.9 종료 검증)의 커맨드를 짤 때** — `RUN_LIVE_SMOKE=1`인데 라이브 표식 테스트가 스킵되면 스위트를 실패시키는 conftest 훅(DW-622가 보안 표식에 제안한 것과 같은 형태로 묶어서), 또는 최소한 커맨드에 `-rs`를 붙이고 기대값을 "6 collected / 0 skipped(langsmith 제외)"처럼 개수로 못박는다.
+status: open
+
+### DW-631: G2 캡처 아티팩트에 실행 시각·커밋 해시가 없어 "어느 코드 상태의 캡처인가"를 파일로 증명할 수 없다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈 발견
+location: `api/scripts/run_phase_b.py`(`capture()`가 남기는 최상위 메타 = `{"model": …}` 뿐) · `api/docs/g2-baseline.json` · `api/docs/g2-exit-gate-2026-08-02.json`
+severity: low
+reason: 두 캡처 파일의 최상위 키는 `model`과 `results`뿐이다. 그래서 "이 캡처가 어느 코드에서 떴나"를 파일 자체로는 알 수 없고, 이번 리뷰도 `git log --since=... -- api/app`으로 사후 추론해야 했다(그 추론이 DW-621의 근거다). DW-621이 예정한 **13.9 재기준선 작업**에서는 "13.9 이전 코드로 뜬 캡처"를 기준선으로 고정하는 것이 핵심인데, 그 사실을 파일이 스스로 말하지 못하면 같은 사후 추론을 반복해야 하고 파일이 섞이면 구분할 방법이 없다.
+trigger: **DW-621을 처리하는 13.9 재기준선 작업과 같은 자리** — `capture()` 결과 메타에 `captured_at`(ISO)·`git_sha`(`git rev-parse HEAD`)를 함께 기록하고, `score_ab.py`가 리포트에 그대로 실어 준다. 기존 캡처 2개는 메타가 없으므로 소급하지 말고 "메타 없음 = 2026-08-02 이전 캡처"로 둔다.
+status: open
+
+### DW-632: `ai-demo-queries.md` ①②④ 표 12행 중 8행이 관측된 적 없는 기대값이다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — adversarial·edge-case 두 렌즈 발견, 오케스트레이터가 큐리셋·라이브 스모크와 대조해 행별로 확인
+location: `api/docs/ai-demo-queries.md`(표 ①②④) · `api/tests/demo_queries.py`(`STRUCTURED_A`·`SEMANTIC_B`·`UNRELATED_C`) · `api/docs/ai-ab-test-queryset.json`
+severity: low
+reason: 이 문서는 스스로를 라우터 기대동작의 "단일출처"라 선언하고 각 행의 "기대 분류"는 *라우터가 그 질의를 어디로 보내는가*에 대한 주장이다. 실측 대조 결과 근거가 있는 것은 4행뿐이다 — `3천만원 이하 흰색 SUV`(SQL)·`패밀리카로 무난한 거`(CLARIFY)·`오늘 날씨 어때?`(REJECT)는 `test_live_smoke.py`가 라이브로 route를 단언하고, `출퇴근용으로 편한 차 추천해줘`는 큐리셋 CL4와 같은 문자열이다. 나머지 8행(`2020년 이후 제네시스`·`10만km 미만 디젤`·`서울 경차 보여줘`·`초보운전자에게 좋은 차`·`가성비 좋은 차 없을까?`·`파이썬 코드 짜줘`·`안녕`·`1+1은 뭐야?`)은 큐리셋에도 라이브 테스트에도 없고, 결정론 테스트는 `_patch_route`로 경로를 강제 주입하므로 실제 분류를 보지 않는다. **3차 리뷰에서 표 앞에 근거 강도를 밝히는 주석을 달아 오해는 막았지만**(어느 4행이 실측인지 명시), 8행의 기대값 자체를 실측으로 뒷받침하는 일은 남는다. 이건 DW-576(SM3가 라우팅을 강제 주입해 실제 라우팅을 보장하지 못함)의 문서 쪽 표면이다.
+trigger: **DW-576(회색지대 route 강제 주입)을 구조적으로 해소하는 그 작업에서 함께** — 라이브 라우터 결과 기반 판정을 도입한다면 그 대상 목록이 곧 이 12행이 된다. 그 전에 데모 시연이 잡히면 그때 8행을 한 번 라이브로 돌려 실측 라우트를 표에 병기한다(비용은 질의 8건).
+status: open
+
+### DW-633: Follow-up review still recommended for 13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-213104-8dec; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

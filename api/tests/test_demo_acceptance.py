@@ -11,12 +11,15 @@
 [Source: story 4.8 AC1·AC2·AC3; api/docs/ai-demo-queries.md; tests/test_graph.py 모킹 패턴]
 """
 
+import json
+from pathlib import Path
+
 import pytest
 
 import app.graph.graph as gmod
 from app.db.sql_guard import MAX_LIMIT, SqlGuardError, validate_select_sql
 from app.graph.guard_node import _GUARD_ANSWER, guard_node
-from tests.demo_queries import GRAY_AB, SEMANTIC_B, STRUCTURED_A, UNRELATED_C
+from tests.demo_queries import GRAY_ALLOWED, SEMANTIC_B, STRUCTURED_A, UNRELATED_C
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -84,27 +87,81 @@ def test_sm3_pathB_returns_listings(monkeypatch, query):
     assert out["answer"].strip()
 
 
-@pytest.mark.parametrize("query", GRAY_AB)
-@pytest.mark.parametrize("route", ["SQL", "HYBRID", "CLARIFY"])
-def test_sm3_gray_zone_returns_listings_either_route(monkeypatch, query, route):
-    """③ 회색지대 — SQL/HYBRID는 매물을, CLARIFY는 되묻기 칩을 주면 합격(거절·빈손만 아니면 됨).
+def test_gray_allowed_matches_shipped_queryset():
+    """③ 표·`GRAY_ALLOWED`·큐리셋 `acceptable_paths` 셋이 어긋나면 red.
 
-    ai-demo-queries.md ③: "둘 중 어디로 가도 매물 카드/추천을 돌려주면 데모 합격"(구 A/B 라벨을
-    13.2 신버전 어휘로 옮김 — 회색지대 판정 자체는 변경 없음).
+    13.8 후속리뷰가 `GRAY_ALLOWED`를 큐리셋과 1:1로 맞췄지만 강제하는 검사는 없어서,
+    "지금은 맞다"는 산문 주장뿐이었다(스펙 잔여 리스크가 "표면이 3행뿐이라 과설계"라 적었으나
+    큐리셋 로더는 `test_ab_scoring.py`에 이미 있어 3줄이면 된다 — B9). 바로 다음 스토리
+    13.9가 라우팅을 바꾸며 `acceptable_paths`를 좁히면 이 사본만 옛 집합을 계속 정답으로
+    단언하고 양쪽 다 초록이다 — 방금 없앤 "허용 밖 경로가 합격" 결함이 그대로 되살아난다.
+    """
+    queryset = json.loads(
+        (Path(__file__).resolve().parent.parent / "docs" / "ai-ab-test-queryset.json")
+        .read_text(encoding="utf-8")
+    )
+    # 멀티턴 item은 `query` 대신 `turns`를 갖는다 — 회색지대 3행은 전부 단일턴이다.
+    shipped = {
+        it["query"]: set(it["acceptable_paths"])
+        for it in queryset["items"]
+        if it.get("query") in GRAY_ALLOWED
+    }
+    assert shipped == {q: set(routes) for q, routes in GRAY_ALLOWED.items()}, (
+        "GRAY_ALLOWED가 큐리셋 acceptable_paths와 어긋났다 — "
+        "ai-demo-queries.md 표 ③까지 세 곳을 함께 고쳐야 한다"
+    )
+
+
+# 빈 파라미터셋은 pytest에서 실패가 아니라 SKIPPED + exit 0이다(실측). 허용 경로가 비면
+# 회색지대 게이트가 조용히 사라지므로, 수집 시점에 막는다(이 스토리의 주제 그대로 —
+# 스킵은 통과가 아니다).
+assert GRAY_ALLOWED and all(GRAY_ALLOWED.values()), "GRAY_ALLOWED 행·허용경로가 비면 게이트가 사라진다"
+
+
+@pytest.mark.parametrize(
+    "query,route",
+    [(q, r) for q, routes in GRAY_ALLOWED.items() for r in routes],
+)
+def test_sm3_gray_zone_allowed_routes_are_not_dead_ends(monkeypatch, query, route):
+    """③ 회색지대 — 질의별 허용 경로에서만 "빈손·무응답이 아니다"를 확인한다.
+
+    허용 경로는 `demo_queries.GRAY_ALLOWED`가 갖고, 그건 ai-demo-queries.md 표 ③의
+    "기대 분류" 칸과 1:1이다. SQL/HYBRID는 매물 카드를, CLARIFY는 되묻기 칩을, REJECT는
+    고정 거절 문구+빈 목록을 줘야 합격이다.
     ✎ 13.4: CLARIFY의 "빈손 아님"은 listings가 아니라 clarify 칩으로 판정한다(되묻기 칩=
     누를 수 있는 다음 행동이라 dead-end가 아니다, EXPERIENCE.md 칩=타이핑과 동등 경로).
+    ✎ 13.8: 지식형 질의("주행거리 많은 차 사도 괜찮을까?")는 CLARIFY·REJECT 둘 다 정답이라
+    REJECT 분기를 넣었다.
+    ✎ 13.8 후속리뷰: 그때 넣은 방식이 질의×경로 **교차곱**이라, 문서가 오답이라 못박은 조합
+    (지식형 질의가 매물 목록을 주는 것, 가격·인승이 명시된 H6/H7이 거절로 새는 것)까지
+    합격으로 단언하고 있었다 — 그 조합이면 게이트가 진짜 회귀를 못 잡는다. 질의별 허용
+    경로로 좁혔다.
 
-    HYBRID는 13.2가 신설한 라우트인데 이 데모 인수 파일에 한 번도 등장하지 않아,
-    HYBRID 배선이 깨져도 데모 게이트가 전부 초록이었다(review-4 실측: 파일 내
-    "HYBRID" 등장 0회). 회색지대야말로 조합형이 실제로 나오는 자리라 여기에 넣는다.
+    ✎ 13.8 3차 리뷰: SQL·HYBRID 두 경로가 `assert out["listings"]` 한 줄을 공유해서,
+    `conditional_edges`가 "HYBRID" → sql 노드로 잘못 배선돼도 6/6 초록이었다 —
+    epic 컨텍스트가 "신규 라우트가 기존 분기에 조용히 흡수되는 회귀"라 경고한 바로 그
+    실패 모드다. `_patch_route`가 노드별로 다른 카드 id를 주입하므로 그 id를 단언한다.
+
+    ⚠️ 이 테스트가 보지 못하는 것: 라우트는 `_patch_route`가 강제 주입하므로 **실제 라우터가
+    이 질의를 어디로 보내는지는 검증하지 않는다**(그 구조적 공백은 열린 항목 DW-576).
+    여기서 지키는 건 "각 허용 경로의 응답 조립이 빈손/무응답이 아니고, 그 경로의 노드가
+    실제로 불렸다"까지다. 실제 라우팅은 라이브 스모크(`test_live_smoke.py`)와 G2 재캡처가 본다.
     """
     _patch_route(monkeypatch, route)
     out = gmod.run_search(query)
     if route == "CLARIFY":
         assert out["clarify"] is not None, f"회색지대 {query!r}가 CLARIFY에서 clarify 없이 빈손이면 불합격"
         assert out["clarify"]["chips"]
+    elif route == "REJECT":
+        assert out["listings"] == [], f"회색지대 {query!r}가 REJECT에서 매물을 주면 불합격"
+        assert out["answer"] == _GUARD_ANSWER, "REJECT는 고정 거절 문구(_GUARD_ANSWER)를 내보내야 한다"
     else:
         assert out["listings"], f"회색지대 {query!r}가 route={route}에서 빈손이면 불합격"
+        # 어느 노드가 응답을 만들었는지까지 본다 — _patch_route의 카드 id가 노드별로 다르다.
+        expected_id = {"SQL": "s1", "HYBRID": "h1"}[route]
+        assert out["listings"][0]["id"] == expected_id, (
+            f"route={route}인데 {out['listings'][0]['id']!r} 노드가 응답했다 — 분기 배선 회귀"
+        )
 
 
 def test_sm3_pathA_real_guard_passes_generated_sql(monkeypatch):

@@ -20,7 +20,7 @@
   누락·중복 id·`--out` 상위 디렉터리 없음)는 **라이브 호출 전에** fail-fast로 즉시 raise한다
   (쿼터 낭비 방지 — 데이터가 깨졌으면 아예 시작하지 않는다). 반면 실행 중 발생하는 라이브
   실패(429·네트워크 등, run_search 호출 자체의 실패)는 item별로 잡아 그 item 결과에
-  `{"error": ...}`로 기록하고 다음 item으로 계속 진행한다 — 44개 전량 실행 중 하나가 죽어도
+  `{"error": ...}`로 기록하고 다음 item으로 계속 진행한다 — 47개 전량 실행 중 하나가 죽어도
   이미 확보한 앞선 결과가 통째로 날아가지 않는다. 매 item 처리 직후 `--out`에 지금까지의
   누적 결과를 원자적으로(임시파일 → replace) flush한다(중간에 프로세스가 죽어도 그 시점까지는
   파일에 남는다 — 직접 write_text는 truncate-then-write라 이 보장이 깨진다).
@@ -28,12 +28,17 @@
   `run_phase_b.py && score_ab.py ...`처럼 셸에서 체인해도 게이트 차단이나 부분 실패가
   조용히 삼켜지지 않는다. `--out`은 필수다(기본값이 커밋된 baseline 산출물 자체였다).
 
-실행 — 전량(44개, G2 baseline 정본. 2026-07-30 실행됨, DW-554 종료):
+실행 — 전량(47개. 큐리셋 2026-08-02 재설계(DW-609) 기준):
   api/ 에서 RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres \
-    .venv/bin/python scripts/run_phase_b.py --out docs/g2-baseline.json
+    .venv/bin/python scripts/run_phase_b.py --out docs/g2-capture-YYYY-MM-DD.json
 
 실행 — 일부만(디버깅·재캡처용):
-  ... --subset A1,B1,C1 --out docs/g2-baseline-partial.json
+  ... --subset S1,H1,CL1 --out docs/g2-capture-YYYY-MM-DD-partial.json
+
+⚠️ `--out`을 `docs/g2-baseline.json`·`docs/g2-baseline-partial.json`으로 주지 말 것 — 그 둘은
+  **커밋된 비교 기준선**이고 G2 게이트가 대조 대상으로 읽는다. 덮어쓰면 회귀 판정의 기준점이
+  사라지고(되돌리려면 유료 라이브 재캡처밖에 없다), 그게 바로 위에서 `--out`을 필수로 만든
+  이유다. 기준선을 의도적으로 다시 뜨는 것(re-baselining)은 별도 결정으로 다룬다.
 """
 
 from __future__ import annotations
@@ -47,6 +52,12 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(API_ROOT))
+
+# G2 게이트가 비교 대상으로 읽는 커밋된 기준선 — --out으로 지목하면 거부한다(main() 참조).
+_PROTECTED_BASELINES = frozenset({
+    (API_ROOT / "docs" / "g2-baseline.json").resolve(),
+    (API_ROOT / "docs" / "g2-baseline-partial.json").resolve(),
+})
 
 
 def _card_id(card) -> str:
@@ -240,8 +251,8 @@ def main() -> None:
     ap.add_argument("--queryset", default="docs/ai-ab-test-queryset.json")
     ap.add_argument(
         "--subset", default=None,
-        help="쉼표구분 item id 부분집합(예: A1,B1,C1). 생략하면 큐리셋 전량 — "
-             "44개 전량 실행은 Gemini 무료 티어 쿼터를 태울 수 있으니 신중히 사용할 것.",
+        help="쉼표구분 item id 부분집합(예: S1,H1,CL1). 생략하면 --queryset 전량 — "
+             "전량 실행은 실제 유료 API 호출을 발생시키니 신중히 사용할 것.",
     )
     # --out은 필수다(review pass 4) — 기본값이 커밋된 baseline 산출물
     # (docs/g2-baseline-partial.json) 자체였어서, --out을 깜빡하고 전량 실행하면 그 기준
@@ -250,6 +261,17 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="raw 결과를 기록할 경로(필수)")
     ap.add_argument("--model", default=None, help="raw 결과에 기록할 모델명(생략 시 gemini_generation_model 설정값)")
     args = ap.parse_args()
+
+    # 커밋된 기준선은 --out으로 지목할 수 없다(13.8 3차 리뷰 patch). 위 독스트링이 이미 같은
+    # 규칙을 ⚠️로 적었지만 주석은 실행되지 않는다(CLAUDE.md B9) — 실제로 재현해 보면
+    # capture()가 루프 진입 **전에** 첫 _flush를 하므로 라이브 호출 0회로 죽는 실행도
+    # 대상 파일을 이미 비운다(실측: 47항목 → 1항목). 복구 수단은 유료 47문항 재캡처뿐이라
+    # 되돌리기가 없는 파괴다. 의도적 re-baselining은 이 스크립트가 아니라 별도 결정으로 다룬다.
+    if Path(args.out).resolve() in _PROTECTED_BASELINES:
+        ap.error(
+            f"--out이 커밋된 G2 비교 기준선({args.out})을 가리킵니다 — 덮어쓰면 회귀 판정의 "
+            "기준점이 사라집니다. 날짜형 경로(예: docs/g2-capture-YYYY-MM-DD.json)를 쓰세요."
+        )
 
     subset = None
     if args.subset is not None:

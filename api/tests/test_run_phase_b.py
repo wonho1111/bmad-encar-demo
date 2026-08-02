@@ -487,6 +487,47 @@ def test_main_requires_out_argument(monkeypatch, tmp_path, capsys):
     assert "--out" in capsys.readouterr().err
 
 
+# ── 13.8 3차 리뷰 — 커밋된 기준선을 --out으로 지목하면 거부한다 ──────────
+@pytest.mark.parametrize("baseline_name", ["g2-baseline.json", "g2-baseline-partial.json"])
+def test_main_refuses_to_overwrite_committed_baseline(
+    monkeypatch, tmp_path, capsys, baseline_name
+):
+    """`--out docs/g2-baseline.json`은 G2 회귀 판정의 기준점을 파괴한다.
+
+    독스트링이 ⚠️로 금지하고 있었지만 주석은 실행되지 않는다(CLAUDE.md B9). 그리고
+    capture()는 루프 진입 **전에** 첫 flush를 하므로, 라이브 호출 0회로 죽는 실행조차
+    대상 파일을 이미 비운다 — 즉 "실행하다 실패했으니 괜찮겠지"가 성립하지 않는다.
+    복구 수단은 유료 47문항 재캡처뿐이라 되돌리기가 없다.
+    """
+    monkeypatch.setenv("RUN_LIVE_SMOKE", "1")
+    qs_path = tmp_path / "qs.json"
+    qs_path.write_text(json.dumps({"items": []}), encoding="utf-8")
+    protected = run_phase_b.API_ROOT / "docs" / baseline_name
+    monkeypatch.setattr(
+        sys, "argv",
+        ["run_phase_b.py", "--queryset", str(qs_path), "--out", str(protected)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_phase_b.main()
+    assert exc_info.value.code == 2
+    assert "기준선" in capsys.readouterr().err
+
+
+def test_main_allows_non_baseline_out_path(monkeypatch, tmp_path):
+    """과차단 대조군 — 날짜형 캡처 경로는 그대로 통과해야 한다(가드가 정상 사용을 막지 않음)."""
+    monkeypatch.setenv("RUN_LIVE_SMOKE", "1")
+    qs_path = tmp_path / "qs.json"
+    qs_path.write_text(json.dumps({"items": []}), encoding="utf-8")
+    out_path = run_phase_b.API_ROOT / "docs" / "g2-capture-2026-08-02.json"
+    monkeypatch.setattr(
+        sys, "argv",
+        ["run_phase_b.py", "--queryset", str(qs_path), "--out", str(tmp_path / out_path.name)],
+    )
+
+    run_phase_b.main()  # 거부되지 않고 정상 종료
+
+
 # ── review pass 5 — 0건 매칭이 낡은 --out을 남기면 안 된다 ────────────────
 def test_capture_with_zero_matching_items_overwrites_stale_out(tmp_path):
     """매칭 item이 0개여도 --out은 새로 써져야 한다.
