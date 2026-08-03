@@ -624,6 +624,33 @@ def test_has_superlative_false_when_price_adjective_continues_into_another_sylla
     assert node._has_superlative(query) is False
 
 
+# ── DW-653 — 음절 경계가 만든 "알려진 구멍"을 양성/음성과 같은 표에 함께 고정한다 ─────────
+# 이 검사가 왜 있나: 위 P2가 넣은 `(?![가-힣])`는 `가장 싼타페`(오탐)를 막는 대신 띄어쓰기를
+#   생략한 `가장 싼거`·`제일 싼차`(정상 질의)도 함께 떨어뜨렸다. 정규식만 보면 둘이 구분되지
+#   않는다. 그 경계가 **어디에 있는지**를 고정하는 테스트가 없어서, DW-653은 "다음에 정규식을
+#   손대는 사람이 이 경계를 모른 채 되돌리거나 더 좁힌다"를 위험으로 적었다 — 그 항목이
+#   요구한 "셋을 한 테스트에서 대조"가 이것이다.
+# ⚠️ `가장 싼거`·`제일 싼차`의 기대값 False는 **옳아서가 아니라 지금 그렇기 때문이다.**
+#   DW-653을 실제로 고치면(어간+조사/어미 목록으로 전환) 이 두 줄이 red가 된다 —
+#   그때 기대값을 True로 바꾸고 DW-653을 닫아라. red가 나는 것이 이 검사의 목적이다.
+@pytest.mark.parametrize(
+    ("query", "expected", "why"),
+    [
+        ("가장 싼 거", True, "양성 — 띄어쓰기 정상형(큐리셋 M1.t3 계열)"),
+        ("제일 싼 차", True, "양성 — 띄어쓰기 정상형(큐리셋 S6)"),
+        ("가장 저렴한 SUV", True, "양성 — `저렴`은 어미 때문에 음절 경계에서 제외됨"),
+        ("가장 싼타페", False, "음성 — `싼`이 차명 첫 음절일 뿐(P2가 닫으려던 오탐)"),
+        ("제일 싼타페", False, "음성 — 위와 같음"),
+        ("가장 싼거", False, "⚠ 알려진 구멍(DW-653) — 정규식상 `싼타페`와 구분되지 않는다"),
+        ("제일 싼차", False, "⚠ 알려진 구멍(DW-653) — 위와 같음"),
+    ],
+)
+def test_has_superlative_syllable_boundary_covers_positive_negative_and_known_gap(
+    query, expected, why
+):
+    assert node._has_superlative(query) is expected, why
+
+
 def test_superlative_price_re_identical_in_both_modules():
     """P7 — 두 사본이 같다는 계약을 주석이 아니라 실행되는 검사로 못박는다(CLAUDE.md B9).
 

@@ -12,7 +12,38 @@
   판정 함수는 import로 가져오므로 사본이 생기지 않는다(로직은 계속 한 곳에만 있다).
 """
 
+import ast
+import pathlib
+
 from tests.test_live_smoke import _missing_span_kinds
+
+_LIVE_SMOKE_PATH = pathlib.Path(__file__).with_name("test_live_smoke.py")
+
+
+def test_every_test_in_live_smoke_file_is_guarded_by_live_only():
+    """위 모듈 독스트링이 선언한 "RUN_LIVE_SMOKE 없으면 0 passed" 계약을 실행되는 검사로 바꾼다.
+
+    왜 필요한가(13.9 독립 후속 리뷰 실측): 그 계약은 지금까지 **독스트링과 주석에만** 있었다.
+    실제로 `test_live_smoke.py`의 `@_live_only` 한 줄을 지우고 `RUN_LIVE_SMOKE` 없이 전체
+    스위트를 돌리면 `545 passed, 5 skipped`가 나왔다 — 라이브 호출이 0인 실행이 초록 통과로
+    보이는 바로 그 상태(DW-630)인데 **아무 검사도 red가 되지 않았다**. 주석은 계약이 아니다
+    (CLAUDE.md B9). 파일을 AST로 읽어 `def test_*` 전부가 `@_live_only`를 달고 있는지 본다.
+
+    이 검사가 못 보는 것(추측 아님, 실측): `RUN_LIVE_SMOKE=1`인데 쿼터(429)·키 부재로
+    `_run_or_skip`이 전량 skip을 내는 경우는 여전히 못 잡는다 — 그건 마커가 아니라 실행
+    시점의 문제라 conftest 훅이 필요하고, DW-649가 그 잔여분을 들고 있다.
+    """
+    tree = ast.parse(_LIVE_SMOKE_PATH.read_text(encoding="utf-8"))
+    tests = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")]
+    assert tests, "라이브 스모크 파일에 테스트가 하나도 없다 — 파일이 비었거나 경로가 틀렸다."
+    unguarded = [
+        n.name for n in tests
+        if not any(isinstance(d, ast.Name) and d.id == "_live_only" for d in n.decorator_list)
+    ]
+    assert unguarded == [], (
+        f"`@_live_only`가 없는 라이브 테스트: {unguarded} — 이 파일은 SM-F/SM-G 게이트의 증거라 "
+        "RUN_LIVE_SMOKE 없이 pass가 나오면 안 된다. 순수 함수 단위테스트라면 이 파일로 옮겨라."
+    )
 
 
 class _FakeRun:

@@ -860,11 +860,51 @@ def test_cli_raw_single_file_mode_survives_error_entries(tmp_path, monkeypatch):
     out = tmp_path / "out.json"
 
     monkeypatch.setattr(sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", str(out)])
-    score_ab.main()  # 수정 전엔 KeyError로 죽어 --out 파일 자체가 안 만들어졌다
+    # 수정 전엔 KeyError로 죽어 --out 파일 자체가 안 만들어졌다. 지금은 리포트를 다 쓴 뒤
+    # 게이트 탈락(errored_n>0)으로 exit 1 한다 — 종료해도 **산출물은 남는다**가 이 테스트의 요지다.
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
 
     report = json.loads(out.read_text(encoding="utf-8"))
     assert report["baseline_summary"]["errored_n"] == 1
     assert report["baseline_summary"]["routing_correct"] == 1
+
+
+# ── 1파일 모드 종료 코드(13.9 독립 후속 리뷰) ──────────────────────────────
+# 3차 리뷰 P3가 넣은 `sys.exit(1)`은 **2파일 모드에만** 있었고 독스트링도 그렇게 못박고 있었다.
+# 그런데 1파일 모드가 바로 G2 2단계("이 캡처를 새 기준선으로 올린다")가 쓰는 자리다 — 실측으로
+# 47건 전량 errored인 raw가 콘솔에 `게이트: FAIL`을 찍고도 exit 0으로 끝났고, 문서화된
+# `score_ab … && cp … g2-baseline.json` 체인은 그걸 그대로 기준선으로 승격시킨다.
+# 아래 두 테스트가 양방향(FAIL→1, PASS→종료 없음)을 함께 못박는다 — 한쪽만 있으면
+# "항상 1로 끝나게" 만드는 뮤테이션이 통과한다.
+def test_single_file_mode_exits_1_when_gate_fails(tmp_path, monkeypatch):
+    """1파일 모드에서 게이트가 떨어지면 종료 코드 1 — 리포트는 그래도 남는다."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw = _write_json(tmp_path / "raw.json", {
+        "model": "gemini-3.1-flash-lite",
+        "results": {"C1": [{"error": "429 quota exceeded"}]},  # 전량 실패 = gate_pass:false
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", str(out)])
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["baseline_summary"]["gate_pass"] is False
+
+
+def test_single_file_mode_does_not_exit_when_gate_passes(tmp_path, monkeypatch):
+    """반대 방향 — 깨끗한 캡처는 종료 코드 0(SystemExit 없이 정상 반환)."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw = _write_json(tmp_path / "raw.json", _raw("gemini-3.1-flash-lite"))
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", str(out)])
+    score_ab.main()  # SystemExit이 나면 여기서 테스트가 실패한다
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["baseline_summary"]["gate_pass"] is True
 
 
 # ── score_model 커버리지(review pass 4) ─────────────────────────────────

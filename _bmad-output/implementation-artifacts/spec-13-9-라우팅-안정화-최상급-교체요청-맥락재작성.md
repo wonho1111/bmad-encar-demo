@@ -170,6 +170,40 @@ warnings: ['oversized']
 - defer(신규 등재, deferred-work.md — 기존 항목은 오케스트레이터 소관이라 무수정): DW-651(스펙 Design Notes가 약속한 최상급×HYBRID 재검토 트리거가 실제로는 장부에 없다) · DW-652(`제일 싼 차 뭐야?`가 여전히 5건 반환 — `predicate.limit:1`을 SQL 생성이 안 지킨다, DW-647의 반쪽) · DW-653(이번 P2가 만든 띄어쓰기 없는 `가장 싼거`류 좁힘, 미고정).
 - reject 6건: 최상위 `gate_pass`가 baseline 자신의 게이트까지 AND한다는 지적 — 오염된 기준선으로는 후보를 채택하지 않는 것이 방어 가능한 설계이고 현재 실발동 없음. `test_docstring_out_examples_are_not_protected`가 위조 불가라는 지적 — 실제 정규식 매치는 `docs/ab-eval-report.json`·`docs/g2-recapture-<YYYY-MM-DD>-report.json` 2건이라 전자가 실경로로 검사를 지탱한다(오케스트레이터 실행 확인). `epic-13-context.md` 재컴파일이 아직도 제약을 빠뜨렸다는 지적 — 2패스가 복원한 3건(JWT·500자·`_CLARIFY_TURN_CAP`)이 실재함을 grep으로 확인했고, 나머지는 `compile-epic-context.md`가 명시적으로 배제하는 "코드베이스에서 도출 가능한 세부"라 DW-643이 이미 판정한 사안. DW-630·625가 done인데 DW-649가 잔여 의무를 적고 있어 모순이라는 지적, DW-644의 인용 오류를 DW-650 신설로 우회했다는 지적 — 둘 다 **기존 장부 항목의 status·본문은 오케스트레이터 소관**이라는 이번 호출의 명시 지시에 걸리고, 잔여 의무는 이미 DW-649·DW-650이 들고 있다. `PROTECTED_BASELINES`를 손 목록 대신 `git ls-files`로 바꾸라는 지적 — DW-636이 열린 채 그 항목을 명시적으로 스코프 밖으로 남겨 뒀다.
 
+### 2026-08-03 — Review pass (독립 후속 리뷰, 4차 — DW-654 수행)
+
+새 세션·새 컨텍스트에서 코드만 보고 재검증했다(CLAUDE.md B4 "코드리뷰는 새 세션에서 돈다"). 발견은 전부 **직접 실행해 재현**한 뒤 분류했다.
+
+- intent_gap: 0 / bad_spec: 0 / patch: 4 (medium 2, low 2) / defer: 1 (medium 1) / reject: 0
+
+- **헤드라인 주장 검증(스토리의 가장 큰 미검증 지점) — 결과: 수치는 바뀌지 않는다. 라이브 재캡처 없이 결정론으로 증명했다.**
+  커밋된 G2 수치(라우팅 57/57 · result_mean 0.954)는 2·3차 패치 **이전** 코드로 캡처됐고, 그 뒤 `_is_topic_shift`와 `_SUPERLATIVE_PRICE_RE`가 두 번 더 바뀌었다. 캡처 이후 바뀐 **런타임 파일은 `contextualize_node.py`·`hybrid_rag_node.py` 둘뿐**이며(`router_node.py`는 dev 패스에서만 바뀌었다 — 2·3차 addressed_findings에 등장하지 않음), 두 파일에서 바뀐 상수의 소비처는 `grep` 결과 **각각 함수 하나뿐**이다(`_is_topic_shift` · `_has_superlative`). 그래서 그 두 함수만 검증하면 닫힌다.
+  1. `_is_topic_shift` — 큐리셋 멀티턴 후속 턴 **10개 전부**에 대해 네 버전(pre-13.9 / dev 직후 / 1차 패치 후 / 현행)을 나란히 호출해 진리표를 대조했다. `run_phase_b._run_multiturn`이 넘기는 context를 그대로 재구성했고, 판정 입력인 `_recent_user_text`는 **사용자 발화만** 읽으므로 LLM 답변과 무관하게 결정론이다. 결과: **dev 직후·1차 패치 후·현행이 10/10 전부 동일**(M3.t2·M6.t2·M8.t2 = RESET, 나머지 7턴 = 맥락 유지). 즉 2·3차 패치는 큐리셋의 어느 턴에서도 재작성 여부를 바꾸지 않으므로, 라우터에 들어가는 질의가 동일하고 라우팅도 동일하다. (pre-13.9와만 M1.t3 한 턴이 다른데, 그게 이 스토리가 의도한 수정이다.)
+  2. `_has_superlative` — 57턴 전체에 대해 dev/1차/2차/현행 네 판정을 대조했다. True인 문항은 **S6·S7·M1.t3·M2.t3 넷뿐이고 네 버전 모두 동일**하며, 커밋된 캡처에서 넷 다 `route=SQL`이다. 이 함수의 유일한 효과는 HYBRID 경로 `answer` 뒤에 캐비엇 문장을 붙이는 것이라 SQL 경로엔 닿지 않는다 — 실제로 커밋된 캡처 전문에서 캐비엇 문구는 **0회** 등장한다.
+  3. 게이트 판정 자체의 재현성 — 커밋된 두 raw(`g2-baseline-pre-13-9.json` · `g2-recapture-2026-08-03.json`)를 **현행(3차 패치 후)** `score_ab.py`로 다시 채점해 커밋된 `g2-recapture-report.json`과 전 필드 대조했다: `gate_pass:true` · `regression_axes` 4축 전부 false · `unverifiable_axes:[]` · 라우팅 54→57 · result_mean 0.8936→0.9542 **전부 일치**. 즉 판정은 현행 스코어러로도 그대로 선다.
+  → **위험 등급 하향**: 이 항목은 "라이브 재캡처로만 확증 가능"이 아니라 "큐리셋 범위 안에서는 결정론으로 확증됐다"로 정정한다. 남는 미검증분은 프롬프트 흔들림(모델 교체 시)뿐이며, 그건 스펙이 이미 명시적으로 수용한 트레이드오프다.
+
+- addressed_findings:
+  - `[medium]` `[patch]` (verification-gap, 뮤테이션으로 실증) `score_ab.py`의 `sys.exit(1)`이 **2파일 모드에만** 있었고 독스트링도 그렇게 못박고 있었다 — 그런데 1파일 모드가 바로 이 스펙의 **G2 2단계**("이 캡처를 새 기준선으로 올린다")가 쓰는 자리다. 실측: 47건 **전량 errored**인 raw를 1파일 모드에 넣으니 콘솔에 `게이트: FAIL`을 찍고도 `EXIT=0`이었고, 문서화된 `score_ab … && cp … g2-baseline.json` 체인은 그 쓰레기 캡처를 그대로 기준선으로 승격시킨다(DW-636이 `run_phase_b`에서 닫은 것과 같은 부류가 이쪽에 남아 있었다). 게이트 탈락 시 exit 1 추가 + 독스트링을 사실대로 정정. **양방향 실증**: exit 삭제 → FAIL 케이스 2건 red / `if True`로 항상 exit → PASS 케이스 2건 red / 원복 시 77 passed. CLI 실측도 `전량 errored → EXIT=1`, `정상 기준선 → EXIT=0`.
+  - `[medium]` `[patch]` (verification-gap, 뮤테이션으로 실증) 3차 P6이 세운 계약 — "`tests/test_live_smoke.py`는 `RUN_LIVE_SMOKE` 없으면 **0 passed**여야 한다" — 이 **독스트링과 주석에만** 있었다. 실측: `@_live_only` 한 줄을 지우고 `RUN_LIVE_SMOKE` 없이 전체 스위트를 돌리면 `545 passed, 5 skipped`가 나오고(라이브 호출 0인데 초록 통과 — DW-630이 막으려던 바로 그 상태) **아무 검사도 red가 되지 않았다**. 주석은 계약이 아니다(B9). `test_live_smoke_helpers.py`에 AST 검사를 추가해 `def test_*` 전부가 `@_live_only`를 달고 있는지 본다. **양방향 실증**: 마커 제거 → red / 마커 없는 새 테스트 추가 → red / 원복 시 6 passed. 이 검사가 **안 보는 것**도 함께 적었다(`RUN_LIVE_SMOKE=1`인데 429로 전량 skip되는 경우 — conftest 훅이 필요하고 DW-649가 그 잔여분을 들고 있다).
+  - `[low]` `[patch]` (verification-gap, 새 셸에서 실측) 스펙 Verification의 라이브 스모크 커맨드가 `collected 11 · 10 PASSED`를 기대값으로 못박고 있는데, 3차 P6이 순수 함수 5건을 분리해 이 파일은 **6건**이 됐다(`--collect-only` 실측). DW-630이 자기 조치로 **택한 것이 바로 그 개수 pin**인데 갱신을 안 해, 아무도 맞출 수 없는 기대값이 되면서 조치 자체가 죽었다. 6건으로 정정 + 분리된 5건을 어디서 도는지 명시.
+  - `[low]` `[patch]` (verification-gap, 새 셸에서 실측) 스펙 Verification의 마지막 커맨드 `pytest tests/ -q`를 **새 셸에서 그대로** 치면 `464 passed, 86 skipped`다 — 3차가 기록한 `544 passed, 6 skipped`는 같은 셸의 **앞선 커맨드가 export해 둔 `TEST_DATABASE_URL`에 얹혀** 나온 수치였고, 실DB 통합테스트 80건이 조용히 스킵되는데도 "0 failed"라 초록으로 보인다. 커맨드에 env를 넣고, 기대값을 통과 건수가 아니라 **스킵 건수**로 pin했다(DW-630이 라이브 스모크에서 배운 교훈과 같은 종류).
+  - `[patch, 장부 요구 이행]` DW-653이 명시적으로 요구한 "`가장 싼거`·`제일 싼차`와 `가장 싼타페`를 **같은 테이블에서 대조**해 경계를 고정한다"를 실제로 심었다(`test_has_superlative_syllable_boundary_covers_positive_negative_and_known_gap`). 알려진 구멍 2줄은 기대값 `False`로 두되, **"옳아서가 아니라 지금 그렇기 때문이며 DW-653을 고치면 red가 되니 그때 True로 바꾸고 닫아라"**를 테스트 본문에 적었다. **양방향 실증**: 경계 제거(넓힘) → 8 failed / `저렴`까지 경계 요구(좁힘) → 2 failed / 원복 시 44 passed.
+
+- **재검증했고 이상 없던 것**(존재 확인이 아니라 뮤테이션으로 작동 확인):
+  - 4축 비교 게이트 — `regression_axes.update(_count_axes)` 무력화 → red. **조용히 건너뛸 수 있는 경로는 없다**: `unverifiable_axes`가 하나라도 차면 `gate_pass`가 곧바로 False이고(그 경로도 테스트됨), 4축이 전부 빠지는 조합은 `regression_block`이 `false`가 아니라 `null`로 구분된다(P4).
+  - `gate_pass` 공식의 세 항 — `not unverifiable_axes` 제거 → red, summary별 게이트 AND 제거 → red, `regression=None` 구분 제거 → red.
+  - `sys.exit(1)`(2파일 모드) 제거 → red.
+  - `test_doc_rag_node_real_db.py` — `doc_rag_node`의 `status = 'on_sale'`을 `(status = 'on_sale' OR true)`로 무력화 → 1 failed(실 Supabase 55322로 실제 실행).
+  - `_SUPERLATIVE_PRICE_RE` 두 사본 락스텝 — **양방향**으로 깼다(contextualize 쪽만 넓힘 → red, hybrid 쪽만 넓힘 → red). 3차 P7이 한 방향만 실측했던 자리라 반대 방향을 채웠다.
+  - 스펙 Verification 커맨드 1~3을 새 셸에서 그대로 실행: 86 passed / 75 passed / 1 passed·0 skipped — 전부 기록과 일치.
+
+- defer(신규 등재 1건, 기존 항목은 오케스트레이터 소관이라 무수정): **DW-655** — 열린 AI 후속 8건(DW-645·646·647·648·649·651·652·653)의 `trigger:`가 **하나도 `sprint-status.yaml`에 실재하는 스토리를 가리키지 않는다**(13-1~13-9 전부 done, 백로그의 Epic 14·15·16은 AI 코드를 안 건드림). DW-640이 4건에 대해 진단하고 닫은 병이 8건 규모로 재발한 것이며, 지금 에픽을 닫으면 전부 조용히 사라진다. trigger를 **실재하는 `epic-13-retrospective`**로 걸고, "에픽 13은 회고를 돌리기 전에는 닫지 않는다"를 그 항목의 요지로 적었다.
+
+- DW-649가 지목한 두 미이행분 재확인(코드로): (1) DW-630의 **코드 강제 층** — `tests/conftest.py`는 **존재하지 않고**(`tests/integration/conftest.py`만 있다) 라이브 스킵 감지 훅도 없다 → 미이행 확인, DW-649가 정확하다. 이번에 그 인접 구멍(마커 무결성)은 닫았지만 "실행 중 전량 skip"은 여전히 열려 있다. (2) DW-625의 **로스터를 §6에서 뽑는 절차** — `conventions.md` §6은 이제 세 축(매물·이미지·SECURITY DEFINER)을 파일 경로·강제 장치까지 정확히 나열하고(전제 충족), 세 축의 실DB 검사가 전부 실재해 `TEST_DATABASE_URL`을 준 전체 스위트에서 함께 돈다 — 다만 13.9의 Verification 커맨드 묶음에 `test_seller_summary_real_db.py`(SECURITY DEFINER 축)가 없어 **절차 자체는 아직 한 번도 실행된 적이 없다** → DW-649의 (2)도 정확하다.
+
+- DW-651·652·653 실측 확인(전부 장부 기술과 일치): `_has_superlative("가장 싼거")=False`·`("제일 싼차")=False`·`("가장 싼 거")=True`·`("가장 싼타페")=False`(DW-653) / 가격 외 정렬축 5종 전부 `False`이고 `router_node._SYSTEM_PROMPT`에 연식·주행거리·연비 규칙 **0건**(DW-645) / `sql_rag_node` 프롬프트 규칙 4가 "특별한 요청이 없으면 `LIMIT 5`"라고 **적극 지시**하고 큐리셋 S6는 `predicate:{order:"price ASC", limit:1}`인데 캡처는 5건, `score_path_a`가 `returned[:len(gold_order)]`로 선두 1건만 대조해 `result:1.0`을 주며 `count_range`는 스코어러에 **0회** 등장(DW-652·647). 셋 다 고치려면 프롬프트·정규식 변경 + 라이브 재캡처 확인이 필요해 이번 리뷰 범위 밖 — 유료 재캡처는 사용자 승인 사안이다.
+
 ## Design Notes
 
 **최상급×HYBRID 정렬 충돌 — 옵션(b) 채택 근거:** 후보는 (a) SQL로 보내 정렬을 살리기, (b) HYBRID 유지·최상급 버리되 알리기, (c) sql_guard 2차 정렬키 차단 재검토(보안 결정, 범위 밖)였다. 실제 큐리셋(47문항) 어디에도 "최상급+의미조건" 조합 사례가 없어(S6·S7·M1.t2·M2.t3는 전부 순수 최상급, 의미조건 없음) 이 조합을 실측 검증할 방법이 없다 — 검증 없이 (a)의 "SQL로 보내되 의미조건을 어떻게 살릴지"를 설계하면 B4("재보기 전엔 선언하지 않는다")를 어기는 미검증 코드가 된다. (b)는 오늘 `hybrid_rag_node`가 **이미 하고 있는 동작**(벡터 정렬만 적용, 최상급 무시)에 "그 사실을 답변에 알린다"만 더하는 것이라 침습이 가장 적고, 새 큐리셋 항목 없이도 결정론 단위테스트(캐비엇 문구 유무)로 고정 가능하다. 이 조합이 실제로 관측되면(향후 큐리셋에 항목이 생기면) 그때 (a)/(c)를 재검토한다 — deferred-work.md에 그 트리거로 신규 항목을 남긴다.
@@ -190,10 +224,12 @@ warnings: ['oversized']
 - `cd api && .venv/bin/python -m pytest tests/test_router_node.py tests/test_contextualize_node.py tests/test_hybrid_rag_node.py -v` -- expected: 신규 최상급/교체요청/캐비엇 테스트 전부 PASSED
 - `cd api && DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/test_ab_scoring.py -v` -- expected: 4축 게이트·`--raw` 순서 테스트 전부 PASSED(뮤테이션 주입 시 red, 원복 시 green 확인 포함)
 - `cd api && TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/integration/test_doc_rag_node_real_db.py -v -rs` -- expected: 1 passed, 0 skipped
-- `cd api && RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/test_live_smoke.py -v -rs` -- expected: collected 11 · 0 skipped, 또는 langsmith 트레이싱 미설정 환경이면 1 skipped(langsmith만) · 나머지 10 PASSED — `-rs`로 스킵 사유를 요약에 찍어, 스킵이 예상보다 많으면(=대량 스킵) 그 자체가 게이트 실패로 읽히게 한다(DW-630 — pin하지 않으면 "전부 스킵돼도 초록"이 통과로 보인다)
+- `cd api && RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/test_live_smoke.py -v -rs` -- expected: **collected 6** · 0 skipped, 또는 langsmith 트레이싱 미설정 환경이면 1 skipped(langsmith만) · 나머지 5 PASSED — `-rs`로 스킵 사유를 요약에 찍어, 스킵이 예상보다 많으면(=대량 스킵) 그 자체가 게이트 실패로 읽히게 한다(DW-630 — pin하지 않으면 "전부 스킵돼도 초록"이 통과로 보인다).
+  ✎ **개수 정정(2026-08-03 독립 후속 리뷰, 실측 `--collect-only` 6건)**: 원래 이 줄은 `collected 11 / 10 PASSED`였다. 3차 리뷰 P6이 순수 함수 단위테스트 5건을 `tests/test_live_smoke_helpers.py`로 **분리**하면서 이 파일이 6건으로 줄었는데, DW-630이 자기 조치로 택한 바로 그 "개수 pin"을 갱신하지 않아 **아무도 맞출 수 없는 기대값**이 됐다(pin이 죽으면 DW-630의 조치도 함께 죽는다). 분리된 5건은 `cd api && .venv/bin/python -m pytest tests/test_live_smoke_helpers.py -q`로 환경과 무관하게 항상 돈다(expected: 6 passed — 5건 + 마커 무결성 검사 1건).
 - G2 1단계: `cd api && RUN_LIVE_SMOKE=1 DATABASE_URL=... .venv/bin/python scripts/run_phase_b.py --out docs/g2-recapture-<YYYY-MM-DD>.json` → `DATABASE_URL=... .venv/bin/python scripts/score_ab.py --raw docs/g2-baseline.json docs/g2-recapture-<YYYY-MM-DD>.json --out docs/g2-recapture-<YYYY-MM-DD>-report.json` -- expected: 4축 전부 비하락, `gate_pass:true`. **`<YYYY-MM-DD>`는 실행 당일 날짜로 치환하고 매번 새로 뜬다** — 이 스토리가 실제로 커밋한 증거(`docs/g2-recapture-2026-08-03.json`·`docs/g2-recapture-report.json`)는 이제 `scripts/baseline_guard.py`의 `PROTECTED_BASELINES`에 등재돼 `--out`으로 재사용하면 두 스크립트 모두 즉시 거부한다(위 명령을 그대로 복사해 다시 돌리면 안 되는 이유).
 - G2 2단계(1단계 통과 후에만): `cp api/docs/g2-recapture-2026-08-03.json api/docs/g2-baseline.json && cp api/docs/g2-recapture-report.json api/docs/g2-baseline-report.json` -- expected: git diff로 갱신 확인
-- `cd api && .venv/bin/python -m pytest tests/ -q` -- expected: 기존 통과 건수 대비 신규 테스트만큼 증가, 0 failed
+- `cd api && TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres .venv/bin/python -m pytest tests/ -q` -- expected: **0 failed · 정확히 6 skipped**(라이브 스모크 6건뿐). 2026-08-03 독립 후속 리뷰 시점 실측 = `554 passed, 6 skipped`.
+  ✎ **환경변수 추가(2026-08-03 독립 후속 리뷰, 새 셸에서 실측)**: 원래 이 줄에는 env가 하나도 없었다. 문서 그대로 **새 셸에서** 치면 `464 passed, 86 skipped`가 나온다 — 실DB 통합 테스트 80건이 조용히 스킵되는데도 "0 failed"라 초록으로 보인다(3차 리뷰가 기록한 `544 passed, 6 skipped`는 같은 셸의 앞선 커맨드가 export해 둔 값에 얹혀 나온 수치였다). `TEST_DATABASE_URL`만 주면 `test_readonly.py` 2건이 추가로 스킵되므로(`DATABASE_URL`을 따로 본다) **둘 다** 준다. 통과 **건수**만 보지 말고 **스킵 건수**를 함께 pin해야 이 함정이 닫힌다 — DW-630이 라이브 스모크에서 배운 교훈과 정확히 같은 종류다.
 
 **Manual checks (if no CLI):**
 - `docs/conventions.md` §6에 `hybrid_rag_node`가 등록됐는지, `api/docs/ai-demo-queries.md`의 ①②④·⑤·SM3 표가 서로 모순 없이 4분기 어휘로 통일됐는지 육안 확인
@@ -305,3 +341,8 @@ warnings: ['oversized']
 - `제일 싼 차 뭐야?`는 라우팅은 고쳐졌지만 여전히 **5건**을 반환한다 — 스펙 I/O 매트릭스가 기대출력으로 적은 `LIMIT 1`의 정렬 절반만 달성됐다. 게이트 쪽(스코어러가 `count_range` 미채점)은 DW-647, 생성 쪽(`sql_rag_node`가 `LIMIT 1`을 안 냄)은 이번에 DW-652로 신규 등재했다 — 둘을 함께 처리해야 한다.
 - 스펙 Design Notes가 약속했던 "최상급×HYBRID 재검토 트리거" 장부 항목이 실제로는 없었다(DW-651로 신규 등재). 스펙 본문의 약속이 장부에 실제로 심겼는지는 아무도 검사하지 않는다 — B8의 "지정한 곳에도 실제로 심는다"가 다시 깨진 자리다.
 - Epic 13 종료 판정에는 변화가 없다 — G2 1단계 판정값(`gate_pass:true`, 4축 비하락)은 리포트 재생성 후에도 보존됐다. 사용자에게 에픽 13 종료를 알리고 다음 에픽 착수 여부를 확인해야 한다.
+
+*4차(독립 후속 리뷰, DW-654) 이후 남은 위험:*
+- ✅ **"커밋된 G2 수치가 패치 이전 코드의 것"이라는 위험은 해소됐다** — 라이브 재캡처 없이 결정론으로 확증했다(위 4차 Review Triage Log 참조): 캡처 이후 바뀐 런타임 파일 2개의 변경 상수는 소비처가 각각 함수 하나뿐이고, `_is_topic_shift`는 큐리셋 멀티턴 후속 10턴에서 네 코드 버전이 **10/10 동일 판정**, `_has_superlative`는 True인 4문항이 전부 SQL 경로라 캐비엇이 캡처에 **0회** 등장한다. 커밋된 리포트도 현행 스코어러로 전 필드 재현된다. 남는 미검증분은 "모델을 바꾸면 프롬프트 판정이 흔들릴 수 있다"뿐이고, 그건 스펙이 세 번 명시적으로 수용한(reject 처리) 트레이드오프다.
+- ⚠️ **에픽 13을 지금 닫으면 열린 후속 8건이 사라진다** — DW-655(신규). DW-645·646·647·648·649·651·652·653의 `trigger:`가 하나도 `sprint-status.yaml`의 실재 스토리를 가리키지 않는다(13-1~13-9 전부 done, Epic 14·15·16은 AI 코드 무관). **에픽 13 종료 전에 `epic-13-retrospective`를 돌려** 8건의 처분(스토리로 흡수 / 새 에픽 / 명시적 수용)을 사용자와 정하고 trigger를 실재 키로 재지정해야 한다.
+- `_is_topic_shift`가 세 패스 연속 회귀했다는 3차 경고는 유효하다 — 다만 4차에서 pre-diff 대비 진리표를 큐리셋 전 범위로 다시 돌려 현행이 안정 상태임을 확인했다(네 버전 10/10 일치). 이 함수를 다음에 손대는 사람은 같은 대조를 먼저 돌릴 것.

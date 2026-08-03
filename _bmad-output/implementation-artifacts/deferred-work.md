@@ -4502,3 +4502,12 @@ source_spec: `spec-13-9-라우팅-안정화-최상급-교체요청-맥락재작�
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260803-013219-ca30; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-655: Epic 13의 열린 AI 후속 항목 8건이 **백로그에 없는 작업**을 trigger로 걸고 있다 — DW-640이 닫은 병이 재발했다
+
+origin: Story 13.9 독립 후속 리뷰(DW-654 수행) — 오케스트레이터가 `sprint-status.yaml` 전문과 열린 항목 8건의 `trigger:`를 직접 대조.
+location: `_bmad-output/implementation-artifacts/deferred-work.md`(DW-645·646·647·648·649·651·652·653의 `trigger:`) · `_bmad-output/implementation-artifacts/sprint-status.yaml`(Epic 13 블록 — 13-1~13-9 전부 `done`, 남은 항목은 `epic-13-retrospective: optional` 하나)
+severity: medium
+reason: 위 8건의 trigger를 실측 대조한 결과, **어느 것도 `sprint-status.yaml`에 실재하는 스토리를 가리키지 않는다** — "다음 라우팅·큐리셋 관련 스토리"(DW-645) · "`score_ab.py`의 coverage 구조를 다음에 손대는 스토리"(DW-646) · "큐리셋·스코어러를 다음에 손대는 스토리"(DW-647) · "`contextualize_node`의 주제전환 판정을 다음에 손대는 스토리"(DW-648) · "다음 CM-B 전수 재실행 시점"(DW-649) · "큐리셋에 최상급+의미조건 항목이 처음 추가되는 시점"(DW-651) · "DW-647을 처리하는 그 자리"(DW-652, 없는 스토리에 연쇄) · "`_SUPERLATIVE_PRICE_RE`를 다음에 손대는 스토리(DW-645가 넓히는 자리)"(DW-653, 역시 연쇄). Epic 13은 13-1~13-9가 전부 `done`이라 그 "다음 스토리"가 존재하지 않고, 백로그에 남은 Epic 14(계정 역할 통합)·15(관리자 UI)·16(Flutter 증분)은 어느 것도 AI 검색 RAG 코드를 건드리지 않는다. **이건 DW-640이 4건에 대해 이미 진단하고 닫은 것과 똑같은 병이 8건 규모로 재발한 것이다** — 그때의 해법(trigger를 실재 스토리의 인수조건으로 재지정)이 절차로 남지 않아서다. 지금 Epic 13을 종료하면 8건이 전부 조용히 사라진다(CLAUDE.md B8: "미룬 항목엔 언제·어디서 고칠지를 대장에 함께 적는다 — '이월'만 적으면 조용히 또 밀린다"). 실피해 등급은 medium이다: 8건 중 기능 결함은 DW-645(가격 외 정렬축이 CLARIFY로 샘)·DW-652(`제일 싼 차 뭐야?`가 5건 반환)뿐이고 나머지는 게이트 정밀도·문서 정합이지만, 둘 다 이 에픽의 헤드라인 질의에 직접 걸린다.
+trigger: **`epic-13-retrospective`**(`sprint-status.yaml`에 실재하는 항목, 현재 `optional`) — 에픽 13 종료 판단을 하는 그 자리에서 위 8건을 한 번에 훑고, (a) Epic 13에 스토리를 하나 더 열어 흡수할지 (b) 새 에픽으로 묶을지 (c) 명시적으로 수용(닫음)할지를 사용자와 함께 정한 뒤, 남기기로 한 항목의 trigger를 그때 실재하게 된 스토리 키로 재지정한다. 회고를 `optional`로 건너뛰면 이 항목도 함께 사라지므로, **에픽 13은 회고를 돌리기 전에는 닫지 않는다**가 이 항목의 요지다.
+status: open

@@ -30,9 +30,15 @@
   들어가므로 `--out`으로 재사용하지 말 것**, 매번 새 날짜로 써야 한다. `main()`이 이 목록을
   실제로 거부한다(CLAUDE.md B9).
 
-종료 코드(2파일 모드): top-level `gate_pass`가 false면 **1**로 끝난다(회귀·검증불가·개별
-  summary FAIL 어느 쪽이든). 위 실행 예시처럼 `run_phase_b.py … && score_ab.py …`로 이어
-  붙일 때 체인이 조용히 진행되지 않게 하기 위해서다(run_phase_b.py와 같은 규칙).
+종료 코드(두 모드 공통): 게이트가 떨어지면 **1**로 끝난다.
+  · 2파일 모드 — top-level `gate_pass`가 false일 때(회귀·검증불가·개별 summary FAIL 어느 쪽이든).
+  · 1파일 모드 — 그 raw의 `gate_pass`가 false일 때. 1파일 모드는 "이 캡처를 새 기준선으로
+    올린다"는 자리라(G2 2단계), 여기서 exit 0을 내면 `score_ab.py … && cp … g2-baseline.json`
+    같은 체인이 오염·전량 실패 캡처를 그대로 기준선으로 승격시킨다(실측: 47건 전량 errored인
+    raw가 콘솔에 `게이트: FAIL`을 찍고도 exit 0이었다 — DW-636이 run_phase_b에서 닫은 것과
+    같은 부류가 이쪽에 남아 있었다, 13.9 독립 후속 리뷰).
+  위 실행 예시처럼 `run_phase_b.py … && score_ab.py …`로 이어 붙일 때 체인이 조용히 진행되지
+  않게 하기 위해서다(run_phase_b.py와 같은 규칙).
   리포트 파일과 콘솔 요약은 종료 전에 이미 다 쓴다 — 게이트가 떨어져도 산출물은 남는다.
 """
 
@@ -812,6 +818,12 @@ def main() -> None:
         )
         print(f"리포트: {args.out}")
         print("=" * 70)
+        # 1파일 모드도 게이트 탈락은 0이 아닌 코드로 끝낸다(13.9 독립 후속 리뷰) — 이 모드는
+        # G2 2단계("이 캡처를 새 기준선으로 올린다")가 쓰는 자리라, 여기서 조용히 0을 내면
+        # 뒤따르는 `cp … g2-baseline.json`이 오염·전량 실패 캡처를 기준선으로 승격시킨다.
+        # 아래 2파일 모드와 같은 규칙이며, 리포트는 위에서 이미 썼으므로 산출물은 남는다.
+        if not baseline_only["gate_pass"]:
+            sys.exit(1)
         return
 
     baseline, candidate = summaries[0], summaries[1]
