@@ -36,6 +36,7 @@
 
 generated: 2026-06-19T18:28:17
 last_updated: |
+  2026-08-06 Epic 13 마감 + Epic 14 착수 점검 - 13-10·13-11을 backlog→done, epic-13을 in-progress→done으로 전이한다. **이 전이 자체가 점검에서 나온 것이다**: 두 스토리는 손으로 완주해 커밋(4016420·0258f00)까지 갔는데 이 장부만 backlog로 남아 있었다. 엔진이 돌린 스토리는 dev 세션이 장부를 닫지만 사람이 돌린 스토리는 아무도 안 닫는다 - 그래서 "안 한 것"과 "했는지 모르는 것"이 구별되지 않았다(CLAUDE.md B8). 코드에서 확인하고 닫았다(문서 말고 코드에서 - B5). 착수 전 베이스라인 실측: verify 게이트 6종 전부 초록(env 무결성 통과 - 로컬 DB 권한 허용5축·차단2축 실제 확인, api pytest 490 passed 86 skipped, web lint 0, web vitest 305 passed, flutter analyze 0 issues, flutter test 80 passed). 로컬 Supabase 스택 10컨테이너 healthy. 한도 5시간 2% / 7일 26%. bmad-loop 열린 런 0건(전부 finished·stopped). policy.toml의 review.trigger를 recommended→always로 올렸다(근거는 policy.toml 주석 - Epic 14는 마이그레이션 에픽이고 (d)하이브리드 결정이 그 경우만 always를 켜라고 했다). max_review_cycles는 2 그대로(2026-08-05 사용자 결정).
   2026-07-29 Epic 12 마감 정합 - 회고 이후 실제로 끝났는데 장부에 열린 채 남아 있던 action_items 4건을 닫는다(B3·B4·B6·B7). 닫기 전에 근거를 코드에서 직접 확인했다(문서 말고 코드에서 - CLAUDE.md B5). B3: scripts/check_env_integrity.sh가 존재하고 .bmad-loop/policy.toml:82의 verify 게이트 첫 자리에 배선돼 있음. B4: policy.toml:10-21에 "유지" 결정과 상향 조건 2가지가 기록돼 있음. B6: docs/tech-debt.md #196·#197 본문에 원격 실측 기반 해소 표시가 있고 조건부 잔여분은 #232로 승계됨. B7: git branch --merged develop에 test/bmad-loop이 있고 develop은 origin과 동일(0 ahead). 남은 열린 항목은 A6(#182 E2E 상시승격, 트리거=#168) - B5(#231 에픽 마지막 스토리 DW 미이관, Epic 13 회고에서 판단) - B8(#229 web CI next build, #168과 함께 판단) 3건이며 전부 트리거가 지정돼 있다. 그리고 앞선 항목(2026-07-29 Story 12-2 마감)의 마지막 문장 "epic-12는 in-progress 유지, 남은 12-3~12-6은 새 런으로 이어간다"는 그 시점 기준이고 **지금은 무효**다 - 12-3~12-6은 그 뒤 전부 done이 됐고 epic-12와 회고도 done이다(커밋 b4b9df1). 경위 줄은 지우지 않고 이 줄로 정정한다.
   2026-07-29 Story 12-2 사람 인수 마감 -12-2 backlog→done을 **사람이 직접** 기록한다(엔진이 아님). 경위: 12-2는 bmad-loop run 20260728-203648-2fc6에서 dev 1패스 + 후속 코드리뷰 2패스까지 정상 완료했으나 자동 이월·롤백됐다. 원인은 코드가 아니라 환경이었다(대장 #191) - 그 리뷰 세션이 공유 api/.venv에서 `pip uninstall -y -q websockets`를 실행하고 원복하지 않아 [verify]의 첫 게이트(api pytest)가 죽었고, 엔진의 판정 분기가 `_verify_review(task).ok`(=status done + sprint done + verify 통과)라 검증이 빨간불이면 이월된다(engine.py:1631 실측). 같은 상황에서 12-1은 검증이 초록이라 review-budget-committed 경로로 커밋됐다 - 두 스토리의 유일한 차이가 그것이었고, 이월 사유 문구("review did not converge within budget")는 원인을 가린다(대장 #191에 함께 기록). 환경 복구(websockets 15.0.1) 후 보존 브랜치 attempt-preserve/20260728-203648-2fc6-808e3ab1(3커밋 +1,289줄)을 재검증하니 5개 게이트가 전부 초록이었고, 재실행한 dev 세션도 같은 사실을 스스로 발견해 "이미 3패스를 거친 구현을 다시 만들면 중복 작업"이라며 CRITICAL escalation으로 멈췄다(4.2M 토큰). 사용자가 A-1(보존본 채택)을 선택해 커밋 7579712(코드)+43b1c7d(대장 #193~#197 번호충돌 정리 병합)로 얹었다. 그 뒤 `bmad-loop resolve --resume`을 시도했으나 **resolve는 재구동 전에 베이스라인으로 롤백하는 구조**라 얹은 커밋 3개가 지워졌다(reflog·attempt-preserve/20260729-001903-e94c-43b1c7d8로 복구함) - 엔진에는 "이미 있는 작업을 인수하는" 경로가 없다. 그래서 런을 닫고 사람이 이 줄로 마감한다. 검증 실측: api pytest 209 passed / web lint 0 / web vitest 239 passed / flutter analyze 0 issues / flutter test 80 passed / scripts/check_migrations.py 게이트 통과(0023 적용 성공 + 동적 프로브 3종 확인). 스펙 파일 frontmatter는 이미 status: done이었고 이 파일만 backlog로 남아 있어 둘을 일치시킨 것이다. epic-12는 in-progress 유지, 남은 12-3~12-6은 새 런으로 이어간다.
   2026-07-28 Story 12.1 완료 - 12-1-멱등키-마이그레이션 backlog→done, epic-12 backlog→in-progress(Epic 11에서 스토리 전량 done인데 에픽 전이가 빠졌던 것과 같은 누락을 반복하지 않도록 이번엔 스토리와 함께 전이). 신규 supabase/migrations/0022_chat_idempotency_key.sql - chat_messages에 nullable client_message_id uuid + UNIQUE(room_id, client_message_id), additive만이고 백필·기본값 없음, 재적용 멱등 가드 포함. 신규 api/tests/integration/test_chat_idempotency_real_db.py - 후속 리뷰 패치 후 13건(중복 재전송 수렴, 커밋 경계 넘는 재전송 수렴, ON CONFLICT 없는 평범한 중복은 23505로 거부, 컬럼·제약 이름과 정의 직접 단언, 방 단위 유니크 범위, NULL 다건 허용, NULL이면 중복이 막히지 않는다는 한계 고정, authenticated 롤로 신규 컬럼 쓰기·읽기, 0010 2000자 경계 양쪽, 0003 빈본문, 0016 트리거 짝 확인, additive NULL 읽기). 검증 - check_migrations 게이트 통과, 실DB 통합 13 passed. 후속 코드리뷰(4레이어 독립 세션)에서 patch 12건 적용, defer 3건은 docs/tech-debt.md #186~#188로 등재.
@@ -180,7 +181,11 @@ development_status:
   # 같은 회고가 13-10·13-11을 새로 만들었기 때문이다(닫은 에픽에 일감을 넣으면 DW-655가 진단한
   # "trigger가 실재하지 않는 곳을 가리킨다"가 세 번째로 재발한다). 13-11 완료 시 done으로 전이한다.
   # 회고는 재실행하지 않는다 — 이 회고가 두 스토리를 만들어낸 주체라 재실행할 안건이 없다.
-  epic-13: in-progress
+  # 2026-08-06 done으로 전이. 위 조건("13-11 완료 시")이 충족됐다 — 13-10(4016420)·13-11(0258f00)이
+  # 손으로 완주했고 커밋이 HEAD에 있다. ⚠️ 그런데 그 두 스토리는 **커밋만 되고 이 장부는 backlog로
+  # 남아 있었다**(에픽 14 착수 점검에서 발견). 손으로 돌린 스토리는 엔진이 장부를 안 닫는다 —
+  # "안 한 것"과 "했는지 모르는 것"이 구별되지 않는 상태였다(CLAUDE.md B8).
+  epic-13: done
   13-1-sql-guard-하이브리드-정비-g2-baseline: done
   13-2-4분기-라우팅: done
   13-3-하이브리드-검색-sql-벡터: done
@@ -194,8 +199,8 @@ development_status:
   # 2026-08-05 회고가 신설. 열린 AI 후속 항목들의 trigger가 실재하는 스토리를 가리키도록 "갈 곳"을
   # 만든 것이다(DW-655). 순서 고정: 13-10 → 13-11. 데이터가 바뀌면 정답 건수와 기준선이 전부
   # 무효가 되므로 보강을 먼저 해야 라이브 재캡처(유료)를 한 번만 한다.
-  13-10-검색-데이터-보강: backlog
-  13-11-sql-생성-정비-채점축-확장-재캡처: backlog
+  13-10-검색-데이터-보강: done
+  13-11-sql-생성-정비-채점축-확장-재캡처: done
   epic-13-retrospective: done
 
   # --- Epic 14: 계정 역할 통합 나머지 ---
