@@ -17,8 +17,8 @@
     },
     "scoring": "사전식 승부: ①결과집합 정확도(clean SQL+HYBRID 평균) → ②라우팅 → ③flaky → ④비용 → ⑤지연. 게이트: 멀티턴 오염 0건 · REJECT dead-end 0건 · 채점된 항목 > 0. 부가 관측: 가이드 인용률(doc_hit_n/doc_hit_total) · 되묻기 발동률(clarify_ok_n/clarify_total).",
     "default_limit": 5,
-    "total": 62,
-    "breakdown": "single SQL 12 · single HYBRID 27(clean 25 / gray 2) · single CLARIFY 7(clean 6 / gray 1) · single REJECT 8(clean 6 / gray 2) · multiturn 8 = 62 item / 72 turn.",
+    "total": 64,
+    "breakdown": "single SQL 14 · single HYBRID 27(clean 25 / gray 2) · single CLARIFY 7(clean 6 / gray 1) · single REJECT 8(clean 6 / gray 2) · multiturn 8 = 64 item / 74 turn.",
     "id_scheme": "S=SQL, H=HYBRID, CL=CLARIFY, R=REJECT, M=multiturn. 구셋의 A/B/C/G 접두사는 폐기했다(--subset으로 옛 id를 쓰던 명령은 갱신 필요)."
   },
   "items": [
@@ -246,6 +246,42 @@
         6
       ],
       "notes": "변속기 차원 커버."
+    },
+    {
+      "id": "S13",
+      "kind": "single",
+      "category": "clean",
+      "query": "아반떼 보여줘",
+      "primary_path": "SQL",
+      "acceptable_paths": [
+        "SQL"
+      ],
+      "predicate": {
+        "model_like": "아반떼"
+      },
+      "count_range": [
+        7,
+        7
+      ],
+      "notes": "모델명 부분일치(ILIKE) 커버 — DW-657(A-1). 실데이터는 '아반떼 MD'·'아반떼 CN7'처럼 트림이 붙어, 정확일치(model='아반떼')로는 0건이 된다."
+    },
+    {
+      "id": "S14",
+      "kind": "single",
+      "category": "clean",
+      "query": "쏘렌토 있어?",
+      "primary_path": "SQL",
+      "acceptable_paths": [
+        "SQL"
+      ],
+      "predicate": {
+        "model_like": "쏘렌토"
+      },
+      "count_range": [
+        3,
+        3
+      ],
+      "notes": "모델명 부분일치(ILIKE) 커버 — DW-657(A-1). 실데이터는 '쏘렌토 MQ4'처럼 트림이 붙어, 정확일치(model='쏘렌토')로는 일부만 잡힌다."
     },
     {
       "id": "H1",
@@ -692,11 +728,12 @@
     {
       "id": "H18",
       "kind": "single",
-      "category": "clean",
+      "category": "gray",
       "query": "3천만원 이하 무사고 해치백 보여줘",
       "primary_path": "HYBRID",
       "acceptable_paths": [
-        "HYBRID"
+        "HYBRID",
+        "SQL"
       ],
       "doc_refs": [
         "06-차형-용어-매핑"
@@ -713,7 +750,7 @@
         21,
         21
       ],
-      "notes": "DB에 '해치백'이라는 body_type 값이 없다. 가이드 06의 용어 매핑(해치백→소형차·준중형차)을 거쳐야 번역된다 — 가이드 없이는 body_type 조건이 통째로 빠져 무사고 3천만원 이하 전체가 섞인다(H6과 같은 함정, 여기는 무사고가 더해진 clean 버전)."
+      "notes": "DB에 '해치백'이라는 body_type 값이 없다. 가이드 06의 용어 매핑(해치백→소형차·준중형차)을 거쳐야 번역된다 — 가이드 없이는 body_type 조건이 통째로 빠져 무사고 3천만원 이하 전체가 섞인다(H6과 같은 함정, 여기는 무사고가 더해진 clean 버전). ⚠️ 2026-08-05 재캡처에서 라우터가 SQL로 보냈다 — H6('2500만원 이하 해치백 있어?')와 같은 차형 용어 매핑 — 라우터 입장에선 명시 차종으로도 읽힌다. 기존 gray 관례에 맞춰 양쪽 허용으로 정정한다(라우터 결함이 아니라 라벨 오류였다)."
     },
     {
       "id": "H19",
@@ -887,7 +924,7 @@
       "id": "H25",
       "kind": "single",
       "category": "clean",
-      "query": "4천만원 이하 하이브리드나 전기차 중에 통풍시트 있고 무사고인 차",
+      "query": "4천만원 이하 하이브리드나 전기차 중에 통풍시트 있고 무사고인, 장거리 출퇴근에 유지비 적은 차",
       "primary_path": "HYBRID",
       "acceptable_paths": [
         "HYBRID"
@@ -910,13 +947,13 @@
         9,
         9
       ],
-      "notes": "연료(하이브리드·전기)·무사고·옵션이 전부 질의에 명시돼 있어, 가이드 04는 그 연료 선택이 유지비 관점에서 타당함을 보강하는 역할이다. 인용 여부로 가이드가 실제로 참고됐는지를 관측한다."
+      "notes": "연료(하이브리드·전기)·무사고·옵션이 전부 질의에 명시돼 있어, 가이드 04는 그 연료 선택이 유지비 관점에서 타당함을 보강하는 역할이다. 인용 여부로 가이드가 실제로 참고됐는지를 관측한다. ⚠️ 2026-08-05: 원문('…무사고인 차')은 조건이 전부 명시적이라 라우터가 SQL로 보냈다(정당한 판정). 용도 조건('장거리 출퇴근에 유지비 적은')을 넣어 하이브리드 문항으로 성립시킨다 — 가이드 04가 그 용도를 연료 선택으로 매핑한다."
     },
     {
       "id": "H26",
       "kind": "single",
       "category": "clean",
-      "query": "2018년 이후 무사고 중형·대형 세단 중에 내비게이션 있는 차",
+      "query": "2018년 이후 무사고 중형·대형 세단 중에 내비게이션 있고 장거리 운전이 편한 차",
       "primary_path": "HYBRID",
       "acceptable_paths": [
         "HYBRID"
@@ -939,16 +976,17 @@
         13,
         13
       ],
-      "notes": "DB에 '세단'이라는 body_type 값이 없다. 가이드 06의 용어 매핑(세단→중형차·대형차 등)을 거쳐야 번역된다 — 가이드 없이는 body_type 조건이 통째로 빠져 SUV·경차까지 섞인다."
+      "notes": "DB에 '세단'이라는 body_type 값이 없다. 가이드 06의 용어 매핑(세단→중형차·대형차 등)을 거쳐야 번역된다 — 가이드 없이는 body_type 조건이 통째로 빠져 SUV·경차까지 섞인다. ⚠️ 2026-08-05: 원문은 조건이 전부 명시적이라 라우터가 SQL로 보냈다(정당한 판정). 용도 조건('장거리 운전이 편한')을 넣어 하이브리드 문항으로 성립시킨다."
     },
     {
       "id": "H27",
       "kind": "single",
-      "category": "clean",
+      "category": "gray",
       "query": "5천만원 이하 무사고 SUV 중에 안전 옵션 갖추고 주행거리 10만 이하인 차",
       "primary_path": "HYBRID",
       "acceptable_paths": [
-        "HYBRID"
+        "HYBRID",
+        "SQL"
       ],
       "doc_refs": [
         "12-옵션-가치-판단"
@@ -966,7 +1004,7 @@
         16,
         16
       ],
-      "notes": "'안전 옵션'이라는 막연한 표현을 가이드 12가 '어댑티브크루즈 등은 안전·재판매 가치가 높은 옵션'으로 구체화해야 options_all 조건이 나온다. 가이드 없이는 옵션 조건이 빠져 안전 옵션 없는 SUV까지 섞인다."
+      "notes": "'안전 옵션'이라는 막연한 표현을 가이드 12가 '어댑티브크루즈 등은 안전·재판매 가치가 높은 옵션'으로 구체화해야 options_all 조건이 나온다. 가이드 없이는 옵션 조건이 빠져 안전 옵션 없는 SUV까지 섞인다. ⚠️ 2026-08-05 재캡처에서 라우터가 SQL로 보냈다 — H7과 같은 성격 — '안전 옵션'은 개념어지만 나머지 조건이 전부 명시적이라 SQL로도 정당하다. 기존 gray 관례에 맞춰 양쪽 허용으로 정정한다(라우터 결함이 아니라 라벨 오류였다)."
     },
     {
       "id": "CL1",

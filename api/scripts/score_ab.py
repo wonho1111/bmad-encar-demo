@@ -106,6 +106,10 @@ _CMP = {
     "year_min": ("year", ">="), "year_max": ("year", "<="),
     "seats_min": ("seats", ">="), "seats_max": ("seats", "<="),
 }
+# 부분일치 키 → 컬럼(13-11 A-1 짝 — model ILIKE '%<모델명>%' 골든). _CMP와 같은 관례로
+# "predicate 키 → 컬럼" 매핑만 두고, 값 감싸기(%…%)는 아래 루프에서 한다(연산자가 아니라
+# 값 형태 자체가 다르므로 _CMP 딕셔너리에 억지로 끼워 넣지 않는다).
+_LIKE_COLS = {"model_like": "model"}
 _VALID_ORDER = {"price ASC", "price DESC", "mileage ASC", "mileage DESC",
                 "year ASC", "year DESC"}
 
@@ -115,7 +119,8 @@ def build_golden_sql(predicate: dict) -> tuple[str, list]:
 
     지원 키: 카테고리 등호(manufacturer/body_type/fuel/color/region/transmission, 값 str|list),
       accident_free(bool), price/mileage/year/seats의 min·max, options_all(list, 각 =ANY(options)),
-      order(화이트리스트), limit(int). 값은 전부 %s 파라미터로만 바인딩(인젝션 0).
+      model_like(str, model ILIKE '%값%'), order(화이트리스트), limit(int).
+      값은 전부 %s 파라미터로만 바인딩(인젝션 0).
     """
     conds = ["status = 'on_sale'"]
     params: list = []
@@ -134,6 +139,11 @@ def build_golden_sql(predicate: dict) -> tuple[str, list]:
         if key in predicate:
             conds.append(f"{col} {op} %s")
             params.append(predicate[key])
+
+    for key, col in _LIKE_COLS.items():
+        if key in predicate:
+            conds.append(f"{col} ILIKE %s")
+            params.append(f"%{predicate[key]}%")
 
     if "accident_free" in predicate:
         conds.append("accident_free = %s")
@@ -231,6 +241,24 @@ def score_path_hybrid(returned_ids: list[str], golden_ids: set) -> dict:
     p = len(returned & golden) / len(returned)
     return {"mode": "hybrid_precision", "result": p, "precision": p,
             "returned_n": len(returned), "golden_n": len(golden)}
+
+
+def count_range_ok(returned_n: int, count_range: list[int], predicate: dict) -> bool:
+    """반환 건수(returned_n)가 큐리셋의 count_range 안에 드는가(DW-647).
+
+    count_range는 recount_queryset.py가 predicate를 DB에 그대로 돌려 만든 "골든 매칭
+    건수"다 — predicate에 명시적 limit이 **없으면** 그 값은 앱의 기본 상한(DEFAULT_LIMIT)보다
+    클 수 있다(예: SUV 3천만원 이하 매칭 25~29건). 그런 경우 앱은 정상적으로 DEFAULT_LIMIT만
+    반환하므로, count_range를 그대로 반환 건수와 비교하면 정상 동작(5건 반환)이 항상 오탐
+    처리된다 — 그래서 predicate에 limit이 없을 때만 양끝을 DEFAULT_LIMIT으로 자른다.
+    predicate에 limit이 있으면(top-N, 예: "제일 싼 차") count_range 자체가 이미 그 limit로
+    골든을 만들 때 잘려 있으므로(build_golden_sql이 LIMIT을 SQL에 붙인다) 그대로 비교한다 —
+    바로 이 경로가 DW-656("제일 싼 차"가 5건을 반환해도 만점이던 버그)을 잡는다.
+    """
+    lo, hi = count_range
+    if "limit" not in predicate:
+        lo, hi = min(lo, DEFAULT_LIMIT), min(hi, DEFAULT_LIMIT)
+    return lo <= returned_n <= hi
 
 
 def doc_hit(answer: str, doc_refs: list[str]) -> bool:
@@ -472,6 +500,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
     clarify_ok_n = 0
     clarify_total = 0
     clarify_chips_unobserved = 0
+    # 반환 건수(count_range) 관측(DW-647) — count_range가 선언된 SQL·HYBRID 문항에서만 센다.
+    # doc_hit·clarify와 같은 분자/분모 관례(0/0과 0/12를 구분).
+    count_range_ok_n = 0
+    count_range_total = 0
     flaky_n = 0
     flaky_measured = False  # N>1로 실제 반복 실행된 item이 하나라도 있어야 True(review pass 4)
     errored_n = 0
@@ -480,6 +512,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
     deadend = 0
     total_in = total_out = 0
     latencies: list[float] = []
+    # 실제로 채점된 문항 id(DW-646) — scored_n은 "몇 개"만 말하고 "어떤 문항"인지는 말하지
+    # 않는다. baseline·candidate가 다른 문항 집합을 우연히 같은 개수로 채점하면 아래
+    # coverage["scored_n"]만 보는 비교는 그걸 놓친다(main()의 coverage_matches가 이 집합을 쓴다).
+    scored_ids: list[str] = []
 
     for rid, runs in raw["results"].items():
         item = items.get(rid)
@@ -500,6 +536,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
             })
             continue
 
+        scored_ids.append(rid)
         # N회 실행 중 대표(첫 실행) + flaky 판정 — usable_runs만 본다(에러 run은 서명에서 제외).
         rep = usable_runs[0]
         if len(usable_runs) > 1:
@@ -535,6 +572,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                 rec["score"] = sc
                 if not gray:
                     result_scores_clean.append(sc["result"])
+                cr = item.get("count_range")
+                if cr:
+                    ok = count_range_ok(len(rep["ids_last"]), cr, item["predicate"])
+                    rec["count_range_ok"] = ok
+                    count_range_total += 1
+                    count_range_ok_n += int(ok)
             elif primary == "HYBRID":
                 # 결과집합(가이드가 실제로 좁혔나) + 인용(가이드가 실제로 쓰였나) 둘 다 본다.
                 # 라우터가 다른 경로로 새서 매물이 0건이면 precision이 0이 되어 그대로 감점된다.
@@ -547,6 +590,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                 rec["doc_hit"] = hit
                 doc_hit_total += 1
                 doc_hit_n += int(hit)
+                cr = item.get("count_range")
+                if cr:
+                    ok = count_range_ok(len(rep["ids_last"]), cr, item["predicate"])
+                    rec["count_range_ok"] = ok
+                    count_range_total += 1
+                    count_range_ok_n += int(ok)
             elif primary == "CLARIFY":
                 q_ok = clarify_question_ok(rep["answer_last"])
                 clarify_total += 1
@@ -640,6 +689,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                     trec["score"] = sc
                     if not gray:
                         result_scores_clean.append(sc["result"])
+                    cr = turn.get("count_range")
+                    if cr:
+                        ok = count_range_ok(len(tr["ids"]), cr, turn["predicate"])
+                        trec["count_range_ok"] = ok
+                        count_range_total += 1
+                        count_range_ok_n += int(ok)
                 elif primary == "HYBRID" and turn.get("predicate"):
                     golden = run_golden_ids(turn["predicate"])
                     sc = score_path_hybrid(tr["ids"], golden)
@@ -650,6 +705,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                     trec["doc_hit"] = hit
                     doc_hit_total += 1
                     doc_hit_n += int(hit)
+                    cr = turn.get("count_range")
+                    if cr:
+                        ok = count_range_ok(len(tr["ids"]), cr, turn["predicate"])
+                        trec["count_range_ok"] = ok
+                        count_range_total += 1
+                        count_range_ok_n += int(ok)
                 turn_recs.append(trec)
             rec["turns"] = turn_recs
 
@@ -675,6 +736,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
     queryset_total = len(items)
     scored_n = len(per_item) - errored_n
     missing_ids = sorted(set(items.keys()) - set(raw["results"].keys()))
+    scored_ids_sorted = sorted(set(scored_ids))
 
     return {
         "name": model,
@@ -690,6 +752,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
         "clarify_ok_n": clarify_ok_n,
         "clarify_total": clarify_total,
         "clarify_chips_unobserved": clarify_chips_unobserved,
+        # 반환 건수(count_range) 관측(DW-647) — 분모(_total)는 doc_hit·clarify와 같은 이유로
+        # 함께 남긴다(0/0과 0/12를 구분).
+        "count_range_ok_n": count_range_ok_n,
+        "count_range_total": count_range_total,
         "flaky_n": flaky_n,
         "flaky_measured": flaky_measured,
         "contamination": contamination,
@@ -713,6 +779,8 @@ def score_model(queryset: dict, raw: dict) -> dict:
             "errored_n": errored_n,
             "missing_n": len(missing_ids),
             "missing_ids": missing_ids,
+            # 채점된 문항 id 집합(DW-646) — "몇 개"가 아니라 "어느 문항"까지 비교 가능하게 한다.
+            "scored_ids": scored_ids_sorted,
         },
         "is_partial": scored_n < queryset_total,
         "per_item": per_item,
@@ -730,7 +798,8 @@ def _observability_line(s: dict) -> str:
 
     doc = _ratio(s.get("doc_hit_n", 0), s.get("doc_hit_total", 0), "해당 문항 없음 ⚠")
     clar = _ratio(s.get("clarify_ok_n", 0), s.get("clarify_total", 0), "해당 문항 없음 ⚠")
-    line = f"  가이드 인용(HYBRID): {doc} | 되묻기 발동(CLARIFY): {clar}"
+    cnt = _ratio(s.get("count_range_ok_n", 0), s.get("count_range_total", 0), "해당 문항 없음 ⚠")
+    line = f"  가이드 인용(HYBRID): {doc} | 되묻기 발동(CLARIFY): {clar} | 개수범위(count_range): {cnt}"
     if s.get("clarify_chips_unobserved"):
         line += f"  (칩 미캡처 {s['clarify_chips_unobserved']}건 — 질문 문구만으로 판정)"
     return line
@@ -831,17 +900,23 @@ def main() -> None:
     verdict = lexicographic_winner(baseline, candidate)
     # 베이스라인 회귀 게이트(DW-626) — 예전엔 result_mean 한 축만 봤다. 13.4(되묻기)·13.6
     # (가이드 인용)이 통째로 죽어도 그 축들은 사람이 눈으로만 대조했다(리뷰가 뮤테이션으로
-    # 실증: 인용 전량 제거·CLARIFY 전량 SQL 치환 둘 다 gate_pass:true로 통과했다). 이제 네
-    # 축 전부를 자동 비교한다 — 하나라도 하락하면 regression_block이다.
+    # 실증: 인용 전량 제거·CLARIFY 전량 SQL 치환 둘 다 gate_pass:true로 통과했다). 이제 다섯
+    # 축 전부를 자동 비교한다(13-11 — DW-647이 count_range를 다섯 번째로 추가) — 하나라도
+    # 하락하면 regression_block이다.
     #
-    # ⚠️ 세 축(routing_correct·doc_hit_n·clarify_ok_n)은 **원시 개수**다(코드리뷰 정정) —
-    # result_mean처럼 문항 수로 나눈 평균이 아니다. baseline·candidate가 서로 다른 개수의
-    # 문항을 채점했다면(부분 재캡처 등, coverage.scored_n 참조) 후보가 더 적게 채점됐다는
-    # 이유만으로 이 세 개수가 항상 더 낮아 보여 실제로는 회귀가 아닌데 regression_block이
-    # 뜬다. scored_n이 같을 때만 이 세 축을 신뢰하고, 다르면 "하락 아님"으로 조용히 넘기지
-    # 않고 리포트에 검증 불가로 명시한다.
+    # ⚠️ 네 축(routing_correct·doc_hit_n·clarify_ok_n·count_range_ok_n)은 **원시 개수**다
+    # (코드리뷰 정정) — result_mean처럼 문항 수로 나눈 평균이 아니다. baseline·candidate가
+    # 서로 다른 개수의 문항을 채점했다면(부분 재캡처 등, coverage.scored_n 참조) 후보가 더
+    # 적게 채점됐다는 이유만으로 이 네 개수가 항상 더 낮아 보여 실제로는 회귀가 아닌데
+    # regression_block이 뜬다. scored_n이 같을 때만 이 네 축을 신뢰하고, 다르면 "하락 아님"
+    # 으로 조용히 넘기지 않고 리포트에 검증 불가로 명시한다.
+    #
+    # ⚠️ DW-646 — scored_n(개수)만 같아도 **채점된 문항 자체**가 다를 수 있다(우연의 일치,
+    # 또는 서로 다른 이유로 서로 다른 문항이 실패한 부분 재캡처). 그러면 개수는 같아 보여도
+    # 위 네 축의 원시 개수 비교는 "다른 시험지"를 비교하는 셈이라 의미가 없다 — id **집합**이
+    # 완전히 같을 때만 coverage가 일치한다고 본다(집합이 같으면 개수도 자동으로 같다).
     coverage_matches = (
-        baseline["coverage"]["scored_n"] == candidate["coverage"]["scored_n"]
+        set(baseline["coverage"]["scored_ids"]) == set(candidate["coverage"]["scored_ids"])
     )
     # result_mean도 같은 종류의 커버리지 함정이 있다(코드리뷰 정정, P6) — 분모가 scored_n이
     # 아니라 result_n(clean SQL+HYBRID 채점 문항 수)이고, 그 값은 정확히 라우팅 스토리가
@@ -853,6 +928,7 @@ def main() -> None:
         "routing_correct": candidate["routing_correct"] < baseline["routing_correct"],
         "doc_hit_n": candidate["doc_hit_n"] < baseline["doc_hit_n"],
         "clarify_ok_n": candidate["clarify_ok_n"] < baseline["clarify_ok_n"],
+        "count_range_ok_n": candidate["count_range_ok_n"] < baseline["count_range_ok_n"],
     }
     regression_axes: dict = {}
     unverifiable_axes: list[str] = []

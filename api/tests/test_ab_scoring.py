@@ -59,6 +59,22 @@ def test_golden_sql_accident_free_bool():
     assert True in params
 
 
+# ── model_like (13-11 B-3, A-1과 짝) ──────────────────────────────────
+def test_golden_sql_model_like_wraps_value_with_percent_and_ilike():
+    """`model_like: "아반떼"` → `model ILIKE '%아반떼%'` 골든(실데이터는 '아반떼 MD'·
+    '아반떼 CN7'처럼 모델명 뒤에 트림이 붙어, 정확일치로는 못 잡는다 — A-1과 같은 이유)."""
+    sql, params = score_ab.build_golden_sql({"model_like": "아반떼"})
+    assert "model ILIKE %s" in sql
+    assert "%아반떼%" in params
+
+
+def test_golden_sql_model_like_combines_with_other_conditions():
+    sql, params = score_ab.build_golden_sql({"model_like": "쏘렌토", "price_max": 30000000})
+    assert "model ILIKE %s" in sql
+    assert "price <= %s" in sql
+    assert "%쏘렌토%" in params and 30000000 in params
+
+
 # ── 집합 지표 ──────────────────────────────────────────────────────────
 def test_jaccard():
     assert score_ab.jaccard({1, 2, 3}, {1, 2, 3}) == 1.0
@@ -92,6 +108,33 @@ def test_score_path_a_topn_exact_order():
     assert sc["mode"] == "topn" and sc["result"] == 1.0
     sc2 = score_ab.score_path_a(["y"], ["x"], {"order": "price ASC", "limit": 1})
     assert sc2["result"] == 0.0
+
+
+# ── count_range 채점 축 (13-11 B-1, DW-647) ────────────────────────────
+def test_count_range_ok_uses_exact_range_when_predicate_has_limit():
+    """DW-656 — top-N(predicate.limit 존재)은 count_range를 그대로 비교한다. '제일 싼
+    차'(count_range=[1,1])가 정렬은 맞아도 5건을 반환하면 여기서 잡혀야 한다."""
+    predicate = {"order": "price ASC", "limit": 1}
+    assert not score_ab.count_range_ok(5, [1, 1], predicate)  # red: 5건 반환(DW-656 실측 그대로)
+    assert score_ab.count_range_ok(1, [1, 1], predicate)      # green: 1건만 반환
+
+
+def test_count_range_ok_caps_at_default_limit_when_predicate_has_no_limit():
+    """일반 필터(predicate에 limit 없음)는 count_range가 DB 전체 매칭 건수(예: 25~29건)일
+    수 있다 — 앱은 정상적으로 DEFAULT_LIMIT(5)만 반환하므로, count_range를 그대로 비교하면
+    이 정상 동작이 항상 오탐 처리된다. 양끝을 DEFAULT_LIMIT으로 잘라야 옳다."""
+    predicate = {"body_type": "SUV", "price_max": 30000000}
+    assert score_ab.count_range_ok(5, [25, 29], predicate)      # 정상: 5건 캡 반환
+    assert not score_ab.count_range_ok(4, [25, 29], predicate)  # 5건 미만 반환은 여전히 오탐
+
+
+def test_count_range_ok_caps_upper_bound_even_when_golden_lo_is_small():
+    """golden 하한이 DEFAULT_LIMIT보다 작아도(예: 5~7건) 앱이 5건을 넘겨 반환할 수는 없으므로
+    상한도 DEFAULT_LIMIT으로 잘려야 한다 — 캡 로직이 하한만 보고 상한을 안 자르면 6건
+    반환처럼 실제로는 불가능한 값이 통과로 오판된다."""
+    predicate = {"fuel": "하이브리드", "body_type": "중형차", "accident_free": True}
+    assert score_ab.count_range_ok(5, [5, 7], predicate)
+    assert not score_ab.count_range_ok(4, [5, 7], predicate)
 
 
 def test_route_ok_acceptable_paths():
@@ -457,6 +500,110 @@ def test_regression_axes_flags_count_based_axes_unverifiable_when_scored_n_diffe
     assert report["gate_pass"] is False
 
 
+# ── DW-646 — scored_n이 같아도 채점된 **문항 자체**가 다르면 검증 불가여야 한다 ──────
+# 위 테스트는 "개수가 다르면" 잡는다. 이 테스트는 그 짝인 "개수는 우연히 같은데 문항이
+# 다르면"을 잡는다 — 수정 전엔 coverage_matches가 scored_n(개수)만 비교해서, 서로 다른
+# 문항 집합이 우연히 같은 개수로 채점되면 routing_correct 등 개수 기반 축을 그대로
+# "검증됨"으로 취급해 잘못된 회귀/비회귀 판정을 냈다.
+def test_regression_axes_flags_count_based_axes_unverifiable_when_item_set_differs_though_count_matches(
+    tmp_path, monkeypatch,
+):
+    """baseline은 C1·C2를, candidate는 C1·C3을 채점했다 — 둘 다 2건이라 scored_n은 같지만
+    채점된 문항 자체가 다르다. 개수만 보면 "검증 가능"으로 잘못 통과한다(수정 전 버그
+    재현) — id 집합으로 비교해야 이걸 검증 불가로 잡는다."""
+    qs = _write_json(tmp_path / "qs.json", _COVERAGE_MISMATCH_QS)
+    raw_baseline = _write_json(tmp_path / "raw_base.json", {
+        "model": "m", "results": {"C1": [_reject_run()], "C2": [_reject_run()]},
+    })
+    raw_candidate = _write_json(tmp_path / "raw_cand.json", {
+        "model": "m", "results": {"C1": [_reject_run()], "C3": [_reject_run()]},
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # 전제 — 개수는 정말 같다(이게 없으면 이 테스트는 위 scored_n 불일치 테스트와 다르지 않다).
+    assert report["summaries"][0]["coverage"]["scored_n"] == 2
+    assert report["summaries"][1]["coverage"]["scored_n"] == 2
+    # 그런데도 문항 id 집합이 달라 검증 불가여야 한다(수정 전엔 여기가 regression_axes에
+    # 정상적으로 들어가 "하락 없음"으로 조용히 통과했다).
+    assert "routing_correct" in report["unverifiable_axes"]
+    assert "routing_correct" not in report["regression_axes"]
+    assert report["gate_pass"] is False
+
+
+# ── count_range 다섯 번째 회귀 축 (13-11 B-1, DW-647) ─────────────────────
+# "결과집합(result_mean)"만으론 DW-656을 못 잡는다는 것을 아래 두 번째 테스트가 직접
+# 보여준다 — score_path_a의 topn 모드는 "첫 N건이 정답인가"만 보므로, 5건을 반환해도
+# 그중 앞 1건이 맞으면 result_mean은 만점이다. count_range_ok_n이 그 사각지대를 메운다.
+_COUNT_RANGE_REGRESSION_QS = {
+    "items": [
+        {"id": "S6", "kind": "single", "category": "clean", "query": "제일 싼 차 뭐야?",
+         "primary_path": "SQL", "acceptable_paths": ["SQL"],
+         "predicate": {"order": "price ASC", "limit": 1}, "count_range": [1, 1]},
+    ],
+}
+
+
+def _s6_run(ids: list[str]) -> dict:
+    return {"model": "m", "results": {"S6": [{
+        "route_last": "SQL", "ids_last": ids,
+        "answer_last": f"조건에 맞는 매물 {len(ids)}건을 찾았어요.",
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0,
+    }]}}
+
+
+def test_count_range_axis_populated_on_score_model_summary(monkeypatch):
+    """DW-656 red/green — count_range_ok_n/_total이 실제로 채워지고, 5건 과다반환을 잡는다."""
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["cheapest"])
+    # red — 정렬은 맞지만(첫 건이 최저가) 5건을 돌려준다(수정 전 실측 그대로).
+    over = score_ab.score_model(_COUNT_RANGE_REGRESSION_QS, _s6_run(["cheapest", "b", "c", "d", "e"]))
+    assert over["count_range_total"] == 1
+    assert over["count_range_ok_n"] == 0
+    assert over["per_item"][0]["count_range_ok"] is False
+    # green — 1건만 반환하면 통과.
+    ok = score_ab.score_model(_COUNT_RANGE_REGRESSION_QS, _s6_run(["cheapest"]))
+    assert ok["count_range_ok_n"] == 1
+    assert ok["per_item"][0]["count_range_ok"] is True
+
+
+def test_count_range_regression_is_the_only_axis_that_catches_topn_overreturn(tmp_path, monkeypatch):
+    """이 축이 --baseline 비교(2파일 모드)의 회귀 게이트에 실제로 반영되는지(B-1 요구:
+    "4축 비교 게이트에도 이 축이 반영되게 하라") — baseline은 1건(정답), candidate는
+    5건(DW-656 재발)을 반환한다. topn 채점의 result_mean은 둘 다 1.0(첫 건이 맞으므로)이라
+    이 축 없이는 회귀가 전혀 안 잡힌다는 것도 함께 확인한다.
+    """
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["cheapest"])
+    qs = _write_json(tmp_path / "qs.json", _COUNT_RANGE_REGRESSION_QS)
+    raw_baseline = _write_json(tmp_path / "raw_base.json", _s6_run(["cheapest"]))
+    raw_candidate = _write_json(
+        tmp_path / "raw_cand.json", _s6_run(["cheapest", "b", "c", "d", "e"])
+    )
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # result_mean은 둘 다 만점이라(topn이 첫 건만 본다) 회귀가 아니다 — count_range가 유일한 신호.
+    assert report["regression_axes"]["result_mean"] is False
+    assert report["regression_axes"]["count_range_ok_n"] is True
+    assert report["regression_block"] is True
+    assert report["gate_pass"] is False
+
+
 # ── P2 — top-level gate_pass는 개별 summary가 자기 게이트에서 FAIL이면 절대 True가 아니다 ──
 _GRAY_CONTAMINATION_QS = {
     "items": [{
@@ -596,10 +743,11 @@ def test_result_mean_unverifiable_when_result_n_differs_even_if_scored_n_matches
 
 # ── P4 — 비교 축이 0개면 regression_block은 false가 아니라 null(판정 불가)이다 ─────────
 def test_regression_block_is_null_when_nothing_could_be_compared(tmp_path, monkeypatch, capsys):
-    """coverage_matches·result_n_matches가 **둘 다** 거짓이면 네 축 전부가 unverifiable로 빠져
-    `regression_axes`가 빈 dict가 된다 — `any({})`는 False라 예전엔 커밋된 리포트에
-    `regression_block: false`가 박혔다. 그건 "회귀를 못 찾았다"가 아니라 "아무것도 비교하지
-    못했다"인데, 산출물만 읽는 다음 사람에겐 정반대로 읽힌다(P4). 이제 null로 명시한다.
+    """coverage_matches·result_n_matches가 **둘 다** 거짓이면 다섯 축 전부(13-11 — DW-647이
+    count_range_ok_n을 다섯 번째로 추가)가 unverifiable로 빠져 `regression_axes`가 빈 dict가
+    된다 — `any({})`는 False라 예전엔 커밋된 리포트에 `regression_block: false`가 박혔다.
+    그건 "회귀를 못 찾았다"가 아니라 "아무것도 비교하지 못했다"인데, 산출물만 읽는 다음
+    사람에겐 정반대로 읽힌다(P4). 이제 null로 명시한다.
     """
     monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["g1"])
     qs = _write_json(tmp_path / "qs.json", _RESULT_N_MISMATCH_QS)
@@ -622,10 +770,10 @@ def test_regression_block_is_null_when_nothing_could_be_compared(tmp_path, monke
     assert exc_info.value.code == 1
 
     report = json.loads(out.read_text(encoding="utf-8"))
-    # 전제 — 비교된 축이 정말 0개다(네 축 전부 검증 불가).
+    # 전제 — 비교된 축이 정말 0개다(다섯 축 전부 검증 불가).
     assert report["regression_axes"] == {}
     assert set(report["unverifiable_axes"]) == {
-        "result_mean", "routing_correct", "doc_hit_n", "clarify_ok_n",
+        "result_mean", "routing_correct", "doc_hit_n", "clarify_ok_n", "count_range_ok_n",
     }
     # 핵심 — 산출물이 "회귀 없음"이라고 거짓말하지 않는다.
     assert report["regression_block"] is None
@@ -1473,11 +1621,13 @@ def test_score_model_clarify_old_capture_without_chips_key_is_flagged_not_silent
 def test_observability_line_distinguishes_zero_percent_from_no_items():
     """0%와 "볼 문항이 없음"을 사람이 보는 화면에서 구분한다 — 구셋이 정확히 후자였다."""
     empty = score_ab._observability_line({"doc_hit_n": 0, "doc_hit_total": 0,
-                                          "clarify_ok_n": 0, "clarify_total": 0})
+                                          "clarify_ok_n": 0, "clarify_total": 0,
+                                          "count_range_ok_n": 0, "count_range_total": 0})
     assert "해당 문항 없음" in empty
     real_zero = score_ab._observability_line({"doc_hit_n": 0, "doc_hit_total": 12,
-                                              "clarify_ok_n": 7, "clarify_total": 7})
-    assert "0/12" in real_zero and "해당 문항 없음" not in real_zero
+                                              "clarify_ok_n": 7, "clarify_total": 7,
+                                              "count_range_ok_n": 9, "count_range_total": 10})
+    assert "0/12" in real_zero and "9/10" in real_zero and "해당 문항 없음" not in real_zero
 
 
 # ── 출고 큐리셋 자체를 검사한다(B9: 규칙은 어길 수 없는 자리에) ──────────

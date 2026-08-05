@@ -82,20 +82,38 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL �
 2. WHERE 절에 `status = 'on_sale'` 을 항상 포함한다.
 3. 조건은 AND 로만 결합한다. OR 는 절대 쓰지 않는다.
 4. 특별히 더 많이 보여달라는 요청이 없으면 끝에 `LIMIT {DEFAULT_LIMIT}` 을 붙인다(최대 {MAX_LIMIT}).
+   단, "제일"·"가장"·"최고"·"최저"처럼 최상급 표현이 정렬 가능한 축(가격·연식·주행거리 등)의
+   형용사와 함께 있으면, 그 축으로 `ORDER BY`를 걸고 `LIMIT 1`을 붙인다(개수를 5로 늘리지
+   않는다) — 단 사용자가 "5개"처럼 개수를 직접 밝히면 최상급이어도 그 개수를 LIMIT으로 쓴다.
+   예: "제일 싼 차 뭐야?" → `ORDER BY price ASC LIMIT 1`
+   예: "가장 비싼 매물 하나 보여줘" → `ORDER BY price DESC LIMIT 1`
+   예: "가장 최신 연식인 차" → `ORDER BY year DESC LIMIT 1`
+   예: "주행거리 제일 적은 차" → `ORDER BY mileage ASC LIMIT 1`
+   예: "제일 싼 거 5개 보여줘" → `ORDER BY price ASC LIMIT 5` (사용자가 개수를 밝혔으므로 5)
 5. SQL 한 문장만 출력한다. 설명·코드펜스(```)·세미콜론·주석을 붙이지 않는다.
 6. id 는 UUID다. 비교(>,<,=)·정렬(ORDER BY)·페이지네이션(OFFSET)에 id 를 쓰지 마라
    (UUID를 숫자와 비교하면 DB 오류가 난다). "지금 것 말고 다른 거/더 보여줘"처럼 페이지네이션을
    요구해도, id 로 거르거나 OFFSET을 만들지 말고 기존 검색 조건을 그대로 유지해 조회한다.
-7. accident_status·is_single_owner·is_non_smoker 는 대부분의 매물에서 아직 NULL(미입력)이라,
-   이 세 컬럼을 조건에 넣으면 결과가 거의 항상 0건이 된다.
-   - 사고이력을 묻는 요청은 방향에 관계없이 accident_status 가 아니라 accident_free(대부분
+7. accident_free·accident_status·is_single_owner·is_non_smoker 는 전부 실제로 채워진 값이
+   있는 정상 필터 조건이다(일부 매물은 여전히 NULL일 수 있고, 조건에 넣으면 그 매물은
+   자연히 제외된다 — 정상 동작이다).
+   - 사고이력을 묻는 요청은 방향에 관계없이 accident_status 가 아니라 accident_free(더 널리
      채워져 있음)로 판단해라: "무사고 차량 찾아줘"→`accident_free = true`,
      "사고 있는 차"/"사고차"/"사고이력 있는 차"→`accident_free = false`. accident_status는
-     사용자가 "단순교환"처럼 accident_free 로는 구분 못 하는 값을 직접 언급할 때만 써라.
-   - is_single_owner·is_non_smoker(1인소유·비흡연)는 지금 필터 조건으로 쓰지 마라 — 이 데모
-     데이터는 아직 전부 NULL이라 조건에 넣으면 항상 0건이 된다. 사용자가 "1인소유 차량"·
-     "비흡연 차량"처럼 요구해도 이 두 컬럼으로 거르지 말고, 나머지 조건(가격·차종 등)만으로
-     조회해라.
+     사용자가 "단순교환"처럼 accident_free 로는 구분 못 하는 값을 직접 언급할 때만 써라
+     (예: "단순교환 이력만 있는 차" → `accident_status = '단순교환'`).
+   - is_single_owner·is_non_smoker(1인소유·비흡연)는 사용자가 "1인소유 차량"·"비흡연 차량"
+     처럼 요구하면 그대로 `is_single_owner = true`·`is_non_smoker = true` 조건으로 걸어라.
+   - 신뢰속성 여러 개가 동시에 요구되면(예: "무사고에 1인소유인 차") 각각을 AND로 결합한다.
+8. model(모델명) 조건은 정확일치(`=`)가 아니라 `model ILIKE '%<모델명>%'` 형태의 부분일치로
+   만든다 — 실제 데이터는 `아반떼 MD`·`아반떼 CN7`·`쏘렌토 MQ4`처럼 모델명 뒤에 세부
+   트림/차대 코드가 붙어 있어, `model = '아반떼'`는 그 세부 트림들을 못 잡고 0건이 되거나
+   일부만 잡는다.
+   예: "아반떼 보여줘" → `model ILIKE '%아반떼%'`
+   예: "쏘렌토 있어?" → `model ILIKE '%쏘렌토%'`
+9. "A 같은 B" 형태(다른 차/모델을 예시로 들며 B 조건을 요청)에서는 B만 조건으로 쓰고 A(예시로
+   든 차/모델)는 조건에 넣지 않는다 — A는 비유일 뿐 실제로 찾는 조건이 아니다.
+   예: "아니 쏘렌토 같은 SUV로 바꿔줘" → `body_type = 'SUV'`만(model 조건 없음)
 
 {_UNIT_AND_FILTER_RULES}
 
