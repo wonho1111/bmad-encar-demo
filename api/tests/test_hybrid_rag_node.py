@@ -468,10 +468,19 @@ def test_blank_guide_is_neither_injected_nor_cited(monkeypatch, guide_row):
 def test_superlative_query_appends_sort_caveat(monkeypatch):
     """최상급 표현("제일"·"가장")이 섞인 HYBRID 질의는 정렬 미적용 캐비엇이 답변에 붙는다.
 
-    캐비엇 문구는 "조건을 더 구체적으로 말씀해주세요"류 실행 불가능한 조언이 아니라
-    실제로 가격순을 볼 수 있는 방법(구조조건만으로 다시 질의)을 구체 예시와 함께
-    알려줘야 한다(P11 — HYBRID는 벡터 정렬만 적용해 조건을 더 붙여도 여전히 HYBRID로
-    남는다. 가격 정렬은 순수 구조질의(SQL 경로)에서만 가능하다).
+    캐비엇 문구는 "조건을 더 구체적으로 말씀해주세요"류 실행 불가능한 조언이면 안 된다
+    (P11 — HYBRID는 벡터 정렬만 적용해 조건을 더 붙여도 여전히 HYBRID로 남는다. 가격
+    정렬은 순수 구조질의(SQL 경로)에서만 가능하므로 그런 조언은 지킬 수 없는 약속이다).
+
+    ⚠️ **P11의 나머지 절반은 2026-08-05 사용자 결정으로 뒤집혔다.** 원래 P11은 "실제로
+    가격순을 볼 수 있는 방법을 **구체 예시와 함께** 알려줘야 한다"까지 요구했고, 그래서
+    캐비엇에 `구조적 조건만으로 다시 물어보시면 …(예: "3천만원 이하 SUV 가격 낮은 순")`
+    이 붙어 있었다. 실제 답변 본문이 `조건에 맞는 매물 5건을 찾았어요.` 한 줄인데 안내가
+    그보다 길어져, 사용자가 "잔소리"로 판단해 한 문장으로 줄이기로 했다(선택지 A 유지/
+    B 축약/C 삭제 중 B). 그래서 "구체 예시가 있어야 한다"는 단언은 여기서 뺀다 —
+    **고지 자체가 남아 있어야 한다는 요구(위 첫 단언)는 그대로다.** 삭제(C)를 안 택한
+    이유가 그것이다: 없애면 "제일 싼"이라고 물은 사용자가 가격순이 아닌 결과를 아무
+    설명 없이 받는다.
     """
     monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
     monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
@@ -481,9 +490,11 @@ def test_superlative_query_appends_sort_caveat(monkeypatch):
 
     result = node.hybrid_rag_node("제일 싼 패밀리카")
 
-    assert "가격 정렬은 반영되지 않았어요" in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT in result["answer"]
     assert "조건을 더 구체적으로 말씀해" not in result["answer"]  # 실행 불가능한 옛 조언 제거
-    assert "가격 낮은 순" in result["answer"]  # 실제로 되는 방법(구조조건만) + 구체 예시
+    # 축약 후에도 "정렬이 반영되지 않았다"는 사실 자체는 문구에 남아 있어야 한다 —
+    # 상수를 빈 문자열로 만들거나 무관한 문구로 갈아끼우면 여기서 red가 난다(실측 확인).
+    assert "정렬" in node._SUPERLATIVE_CAVEAT and "반영되지 않" in node._SUPERLATIVE_CAVEAT
 
 
 def test_non_superlative_query_omits_sort_caveat(monkeypatch):
@@ -496,7 +507,7 @@ def test_non_superlative_query_omits_sort_caveat(monkeypatch):
 
     result = node.hybrid_rag_node("3천만원 이하로 무난한 패밀리카")
 
-    assert "가격 정렬은 반영되지 않았어요" not in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
 
 
 def test_superlative_empty_result_omits_caveat(monkeypatch):
@@ -510,7 +521,7 @@ def test_superlative_empty_result_omits_caveat(monkeypatch):
     result = node.hybrid_rag_node("제일 싼 패밀리카")
 
     assert result["listings"] == []
-    assert "가격 정렬은 반영되지 않았어요" not in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
 
 
 def test_non_price_superlative_query_omits_sort_caveat(monkeypatch):
@@ -528,7 +539,7 @@ def test_non_price_superlative_query_omits_sort_caveat(monkeypatch):
 
     result = node.hybrid_rag_node("가장 안전한 SUV")
 
-    assert "가격 정렬은 반영되지 않았어요" not in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
 
 
 def test_superlative_query_via_none_fallback_appends_sort_caveat(monkeypatch):
@@ -549,7 +560,7 @@ def test_superlative_query_via_none_fallback_appends_sort_caveat(monkeypatch):
 
     result = node.hybrid_rag_node("제일 싼 패밀리카")
 
-    assert "가격 정렬은 반영되지 않았어요" in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT in result["answer"]
     assert result["listings"] == ["d1", "d2", "d3"]
 
 
@@ -565,7 +576,7 @@ def test_non_superlative_none_fallback_omits_sort_caveat(monkeypatch):
 
     result = node.hybrid_rag_node("패밀리카로 무난한 거")
 
-    assert "가격 정렬은 반영되지 않았어요" not in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
 
 
 def test_superlative_none_fallback_empty_result_omits_caveat(monkeypatch):
@@ -581,7 +592,7 @@ def test_superlative_none_fallback_empty_result_omits_caveat(monkeypatch):
     result = node.hybrid_rag_node("제일 싼 패밀리카")
 
     assert result["listings"] == []
-    assert "가격 정렬은 반영되지 않았어요" not in result["answer"]
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
 
 
 # ── P5 — `_has_superlative`가 순서 무관 substring AND가 아니라 근접 결합만 잡는지 ──────
