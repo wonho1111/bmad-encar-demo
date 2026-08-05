@@ -8,7 +8,13 @@
 // desktop-1280x800 프로젝트에서만 돈다(설계상 [desktop] 표기 — mobile 중복 실행 불필요).
 // tablet-800x1024 프로젝트도 이 조건에 걸려 함께 스킵된다.
 import { expect, test } from '@playwright/test';
-import { assertLocalSupabase, fetchOnSaleListingIdWithPhoto, login, runPsql } from './helpers';
+import {
+  assertLocalSupabase,
+  fetchOnSaleListingIdWithPhoto,
+  login,
+  runPsql,
+  SEED_USER,
+} from './helpers';
 import { PROJECT_NAMES } from './project-names';
 
 assertLocalSupabase();
@@ -197,4 +203,35 @@ test('C7 buyer가 /admin에 접근하면 차단된다', async ({ page }) => {
   // (admin)/layout.tsx의 requireRole(ADMIN) — 비관리자는 홈(/)으로 리다이렉트.
   await page.waitForURL((url) => url.pathname === '/');
   expect(new URL(page.url()).pathname, 'buyer의 /admin 접근은 requireRole(ADMIN)이 홈으로 보내야 함').toBe('/');
+});
+
+// ── C8 [desktop] role='buyer' 계정으로 /sell 접근 (spec-14-3, FR52) ───────
+// 소유권 기반 게이트 회귀 검사 — sell/layout.tsx가 requireRole(SELLER)에서 requireUser()로
+// 바뀐 뒤에도 role='buyer' 계정이 홈으로 튕기지 않고 매물 등록 화면에 도달하는지 확인한다.
+// 읽기 전용(폼 제출 없음) — 이 스펙 파일의 절대 규칙을 지킨다.
+test('C8 role=buyer 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
+  // 전제를 주석이 아니라 DB로 고정한다(C4가 sold id를 psql로 실측하는 것과 같은 관례).
+  // 이게 없으면 시드·가입 트리거가 바뀌었을 때 이 테스트는 "로그인 사용자가 /sell에 간다"로
+  // 조용히 약해지면서도 계속 초록이라, 정작 검사해야 할 FR52를 안 보게 된다.
+  // 계정은 SEED_USER 상수에서 읽는다 — 리터럴로 적으면 상수를 다른 계정으로 바꿨을 때
+  // "role을 검사한 계정"과 "실제로 로그인한 계정"이 갈라진 채로 초록이 된다.
+  const buyerRole = runPsql(
+    `select p.role from profiles p join auth.users u on u.id = p.id where u.email='${SEED_USER.email}'`,
+  ).trim();
+  expect(buyerRole, "C8은 role='buyer' 계정일 때만 FR52를 검사한다").toBe('buyer');
+
+  await login(page); // SEED_USER = buyer@test.com
+
+  await page.goto('/sell');
+  // 먼저 화면이 뜨는 것을 기다린다 — 리다이렉트가 있었다면 이 heading은 나오지 않는다.
+  // (goto 직후 pathname만 읽으면 아직 리다이렉트가 끝나지 않은 상태를 통과로 볼 수 있다.)
+  await expect(
+    page.getByRole('heading', { name: '매물 등록' }),
+    '/sell이 매물 등록 폼을 렌더해야 함(FR52)',
+  ).toBeVisible();
+  // 홈으로 튕기지 않아야 한다(구 동작이었다면 requireRole(SELLER)이 '/'로 리다이렉트했을 것).
+  expect(
+    new URL(page.url()).pathname,
+    'role=buyer도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
+  ).toBe('/sell');
 });

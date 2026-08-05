@@ -45,7 +45,7 @@ web/src/app/
 ├─ (user)/             ← 구매자·판매자 공용
 │   ├─ search/page.tsx      "/search" 매물 탐색
 │   ├─ listings/[id]/page.tsx  "/listings/123" 매물 상세
-│   ├─ sell/...             "/sell" 매물 등록·관리 (판매자)
+│   ├─ sell/...             "/sell" 매물 등록·관리 (로그인 사용자 누구나)
 │   ├─ ai/page.tsx          "/ai" AI 검색
 │   └─ chat/...             "/chat" 채팅
 └─ (admin)/            ← 관리자 전용
@@ -66,7 +66,8 @@ web/src/app/
 1. **`proxy.ts` (미들웨어)** — 모든 요청을 가로채, 로그인 토큰을 갱신하고 **비로그인 사용자를 보호 경로에서 `/login`으로** 보냅니다(빠른 1차 차단).
    - *미들웨어(middleware)*: 요청이 페이지에 닿기 전에 먼저 실행되는 가로채기 코드.
 2. **`lib/auth/guard.ts`** — `requireUser()`(로그인 필수), `requireRole(역할)`(특정 역할 필수)로 각 페이지/그룹에서 DB의 실제 역할을 확인(2차 인가).
-   - 예) `(user)/sell/layout.tsx`는 `requireRole(SELLER)`, `(admin)/layout.tsx`는 `requireRole(ADMIN)`.
+   - 예) `(admin)/layout.tsx`는 `requireRole(ADMIN)`. 반면 `(user)/sell/layout.tsx`는 `requireUser()`만 쓴다 — 판매는 역할이 아니라 **소유권**으로 통제하기 때문이다(spec-14-3, FR52·FR53).
+   - 다만 "소유권으로 통제"가 등록까지 덮지는 않습니다. **등록**은 로그인한 누구나 할 수 있고(RLS는 남의 명의로 등록하는 것만 막습니다), **수정·삭제·구매완료**만 `listings` RLS의 `seller_id = auth.uid()`가 실제로 막습니다.
 
 > 그리고 그 아래엔 **DB의 RLS**(01번)가 3차로 버팁니다. 프론트가 실수해도 DB가 최종 방어.
 

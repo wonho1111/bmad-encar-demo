@@ -11,7 +11,7 @@
 // 매 요청 최신 DB 상태를 반영해야 하므로(새 방·sold 변화 즉시) force-dynamic.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { ROLE_LABEL, UNITS, USER_ROLE, type UserRole } from '@/lib/constants';
+import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import AppHeader from '@/components/layout/AppHeader';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +42,9 @@ export default async function ChatListPage() {
     data: { user },
   } = await supabase.auth.getUser();
   let roleLabel: string | null = null;
-  // 빈 상태 안내 문구를 역할에 맞게 분기하려고 원시 role 값도 보관한다(판매자는 문의를 '받는' 입장).
+  // 빈 상태 문구를 역할로 분기하던 유일한 실사용처가 spec-14-3에서 폐기돼(아래 참고), 이제
+  // 이 값은 roleLabel 계산으로만 흘러간다 — 그 roleLabel도 AppHeader의 consumer 분기에서는
+  // 렌더되지 않으므로 현재 화면에 나타나는 곳이 없다(장부 DW-453이 이 죽은 prop을 추적 중).
   let role: UserRole | null = null;
   if (user) {
     const { data: profile } = await supabase
@@ -104,11 +106,13 @@ export default async function ChatListPage() {
               채팅방 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
             </p>
           ) : !rooms || rooms.length === 0 ? (
-            // 역할별 빈 상태: 구매자는 '문의하기를 눌러 시작', 판매자는 '문의가 들어오면 생긴다'(받는 입장).
+            // role은 더 이상 신뢰할 수 있는 구매자/판매자 신호가 아니다(spec-14-3 — role='buyer'
+            // 계정도 매물을 등록해 문의를 받는 입장이 될 수 있다). 없앤 것은 역할 **분기**뿐이고,
+            // 다음 행동 안내는 남긴다 — 빈 화면에서 사용자가 갈 곳을 잃지 않게(두 역할 모두에게
+            // 참인 문장으로 합쳤다: 내가 문의해도, 남이 내 매물에 문의해도 여기에 생긴다).
             <p className="text-sm text-zinc-500">
-              {role === USER_ROLE.SELLER
-                ? '아직 들어온 문의가 없습니다. 구매자가 매물에 문의하면 여기에 채팅방이 생깁니다.'
-                : '아직 문의한 채팅방이 없습니다. 매물 상세에서 ‘문의하기’를 눌러보세요.'}
+              아직 채팅방이 없습니다. 매물 상세에서 ‘문의하기’를 누르거나, 내 매물에 문의가 들어오면
+              여기에 생깁니다.
             </p>
           ) : (
             <ul className="flex flex-col gap-2">

@@ -86,8 +86,9 @@ describe('ROLE_LABEL 인덱싱은 폴백 없이는 못 쓴다', () => {
       .sort();
 
     expect(constantKeySites).toEqual([
+      // spec-14-3: sell/layout.tsx는 더 이상 role=seller 전용이 아니므로 ROLE_LABEL[USER_ROLE.SELLER]를
+      // AppHeader에 넘기지 않는다(account/page.tsx와 동일 패턴, "죽은 prop을 틀린 서술로 남기지 않는다").
       'app/(admin)/layout.tsx: ROLE_LABEL[USER_ROLE.ADMIN]',
-      'app/(user)/sell/layout.tsx: ROLE_LABEL[USER_ROLE.SELLER]',
     ]);
   });
 

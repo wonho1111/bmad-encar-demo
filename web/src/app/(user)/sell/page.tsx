@@ -1,5 +1,6 @@
-// 판매자 매물 등록 화면 (FR5·FR7) — 서버 컴포넌트.
-// 역할 게이트는 (user)/sell/layout.tsx의 requireRole(seller)이 담당하므로 여기서는 데이터만 준비한다.
+// 매물 등록 화면 (FR5·FR7) — 서버 컴포넌트.
+// 게이트는 (user)/sell/layout.tsx의 requireUser()가 로그인만 확인하므로 여기서는 데이터만 준비한다.
+// 본인 매물 여부는 role이 아니라 listings RLS의 소유권 정책(seller_id = auth.uid())이 집행한다(spec-14-3).
 //
 // 구성:
 //   1) 등록 폼(SellForm, 클라이언트 컴포넌트) — 15필드 입력·검증·INSERT.

@@ -4675,3 +4675,109 @@ source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-023902-0381; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-668: Flutter 앱이 아직 "판매 = 역할" 모델이다 — 같은 계정이 web에선 팔 수 있고 앱에선 차단된다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 지적, 리뷰 세션이 Dart 파일 4곳을 직접 grep해 확인.
+location: `app/lib/features/listings/sell_screen.dart:152` · `my_listings_screen.dart:26` · `edit_listing_screen.dart:28`(모두 `if (role != UserRole.seller)` 하드 게이트) · `app/lib/features/chat/chat_list_screen.dart:39`(빈 채팅목록 문구가 `role == UserRole.seller`로 2분기 — web에서는 이번 스토리가 역할 중립 문구로 통일한 바로 그 코드)
+severity: medium
+summary: Story 14.3이 web의 판매 게이트를 소유권 기반으로 풀었지만 Flutter 앱은 그대로 역할 게이트다. 그래서 `role='buyer'` 계정이 **web에서는 매물을 등록·수정할 수 있는데 앱에서는 차단 화면을 본다** — 같은 계정이 플랫폼에 따라 다른 권한을 갖는, 사용자가 직접 관측 가능한 불일치다. Story 14.2가 가입 트리거 기본값을 바꾸면 더 나빠진다: `app/lib/features/auth/user_role.dart`의 기존 주석이 이미 경고하듯 metadata에 role이 안 실리면 `fromValue(null) → null`이 되어 **신규 가입자는 앱의 판매자 화면 전체에 영영 못 들어간다**.
+evidence: 위 4개 파일의 조건문을 직접 확인함. `app/test/`에는 이 게이트를 단언하는 검사가 없다(`widget_test.dart`는 enum 값·파싱만 본다). Story 14.3의 스펙은 Never 절에서 "Flutter 변경은 에픽 범위 밖"이라고 명시하고 "DW 등재는 아직 안 됐다"고 스스로 인정했다 — 이 항목이 그 등재다. **코드를 지금 안 고치는 이유**는 에픽 14의 범위가 web 한정으로 사용자 확정돼 있기 때문이지, 문제가 아니어서가 아니다.
+trigger: **Epic 16(앱 정합성 에픽)의 첫 스토리를 만들 때 인수조건으로 심는다.** 그보다 먼저 Story 14.2가 가입 트리거 기본값을 바꾸는 시점이 오면, 그 스토리의 리뷰에서 "앱 신규 가입자가 role=null로 전 판매화면 차단"이 실제로 발생하는지 먼저 확인한다(그 경우 severity가 high로 올라간다).
+status: open
+
+### DW-669: 정지(`status='suspended'`)된 회원의 판매를 아무것도 막지 않는다 — 게이트에도 RLS에도 status 검사가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰(edge-case 렌즈) 지적, 리뷰 세션이 마이그레이션과 web 게이트를 직접 grep해 확인.
+location: `supabase/migrations/0001_profiles.sql:15`(`status text not null default 'active' check (status in ('active','suspended'))`) · `supabase/migrations/0002_listings.sql`의 INSERT/UPDATE/DELETE 정책(모두 `seller_id = auth.uid()`만 검사) · `web/src/app/(user)/sell/layout.tsx`(`requireUser()` — status를 안 읽는다)
+severity: medium
+summary: 관리자가 회원을 정지시켜도(`0005_admin_policies.sql`이 제공하는 기능) 그 회원은 계속 로그인해 매물을 등록·수정·삭제할 수 있다. 정지 상태를 읽어 행동을 막는 지점이 web 게이트·RLS 어디에도 없다.
+evidence: `grep -rln "suspended"` 결과 매치는 `0001_profiles.sql`(컬럼 정의)·`0005_admin_policies.sql`(관리자가 값을 바꾸는 정책)·`0027_role_check_relax.sql`·`MemberActions.tsx`(관리자 UI)·`constants.ts`(상수)뿐 — **정지 여부로 무언가를 거부하는 코드는 0건**이다. ⚠️ **이것은 Story 14.3이 만든 문제가 아니다**: 이전 게이트 `requireRole(SELLER)`도 role만 봤으므로 정지된 seller는 예전에도 그대로 팔 수 있었다. 다만 게이트가 풀리면서 이제 정지된 **모든** 계정으로 범위가 넓어졌다. 이 프로젝트의 원칙(CLAUDE.md B9 "중요한 값은 데이터 계층이 직접 구한다")대로면 해결 자리는 앱 게이트가 아니라 `listings` RLS에 `exists(select 1 from profiles where id=auth.uid() and status='active')`를 더하는 쪽이다.
+trigger: **관리자 회원관리를 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 "정지"의 의미를 화면에서 다루므로, 정지가 실제로 무엇을 막는지도 그 자리에서 정한다. 정하면 `docs/conventions.md` §8(접근 게이트 계약)에 한 줄로 적어야 다음 사람이 다시 묻지 않는다.
+status: open
+
+### DW-670: `profiles` 행이 없는 로그인 사용자가 매물을 등록하면 FK 오류(23503)가 정체불명 문구로 뜬다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰(edge-case 렌즈) 지적, 리뷰 세션이 `SellForm.tsx`의 에러 매핑과 `0002_listings.sql`의 FK를 직접 확인.
+location: `web/src/app/(user)/sell/SellForm.tsx:117-124`(`toKoreanError`가 `23514`·`42501`만 한국어로 매핑) · `supabase/migrations/0002_listings.sql:28`(`seller_id ... references public.profiles(id)`)
+severity: low
+summary: `auth.users`에는 있으나 `profiles` 행이 없는 세션으로 매물을 등록하면 INSERT가 외래키 위반(23503)으로 실패하는데, 그 코드가 한국어 매핑 목록에 없어 15개 필드를 다 채운 사용자가 무슨 일인지 알 수 없는 일반 오류만 본다.
+evidence: `toKoreanError`의 분기를 직접 읽음 — `23514`(CHECK 위반)와 `42501`(RLS 거부)만 처리한다. 그런 사용자가 실제로 생길 수 있는 경로도 실재한다: `web/src/app/(admin)/admin/members/MemberActions.tsx`가 "profiles 행은 DELETE 되지만 `auth.users`는 service_role 키가 없어 못 지운다"고 스스로 명시하고 있어, 관리자가 회원을 지운 뒤에도 그 사람의 세션은 살아 있다. ⚠️ Story 14.3 이전에는 `/sell`의 `requireRole(SELLER)`이 profiles를 읽어 비교했기 때문에 **우연히** 존재 검사 역할을 했고 그런 세션은 홈으로 튕겼다. 게이트가 `requireUser()`로 바뀌며 그 우연한 방어가 사라져 이 경로가 열렸다(발생 조건이 좁아 low).
+trigger: **`SellForm.tsx`의 에러 처리나 매물 등록 실패 문구를 다음에 손대는 스토리에서** — 그때 `23503`을 한국어 문구("프로필 정보가 없어 등록할 수 없습니다. 다시 로그인해주세요.")로 매핑한다. 함께 판단할 것: 관리자 회원 삭제가 세션을 무효화하지 못하는 구조(service_role 키 부재) 자체는 별개의 오래된 제약이므로 여기서 풀려 하지 않는다.
+status: open
+
+### DW-671: 라우트 게이트를 바꿔도 E2E **전량**을 돌리라는 강제가 없다 — Story 14.3에서 실제로 모순된 테스트를 놓쳤다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 같은 사고를 지적, 리뷰 세션이 `nav-and-hero.spec.ts`를 열어 확인 후 그 자리에서 테스트를 고쳤다.
+location: `web/e2e/*.spec.ts`(9개 파일) · 각 스펙 문서의 `## Verification` 절에 손으로 적는 Playwright 명령
+severity: low
+summary: Story 14.3은 `/sell` 게이트를 뒤집어 놓고 검증을 `core-flows.spec.ts write-flows.spec.ts` 두 파일로만 돌렸다. 그런데 옛 동작(`buyer가 /sell 접근하면 홈으로`)을 단언하는 테스트는 손대지 않은 `nav-and-hero.spec.ts`(B8)에 있었다. 결과적으로 **`npm run test:e2e` 전량은 red인데 스토리는 초록으로 닫혔다**. 이번 후속 리뷰가 B8을 새 동작으로 뒤집어 개별 사고는 해소했지만, "부분 실행을 검증으로 인정하는" 구조 자체는 그대로다.
+evidence: `grep -rn "'/sell'" web/e2e/*.spec.ts` → `core-flows`·`write-flows` 외에 `nav-and-hero.spec.ts:160`이 나온다. 스펙의 Verification Evidence는 두 파일만 실행했다고 명시한다. ⚠️ 이 사고가 **조용히** 지나간 이유는 DW-664가 기록한 별개 사실(E2E 잡이 CI에 아예 없다)과 겹친다 — 사람이 로컬에서 고른 파일만 돌리는 것이 유일한 실행 경로다.
+trigger: **다음에 라우트 게이트·접근 제어를 바꾸는 스토리(Epic 15 Story 15-3이 관리자 회원관리를 건드린다)를 계획할 때** — 그 스펙의 Verification에 파일 목록 대신 `npm run test:e2e`(전량)를 적는다. 더 근본적으로는 DW-661·DW-664를 처리해 PR을 여는 자리에서, E2E 잡을 CI에 배선할지(헤드리스 브라우저·로컬 Supabase 컨테이너 필요, `docs/tech-debt.md` #168이 비용을 이미 산정해 뒀다) 함께 판단한다.
+status: open
+
+### DW-672: `/sell/[id]/edit`에서 타인 매물 폼을 막는 실주체는 앱측 `seller_id` 필터인데, 그 필터를 지키는 자동 검사가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰 — adversarial·verification-gap 두 렌즈가 독립 지적, 리뷰 세션이 마이그레이션과 e2e 스위트를 직접 열어 확인.
+location: `web/src/app/(user)/sell/[id]/edit/page.tsx:44`(`.eq('seller_id', user?.id ?? '')`) · `supabase/migrations/0002_listings.sql:94-95`(`listings_select_on_sale`)
+severity: medium
+summary: SELECT RLS는 "on_sale ∪ 본인 ∪ 관리자"의 OR 결합이라 **타인의 판매중 매물도 읽힌다**. 폼이 안 뜨게 막는 것은 RLS가 아니라 이 페이지의 앱측 `seller_id` 필터 한 줄인데, 그 줄이 사라져도 실패하는 테스트가 하나도 없다. 이 스토리로 `/sell/[id]/edit`에 도달할 수 있는 사람이 `role='seller'`에서 로그인 사용자 전원으로 넓어져 노출면이 커졌다.
+evidence: `grep -rn "본인 매물만|접근 권한이 없습니다" web/e2e web/src --include=*.spec.ts` → 0건. `write-flows.spec.ts:161`은 **본인** 매물 edit URL만 연다. 스펙 I/O 매트릭스 4행의 유일한 검증 기록은 2차 리뷰 세션의 브라우저 수동 재현 1회다(`## Verification Evidence`). ⚠️ 필터 자체는 지금 정상 동작한다 — 없는 것은 동작이 아니라 **그 동작을 지키는 검사**다. 3차 리뷰에서 이 페이지 헤더 주석이 "본인 매물 여부는 RLS가 집행한다"고 잘못 서술한 것은 고쳤지만(그대로 믿으면 필터를 중복이라 여겨 지울 수 있었다), 주석은 계약이 아니다(CLAUDE.md B9).
+trigger: **`web/e2e/write-flows.spec.ts`나 `/sell` 수정 흐름을 다음에 손대는 스토리에서** — 그 자리에 교차 소유자 케이스를 추가한다(BUYER 로그인 → SELLER 소유 on_sale 매물의 `/sell/[id]/edit` 직접 접속 → 안내 문구 노출 + 폼 미렌더 단언). 읽기 전용이라 `core-flows.spec.ts`에 둬도 된다.
+status: open
+
+### DW-673: role='buyer' 계정이 실제로 매물을 **등록**할 수 있는지는 어떤 테스트도 확인하지 않는다 — FR52의 절반이 무검사다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰 — adversarial·edge-case 두 렌즈가 독립 지적, 리뷰 세션이 e2e 스위트 전량을 grep해 확인.
+location: `web/e2e/core-flows.spec.ts:212`(C8, 읽기 전용이라 등록 불가) · `web/e2e/write-flows.spec.ts:108,156,216`(등록·수정·구매완료 전부 `seller@test.com`)
+severity: medium
+summary: C8과 B8은 role='buyer' 계정이 `/sell` **화면에 도달**하는 것까지만 단언한다. 실제로 등록 버튼을 눌러 매물이 생기는지는 아무도 안 본다 — 쓰기 흐름은 전부 `role='seller'` 계정으로만 돈다. 스토리의 인수조건이 "화면이 렌더된다"까지라 이 스토리는 정당하게 닫혔지만, 에픽 목표(FR52 "로그인만 하면 누구나 사고팔 수 있다")의 실질은 검사 밖이다.
+evidence: `core-flows.spec.ts` 파일 헤더가 "읽기 전용 — DB에 INSERT/UPDATE/DELETE 하지 않는다. 폼 제출도 하지 않는다"를 절대 규칙으로 못박고 있어 C8이 구조적으로 등록을 검사할 수 없다. `write-flows.spec.ts`의 BUYER 계정 사용은 채팅(180행) 한 곳뿐이다. ⚠️ 지금 동작은 한다 — `listings_insert_own`이 role을 안 보므로 buyer 계정 INSERT는 통과한다(3차 리뷰가 정책 본문을 직접 확인). 없는 것은 **회귀 시 잡아줄 장치**다: Story 14.2가 가입 트리거를 바꾸거나 누군가 INSERT 경로에 role 검사를 되살려도 스위트는 초록을 유지한다.
+trigger: **Story 14.2(가입 트리거 기본값 변경)를 구현할 때 그 스토리의 인수조건으로 심는다** — 14.2가 "신규 가입자가 곧바로 팔 수 있다"를 약속하므로 등록 성공까지 단언하는 것이 그 스토리의 자연스러운 DoD다. 자리는 `write-flows.spec.ts`(등록 → 확인 → afterAll에서 삭제하는 기존 관례가 92행에 이미 있다).
+status: open
+
+### DW-674: `listings` 소유권 RLS 자체를 지키는 반복 실행 검사가 저장소에 없다 — 이 스토리가 그것을 유일한 방어선으로 승격시켰는데도
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰(verification-gap 렌즈) 지적, 리뷰 세션이 `api/tests/integration` 전량과 저장소 SQL 테스트를 직접 조사.
+location: `supabase/migrations/0002_listings.sql:104-118`(`listings_insert_own`·`listings_delete_own`) · `supabase/migrations/0015_listings_update_not_sold.sql:24-29`(`listings_update_own` 현행판)
+severity: medium
+summary: Story 14.3이 앱 계층 역할 게이트를 없애면서 "누가 남의 매물을 바꿀 수 있나"의 방어선은 이제 `listings` RLS 하나뿐이다. 그런데 그 정책이 느슨해져도 실패하는 자동 검사가 저장소 어디에도 없다 — 확인 기록은 전부 사람이 psql로 한 번씩 해본 것이다.
+evidence: `find . -name '*.sql' -path '*test*'` → 0건(pgTAP 없음). `api/tests/integration`의 10개 파일 중 listings 소유권 거부를 단언하는 파일 없음. 기록된 검증은 Story 2-1·2-3(2026-06)의 수동 임퍼소네이션과 Story 14.3 2차 리뷰 세션의 psql 1회(스펙 `## Verification Evidence`)뿐이다. ⚠️ 실행 자리는 이미 있다 — CI의 `api-db` 잡이 전 마이그레이션을 실제 Postgres에 적용하고, `test_chat_unread_real_db.py:91-106`·`test_role_check_relax_real_db.py:145-155`가 `set local role authenticated` + `set local request.jwt.claim.sub`로 세션을 흉내 내는 관례를 이미 쓴다. 새 인프라가 아니라 그 관례를 한 번 더 쓰는 일이다. 선례도 있다: `0015`가 `listings_update_own`을 drop 후 재생성했다 — 정책은 실제로 교체된다.
+trigger: **`listings` RLS 정책을 다음에 건드리는 마이그레이션 스토리에서**(DW-669의 정지 회원 검사를 RLS에 넣는 작업이 유력한 첫 후보다) — 그 마이그레이션과 같은 스토리에서 `api/tests/integration`에 비소유자 UPDATE/DELETE가 0행, 타인 명의 INSERT가 42501임을 단언하는 pytest를 추가한다. 그래야 CI(`api-db` 잡)가 실제로 돌린다.
+status: open
+
+### DW-675: admin 계정이 `/sell`에 들어오는 것은 "의도된 결과"로 선언됐지만, 그 선언을 지키는 검사가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰 — edge-case·verification-gap 두 렌즈가 독립 지적, 리뷰 세션이 `web/e2e/*.spec.ts` 전량에서 `/sell` 접근 케이스를 grep해 확인.
+location: `web/src/app/(user)/sell/layout.tsx:14`(`requireUser()` — role을 아예 안 읽는다) · `web/e2e/core-flows.spec.ts:16`(`ADMIN_USER` 상수는 이미 있다)
+severity: low
+summary: `requireUser()`는 role을 안 보므로 `{buyer, seller, admin}` 셋 다 통과한다. buyer는 C8·B8이, seller는 `write-flows`가 간접적으로 덮지만 **admin 경로는 아무 케이스도 없다**. 스펙 Design Notes가 admin 진입을 "의도된 귀결"로 명시 선언했고 2차 리뷰가 "admin을 막자"는 제안을 계약 위반이라며 기각까지 했는데, 그 결정은 문서에만 있고 실행되는 검사가 아니다(CLAUDE.md B9 — 주석·문서는 계약이 아니다).
+evidence: `grep "'/sell'" web/e2e/*.spec.ts` 전수 → admin 계정으로 `/sell`을 여는 케이스 0건. `admin@test.com`은 `core-flows.spec.ts:16`·`nav-and-hero.spec.ts:18`에 상수로 이미 있지만 `/admin` 케이스(C6·C7·B4)에만 쓰인다. ⚠️ 지금 동작은 정상이다(`requireUser()`가 role을 안 읽으므로 통과). 문제는 누군가 "관리자가 매물 파는 건 이상하다"며 admin 제외 분기를 넣어도 전량 E2E가 초록이라는 것 — 즉 스펙이 계약 위반이라 판정한 바로 그 변경이 무검사로 들어올 수 있다.
+trigger: **관리자 화면·권한을 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 admin 권한 경계를 다루므로 그 자리에서 한 줄 추가한다(`core-flows.spec.ts`의 C8 옆에 ADMIN_USER로 `/sell` 도달을 단언, 읽기 전용이라 그 파일의 절대 규칙에 맞는다). 함께 판단할 것: 그때도 admin 진입을 유지할지 여부 자체를 재확인한다 — 유지가 결론이면 검사로 못박고, 뒤집는다면 스펙 Always부터 고쳐야 한다.
+status: open
+
+### DW-676: `/account`가 "역할: 구매자"를 실제 화면에 표시한다 — 그 값이 더 이상 무엇을 할 수 있는지 말해주지 않는데도
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰(edge-case 렌즈) 지적, 리뷰 세션이 `account/page.tsx`를 직접 열어 렌더 여부를 확인.
+location: `web/src/app/(user)/account/page.tsx:65-66`(`<dt>역할</dt><dd>{roleLabel ?? '-'}</dd>`)
+severity: low
+summary: Story 14.3 이후 `profiles.role`은 판매 가능 여부와 아무 관계가 없다(로그인만 하면 누구나 판다). 그런데 `/account`는 여전히 "역할: 구매자"를 **실제로 렌더**한다 — 매물을 등록해 팔고 있는 사용자가 자기 계정 화면에서 "구매자"라고 읽는다.
+evidence: `AppHeader`의 `roleLabel`은 admin 분기에서만 렌더돼 소비자 화면에 안 보이지만(그래서 DW-453의 죽은 prop 문제와는 별개다), `account/page.tsx:65-66`의 `<dd>`는 consumer 화면에 그대로 그려진다 — 3차 리뷰가 파일을 열어 확인했다. ⚠️ DW-453의 범위가 **아니다**: 그 항목은 "6개 페이지가 렌더되지도 않을 `roleLabel`을 만들려고 요청마다 profiles를 조회한다"는 낭비를 다루고, 여기는 값이 실제로 보이는데 그 의미가 낡았다는 문제다. Story 14.3이 만든 버그도 아니다 — 이 스토리가 role의 의미를 축소하면서 **드러난** 표시다.
+trigger: **Story 14.2(가입 화면의 역할 선택 정리)를 구현할 때 그 스토리의 인수조건으로 함께 심는다** — 14.2가 "가입 시 역할을 고르는 것이 무의미해졌다"를 다루므로, "이미 가입한 사람에게 역할을 보여주는 것도 무의미한가"를 같은 자리에서 정하는 것이 자연스럽다. 결론이 "숨긴다"면 `<dt>/<dd>` 쌍을 지우고, "관리자만 의미 있다"면 admin일 때만 표시한다. 정한 뒤 `docs/conventions.md`에 role 값의 현재 의미를 한 줄로 남긴다.
+status: open
+
+### DW-677: Follow-up review still recommended for 14-3-소유권-기반-판매-게이트 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-14-3-소유권-기반-판매-게이트.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
