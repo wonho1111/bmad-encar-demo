@@ -204,10 +204,26 @@ development_status:
   epic-13-retrospective: done
 
   # --- Epic 14: 계정 역할 통합 나머지 ---
-  epic-14: backlog
+  # 2026-08-06 backlog → in-progress. 14-1이 done인데 에픽이 backlog로 남아 있던 것을 정정한다
+  # (DW-666 — 이 파일이 스스로 정의한 전이 규칙 "첫 스토리 착수 시 in-progress"를 이 파일이 안 지켰다).
+  epic-14: in-progress
   14-1-role-check-완화-마이그레이션: done
-  14-2-가입-역할선택-제거-트리거-기본-role: backlog
+  # ⚠️ 2026-08-06 **실행 순서를 14-3 → 14-2로 뒤집는다**(사용자 결정). 아래 나열 순서가 곧 큐 순서다.
+  #   경위: 14-2를 먼저 돌렸더니 dev 세션이 `intent gap`으로 CRITICAL 에스컬레이션하고 멈췄다(run 0381).
+  #   스펙 자체가 모순이었다 — `Always`는 신규 가입 기본 role을 `'user'`로 강제하는데 `Never`는
+  #   판매 게이트(`requireRole(SELLER)`, 14.3 범위)를 못 건드리게 막아, **14-2만 끝난 상태에서는
+  #   신규 가입자 전원이 `/sell`에서 튕긴다**(`web/src/lib/auth/guard.ts:37`이 정확일치 비교 +
+  #   `web/src/app/(user)/sell/layout.tsx:14`가 `requireRole(USER_ROLE.SELLER)` — 코드에서 직접 확인).
+  #   이 스토리의 존재 이유인 FR52를 정면으로 어긴다.
+  #   왜 순서 뒤집기인가: 14-3이 게이트를 `requireUser()`로 **먼저** 풀면 14-2가 기본값을 뭘 주든
+  #   막히지 않는다. 14-3의 인수조건을 확인한 결과 14-2에 의존하지 않는다(14-1만 선행이면 되고
+  #   `requireUser()`는 `guard.ts:9`에 이미 존재한다). 스펙 내용·범위·기본값을 하나도 안 바꾸고
+  #   깨지는 중간 상태만 사라진다 — 에스컬레이션이 제시한 3안(기본값을 'seller'로 / 14-2 범위 확대 /
+  #   회귀 창 수용)은 전부 무언가를 바꿔야 했다.
+  #   ⚠️ 순서만 바뀌고 **에픽 문서의 스토리 번호·내용은 그대로다.** 번호로 실행 순서를 유추하면
+  #   안 되는 자리이므로 여기 적어둔다.
   14-3-소유권-기반-판매-게이트: backlog
+  14-2-가입-역할선택-제거-트리거-기본-role: backlog
   epic-14-retrospective: optional
 
   # --- Epic 15: 관리자 웹 UI 통일 (UI-only) ---
