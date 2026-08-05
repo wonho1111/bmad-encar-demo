@@ -137,7 +137,7 @@ describe('ListingCard 조립 — SM-C(카드에서 신뢰속성과 옵션이 구
     expect(chipTexts(container!)[0]).toBe('파노라마선루프'); // 희소 옵션 최상단(SM-C)
   });
 
-  it('옵션 없는 카드(options=[]): 옵션칩 컨테이너는 부재하지만 TrustAttributes는 여전히 마운트된다', () => {
+  it('옵션 없는 카드(options=[]): 옵션칩 컨테이너는 "등록된 옵션 없음" 자리표시자로 여전히 존재하고(빈 자리 예약, 2026-08-05), TrustAttributes도 여전히 마운트된다', () => {
     const listing: ListingCardData = {
       ...BASE_LISTING,
       accident_status: '사고',
@@ -147,7 +147,13 @@ describe('ListingCard 조립 — SM-C(카드에서 신뢰속성과 옵션이 구
     const tree = ListingCard({ listing });
     const nodes = collectNodes(tree);
 
-    expect(findChipContainer(tree)).toBeUndefined(); // cardOptions.length===0 가드
+    // 옵션이 없어도 컨테이너 자체는 항상 렌더된다(옵션 유무로 카드 높이가 들쭉날쭉해지지
+    // 않게 하는 빈 자리 예약, 사용자 승인 방식 A) — cardOptions.length===0이면 컨테이너가
+    // 통째로 사라지던 예전 동작을 이 단언이 지킨다.
+    const container = findChipContainer(tree);
+    expect(container).toBeDefined();
+    expect(chipTexts(container!)).toEqual(['등록된 옵션 없음']);
+
     const trustNodes = nodes.filter((n) => n.type === TrustAttributes);
     expect(trustNodes).toHaveLength(1); // 옵션이 없어도 신뢰블록 슬롯 자체는 그대로 조립됨
     expect(trustNodes[0].props?.variant).toBe('card');

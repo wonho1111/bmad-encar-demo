@@ -68,15 +68,11 @@ export default function ListingCard({
         <ListingCardImage url={listing.image_url} count={listing.image_count} alt={title} />
 
         <div className="flex flex-col gap-1 p-[18px]">
-          {/* ② 신뢰속성 행 — TrustAttributes가 뱃지·면책을 한 몸으로 emit한다(B9, Story 10.2).
-              값이 전부 없으면 컴포넌트가 null을 반환해 슬롯이 비고, 빈 높이·빈 테두리는 남지 않는다(AC1). */}
-          <TrustAttributes variant="card" listing={listing} />
-
-          {/* ③ 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5).
+          {/* ② 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5).
               pr-14(56px)는 우상단 찜 버튼(44px+오프셋 8px)과 겹치지 않게 이 줄에만 둔 여백이다. */}
           <h3 className="truncate pr-14 text-card-title font-semibold text-ink-primary">{title}</h3>
 
-          {/* ④ meta — **한 줄 가로 유지**. 공간이 부족하면 truncate만(D5, 세로로 접지 않는다).
+          {/* ③ meta — **한 줄 가로 유지**. 공간이 부족하면 truncate만(D5, 세로로 접지 않는다).
               AC 문구대로 `주행 · 연료 · 지역`(+ 있으면 판매자)를 표시한다(대장 #67 해소, Story 10.1).
               fuel이 없으면(계약-외 값 정규화) 그 마디를 통째로 생략 — 빈 자리("· ·")를 남기지 않는다.
               ⚠️ fuel은 `isValidListing`(aiSearch.ts)의 필수 7필드 검사 대상이 아니라서 /ai/search가
@@ -98,16 +94,15 @@ export default function ListingCard({
               .join(' · ')}
           </p>
 
-          {/* ⑤ 가격 — 카드에서 **시각적으로 가장 큰 요소**(26px/800 vs 차량명 16px/600). */}
+          {/* ④ 가격 — 카드에서 **시각적으로 가장 큰 요소**(26px/800 vs 차량명 16px/600). */}
           <p className="text-price font-extrabold text-price-emphasis">
             {listing.price.toLocaleString('ko-KR')}
             {UNITS.price}
           </p>
 
-          {/* ⑥ 옵션 칩 — 우선순위 상위 3개(희소 우선, 보편은 topOptions의 자연 fallback로
-              채워짐, conventions §11.2) + 나머지 개수를 알리는 "+N". 값이 없으면 슬롯 자체를
-              렌더하지 않는다(AC1, 빈 잉크 없음). 세로로 접히거나 2줄로 밀지 않는다(D5) —
-              `flex-nowrap`이라 줄바꿈 자체가 없다.
+          {/* ⑤ 옵션 칩 — 우선순위 상위 3개(희소 우선, 보편은 topOptions의 자연 fallback로
+              채워짐, conventions §11.2) + 나머지 개수를 알리는 "+N". 세로로 접히거나 2줄로 밀지
+              않는다(D5) — `flex-nowrap`이라 줄바꿈 자체가 없다.
               ⚠️ **`shrink`+`truncate`에서 `shrink-0`으로 바꿨다(2026-07-29).** 예전엔 폭이
               모자라면 칩들이 나란히 쪼그라들며 전부 `…`로 잘려 **하나도 못 읽는** 상태가 됐다.
               이제 칩은 제 글자 폭을 지키고, 그래도 넘치는 만큼만 `overflow-hidden`이 잘라낸다 —
@@ -115,29 +110,48 @@ export default function ListingCard({
               **남는 한계(추측 아니라 실측, 2026-07-29 로컬 시드 93건):** 390px 뷰포트(카드 내용
               폭 304px)에서 **93건 중 2건**이 17px 넘쳐 잘린다 — 잘리는 건 맨 끝 "+N" 칩이고
               옵션 이름 3개는 전부 온전히 읽힌다. 가로 페이지 스크롤은 생기지 않는다(D5 유지).
-              800px 이상(카드 내용 폭 328px)에서는 93건 전부 넘침 0건. */}
-          {cardOptions.length > 0 && (
-            <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
-              {cardOptions.map((opt) => (
-                <span
-                  key={opt}
-                  className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary"
-                >
-                  {opt}
-                </span>
-              ))}
-              {hiddenOptionCount > 0 && (
-                <span
-                  aria-label={`옵션 ${hiddenOptionCount}개 더 있음`}
-                  className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-muted"
-                >
-                  +{hiddenOptionCount}
-                </span>
-              )}
-            </div>
-          )}
+              800px 이상(카드 내용 폭 328px)에서는 93건 전부 넘침 0건.
+              ⚠️ **옵션이 없어도 슬롯을 렌더한다(2026-08-05, 사용자 승인 방식 A — 빈 자리 예약).**
+              예전엔 `cardOptions.length > 0`일 때만 이 블록을 렌더해서 옵션 없는 매물은 이 줄
+              높이가 0이 되어 카드가 짧아졌다. `border-transparent`로 실제 칩과 같은 박스 높이를
+              내는 자리표시자를 대신 넣는다(테두리 없는 텍스트만 넣으면 border 두께(2px)만큼
+              살짝 낮아져 줄이 안 맞는다). */}
+          <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
+            {cardOptions.length > 0 ? (
+              <>
+                {cardOptions.map((opt) => (
+                  <span
+                    key={opt}
+                    className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary"
+                  >
+                    {opt}
+                  </span>
+                ))}
+                {hiddenOptionCount > 0 && (
+                  <span
+                    aria-label={`옵션 ${hiddenOptionCount}개 더 있음`}
+                    className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-muted"
+                  >
+                    +{hiddenOptionCount}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="shrink-0 whitespace-nowrap rounded-chip border border-transparent px-2 py-0.5 text-caption font-medium text-ink-muted">
+                등록된 옵션 없음
+              </span>
+            )}
+          </div>
         </div>
       </Link>
+
+      {/* 신뢰속성 뱃지 — 사진 위 좌상단에 절대배치로 겹친다(사용자 승인, 2026-08-05). 예전엔
+          사진과 제목 사이 일반 블록이라, 값이 없으면 TrustAttributes가 null을 반환해 슬롯 자체가
+          사라지며 카드 높이가 들쭉날쭉했다(판매중 95건 중 4건만 신뢰속성 보유). 본문 흐름 밖으로
+          완전히 빼서 값 유무와 무관하게 카드 본문 높이가 항상 같아지게 한다.
+          자리: 사진 밖(찜 버튼과 동일하게 article 기준 절대배치), 사진 좌상단(찜 버튼은 사진
+          아래쪽에 걸리므로 겹치지 않음 — WishButton.tsx variant='card' 참조). */}
+      <TrustAttributes variant="card" listing={listing} />
 
       {/* 찜(♡) — 낙관적 토글·로그인 게이트·복귀 자동반영은 WishButton이 전담(Story 10.5).
           자리: 사진 밖, 정보 영역 우상단(WishButton 내부가 같은 5:3 감싸개 + top-full로 재현). */}

@@ -51,7 +51,7 @@ export default async function EditListingPage({
   // 본인 매물이 아니거나 존재하지 않음 → 수정 폼을 노출하지 않고 한국어 안내(AC4).
   if (!listing) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">매물 수정</h1>
         <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           매물을 찾을 수 없거나 접근 권한이 없습니다. 본인 매물만 수정할 수 있습니다.
@@ -71,7 +71,7 @@ export default async function EditListingPage({
   //   상태 전환(구매완료/되돌리기)은 2-4 소관이라 여기서 다루지 않는다(스코프 침범 금지).
   if (listing.status === LISTING_STATUS.SOLD) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">매물 수정</h1>
         <p role="alert" className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
           판매완료된 매물은 수정할 수 없습니다.
@@ -109,7 +109,7 @@ export default async function EditListingPage({
   );
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6">
       <section className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">매물 수정</h1>
         <p className="text-sm text-zinc-500">

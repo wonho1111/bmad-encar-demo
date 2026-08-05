@@ -68,7 +68,7 @@ export default async function AdminChatRoomPage({
   if (roomError) {
     console.error('[admin/chats/room] 채팅방 조회 실패:', roomError);
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">채팅방 대화</h1>
         <p
           role="alert"
@@ -84,7 +84,7 @@ export default async function AdminChatRoomPage({
   if (!room) {
     // 없는 방·삭제된 방 — 한 안내로 묶는다.
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">채팅방 대화</h1>
         <p
           role="alert"
@@ -128,7 +128,7 @@ export default async function AdminChatRoomPage({
   }
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
       {/* 방 헤더 — 어떤 매물·누구 사이의 대화인지 */}
       <section className="flex flex-col gap-1">
         <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-zinc-400'}>

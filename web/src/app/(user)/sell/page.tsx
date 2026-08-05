@@ -49,7 +49,7 @@ export default async function SellPage() {
   }
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6">
       <section className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">매물 등록</h1>
         <p className="text-sm text-zinc-500">

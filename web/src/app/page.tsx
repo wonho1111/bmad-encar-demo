@@ -83,7 +83,7 @@ export default async function Home() {
         <CategoryChips />
         {/* 폭을 max-w-2xl(672px)에서 넓힌다 — 그래야 그리드 카드 4장이 넓은 화면에서 실제로 4열이 된다
             (D5 브레이크포인트는 뷰포트 기준이라 본문이 좁으면 열만 늘고 칸이 찌그러진다, AC6). */}
-        <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+        <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
           {/* 인기/최신 매물 그리드 — 발췌 4건씩 + 전체 보기(/search, 무필터). 읽기 전용
               (필터·상태는 /search가 소유, 랜딩은 URL 쿼리를 소유하지 않는다). */}
           <PopularRecentGrid popular={popular} recent={recent} wishedIds={wishedIds} authed />
@@ -120,7 +120,7 @@ export default async function Home() {
       <HeroSearch authed={false} />
       <CategoryChips />
       {/* /search와 동일 폭(max-w-6xl p-6) — 그래야 4열 그리드가 실제로 4칸이 된다(D5, Story 9.4 AC6). */}
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
         <PopularRecentGrid popular={popular} recent={recent} wishedIds={new Set()} authed={false} />
       </main>
     </>

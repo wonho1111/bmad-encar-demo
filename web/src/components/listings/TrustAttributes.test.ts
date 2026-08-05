@@ -40,7 +40,9 @@ describe('getTrustDisplay — I/O 매트릭스', () => {
     const listing: TrustAttributesInput = { accident_status: '무사고' };
     const display = getTrustDisplay(listing, 'card');
     expect(display?.badges).toEqual([{ key: 'accident', label: '무사고', tone: 'green' }]);
-    expect(display?.disclaimer).toBe('판매자 제공 정보');
+    // card variant도 데이터 계층은 면책 문자열을 담아 반환한다(결속 자체는 유지) — 다만 카드
+    // 렌더는 이제 이 값을 쓰지 않는다(2026-08-05, 아래 "카드는 면책을 렌더하지 않는다" 참조).
+    expect(typeof display?.disclaimer).toBe('string');
   });
 
   it('단순교환 → 초록이 아닌 중립 상태칩 + 면책', () => {
@@ -169,13 +171,13 @@ describe('렌더 레이어 결속(P1, 코드리뷰 2026-07-22) — 컴포넌트 
   ];
 
   it.each(casesWithBadges)(
-    '%s(card) — 렌더 트리에 뱃지 라벨과 "판매자 제공 정보"가 같이 있다',
+    '%s(card) — 렌더 트리에 뱃지 라벨이 있다(면책은 카드에서 뺐다, 2026-08-05 사용자 승인)',
     (_label, listing, badgeLabel) => {
       const element = TrustAttributes({ listing, variant: 'card' });
       const text = collectText(element).join(' ');
       expect(text).toContain(badgeLabel);
-      // 컴포넌트 JSX에서 면책 <span>을 지우면(getTrustDisplay는 그대로 둬도) 이 줄이 red가 된다.
-      expect(text).toContain('판매자 제공 정보');
+      // 카드는 더 이상 면책을 렌더하지 않는다 — 상세(TrustInfoSection)에만 남아 있다.
+      expect(text).not.toContain('판매자 제공 정보');
     },
   );
 
@@ -212,10 +214,13 @@ describe('톤 결속(follow-up 코드리뷰 2026-07-22) — 초록의 비색 신
   // 텍스트에 ✓가 있는지, className에 초록 토큰(trust-green)이 있는지를 직접 단언한다.
   // red/green 실측 지점: 컴포넌트에서 ✓ 노드를 지우면 초록 케이스가 red, 초록 className을 중립으로
   // 바꾸면 trust-green 단언이 red — 원복하면 green.
-  it('초록 케이스(무사고, card) — 트리에 ✓와 trust-green 클래스가 함께 있다', () => {
+  it('초록 케이스(무사고, card) — 트리에 ✓와 카드 전용 초록 배경 클래스가 함께 있다', () => {
+    // card는 사진 위에 겹치므로 테마에 따라 뒤집히는 trust-green-* 토큰 대신 고정 hex를 쓴다
+    // (TrustAttributes.tsx의 badgeClassName 주석 참조) — 그래서 여기선 trust-green이 아니라
+    // 그 고정 hex(#1B6E3D)를 찾는다.
     const element = TrustAttributes({ listing: { accident_status: '무사고' }, variant: 'card' });
     expect(collectText(element).join(' ')).toContain('✓');
-    expect(collectClassNames(element).join(' ')).toContain('trust-green');
+    expect(collectClassNames(element).join(' ')).toContain('#1B6E3D');
   });
 
   it('초록 케이스(1인소유, detail) — 트리에 ✓와 trust-green 클래스가 함께 있다', () => {
@@ -227,7 +232,7 @@ describe('톤 결속(follow-up 코드리뷰 2026-07-22) — 초록의 비색 신
   it('중립 케이스(사고, card) — ✓ 없음, 초록 클래스 없음(중립칩이 초록으로 오염되지 않는다)', () => {
     const element = TrustAttributes({ listing: { accident_status: '사고' }, variant: 'card' });
     expect(collectText(element).join(' ')).not.toContain('✓');
-    expect(collectClassNames(element).join(' ')).not.toContain('trust-green');
+    expect(collectClassNames(element).join(' ')).not.toContain('#1B6E3D');
   });
 
   it('중립 케이스(단순교환, card) — ✓ 없음', () => {
@@ -235,7 +240,7 @@ describe('톤 결속(follow-up 코드리뷰 2026-07-22) — 초록의 비색 신
     expect(collectText(element).join(' ')).not.toContain('✓');
   });
 
-  it('혼합(사고+비흡연, card) — 초록 칩(비흡연)의 ✓·trust-green과 중립칩(사고)이 공존한다', () => {
+  it('혼합(사고+비흡연, card) — 초록 칩(비흡연)의 ✓·초록 배경과 중립칩(사고)이 공존한다', () => {
     const element = TrustAttributes({
       listing: { accident_status: '사고', is_non_smoker: true },
       variant: 'card',
@@ -244,6 +249,6 @@ describe('톤 결속(follow-up 코드리뷰 2026-07-22) — 초록의 비색 신
     expect(text).toContain('사고'); // 중립칩
     expect(text).toContain('비흡연'); // 초록칩
     expect(text).toContain('✓'); // 초록칩의 비색 신호
-    expect(collectClassNames(element).join(' ')).toContain('trust-green');
+    expect(collectClassNames(element).join(' ')).toContain('#1B6E3D');
   });
 });

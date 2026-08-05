@@ -45,7 +45,7 @@ export default async function AccountPage() {
           하고 렌더하지 않는다(기존 6개 호출부의 죽은 prop, 대장 #153). 이 파일은 신규 호출부라
           그 죽은 관행을 새로 반복하지 않는다 — roleLabel 변수 자체는 아래 <dd>가 그대로 쓴다. */}
       <AppHeader email={user.email} currentPath="/account" />
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
         <h1 className="text-section font-bold text-ink-primary">내 정보</h1>
         {/* 진짜 에러(네트워크·RLS 등)일 때만 배너로 위에 얹는다 — .maybeSingle()이라 행 부재는
             여기 안 걸린다(코드리뷰 지적). 에러여도 아래 <dl>은 항상 그리고 이메일은 무조건 보여준다

@@ -90,7 +90,7 @@ export default async function ChatRoomPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
           <h1 className="text-2xl font-semibold">문의 채팅</h1>
           <p
             role="alert"
@@ -109,7 +109,7 @@ export default async function ChatRoomPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
           <h1 className="text-2xl font-semibold">문의 채팅</h1>
           <p
             role="alert"
@@ -154,7 +154,7 @@ export default async function ChatRoomPage({
   return (
     <>
       {header}
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         {/* 방 헤더 — 어떤 매물·누구와의 대화인지 (매물이 안 보이면 플레이스홀더 — FR11 준수) */}
         <section className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-2">
