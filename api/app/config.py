@@ -6,6 +6,10 @@
     require()로 "어떤 변수가 비었는지" 명확한 한국어 에러를 던진다(fail-loud, 1.4 패턴 계승).
 """
 
+import os
+import sys
+
+from dotenv import dotenv_values
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +40,46 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# ── LangSmith 트레이싱 env 승격 (FR51, DW-658) ──────────────────────────
+# langsmith SDK는 위 Settings가 아니라 os.environ을 직접 읽는다(api/.env.example:22-40).
+# Settings는 langchain_*를 선언하지 않고 extra="ignore"라 .env에 값이 있어도 조용히
+# 버려지므로, 여기서 파일값을 os.environ으로 직접 옮긴다.
+#
+# 승격 함수 자체(_promote_env_from_dotenv)는 순수하게 "파일값을 os.environ에 옮긴다"만
+# 하고, "언제 자동 실행할지"는 아래에서 따로 판단한다 — 이 둘을 분리해야 테스트가 실행
+# 여부와 무관하게 이 함수를 직접 불러 검증할 수 있다(api/tests/test_langsmith_env_promotion.py).
+def _promote_env_from_dotenv(env_path: str, keys: tuple[str, ...]) -> None:
+    """`env_path`의 `keys`만 os.environ으로 승격한다. OS 환경변수가 이미 있으면 덮지 않는다
+    (scripts/dev-api.sh가 DATABASE_URL 등을 export로 우선시키는 것과 동일한 원칙). 파일이
+    없거나 키가 없거나 비어 있으면 조용히 아무것도 하지 않는다(트레이싱은 선택 기능).
+    """
+    values = dotenv_values(env_path)
+    for key in keys:
+        if key in os.environ:
+            continue
+        value = values.get(key)
+        if value:
+            os.environ[key] = value
+
+
+_LANGSMITH_ENV_KEYS = ("LANGCHAIN_TRACING_V2", "LANGCHAIN_API_KEY")
+
+# 승격 시점이 중요하다: langsmith.utils.get_env_var는 lru_cache가 걸려 있어(첫 호출 때
+# 값이 굳는다) app.main이 langgraph/langchain-google-genai를 import하는 순간 이미 한 번
+# 호출된다(실측 확인). config.py는 main.py에서 그 import들보다 먼저 로드되므로, 여기 모듈
+# 로드 시점에 즉시 실행해야 늦지 않는다(main.py의 lifespan 기동 훅은 이미 늦다 — 그 시점엔
+# import가 끝난 뒤라 캐시가 굳어 있다).
+#
+# pytest 세션에서는 자동 실행을 건너뛴다: app/graph/graph.py의 run_search는 COMPILED_GRAPH
+# .invoke()를 실제로 태우므로, 결정론 테스트가 그래프 노드 함수를 몽키패치해도 LangGraph
+# 실행 자체는 트레이싱된다 — 로컬 개발자의 api/.env에 진짜 키가 있는 채로 pytest를 돌리면
+# 매번 LangSmith에 트레이스가 올라간다(DW-658 origin이 기록한 "가짜 LLM 단위테스트 흔적"
+# 재발 — tests.yml이 라이브 스모크를 CI 밖으로 뺀 것과 같은 이유로 여기서도 막는다). CI는
+# 애초에 api/.env가 없어 원래도 안전하다.
+if "pytest" not in sys.modules:
+    _promote_env_from_dotenv(".env", _LANGSMITH_ENV_KEYS)
 
 
 def require(name: str, value: str | None) -> str:
