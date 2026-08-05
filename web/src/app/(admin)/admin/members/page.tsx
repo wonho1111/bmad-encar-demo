@@ -12,9 +12,14 @@ import { ROLE_LABEL, PROFILE_STATUS, type UserRole, type ProfileStatus } from '@
 import MemberActions from './MemberActions';
 
 // 목록에 보여줄 최소 필드.
+// ⚠️ role은 `UserRole`이 아니라 `string`이다 — 그 타입을 참으로 만들어주던 profiles.role의
+// 3값 CHECK를 0027(Story 14.1)이 걷어냈다. DB가 더 이상 어휘를 강제하지 않으므로 표시할 때
+// 폴백이 필요하다(형제 화면들이 이미 쓰는 `ROLE_LABEL[... as UserRole] ?? role` 패턴).
+// 이 규칙은 주석이 아니라 검사가 지킨다 — `src/lib/__tests__/roleLabelFallback.test.ts`가
+// web/src의 모든 ROLE_LABEL 인덱싱에 폴백이 붙어 있는지 CI(web 잡)에서 매번 확인한다.
 type MemberRow = {
   id: string;
-  role: UserRole;
+  role: string;
   status: ProfileStatus;
   name: string | null; // 표시 이름(이메일 @앞부분, 0009). 회원 식별에 사용.
   created_at: string;
@@ -73,7 +78,7 @@ export default async function AdminMembersPage() {
                   className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
                 >
                   <span className="flex items-center gap-2">
-                    <span className="font-medium">{ROLE_LABEL[m.role]}</span>
+                    <span className="font-medium">{ROLE_LABEL[m.role as UserRole] ?? m.role}</span>
                     <span className="text-zinc-400">{memberLabel}</span>
                     {isSelf && (
                       <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
@@ -96,7 +101,7 @@ export default async function AdminMembersPage() {
                       <MemberActions
                         memberId={m.id}
                         status={m.status}
-                        label={`${ROLE_LABEL[m.role]} ${memberLabel}`}
+                        label={`${ROLE_LABEL[m.role as UserRole] ?? m.role} ${memberLabel}`}
                       />
                     )}
                   </div>

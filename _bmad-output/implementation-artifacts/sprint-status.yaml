@@ -205,7 +205,7 @@ development_status:
 
   # --- Epic 14: 계정 역할 통합 나머지 ---
   epic-14: backlog
-  14-1-role-check-완화-마이그레이션: backlog
+  14-1-role-check-완화-마이그레이션: done
   14-2-가입-역할선택-제거-트리거-기본-role: backlog
   14-3-소유권-기반-판매-게이트: backlog
   epic-14-retrospective: optional

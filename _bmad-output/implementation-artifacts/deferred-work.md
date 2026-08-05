@@ -4592,3 +4592,86 @@ reason: 가이드는 질의 임베딩과 가이드 문서의 코사인 거리가
 ⚠️ **다만 이번에 생긴 회귀는 아니다**(실측): 옛 기준선(매물 93건·47문항)에서도 `H6`는 이미 `doc_hit=False`에 결과 **0.0**이었다. 2026-08-05에 추가한 조건 밀집 문항들이 **같은 병의 사례 수를 늘려 눈에 띄게 만든 것**이지, 없던 병을 만든 것이 아니다. 새 기준선이 그 상태를 수치로 고정한다(가이드 인용 18/28, 위 세 문항 0.2) — 이제부터의 악화는 게이트가 잡는다.
 trigger: **Epic 15에서 웹이 AI 응답의 `(참고: 문서명)`·되묻기 칩을 실제로 화면에 그리는 자리**(DW-587·597·600과 같은 스토리). 근거: ① 그때 인용률이 **사용자 눈에 보이는 값**이 되어 품질 목표로 삼을지 말지를 그 자리에서 정하게 된다 ② 지금은 서버만 보내고 웹이 안 그려서 64%든 92%든 화면상 차이가 없다. ⚠️ **고치는 코드는 백엔드**(`doc_rag_node` 컷오프·검색 방식)라 Epic 15 스토리의 인수조건으로 "이 항목을 판단한다"만 심고, 실제 수정이 필요하다고 결론나면 그때 AI 스토리를 하나 연다 — 판단 자리와 수정 자리를 구분해 적는다.
 status: open
+
+- source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+  summary: `scripts/check_migrations.py`(마이그레이션 게이트)는 이 마이그레이션의 실제 CHECK 내용(즉 buyer/seller가 정말 완화됐는지)을 전혀 검증하지 못한다 — self-containment(파일명·번호·적용 성공 여부·listings/guide_documents 축 3개)만 본다.
+  evidence: 리뷰 중 `0027_role_check_relax.sql`의 새 CHECK를 원래의 3값 enum(`role in ('buyer','seller','admin')`)으로 되돌려(=이 스토리의 목적을 완전히 무효화) 같은 게이트를 재실행했더니 **동일하게 exit 0으로 통과**했다(파일은 즉시 원복). 즉 이 스토리의 스펙이 유일한 자동 검증으로 제시한 커맨드가, 이 스토리가 실제로 잘못돼도 못 잡는다. 게이트 자체의 설계 범위(self-containment)가 원래 이렇고 이 스토리가 새로 만든 결함은 아니지만, "CHECK 내용까지 매 마이그마다 자동 검증할지"는 게이트 설계자의 판단이 필요하다.
+  trigger: 다음에 `profiles.role`(또는 유사한 도메인 규칙을 강제하는 CHECK) 관련 마이그레이션을 또 작성할 때, 혹은 `scripts/check_migrations.py`를 다른 이유로 손대는 스토리에서 — 그때 "마이그별 내용 검증을 프로브에 추가할지"를 판단한다.
+
+- source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+  summary: `docs/conventions.md §9.1`이 명시적으로 승인한 forward-only 예외 4가지(정책 재생성·트리거 재생성·함수 EXECUTE 회수·GRANT 축소)에 "CHECK 제약을 drop 후 같은 이름으로 재생성"이 들어있지 않다 — 이 스토리(`0027_role_check_relax.sql`)가 그 패턴을 처음 썼는데 문서화되지 않았다.
+  evidence: 코드리뷰(adversarial 렌즈)가 지적. §9.1은 "근거 없는 선례 복사"를 막기 위해 각 예외의 안전 조건을 명시해왔는데(예: GRANT 축소는 "축소 방향만" 허용), CHECK 제약은 정책/트리거와 달리 **데이터 무결성을 가른다** — 이번처럼 기존 값의 상위집합으로만 넓히는 경우는 안전하지만, 좁히는 replace는 기존 행을 위반 상태로 만들 수 있다(이 스펙의 Design Notes에 그 위험을 직접 서술해뒀다). 그 안전 조건("넓히는 방향만")을 정확히 문서에 새기지 않으면 다음 사람이 "CHECK도 drop-recreate 하면 된다"고 좁히는 방향으로 오용할 위험이 있다.
+  trigger: 다음에 기존 CHECK 제약을 drop 후 재생성하는 마이그레이션을 작성할 때 — 그때 §9.1에 이 예외를 "넓히는 방향만" 조건으로 명시해 추가한다(GRANT 축소 예외의 반대 방향 버전으로 서술).
+
+### DW-661: 마이그레이션 게이트(CI)가 `test/bmad-loop` 브랜치에서 한 번도 돌지 않아, "에픽 첫 마이그 스토리는 게이트 통과가 DoD"가 Epic 14에서 충족되지 않았다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 후속 리뷰(adversarial 렌즈)가 지적, 리뷰 세션이 워크플로 파일과 브랜치 이력으로 확인.
+location: `.github/workflows/migration-gate.yml`(트리거 절) · 현재 작업 브랜치 `test/bmad-loop`
+severity: medium
+summary: `docs/conventions.md` §9.4와 `project-context.md` 규칙 10이 "각 에픽 첫 마이그레이션 스토리는 마이그레이션 게이트(CI) 통과가 DoD"라고 못박았는데, 그 게이트는 `develop`/`main` push 또는 PR에서만 돈다. Epic 14의 첫 마이그(`0027`)는 `test/bmad-loop`에 있고 PR도 없어 게이트가 실행된 적이 없다.
+evidence: 워크플로의 트리거가 `develop`/`main`·PR로 한정돼 있고 현재 브랜치는 둘 다 아니다. 이 스토리가 통과를 선언한 것은 로컬 `python3 scripts/check_migrations.py`인데, 스펙 자신이 이걸 "로컬 검증 커맨드"라고 부른다 — 즉 DoD가 지정한 CI 실행과 같은 사실이 아니다. ⚠️ **이 스토리 혼자 해결할 수 없다**: bmad-dev-auto 워크플로는 커밋만 하고 push를 하지 않으며(step-04 "Do not push"), `develop` 병합·push는 CLAUDE.md B3에 따라 사람의 판단 영역이다. 게이트 자체는 정상이고 로컬 재현(동적 Docker 검사 포함)은 exit 0으로 통과했으므로 코드 결함 신고가 아니라 **절차 공백 신고**다.
+trigger: **`test/bmad-loop`의 작업을 `develop`으로 처음 병합·push하는 자리에서** — 그때 게이트가 실제로 초록인지 확인하고, 초록이면 이 항목을 닫는다. 무인 루프를 계속 돌릴 계획이면 그 전에 판단할 것: (a) 게이트 트리거에 이 브랜치를 추가할지 (b) 루프가 도는 브랜치를 `develop`으로 바꿀지 (c) 에픽 종료 시 사람이 일괄 확인하는 것으로 DoD 문구를 조정할지. 지금처럼 두면 **에픽마다 같은 공백이 반복된다**.
+status: open
+
+### DW-662: 이 장부의 마지막 2개 항목(Story 14.1 1차 리뷰가 등재)이 `### DW-<번호>` 형식을 따르지 않아 번호로 조회되지 않는다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 후속 리뷰(adversarial 렌즈)가 지적. 같은 스토리의 **1차 리뷰 패스**가 만든 것이다.
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-660 바로 뒤 — `- source_spec:` 불릿으로 시작하는 2개 항목(게이트 사각지대 / `conventions.md §9.1` 문서화 공백)
+severity: low
+summary: 그 2건은 `### DW-<번호>` 제목도, 번호도, `severity:`·`status:`도 없이 불릿으로만 붙어 있다. 장부의 다른 660개 항목과 형식이 다르다.
+evidence: bmad-dev-auto의 step-04가 지정하는 defer 형식(`- source_spec:`/`summary:`/`evidence:`)과 이 프로젝트 장부의 정본 형식(`### DW-N` + `origin/location/severity/reason/trigger/status`)이 서로 다른데, 1차 패스가 전자만 따랐다. 결과적으로 그 2건은 **DW 번호로 지목할 수 없고**, 제목(`### DW-`)을 기준으로 항목을 나누는 조회·sweep은 이 둘을 DW-660 본문의 일부로 읽는다. 장부에 올렸다는 기록만 남고 실제로는 검색되지 않는 상태 — CLAUDE.md B8이 막으려는 "미룬 일이 조용히 사라지는" 실패 모드 그 자체다. 내용 자체는 둘 다 유효하다(사실관계 재확인함). ⚠️ **이번 리뷰가 직접 고치지 않은 이유**: 이 실행의 지시가 "기존 장부 항목을 수정·재개·재작성하지 말고 신규 항목만 추가하라(기존 항목의 상태와 처리는 오케스트레이터 소유)"였다. 그래서 신고만 한다.
+trigger: **오케스트레이터가 이 장부를 다음에 sweep(정리)할 때** — 그때 두 항목에 DW-661 이전 번호(예: DW-660-a/b) 또는 새 번호를 배정하고 6필드로 승격한다. 함께 판단할 것: bmad-dev-auto의 defer 형식과 이 프로젝트 장부 형식이 다르다는 **구조적 원인**을 스킬 커스터마이즈(`_bmad/custom/bmad-dev-auto.toml`)로 맞출지 — 안 맞추면 dev-auto가 defer할 때마다 같은 불일치가 재발한다.
+status: open
+
+### DW-663: 통합테스트 공용 픽스처가 **가입 트리거의 기본 role을 단언**해, Story 14.2가 트리거를 바꾸는 순간 실DB 테스트가 무더기로 깨진다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(adversarial·edge-case 두 렌즈가 독립적으로 지적), 리뷰 세션이 `conftest.py`와 사용처를 직접 읽어 확인.
+location: `api/tests/integration/conftest.py`의 `_create_user()` — `assert row[0] == role` 줄. 이 헬퍼를 쓰는 파일: `test_role_check_relax_real_db.py`(15건) + `test_chat_realtime_broadcast_real_db.py` 등 형제 파일들(`grep -ln '_create_user' api/tests/integration/*.py`로 확인).
+severity: medium
+summary: `_create_user()`는 유저를 만든 뒤 "가입 트리거가 `user_metadata`의 role을 그대로 `profiles.role`에 반영했는가"까지 단언한다. Story 14.2는 바로 그 트리거(`handle_new_user`)의 기본 role 로직을 바꾸는 스토리다 — 바뀌는 순간 이 단언이 **픽스처 setup 단계에서** AssertionError를 내고, 그 헬퍼를 쓰는 모든 실DB 테스트가 자기가 검증하려던 것과 무관한 이유로 죽는다.
+evidence: `conftest.py`의 해당 단언은 Story 12.1이 겪은 실제 결함(판매자 유저에 role="buyer"를 하드코딩)을 막으려고 **의도적으로** 넣은 것이라 그냥 지우면 그 방어가 사라진다. 즉 14.2는 "트리거를 바꾼다 + 이 단언을 트리거의 새 계약에 맞게 고친다"를 **한 커밋 안에서** 해야 한다. 지금 이 사실이 적힌 곳은 conftest 주석뿐이고, 14.2 스토리 문서에는 없다. Story 14.1이 새로 추가한 테스트 15건도 같은 헬퍼를 쓰므로 폭발 반경이 이번 스토리로 더 커졌다(그래서 여기 등재한다).
+trigger: **Story 14.2 착수 시(트리거 기본값을 바꾸는 그 작업 안에서)** — 14.2의 인수조건에 "`conftest._create_user`의 role 단언을 새 트리거 계약에 맞게 갱신하고, `pytest tests/integration` 전체가 초록임을 확인한다"를 심는다. 14.2가 시작될 때 이 항목을 열어 확인할 것.
+status: open
+
+### DW-664: `tests.yml`(api-db·web 잡)도 `test/bmad-loop`에서 안 돈다 — Story 14.1이 새로 만든 검사 15건이 CI에서 한 번도 실행되지 않았다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(verification-gap 렌즈)가 지적, 리뷰 세션이 워크플로 트리거 절과 브랜치 위치를 직접 확인.
+location: `.github/workflows/tests.yml`의 `on.push.branches: [develop, main]` — 현재 작업 브랜치 `test/bmad-loop`(develop 대비 28커밋 앞, PR 없음)
+severity: medium
+summary: DW-661은 `migration-gate.yml`(레포만으로 DB가 서는가)만 지목했다. 그런데 Story 14.1이 "검사를 실행되는 자리에 박았다"며 만든 `api/tests/integration/test_role_check_relax_real_db.py`(15건)와 `web/src/lib/__tests__/roleLabelFallback.test.ts`가 실제로 의존하는 것은 **`tests.yml`의 `api-db`·`web` 잡**이고, 그 워크플로도 같은 브랜치 제한을 받는다. 즉 그 검사들이 초록인 근거는 아직 로컬 1회 실행뿐이다.
+evidence: `tests.yml`의 트리거는 `push: branches: [develop, main]` + `pull_request`(브랜치 필터 없음). 현재 브랜치는 둘 다 아니고 `gh pr list --head test/bmad-loop`도 0건이다. **DW-661과 원인은 같지만 대상이 다르므로 따로 적는다** — DW-661을 닫을 때 `migration-gate.yml`만 보고 닫으면 이쪽은 그대로 남는다. ⚠️ 이 워크플로(bmad-dev-auto)는 push를 하지 않으므로 여기서 해결할 수 없다. 해결책은 DW-661과 동일한 자리에서 함께 판단하는 것이 자연스럽다: PR 하나를 열면 두 워크플로의 `pull_request` 트리거가 **동시에** 켜진다(둘 다 브랜치 필터가 없다).
+trigger: **DW-661을 처리하는 그 자리에서 함께** — `test/bmad-loop`을 `develop`으로 병합·push하거나 draft PR을 여는 시점. 그때 `api-db`·`web` 잡이 실제로 초록인지 확인하고 닫는다.
+status: open
+
+### DW-665: 마이그레이션이 CI·원격 적용 경로에서 **원자적이지 않다** — 실패하면 앞부분만 적용된 채 남는다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(adversarial·edge-case 렌즈)가 지적, 리뷰 세션이 워크플로의 psql 호출과 `scripts/check_migrations.py`를 대조해 확인.
+location: `.github/workflows/tests.yml`의 "마이그레이션 적용" 스텝(`psql -v ON_ERROR_STOP=1 -q -f "$f"`) vs `scripts/check_migrations.py:172`(`--single-transaction` **있음**) · 원격 `apply_migration`(트랜잭션 의미 미문서화, `docs/deployment-runbook.md:126`)
+severity: low
+summary: 마이그 게이트는 파일을 `--single-transaction`으로 적용하지만 `tests.yml`의 api-db 잡과 원격 적용 경로는 그렇지 않다. 그래서 파일 중간에서 실패하면 **앞선 문장은 이미 커밋된 채** 마이그가 실패로 보고된다. 0027이 구체적 사례다: 이름 드리프트로 사후조건이 발화하거나, `role=''` 행이 있어 `add constraint`가 실패하면, 앞의 `drop constraint`는 이미 적용돼 profiles에 role CHECK가 아예 없는 상태로 남는다.
+evidence: 세 적용 경로의 트랜잭션 의미가 서로 다르다는 것은 `docs/deployment-runbook.md:126`이 이미 다른 각도(트랜잭션 밖에서만 되는 문)로 기록해 둔 사실이다. 현재 27개 마이그 중 명시적 `begin;`/`commit;`을 쓰는 파일은 **0개**라, 0027 하나만 감싸면 레포에 없던 관례가 생긴다(게이트의 `--single-transaction`과 중첩되면 동작도 달라진다). 게다가 0027을 그대로 감싸면 이번 리뷰가 추가한 재실행 검사(`test_migration_aborts_when_drop_is_a_no_op` 등 — 파일 본문을 테스트 트랜잭션 안에서 다시 실행한다)가 내부 `commit;` 때문에 격리를 잃는다. 즉 **파일 하나의 문제가 아니라 "마이그레이션을 어떻게 적용하는가"라는 레포 전체 관례의 공백**이라 여기 등재한다. 실패 시에도 메시지가 무엇이 잘못됐는지 정확히 알려주므로 전진 수복은 가능하다(그래서 low).
+trigger: **다음 마이그레이션 스토리(Epic 15의 Story 15-4가 마이그레이션 1개를 포함한다)를 착수할 때** — 그때 셋 중 하나로 정한다: (a) `tests.yml`의 적용 스텝에도 `--single-transaction`을 붙여 게이트와 맞춘다(가장 좁은 변경, 파일은 안 건드림) (b) 마이그 파일마다 명시적 트랜잭션을 쓰기로 `docs/conventions.md` §9에 관례를 세운다 (c) 실패 시 부분 적용이 허용되는 것으로 명시하고 런북에 수복 절차를 적는다. 정한 결과를 §9에 적어야 다음 사람이 동전을 던지지 않는다.
+status: open
+
+### DW-666: `sprint-status.yaml`이 `epic-14: backlog`인데 그 첫 스토리 `14-1`은 `done` — 파일이 스스로 정의한 상태 전이가 빠졌다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(adversarial·edge-case 두 렌즈가 독립적으로 지적), 리뷰 세션이 해당 파일의 범례와 값을 직접 읽어 확인.
+location: `_bmad-output/implementation-artifacts/sprint-status.yaml` — `epic-14:` 줄과 `14-1-role-check-완화-마이그레이션:` 줄 · 파일 상단 `# last_updated:` 블록
+severity: low
+summary: 같은 파일 상단 범례가 "backlog → in-progress: 첫 스토리를 만들 때 자동 전이"라고 못박고 있는데, Epic 14는 첫 스토리가 `done`인 지금도 `backlog`로 남아 있다. 또 이 변경에서 `# last_updated:` 블록이 갱신되지 않아, 파일의 유일한 사람용 이력에 Story 14.1이 남지 않았다.
+evidence: 파일을 열어 확인함 — `epic-14: backlog` 바로 아래 줄이 `14-1-...: done`이다. 상태로 분기하는 사람·도구가 "Epic 14 미착수"로 읽는데 실제로는 스키마 변경이 이미 커밋돼 있다. ⚠️ **이번 리뷰가 직접 고치지 않은 이유**: `sprint-status.yaml`은 bmad-loop 오케스트레이터가 소유하는 상태 파일이고, 이 실행의 지시가 오케스트레이터 소유 항목의 상태를 건드리지 말라는 것이었다. 그래서 신고만 한다(내용 자체는 사실 확인 완료).
+trigger: **오케스트레이터가 Story 14.2를 착수하는 자리에서** — 그때 `epic-14`를 `in-progress`로 올리고 `last_updated`에 14.1·14.2 항목을 남긴다. 함께 볼 것: 전이가 "자동"이라고 적혀 있는데 실제로 자동으로 일어나지 않았다면, 그 자동화가 어디서 끊겼는지(스토리 생성 경로를 안 거치는 무인 루프인지)를 확인해야 같은 누락이 에픽마다 반복되지 않는다.
+status: open
+
+### DW-667: Follow-up review still recommended for 14-1-role-check-완화-마이그레이션 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-023902-0381; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

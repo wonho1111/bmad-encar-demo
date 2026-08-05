@@ -21,7 +21,8 @@ export const PROFILE_STATUS = {
 } as const;
 export type ProfileStatus = (typeof PROFILE_STATUS)[keyof typeof PROFILE_STATUS];
 
-/** 사용자 역할 enum (profiles.role CHECK와 일치). */
+/** 사용자 역할 enum. buyer/seller 값은 앱 코드가 계속 쓰지만, profiles.role의 DB CHECK는
+ * Epic 14(Story 14.1)로 완화되어 이 세 값만 허용하지 않는다 — 더 이상 CHECK와 1:1 대응이 아니다. */
 export const USER_ROLE = {
   BUYER: 'buyer',
   SELLER: 'seller',
