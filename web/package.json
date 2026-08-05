@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:log": "mkdir -p ../.logs && next dev 2>&1 | tee ../.logs/web.log",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

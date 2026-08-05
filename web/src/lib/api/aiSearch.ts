@@ -111,12 +111,21 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
       headers,
       body: JSON.stringify(body),
     });
-  } catch {
+  } catch (err) {
     // 네트워크 자체가 실패(API 미기동·CORS·끊김). 사용자에겐 원인 대신 일반 안내(서버 미가동을 흔한 원인으로 짚어줌).
+    // 개발자용으로는 콘솔에 질의·원본 에러를 남긴다(DW-659) — 화면 문구·throw 동작은 그대로.
+    console.error('[aiSearch] 네트워크 요청 실패:', { query, err });
     throw new Error('AI 검색 서버에 연결하지 못했습니다. 잠시 후 다시 시도해주세요.');
   }
 
   if (!res.ok) {
+    // 진단용 원본 본문을 먼저 확보한다. Response 본문은 한 번만 읽히므로 clone()으로 갈라
+    // extractErrorMessage(사용자 메시지 추출)와 별도로 읽는다.
+    const rawBody = await res
+      .clone()
+      .text()
+      .catch(() => '(본문 읽기 실패)');
+    console.error('[aiSearch] HTTP 상태 오류:', { query, status: res.status, body: rawBody });
     // 공통 에러 포맷 {error:{code,message}}을 최대한 읽어 사용자에게 보여준다. 못 읽으면 상태코드 기반 일반 문구.
     const message = await extractErrorMessage(res);
     throw new Error(message);
@@ -126,7 +135,8 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
   let data: unknown;
   try {
     data = await res.json();
-  } catch {
+  } catch (err) {
+    console.error('[aiSearch] 200 응답 JSON 파싱 실패:', { query, err });
     throw new Error('AI 검색 응답을 해석하지 못했습니다. 잠시 후 다시 시도해주세요.');
   }
   const result = data as Partial<SearchResult>;

@@ -142,6 +142,8 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
         { role: 'assistant', content: result.answer, listings: result.listings },
       ]);
     } catch (err) {
+      // 화면엔 한국어 안내만 뜨므로(AC5), 원인은 콘솔에 남겨 재현 없이도 진단할 수 있게 한다(DW-659).
+      console.error('[ai] 검색 실패:', { query, err });
       // fail-loud: 실패를 조용히 삼키지 않고 한국어로 보여준다(AC5).
       setError(err instanceof Error ? err.message : 'AI 검색에 실패했습니다. 잠시 후 다시 시도해주세요.');
       // 실패하면 방금 낙관적으로 추가한 "사용자 질의 버블"을 되돌린다(롤백). 그러지 않으면
