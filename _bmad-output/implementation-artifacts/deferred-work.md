@@ -4899,3 +4899,36 @@ source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-689: E2E `C2 매물 목록 검색·필터`가 13-10 데이터 보강으로 무효화됐다 — 필터가 안 걸려도 초록이 될 수 없어 red
+origin: 2026-08-06 Epic 14 마감 E2E 실행(사람). Epic 14가 만든 회귀가 아니다.
+location: `web/e2e/core-flows.spec.ts:70-83`
+severity: medium
+summary: `totalCount`(필터 없음)와 `filteredCount`(지역=서울)를 **첫 페이지의 카드 수**로 세고 `filteredCount < totalCount`를 단언하는데, 둘 다 `PAGE_SIZE`에 걸려 24로 같아져 실패한다.
+evidence: 추정이 아니라 실측·산술로 확정했다 — `web/src/app/(user)/search/page.tsx:65`의 `PAGE_SIZE = 24`, 로컬 DB `on_sale` **158건**, `region='서울'` **43건**. 43 > 24이므로 필터를 걸어도 첫 페이지는 24장 그대로다. 테스트 주석 자체가 낡은 전제를 적고 있다("로컬 DB on_sale 95건", "서울 24건") — Story **13-10 검색 데이터 보강**(2026-08-05, 매물 93→158)이 그 전제를 깼다. Epic 14는 `web/src/components/`·검색 경로를 하나도 건드리지 않았다(`git log 12e1db9..HEAD -- web/src/components/` 0건).
+why_it_matters: 이 검사는 **필터가 실제로 결과를 좁히는가**를 보는데, 지금은 결과와 무관하게 red다. 즉 필터 회귀를 못 잡는다. 11-4가 11-1의 실DB 테스트를 무효화하고 6일간 아무도 몰랐던 것(#180)과 **같은 유형**이다 — 한 스토리의 변경이 다른 스토리의 검사를 무효화했고, E2E가 verify 게이트에 없어서 에픽 마감까지 아무도 몰랐다.
+fix_sketch: 카드 수가 아니라 페이지네이션 총계(헤더의 전체 건수)로 비교하거나, 첫 페이지 안에서 확실히 좁혀지는 조건(예: `region='서울'` 대신 24건 미만인 값)으로 바꾼다. 어느 쪽이든 **일부러 필터를 무력화해 red를 확인**한 뒤 원복해 green을 확인할 것(CLAUDE.md B4 — 만들었다가 아니라 잡는다가 완료다).
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점). 그 전에 사용자가 지시하면 즉시.
+status: open
+
+### DW-690: E2E `image-fallback` /search·/ai가 **2026-07-29 next/image 전환 이후 8일간 red**였고 아무도 몰랐다
+origin: 2026-08-06 Epic 14 마감 E2E 실행(사람). Epic 14가 만든 회귀가 아니다.
+location: `web/e2e/image-fallback.spec.ts:43-46`(abort 라우트 패턴) · 대상 `web/src/components/listings/ListingCardImage.tsx`
+severity: medium
+summary: 스펙이 `page.route('**/storage/v1/object/public/**')`로 **브라우저의 스토리지 직접 요청**을 가로채 이미지 전면 장애를 재현하는데, 매물 카드가 `next/image`로 바뀐 뒤로는 브라우저가 `/_next/image?url=…`만 요청하고 스토리지는 **서버가** 대신 가져간다. 그래서 abort 카운터가 0이 되고, 스펙에 심어둔 "0-of-0 침묵 통과 방지" 가드가 red를 낸다.
+evidence: 커밋 이력으로 시점을 특정했다 — 스펙은 `51c6154`(Story 11-5)가 가드까지 포함해 만들었고 그 뒤 **한 번도 수정되지 않았다**. 카드 이미지는 `b39a2b2`(DW-541, 2026-07-29 "매물 카드 사진을 next/image로 전환 — 장당 194KB → 8KB")가 바꿨다. 같은 실행에서 **상세(`/listings/[id]`)의 같은 테스트는 통과**했는데, `ListingGallery.tsx:141`이 의도적으로 평범한 `<img>`를 쓰기 때문이다(파일 주석에 근거 명시) — 통과/실패가 정확히 그 경계로 갈린다.
+why_it_matters: 이 검사가 지키던 것은 **"매물은 뜨는데 사진만 전면 실패해도 깨진 아이콘 0개 + 플레이스홀더 전량 발동"**(대장 #73)이다. 8일간 그 보호가 사실상 없었다. ⚠️ 동시에 **가드가 제 일을 했다** — 카운터가 없었다면 "깨진 이미지 0개"만 보고 **조용히 초록**이 됐을 것이고, 검사가 아무것도 안 보는 상태가 발각되지 않았다.
+fix_sketch: abort 패턴에 `**/_next/image**`를 추가(카드 경로)하고 스토리지 패턴은 유지(상세 경로). 고친 뒤 **두 경로 각각에서 카운터가 0이 아님**을 확인할 것 — 한쪽만 걸려도 나머지는 다시 0-of-0이 된다.
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점). 그 전에 사용자가 지시하면 즉시.
+status: open
+
+### DW-691: "신규 가입 계정이 실제로 `/sell`에 도달한다"를 **자동으로 보는 검사가 없다** — 사용자가 명시한 인수 조건인데 사람만 확인했다
+origin: 2026-08-06 Epic 14 마감 검증(사람). 세 축 중 이 축만 자동 검사가 없어 손으로 확인했다.
+location: `web/e2e/core-flows.spec.ts`(C8 옆이 자연스러운 자리) · 현존 부분검사 `web/src/app/(auth)/signup/__tests__/signupNoRoleMetadata.test.ts` · `api/tests/integration/test_role_check_relax_real_db.py`
+severity: medium
+summary: 사용자가 에픽 14의 최종 조건으로 **세 계정(기존 buyer·기존 seller·신규 가입)이 전부 `/sell`에 도달**할 것을 명시했다. ①은 E2E `C8`, ②는 E2E `E1~E5`가 본다. **③만 자동 검사가 없다.**
+evidence: 14-2가 만든 것은 두 개의 **반쪽 검사**다 — 단위테스트는 "가입 화면이 role metadata를 안 보낸다"까지만 보고, 실DB 통합테스트는 "트리거가 role 없으면 'user'를 넣는다"까지만 본다. **그 둘을 이어붙인 "그래서 그 계정이 /sell에 간다"는 아무도 안 본다.** 14-2는 `web/e2e/`를 하나도 건드리지 않았다(`git show --stat f1ae434 | grep e2e` 0건). 사람이 실브라우저로 확인해 **실제로 통과함**은 확인했으나(가입→role='user' 확인→/sell 폼 렌더), 그 확인은 재실행되지 않는다.
+why_it_matters: 이 프로젝트가 반복해서 데인 자리다 — "존재 확인 ≠ 작동 확인"(CLAUDE.md B4). 두 반쪽이 각각 초록인 채로 합이 깨질 수 있다. 예: 판매 게이트가 나중에 다시 역할을 보게 바뀌면(Epic 15의 관리자 역할 통합 반영 등) 단위·통합 테스트는 그대로 초록인데 신규 가입자만 조용히 막힌다. 그게 정확히 14-2가 처음에 에스컬레이션했던 그 결함이다.
+fix_sketch: `C8` 바로 옆에 `C9`를 추가한다 — 고유 이메일로 가입 → `runPsql`로 그 계정의 `role`이 트리거 기본값임을 고정(리터럴로 'user'를 적지 말고 "buyer/seller가 아님"을 단언해도 됨) → `/sell`에서 '매물 등록' heading 렌더 확인 → **테스트가 만든 계정 삭제**(write-flows가 쓰는 원복 증명 관례를 따를 것). 폼 제출은 하지 않는다(core-flows는 읽기 전용 스펙).
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점) — DW-689·690과 같은 자리에서 함께 고친다. 그 전에 사용자가 지시하면 즉시.
+status: open
