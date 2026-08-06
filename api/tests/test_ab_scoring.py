@@ -5,7 +5,10 @@
 """
 
 import importlib.util
+import inspect
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -56,6 +59,22 @@ def test_golden_sql_accident_free_bool():
     assert True in params
 
 
+# ── model_like (13-11 B-3, A-1과 짝) ──────────────────────────────────
+def test_golden_sql_model_like_wraps_value_with_percent_and_ilike():
+    """`model_like: "아반떼"` → `model ILIKE '%아반떼%'` 골든(실데이터는 '아반떼 MD'·
+    '아반떼 CN7'처럼 모델명 뒤에 트림이 붙어, 정확일치로는 못 잡는다 — A-1과 같은 이유)."""
+    sql, params = score_ab.build_golden_sql({"model_like": "아반떼"})
+    assert "model ILIKE %s" in sql
+    assert "%아반떼%" in params
+
+
+def test_golden_sql_model_like_combines_with_other_conditions():
+    sql, params = score_ab.build_golden_sql({"model_like": "쏘렌토", "price_max": 30000000})
+    assert "model ILIKE %s" in sql
+    assert "price <= %s" in sql
+    assert "%쏘렌토%" in params and 30000000 in params
+
+
 # ── 집합 지표 ──────────────────────────────────────────────────────────
 def test_jaccard():
     assert score_ab.jaccard({1, 2, 3}, {1, 2, 3}) == 1.0
@@ -89,6 +108,33 @@ def test_score_path_a_topn_exact_order():
     assert sc["mode"] == "topn" and sc["result"] == 1.0
     sc2 = score_ab.score_path_a(["y"], ["x"], {"order": "price ASC", "limit": 1})
     assert sc2["result"] == 0.0
+
+
+# ── count_range 채점 축 (13-11 B-1, DW-647) ────────────────────────────
+def test_count_range_ok_uses_exact_range_when_predicate_has_limit():
+    """DW-656 — top-N(predicate.limit 존재)은 count_range를 그대로 비교한다. '제일 싼
+    차'(count_range=[1,1])가 정렬은 맞아도 5건을 반환하면 여기서 잡혀야 한다."""
+    predicate = {"order": "price ASC", "limit": 1}
+    assert not score_ab.count_range_ok(5, [1, 1], predicate)  # red: 5건 반환(DW-656 실측 그대로)
+    assert score_ab.count_range_ok(1, [1, 1], predicate)      # green: 1건만 반환
+
+
+def test_count_range_ok_caps_at_default_limit_when_predicate_has_no_limit():
+    """일반 필터(predicate에 limit 없음)는 count_range가 DB 전체 매칭 건수(예: 25~29건)일
+    수 있다 — 앱은 정상적으로 DEFAULT_LIMIT(5)만 반환하므로, count_range를 그대로 비교하면
+    이 정상 동작이 항상 오탐 처리된다. 양끝을 DEFAULT_LIMIT으로 잘라야 옳다."""
+    predicate = {"body_type": "SUV", "price_max": 30000000}
+    assert score_ab.count_range_ok(5, [25, 29], predicate)      # 정상: 5건 캡 반환
+    assert not score_ab.count_range_ok(4, [25, 29], predicate)  # 5건 미만 반환은 여전히 오탐
+
+
+def test_count_range_ok_caps_upper_bound_even_when_golden_lo_is_small():
+    """golden 하한이 DEFAULT_LIMIT보다 작아도(예: 5~7건) 앱이 5건을 넘겨 반환할 수는 없으므로
+    상한도 DEFAULT_LIMIT으로 잘려야 한다 — 캡 로직이 하한만 보고 상한을 안 자르면 6건
+    반환처럼 실제로는 불가능한 값이 통과로 오판된다."""
+    predicate = {"fuel": "하이브리드", "body_type": "중형차", "accident_free": True}
+    assert score_ab.count_range_ok(5, [5, 7], predicate)
+    assert not score_ab.count_range_ok(4, [5, 7], predicate)
 
 
 def test_route_ok_acceptable_paths():
@@ -296,6 +342,595 @@ def test_cli_raw_two_file_mode_unchanged(tmp_path, monkeypatch):
     assert "baseline_summary" not in report  # 1개 모드 전용 키가 섞여 들어오지 않는다
 
 
+# ── G2 4축 회귀 게이트(DW-626) ───────────────────────────────────────────
+# result_mean만 보던 옛 게이트는 13.4(되묻기)·13.6(가이드 인용)이 통째로 죽어도 통과했다
+# (리뷰가 뮤테이션으로 실증). 4축(result_mean·routing_correct·doc_hit_n·clarify_ok_n)이
+# 자동 비교되는지, 하나만 하락해도 regression_block이 걸리는지를 raw 두 벌로 실제 채점해 본다.
+_FOUR_AXIS_QS = {
+    "items": [
+        {"id": "C1", "kind": "single", "category": "clean", "query": "오늘 날씨 어때?",
+         "primary_path": "REJECT", "acceptable_paths": ["REJECT"]},
+        {"id": "H1", "kind": "single", "category": "clean", "query": "3천만원 이하로 무난한 SUV",
+         "primary_path": "HYBRID", "acceptable_paths": ["HYBRID"],
+         "predicate": {"body_type": "SUV"}, "doc_refs": ["01-차종별-특성"]},
+        {"id": "CL1", "kind": "single", "category": "clean", "query": "패밀리카로 무난한 거",
+         "primary_path": "CLARIFY", "acceptable_paths": ["CLARIFY"]},
+    ],
+}
+
+
+def _four_axis_raw(model: str, *, doc_cited: bool, clarify_ok: bool) -> dict:
+    hybrid_answer = "조건에 맞는 매물 1건을 찾았어요."
+    if doc_cited:
+        hybrid_answer += " (참고: 차종별 특성과 용도 가이드)"
+    return {
+        "model": model,
+        "results": {
+            "C1": [{"route_last": "REJECT", "ids_last": [], "answer_last": "매물을 찾아드릴게요.",
+                     "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}],
+            "H1": [{"route_last": "HYBRID", "ids_last": ["g1"], "answer_last": hybrid_answer,
+                     "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}],
+            "CL1": [{"route_last": "CLARIFY",
+                     "answer_last": "조건을 조금만 좁혀볼게요 — 어떤 조건이 있으신가요?",
+                     "clarify_last": {"question": "q", "chips": (["칩1"] if clarify_ok else [])},
+                     "ids_last": [], "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}],
+        },
+    }
+
+
+def test_regression_block_flags_doc_hit_and_clarify_regression_even_when_result_mean_ties(
+    tmp_path, monkeypatch,
+):
+    """DW-626 — result_mean이 동률이어도 가이드 인용·되묻기가 후보에서 죽으면 4축 게이트가 잡는다.
+
+    P3(13.9 3차 리뷰): 게이트가 떨어지면 **종료 코드도 1**이어야 한다 — 예전엔 경고만 찍고
+    항상 0으로 끝나서 문서화된 `run_phase_b.py … && score_ab.py …` 체인이 진짜 회귀를 만나고도
+    그대로 다음 단계로 넘어갔다. 리포트 파일은 종료 전에 쓰이므로 아래 단언이 전부 그대로 산다.
+    """
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["g1"])
+    qs = _write_json(tmp_path / "qs.json", _FOUR_AXIS_QS)
+    raw_baseline = _write_json(
+        tmp_path / "raw_base.json", _four_axis_raw("m", doc_cited=True, clarify_ok=True)
+    )
+    raw_candidate = _write_json(
+        tmp_path / "raw_cand.json", _four_axis_raw("m", doc_cited=False, clarify_ok=False)
+    )
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["regression_axes"]["result_mean"] is False  # 결과집합 자체는 동률
+    assert report["regression_axes"]["doc_hit_n"] is True     # 인용이 후보에서 죽었다
+    assert report["regression_axes"]["clarify_ok_n"] is True  # 되묻기도 후보에서 죽었다
+    assert report["regression_block"] is True
+    assert report["gate_pass"] is False
+
+
+def test_regression_block_false_when_all_four_axes_hold(tmp_path, monkeypatch):
+    """4축 전부 비하락이면 regression_block=False·gate_pass=True(양성 대조군).
+
+    P3 짝 — 여기서는 `main()`이 SystemExit 없이 정상 반환해야 한다(게이트 통과 = 종료 코드 0).
+    이 대조군이 없으면 "무조건 1로 끝나는" 회귀를 못 잡는다.
+    """
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["g1"])
+    qs = _write_json(tmp_path / "qs.json", _FOUR_AXIS_QS)
+    raw_baseline = _write_json(
+        tmp_path / "raw_base.json", _four_axis_raw("m", doc_cited=True, clarify_ok=True)
+    )
+    raw_candidate = _write_json(
+        tmp_path / "raw_cand.json", _four_axis_raw("m", doc_cited=True, clarify_ok=True)
+    )
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    score_ab.main()
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert not any(report["regression_axes"].values())
+    assert report["regression_block"] is False
+    assert report["gate_pass"] is True
+
+
+# ── 채점 문항 수(coverage.scored_n) 불일치 시 개수 기반 축은 검증 불가(코드리뷰 정정) ──
+_COVERAGE_MISMATCH_QS = {
+    "items": [
+        {"id": "C1", "kind": "single", "category": "clean", "query": "q1",
+         "primary_path": "REJECT", "acceptable_paths": ["REJECT"]},
+        {"id": "C2", "kind": "single", "category": "clean", "query": "q2",
+         "primary_path": "REJECT", "acceptable_paths": ["REJECT"]},
+        {"id": "C3", "kind": "single", "category": "clean", "query": "q3",
+         "primary_path": "REJECT", "acceptable_paths": ["REJECT"]},
+    ],
+}
+
+
+def _reject_run() -> dict:
+    return {"route_last": "REJECT", "ids_last": [], "answer_last": "매물을 찾아드릴게요.",
+            "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}
+
+
+def test_regression_axes_flags_count_based_axes_unverifiable_when_scored_n_differs(
+    tmp_path, monkeypatch,
+):
+    """baseline·candidate가 채점한 문항 수가 다르면(부분 재캡처 등), routing_correct 같은
+    **원시 개수** 비교는 후보가 적게 채점됐다는 이유만으로 항상 더 낮아 보여 정확도가
+    똑같거나 더 좋아도 거짓 회귀를 만든다(코드리뷰 정정) — scored_n이 다르면 그 축들을
+    "하락 아님"으로 조용히 넘기지 않고 검증 불가로 표시한다.
+    """
+    qs = _write_json(tmp_path / "qs.json", _COVERAGE_MISMATCH_QS)
+    raw_baseline = _write_json(tmp_path / "raw_base.json", {
+        "model": "m", "results": {
+            "C1": [_reject_run()], "C2": [_reject_run()], "C3": [_reject_run()],
+        },
+    })
+    # 후보는 C3이 아예 캡처되지 않았다(부분 재캡처) — C1·C2는 baseline과 정확도가 완전히
+    # 동일(100%)한데, routing_correct 원시 개수만 보면 3 → 2로 "하락"처럼 보인다.
+    raw_candidate = _write_json(tmp_path / "raw_cand.json", {
+        "model": "m", "results": {"C1": [_reject_run()], "C2": [_reject_run()]},
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1  # 게이트 탈락은 종료 코드로도 드러난다(P3)
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["summaries"][0]["coverage"]["scored_n"] == 3
+    assert report["summaries"][1]["coverage"]["scored_n"] == 2
+    assert "routing_correct" in report["unverifiable_axes"]
+    assert "routing_correct" not in report["regression_axes"]
+    assert report["regression_block"] is False
+    # P2 코드리뷰 정정 — 4축 회귀(regression_block)가 없어도 검증 불가 축이 남아 있으면
+    # top-level gate_pass는 더 이상 True를 자동 승격하지 않는다("검증 불가"와 "통과"는
+    # 다른 상태다 — 이전엔 `not regression`만 봐서 부분 재캡처가 무조건 PASS로 나갔다).
+    assert report["gate_pass"] is False
+
+
+# ── DW-646 — scored_n이 같아도 채점된 **문항 자체**가 다르면 검증 불가여야 한다 ──────
+# 위 테스트는 "개수가 다르면" 잡는다. 이 테스트는 그 짝인 "개수는 우연히 같은데 문항이
+# 다르면"을 잡는다 — 수정 전엔 coverage_matches가 scored_n(개수)만 비교해서, 서로 다른
+# 문항 집합이 우연히 같은 개수로 채점되면 routing_correct 등 개수 기반 축을 그대로
+# "검증됨"으로 취급해 잘못된 회귀/비회귀 판정을 냈다.
+def test_regression_axes_flags_count_based_axes_unverifiable_when_item_set_differs_though_count_matches(
+    tmp_path, monkeypatch,
+):
+    """baseline은 C1·C2를, candidate는 C1·C3을 채점했다 — 둘 다 2건이라 scored_n은 같지만
+    채점된 문항 자체가 다르다. 개수만 보면 "검증 가능"으로 잘못 통과한다(수정 전 버그
+    재현) — id 집합으로 비교해야 이걸 검증 불가로 잡는다."""
+    qs = _write_json(tmp_path / "qs.json", _COVERAGE_MISMATCH_QS)
+    raw_baseline = _write_json(tmp_path / "raw_base.json", {
+        "model": "m", "results": {"C1": [_reject_run()], "C2": [_reject_run()]},
+    })
+    raw_candidate = _write_json(tmp_path / "raw_cand.json", {
+        "model": "m", "results": {"C1": [_reject_run()], "C3": [_reject_run()]},
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # 전제 — 개수는 정말 같다(이게 없으면 이 테스트는 위 scored_n 불일치 테스트와 다르지 않다).
+    assert report["summaries"][0]["coverage"]["scored_n"] == 2
+    assert report["summaries"][1]["coverage"]["scored_n"] == 2
+    # 그런데도 문항 id 집합이 달라 검증 불가여야 한다(수정 전엔 여기가 regression_axes에
+    # 정상적으로 들어가 "하락 없음"으로 조용히 통과했다).
+    assert "routing_correct" in report["unverifiable_axes"]
+    assert "routing_correct" not in report["regression_axes"]
+    assert report["gate_pass"] is False
+
+
+# ── count_range 다섯 번째 회귀 축 (13-11 B-1, DW-647) ─────────────────────
+# "결과집합(result_mean)"만으론 DW-656을 못 잡는다는 것을 아래 두 번째 테스트가 직접
+# 보여준다 — score_path_a의 topn 모드는 "첫 N건이 정답인가"만 보므로, 5건을 반환해도
+# 그중 앞 1건이 맞으면 result_mean은 만점이다. count_range_ok_n이 그 사각지대를 메운다.
+_COUNT_RANGE_REGRESSION_QS = {
+    "items": [
+        {"id": "S6", "kind": "single", "category": "clean", "query": "제일 싼 차 뭐야?",
+         "primary_path": "SQL", "acceptable_paths": ["SQL"],
+         "predicate": {"order": "price ASC", "limit": 1}, "count_range": [1, 1]},
+    ],
+}
+
+
+def _s6_run(ids: list[str]) -> dict:
+    return {"model": "m", "results": {"S6": [{
+        "route_last": "SQL", "ids_last": ids,
+        "answer_last": f"조건에 맞는 매물 {len(ids)}건을 찾았어요.",
+        "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0,
+    }]}}
+
+
+def test_count_range_axis_populated_on_score_model_summary(monkeypatch):
+    """DW-656 red/green — count_range_ok_n/_total이 실제로 채워지고, 5건 과다반환을 잡는다."""
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["cheapest"])
+    # red — 정렬은 맞지만(첫 건이 최저가) 5건을 돌려준다(수정 전 실측 그대로).
+    over = score_ab.score_model(_COUNT_RANGE_REGRESSION_QS, _s6_run(["cheapest", "b", "c", "d", "e"]))
+    assert over["count_range_total"] == 1
+    assert over["count_range_ok_n"] == 0
+    assert over["per_item"][0]["count_range_ok"] is False
+    # green — 1건만 반환하면 통과.
+    ok = score_ab.score_model(_COUNT_RANGE_REGRESSION_QS, _s6_run(["cheapest"]))
+    assert ok["count_range_ok_n"] == 1
+    assert ok["per_item"][0]["count_range_ok"] is True
+
+
+def test_count_range_regression_is_the_only_axis_that_catches_topn_overreturn(tmp_path, monkeypatch):
+    """이 축이 --baseline 비교(2파일 모드)의 회귀 게이트에 실제로 반영되는지(B-1 요구:
+    "4축 비교 게이트에도 이 축이 반영되게 하라") — baseline은 1건(정답), candidate는
+    5건(DW-656 재발)을 반환한다. topn 채점의 result_mean은 둘 다 1.0(첫 건이 맞으므로)이라
+    이 축 없이는 회귀가 전혀 안 잡힌다는 것도 함께 확인한다.
+    """
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["cheapest"])
+    qs = _write_json(tmp_path / "qs.json", _COUNT_RANGE_REGRESSION_QS)
+    raw_baseline = _write_json(tmp_path / "raw_base.json", _s6_run(["cheapest"]))
+    raw_candidate = _write_json(
+        tmp_path / "raw_cand.json", _s6_run(["cheapest", "b", "c", "d", "e"])
+    )
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # result_mean은 둘 다 만점이라(topn이 첫 건만 본다) 회귀가 아니다 — count_range가 유일한 신호.
+    assert report["regression_axes"]["result_mean"] is False
+    assert report["regression_axes"]["count_range_ok_n"] is True
+    assert report["regression_block"] is True
+    assert report["gate_pass"] is False
+
+
+# ── P2 — top-level gate_pass는 개별 summary가 자기 게이트에서 FAIL이면 절대 True가 아니다 ──
+_GRAY_CONTAMINATION_QS = {
+    "items": [{
+        "id": "M-gray", "kind": "multiturn", "category": "gray",
+        "turns": [
+            {"query": "q1", "primary_path": "SQL", "acceptable_paths": ["SQL"]},
+            {"query": "q2", "primary_path": "SQL", "acceptable_paths": ["SQL"],
+             "must_not_contain": ["중형차"]},
+        ],
+    }],
+}
+
+
+def _gray_multiturn_raw(model: str, *, turn2_id: str) -> dict:
+    return {
+        "model": model,
+        "results": {
+            "M-gray": [{
+                "route_last": "SQL", "ids_last": [turn2_id], "answer_last": "a2",
+                "turns": [
+                    {"route": "SQL", "ids": ["l1"], "answer": "a1"},
+                    {"route": "SQL", "ids": [turn2_id], "answer": "a2"},
+                ],
+                "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0,
+            }],
+        },
+    }
+
+
+def test_gate_pass_false_when_gray_item_contaminated_even_if_no_regression_axis_moves(
+    tmp_path, monkeypatch,
+):
+    """gray 문항은 `result_mean`에서 제외되므로(result_scores_clean에 안 들어감), 그 문항만
+    오염돼도 4축(result_mean·routing_correct·doc_hit_n·clarify_ok_n) 중 어느 것도 움직이지
+    않는다 — 그런데 그 candidate summary 자신은 `게이트: FAIL`을 찍는다(P2가 지목한 실측
+    모순). 4축이 전부 초록이어도 top-level gate_pass가 이 개별 FAIL을 가리면 안 된다.
+    """
+    # fetch_attrs: turn2_id가 "l9"일 때만 금지 카테고리(중형차)를 돌려주고, 다른 id는 무해하다.
+    monkeypatch.setattr(
+        score_ab, "fetch_attrs",
+        lambda ids: [{"id": i, "body_type": "중형차" if i == "l9" else "SUV", "price": 1}
+                     for i in ids],
+    )
+    qs = _write_json(tmp_path / "qs.json", _GRAY_CONTAMINATION_QS)
+    raw_baseline = _write_json(
+        tmp_path / "raw_base.json", _gray_multiturn_raw("m", turn2_id="l_ok")
+    )
+    raw_candidate = _write_json(
+        tmp_path / "raw_cand.json", _gray_multiturn_raw("m", turn2_id="l9")  # 오염 유발
+    )
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1  # 게이트 탈락은 종료 코드로도 드러난다(P3)
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # 헤드라인 전제 확인 — 4축 전부 하락 없음(오염이 result_mean 등에 안 잡힌다는 것 자체를 실측).
+    assert not any(report["regression_axes"].values())
+    assert report["unverifiable_axes"] == []
+    assert report["regression_block"] is False
+    # 그런데도 candidate의 개별 게이트는 오염 때문에 FAIL이어야 한다.
+    assert report["summaries"][1]["contamination"] == 1
+    assert report["summaries"][1]["gate_pass"] is False
+    # top-level이 그걸 가리지 않는다(P2 핵심 수정).
+    assert report["gate_pass"] is False
+
+
+# ── P6 — result_mean의 분모(result_n)가 다르면 그 평균도 검증 불가로 표시한다 ─────────
+# scored_n(캡처된 문항 수)이 같아도 **어느 문항이 에러났는지**가 다르면 result_n(그중 실제로
+# 결과집합 채점에 들어간 clean SQL+HYBRID 문항 수)은 다를 수 있다 — HYBRID 문항이 에러난
+# run과 REJECT 문항이 에러난 run은 scored_n 감소폭이 같아도(coverage_matches=True) result_n엔
+# 전혀 다른 영향을 준다. coverage.scored_n만 보는 가드는 이 케이스를 놓친다.
+_RESULT_N_MISMATCH_QS = {
+    "items": [
+        {"id": "H1", "kind": "single", "category": "clean", "query": "q1",
+         "primary_path": "HYBRID", "acceptable_paths": ["HYBRID"], "predicate": {}},
+        {"id": "H2", "kind": "single", "category": "clean", "query": "q2",
+         "primary_path": "HYBRID", "acceptable_paths": ["HYBRID"], "predicate": {}},
+        {"id": "C1", "kind": "single", "category": "clean", "query": "q3",
+         "primary_path": "REJECT", "acceptable_paths": ["REJECT"]},
+    ],
+}
+
+
+def _hybrid_run() -> dict:
+    return {"route_last": "HYBRID", "ids_last": ["g1"], "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+            "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}
+
+
+def _reject_run_ok() -> dict:
+    return {"route_last": "REJECT", "ids_last": [], "answer_last": "매물을 찾아드릴게요.",
+            "tokens_in": 0, "tokens_out": 0, "latency_ms": 1.0}
+
+
+def test_result_mean_unverifiable_when_result_n_differs_even_if_scored_n_matches(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["g1"])
+    qs = _write_json(tmp_path / "qs.json", _RESULT_N_MISMATCH_QS)
+    # baseline: C1(REJECT, result_n에 안 잡히는 문항)이 에러 — scored_n=2, result_n=2(H1,H2).
+    raw_baseline = _write_json(tmp_path / "raw_base.json", {
+        "model": "m", "results": {
+            "H1": [_hybrid_run()], "H2": [_hybrid_run()], "C1": [{"error": "429"}],
+        },
+    })
+    # candidate: H2(HYBRID, result_n에 잡히는 문항)가 에러 — scored_n도 2로 baseline과 같지만,
+    # result_n에 잡히는 문항이 하나 빠져 result_n=1(H1만).
+    raw_candidate = _write_json(tmp_path / "raw_cand.json", {
+        "model": "m", "results": {
+            "H1": [_hybrid_run()], "H2": [{"error": "429"}], "C1": [_reject_run_ok()],
+        },
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1  # 게이트 탈락은 종료 코드로도 드러난다(P3)
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["summaries"][0]["coverage"]["scored_n"] == 2
+    assert report["summaries"][1]["coverage"]["scored_n"] == 2  # scored_n은 같다(감소폭이 같다)
+    assert report["summaries"][0]["result_n"] == 2
+    assert report["summaries"][1]["result_n"] == 1  # result_n은 다르다(에러난 문항의 종류가 다름)
+    assert "result_mean" in report["unverifiable_axes"]
+    assert "result_mean" not in report["regression_axes"]
+    assert report["gate_pass"] is False  # 검증 불가 축이 있으므로 PASS를 자동 승격하지 않는다
+
+
+# ── P4 — 비교 축이 0개면 regression_block은 false가 아니라 null(판정 불가)이다 ─────────
+def test_regression_block_is_null_when_nothing_could_be_compared(tmp_path, monkeypatch, capsys):
+    """coverage_matches·result_n_matches가 **둘 다** 거짓이면 다섯 축 전부(13-11 — DW-647이
+    count_range_ok_n을 다섯 번째로 추가)가 unverifiable로 빠져 `regression_axes`가 빈 dict가
+    된다 — `any({})`는 False라 예전엔 커밋된 리포트에 `regression_block: false`가 박혔다.
+    그건 "회귀를 못 찾았다"가 아니라 "아무것도 비교하지 못했다"인데, 산출물만 읽는 다음
+    사람에겐 정반대로 읽힌다(P4). 이제 null로 명시한다.
+    """
+    monkeypatch.setattr(score_ab, "run_golden_ids", lambda pred: ["g1"])
+    qs = _write_json(tmp_path / "qs.json", _RESULT_N_MISMATCH_QS)
+    # baseline: H1·H2 둘 다 채점 → scored_n=2, result_n=2.
+    raw_baseline = _write_json(tmp_path / "raw_base.json", {
+        "model": "m", "results": {"H1": [_hybrid_run()], "H2": [_hybrid_run()]},
+    })
+    # candidate: H1만 캡처 → scored_n=1(커버리지 불일치), result_n=1(분모도 불일치).
+    raw_candidate = _write_json(tmp_path / "raw_cand.json", {
+        "model": "m", "results": {"H1": [_hybrid_run()]},
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_baseline, raw_candidate, "--out", str(out)],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # 전제 — 비교된 축이 정말 0개다(다섯 축 전부 검증 불가).
+    assert report["regression_axes"] == {}
+    assert set(report["unverifiable_axes"]) == {
+        "result_mean", "routing_correct", "doc_hit_n", "clarify_ok_n", "count_range_ok_n",
+    }
+    # 핵심 — 산출물이 "회귀 없음"이라고 거짓말하지 않는다.
+    assert report["regression_block"] is None
+    assert report["gate_pass"] is False
+    # 후보를 조용히 올리지도 않는다(베이스라인 유지).
+    assert report["final_adopt"] == "m"
+    assert "판정하지 못함" in capsys.readouterr().out
+
+
+def test_resolve_evidence_path_repo_relative_when_inside_api_root():
+    """P7 — API_ROOT 안 경로는 repo-relative로 정규화된다(짧고 이식성 있는 표현).
+
+    P8(13.9 3차 리뷰): 구분자는 항상 `/`다. `str(PurePath)`를 쓰면 Windows(이 모듈 독스트링이
+    문서화한 실행 환경)에서 `docs\\g2-baseline.json`이 나와 이 단언이 깨지는데, 리눅스 CI는
+    초록이라 아무도 못 본다 — `as_posix()`로 플랫폼 의존을 없앤다.
+    """
+    inside = score_ab.API_ROOT / "docs" / "g2-baseline.json"
+    resolved = score_ab._resolve_evidence_path(str(inside))
+    assert resolved == "docs/g2-baseline.json"
+    assert "\\" not in resolved  # OS 네이티브 구분자가 새어 나오지 않는다
+
+
+def test_resolve_evidence_path_normalizes_fragile_relative_path(tmp_path, monkeypatch):
+    """P7 헤드라인 재현 — 세션 한정 상대경로(예: `../../../tmp/.../scratchpad/x.json`)를 그대로
+    기록하면 그 cwd를 벗어난 순간 못 찾는다(실측: 리포지토리 밖 임시 파일을 상대경로로 넘기면
+    `_resolve_evidence_path` 도입 전엔 그 상대경로 문자열 그대로 리포트에 박혔다). resolve()해
+    절대경로로 정규화하면 어느 cwd에서 읽든 항상 같은 실제 파일을 가리킨다.
+    """
+    outside_dir = tmp_path / "outside_repo"
+    outside_dir.mkdir()
+    raw_file = outside_dir / "raw.json"
+    raw_file.write_text("{}", encoding="utf-8")
+
+    monkeypatch.chdir(score_ab.API_ROOT)  # cwd = api/ (score_ab.py가 실제로 실행되는 위치)
+    relative = os.path.relpath(raw_file, start=score_ab.API_ROOT)
+
+    resolved = score_ab._resolve_evidence_path(relative)
+    assert Path(resolved).is_absolute()
+    assert Path(resolved) == raw_file.resolve()
+    assert Path(resolved).exists()
+
+
+def test_report_records_raw_file_paths_and_self_comparison_warning(tmp_path, monkeypatch, capsys):
+    """DW-637 — baseline/candidate 원본 파일 경로가 리포트에 남는다. 모델명이 같아도(자기비교)
+    파일 경로로 어느 쪽이 baseline이었는지 항상 구분 가능해야 한다."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw_a = _write_json(tmp_path / "raw_a.json", _raw("gemini-3.1-flash-lite"))
+    raw_b = _write_json(tmp_path / "raw_b.json", _raw("gemini-3.1-flash-lite"))  # 같은 모델(자기비교)
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_a, raw_b, "--out", str(out)],
+    )
+    score_ab.main()
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    # P7 — 기록된 경로는 resolve()된 경로이고(심볼릭 링크 등 정규화), 실제로 디스크에 존재한다.
+    # 이전엔 세션 한정 상대경로(예: /tmp/claude-.../scratchpad/...)를 그대로 남겨, 그 세션이
+    # 끝나면 산출물만 봐선 가리키는 파일을 찾을 수 없었다(DW-637 취지 위반) — 존재 여부까지
+    # 확인해야 "산출물만 봐도 방향을 되짚을 수 있다"가 실제로 성립함을 실측한다.
+    assert Path(report["baseline_raw"]).resolve() == Path(raw_a).resolve()
+    assert Path(report["candidate_raw"]).resolve() == Path(raw_b).resolve()
+    assert Path(report["baseline_raw"]).exists()
+    assert Path(report["candidate_raw"]).exists()
+    # 콘솔에만 찍고 JSON에는 안 남기면 리포트 파일만 나중에 읽는 사람은 자기비교였다는
+    # 사실을 알 수 없다(코드리뷰 정정) — 커밋된 리포트 자체에도 남긴다.
+    assert report["self_comparison"] is True
+    captured = capsys.readouterr()
+    assert "모델명이 같습니다" in captured.out  # 자기비교 경고가 콘솔에 찍힌다
+
+
+def test_self_comparison_false_when_models_differ(tmp_path, monkeypatch):
+    """음성 대조군 — 모델명이 다르면 self_comparison=False다."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw_a = _write_json(tmp_path / "raw_a.json", _raw("gemini-3.1-flash-lite"))
+    raw_b = _write_json(tmp_path / "raw_b.json", _raw("gemini-2.5-flash-lite"))
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(
+        sys, "argv",
+        ["score_ab.py", "--queryset", qs, "--raw", raw_a, raw_b, "--out", str(out)],
+    )
+    score_ab.main()
+
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["self_comparison"] is False
+
+
+def test_swapping_raw_argument_order_changes_recorded_baseline_direction(tmp_path, monkeypatch):
+    """DW-637 — `--raw` 순서를 바꾸면 리포트의 baseline_raw/candidate_raw도 함께 뒤집힌다
+    (산출물만 봐도 방향을 되짚을 수 있어야 한다)."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw_a = _write_json(tmp_path / "raw_a.json", _raw("m1"))
+    raw_b = _write_json(tmp_path / "raw_b.json", _raw("m2"))
+    out1, out2 = tmp_path / "out1.json", tmp_path / "out2.json"
+
+    monkeypatch.setattr(
+        sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw_a, raw_b, "--out", str(out1)]
+    )
+    score_ab.main()
+    monkeypatch.setattr(
+        sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw_b, raw_a, "--out", str(out2)]
+    )
+    score_ab.main()
+
+    r1 = json.loads(out1.read_text(encoding="utf-8"))
+    r2 = json.loads(out2.read_text(encoding="utf-8"))
+    assert (r1["baseline_raw"], r1["candidate_raw"]) == (raw_a, raw_b)
+    assert (r2["baseline_raw"], r2["candidate_raw"]) == (raw_b, raw_a)
+
+
+# ── --out 보호(DW-635) — score_ab.py도 run_phase_b.py와 같은 보호를 적용한다 ──────
+def test_out_path_pointing_at_committed_baseline_report_is_rejected(tmp_path, monkeypatch, capsys):
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw = _write_json(tmp_path / "raw.json", _raw("m"))
+    protected = str(Path(__file__).resolve().parent.parent / "docs" / "g2-baseline-report.json")
+
+    monkeypatch.setattr(
+        sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", protected]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 2
+    assert "커밋된 G2 비교 근거" in capsys.readouterr().err
+
+
+# ── P1 — 문서화된 명령이 스스로 거부하는 죽은 명령이면 안 된다(반대 방향 검사) ──────
+# is_protected(docs/g2-recapture-report.json)와 is_protected(docs/g2-recapture-2026-08-03.json)
+# 둘 다 True인데(커밋된 증거 보호, DW-635/636), 이 스크립트의 독스트링 예시와 ap.error
+# 제안 문구가 정확히 그 보호된 경로를 "쓰세요"라고 권했다 — 존재 확인(보호 목록에 있다)이
+# 아니라 작동 확인(그 문서를 그대로 따라 해도 막히지 않는다)까지 실제로 실행해 못박는다.
+def test_docstring_out_examples_are_not_protected():
+    """모듈 독스트링에 적힌 모든 `--out <경로>` 예시는 보호 목록에 걸리면 안 된다.
+
+    걸리면 문서를 그대로 복붙해 실행한 사람이 즉시 ap.error로 막히는 죽은 명령이 된다
+    (실측: `--out docs/g2-recapture-report.json` 예시가 바로 이 상태였다).
+    """
+    paths = re.findall(r"--out\s+(docs/\S+\.json)", score_ab.__doc__ or "")
+    assert paths, "독스트링에서 --out 예시를 하나도 못 찾음(테스트 자체가 무력화되지 않았는지 확인)"
+    for p in paths:
+        assert score_ab.is_protected(p) is False, f"독스트링 예시 {p!r}가 보호 목록에 걸림(죽은 명령)"
+
+
+def test_ap_error_suggested_out_path_is_not_protected():
+    """`--out`이 보호 목록에 걸렸을 때 ap.error가 대안으로 제안하는 경로도 보호 목록에
+    걸리면 안 된다 — 걸리면 "이 경로를 쓰세요"가 그 자리에서 다시 거부되는 순환(dead-end)이다.
+    """
+    source = inspect.getsource(score_ab.main)
+    m = re.search(r"예:\s*(docs/\S+?\.json)", source)
+    assert m, "main()의 ap.error 메시지에서 제안 경로(예: ...)를 못 찾음"
+    suggested = m.group(1)
+    assert score_ab.is_protected(suggested) is False, (
+        f"ap.error 제안 경로 {suggested!r}가 보호 목록에 걸림(스스로 거부하는 죽은 안내)"
+    )
+
+
 @pytest.mark.parametrize("raw_args", [[], ["a.json", "b.json", "c.json"]])
 def test_cli_raw_invalid_count_exits_with_usage_error(tmp_path, monkeypatch, capsys, raw_args):
     """`--raw`가 1·2개가 아니면 ap.error로 종료코드 2 + 에러 메시지를 낸다."""
@@ -373,11 +1008,51 @@ def test_cli_raw_single_file_mode_survives_error_entries(tmp_path, monkeypatch):
     out = tmp_path / "out.json"
 
     monkeypatch.setattr(sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", str(out)])
-    score_ab.main()  # 수정 전엔 KeyError로 죽어 --out 파일 자체가 안 만들어졌다
+    # 수정 전엔 KeyError로 죽어 --out 파일 자체가 안 만들어졌다. 지금은 리포트를 다 쓴 뒤
+    # 게이트 탈락(errored_n>0)으로 exit 1 한다 — 종료해도 **산출물은 남는다**가 이 테스트의 요지다.
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
 
     report = json.loads(out.read_text(encoding="utf-8"))
     assert report["baseline_summary"]["errored_n"] == 1
     assert report["baseline_summary"]["routing_correct"] == 1
+
+
+# ── 1파일 모드 종료 코드(13.9 독립 후속 리뷰) ──────────────────────────────
+# 3차 리뷰 P3가 넣은 `sys.exit(1)`은 **2파일 모드에만** 있었고 독스트링도 그렇게 못박고 있었다.
+# 그런데 1파일 모드가 바로 G2 2단계("이 캡처를 새 기준선으로 올린다")가 쓰는 자리다 — 실측으로
+# 47건 전량 errored인 raw가 콘솔에 `게이트: FAIL`을 찍고도 exit 0으로 끝났고, 문서화된
+# `score_ab … && cp … g2-baseline.json` 체인은 그걸 그대로 기준선으로 승격시킨다.
+# 아래 두 테스트가 양방향(FAIL→1, PASS→종료 없음)을 함께 못박는다 — 한쪽만 있으면
+# "항상 1로 끝나게" 만드는 뮤테이션이 통과한다.
+def test_single_file_mode_exits_1_when_gate_fails(tmp_path, monkeypatch):
+    """1파일 모드에서 게이트가 떨어지면 종료 코드 1 — 리포트는 그래도 남는다."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw = _write_json(tmp_path / "raw.json", {
+        "model": "gemini-3.1-flash-lite",
+        "results": {"C1": [{"error": "429 quota exceeded"}]},  # 전량 실패 = gate_pass:false
+    })
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", str(out)])
+    with pytest.raises(SystemExit) as exc_info:
+        score_ab.main()
+    assert exc_info.value.code == 1
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["baseline_summary"]["gate_pass"] is False
+
+
+def test_single_file_mode_does_not_exit_when_gate_passes(tmp_path, monkeypatch):
+    """반대 방향 — 깨끗한 캡처는 종료 코드 0(SystemExit 없이 정상 반환)."""
+    qs = _write_json(tmp_path / "qs.json", _C_QUERYSET)
+    raw = _write_json(tmp_path / "raw.json", _raw("gemini-3.1-flash-lite"))
+    out = tmp_path / "out.json"
+
+    monkeypatch.setattr(sys, "argv", ["score_ab.py", "--queryset", qs, "--raw", raw, "--out", str(out)])
+    score_ab.main()  # SystemExit이 나면 여기서 테스트가 실패한다
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["baseline_summary"]["gate_pass"] is True
 
 
 # ── score_model 커버리지(review pass 4) ─────────────────────────────────
@@ -656,11 +1331,13 @@ def test_flaky_measured_true_when_repeated_runs_present():
 
 
 # ── 구어휘로 캡처된 옛 raw 재채점 (DW-562 후속, review-4) ──────────────────────
-# 13.1이 캡처해 리포에 커밋한 docs/g2-baseline.json(44개 전량)은 구어휘 A/B/C다.
-# route_ok가 primary/acceptable만 번역하고 actual은 그대로 두던 동안, 그 파일을 재채점하면
-# 라우팅이 50/55 → 0/55로 무너지고(저장된 g2-baseline-report.json과 직접 모순) 멀티턴 하드
-# 오염 게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과했다. DW-562가 막으려던
+# 구어휘 A/B/C로 캡처된 raw를 신어휘 코드로 재채점하면, route_ok가 primary/acceptable만
+# 번역하고 actual은 그대로 두던 동안 라우팅이 50/55 → 0/55로 무너지고 멀티턴 하드 오염
+# 게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과했다. DW-562가 막으려던
 # "전량 오판"이 방향만 바뀌어 되살아난 것이라, 캡처 어휘를 읽는 지점에서 올린다.
+# ⚠️ 13.8 3차 리뷰 정정: 이 주석은 "커밋된 docs/g2-baseline.json(44개 전량)이 구어휘"라고
+#   적었으나 지금은 거짓이다 — DW-609의 2026-08-02 재캡처로 그 파일은 47항목·전부 신어휘다
+#   (실측). 별칭표는 리포에 남은 구어휘 raw가 아니라 **외부에서 들어올 옛 raw** 대비책이다.
 
 def test_captured_route_upgrades_legacy_and_passes_new_through():
     assert score_ab.captured_route("A") == "SQL"
@@ -944,11 +1621,13 @@ def test_score_model_clarify_old_capture_without_chips_key_is_flagged_not_silent
 def test_observability_line_distinguishes_zero_percent_from_no_items():
     """0%와 "볼 문항이 없음"을 사람이 보는 화면에서 구분한다 — 구셋이 정확히 후자였다."""
     empty = score_ab._observability_line({"doc_hit_n": 0, "doc_hit_total": 0,
-                                          "clarify_ok_n": 0, "clarify_total": 0})
+                                          "clarify_ok_n": 0, "clarify_total": 0,
+                                          "count_range_ok_n": 0, "count_range_total": 0})
     assert "해당 문항 없음" in empty
     real_zero = score_ab._observability_line({"doc_hit_n": 0, "doc_hit_total": 12,
-                                              "clarify_ok_n": 7, "clarify_total": 7})
-    assert "0/12" in real_zero and "해당 문항 없음" not in real_zero
+                                              "clarify_ok_n": 7, "clarify_total": 7,
+                                              "count_range_ok_n": 9, "count_range_total": 10})
+    assert "0/12" in real_zero and "9/10" in real_zero and "해당 문항 없음" not in real_zero
 
 
 # ── 출고 큐리셋 자체를 검사한다(B9: 규칙은 어길 수 없는 자리에) ──────────

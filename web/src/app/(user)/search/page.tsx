@@ -271,7 +271,7 @@ export default async function SearchPage({
       <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/search" />
       {/* max-w-3xl(768px)이면 4열 브레이크포인트(≥1100px)에 도달해도 칸이 안 생긴다 —
           D5의 4열을 실제로 보이게 하려면 본문 폭도 함께 열어야 한다(Story 9.4 AC6). */}
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           {/* 제목은 이 화면에 들어오는 내비 링크("내 차 사기")와 같은 말을 쓴다 — EXPERIENCE.md
               Anti-patterns가 **"매물 탐색"·"탐색"을 개발용어 라벨로 명시 금지**하는데(소비자

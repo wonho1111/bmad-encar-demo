@@ -1,0 +1,1290 @@
+{
+  "baseline_summary": {
+    "name": "gemini-3.1-flash-lite",
+    "result_mean": 0.9500000000000001,
+    "result_n": 48,
+    "routing_correct": 74,
+    "routing_total": 74,
+    "doc_hit_n": 18,
+    "doc_hit_total": 28,
+    "clarify_ok_n": 9,
+    "clarify_total": 9,
+    "clarify_chips_unobserved": 0,
+    "count_range_ok_n": 56,
+    "count_range_total": 56,
+    "flaky_n": 0,
+    "flaky_measured": false,
+    "contamination": 0,
+    "soft_obs": 0,
+    "deadend": 0,
+    "gate_pass": true,
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "tokens_measured": false,
+    "cost_usd": 0.0,
+    "latency_ms_mean": 2218.6653375938477,
+    "errored_n": 0,
+    "coverage": {
+      "queryset_total": 64,
+      "scored_n": 64,
+      "errored_n": 0,
+      "missing_n": 0,
+      "missing_ids": [],
+      "scored_ids": [
+        "CL1",
+        "CL2",
+        "CL3",
+        "CL4",
+        "CL5",
+        "CL6",
+        "CL7",
+        "H1",
+        "H10",
+        "H11",
+        "H12",
+        "H13",
+        "H14",
+        "H15",
+        "H16",
+        "H17",
+        "H18",
+        "H19",
+        "H2",
+        "H20",
+        "H21",
+        "H22",
+        "H23",
+        "H24",
+        "H25",
+        "H26",
+        "H27",
+        "H3",
+        "H4",
+        "H5",
+        "H6",
+        "H7",
+        "H8",
+        "H9",
+        "M1",
+        "M2",
+        "M3",
+        "M4",
+        "M5",
+        "M6",
+        "M7",
+        "M8",
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R8",
+        "S1",
+        "S10",
+        "S11",
+        "S12",
+        "S13",
+        "S14",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+        "S6",
+        "S7",
+        "S8",
+        "S9"
+      ]
+    },
+    "is_partial": false
+  },
+  "detail": {
+    "gemini-3.1-flash-lite": [
+      {
+        "id": "S1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.18518518518518517,
+          "jaccard": 0.18518518518518517,
+          "returned_n": 5,
+          "golden_n": 27
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.35714285714285715,
+          "jaccard": 0.35714285714285715,
+          "returned_n": 5,
+          "golden_n": 14
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.4166666666666667,
+          "jaccard": 0.4166666666666667,
+          "returned_n": 5,
+          "golden_n": 12
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.45454545454545453,
+          "jaccard": 0.45454545454545453,
+          "returned_n": 5,
+          "golden_n": 11
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.8333333333333334,
+          "jaccard": 0.8333333333333334,
+          "returned_n": 5,
+          "golden_n": 6
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S7",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S8",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S9",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.35714285714285715,
+          "jaccard": 0.35714285714285715,
+          "returned_n": 5,
+          "golden_n": 14
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S10",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.25,
+          "jaccard": 0.25,
+          "returned_n": 5,
+          "golden_n": 20
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S11",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S12",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S13",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.7142857142857143,
+          "jaccard": 0.7142857142857143,
+          "returned_n": 5,
+          "golden_n": 7
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "S14",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        },
+        "count_range_ok": true
+      },
+      {
+        "id": "H1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 64
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 24
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 61
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 10
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 18
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H6",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.2,
+          "precision": 0.2,
+          "returned_n": 5,
+          "golden_n": 23
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H7",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 23
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H8",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 53
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H9",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 14
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H10",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 48
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H11",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 11
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H12",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 12
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H13",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 9
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H14",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 7
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H15",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 11
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H16",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.6,
+          "precision": 0.6,
+          "returned_n": 5,
+          "golden_n": 9
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H17",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 41
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H18",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.2,
+          "precision": 0.2,
+          "returned_n": 5,
+          "golden_n": 21
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H19",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 17
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H20",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 21
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H21",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 12
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H22",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 15
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H23",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 14
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H24",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 9
+        },
+        "doc_hit": true,
+        "count_range_ok": true
+      },
+      {
+        "id": "H25",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 9
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H26",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 13
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "H27",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.2,
+          "precision": 0.2,
+          "returned_n": 5,
+          "golden_n": 16
+        },
+        "doc_hit": false,
+        "count_range_ok": true
+      },
+      {
+        "id": "CL1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL7",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "R1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R7",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R8",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "M1",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.18518518518518517,
+              "jaccard": 0.18518518518518517,
+              "returned_n": 5,
+              "golden_n": 27
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "jaccard": 1.0,
+              "returned_n": 4,
+              "golden_n": 4
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 2,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 1.0,
+              "returned_n": 1,
+              "golden_n": 1
+            },
+            "count_range_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M2",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.38461538461538464,
+              "jaccard": 0.38461538461538464,
+              "returned_n": 5,
+              "golden_n": 13
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "jaccard": 0.4166666666666667,
+              "returned_n": 5,
+              "golden_n": 12
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 2,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 1.0,
+              "returned_n": 1,
+              "golden_n": 1
+            },
+            "count_range_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M3",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.16666666666666666,
+              "jaccard": 0.16666666666666666,
+              "returned_n": 5,
+              "golden_n": 30
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "CLARIFY",
+            "route_ok": true,
+            "clarify_chips": [
+              "3천만원 이하",
+              "SUV",
+              "전기차"
+            ],
+            "clarify_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M4",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "CLARIFY",
+            "route_ok": true,
+            "clarify_chips": [
+              "3천만원 이하",
+              "SUV",
+              "전기차"
+            ],
+            "clarify_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "HYBRID",
+            "route_ok": true,
+            "score": {
+              "mode": "hybrid_precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "returned_n": 5,
+              "golden_n": 18
+            },
+            "doc_hit": true,
+            "count_range_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M5",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "HYBRID",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 0.4,
+              "precision": 0.4,
+              "recall": 0.3333333333333333,
+              "jaccard": 0.2222222222222222,
+              "returned_n": 5,
+              "golden_n": 6
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "HYBRID",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 0.6,
+              "precision": 0.6,
+              "recall": 0.5,
+              "jaccard": 0.375,
+              "returned_n": 5,
+              "golden_n": 6
+            },
+            "count_range_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M6",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.25,
+              "jaccard": 0.25,
+              "returned_n": 5,
+              "golden_n": 20
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.09259259259259259,
+              "jaccard": 0.09259259259259259,
+              "returned_n": 5,
+              "golden_n": 54
+            },
+            "count_range_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M7",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.18518518518518517,
+              "jaccard": 0.18518518518518517,
+              "returned_n": 5,
+              "golden_n": 27
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.18518518518518517,
+              "jaccard": 0.18518518518518517,
+              "returned_n": 5,
+              "golden_n": 27
+            },
+            "count_range_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M8",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.8333333333333334,
+              "jaccard": 0.8333333333333334,
+              "returned_n": 5,
+              "golden_n": 6
+            },
+            "count_range_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "REJECT",
+            "route_ok": true
+          }
+        ]
+      }
+    ]
+  }
+}

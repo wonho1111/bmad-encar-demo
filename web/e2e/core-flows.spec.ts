@@ -8,7 +8,13 @@
 // desktop-1280x800 프로젝트에서만 돈다(설계상 [desktop] 표기 — mobile 중복 실행 불필요).
 // tablet-800x1024 프로젝트도 이 조건에 걸려 함께 스킵된다.
 import { expect, test } from '@playwright/test';
-import { assertLocalSupabase, fetchOnSaleListingIdWithPhoto, login, runPsql } from './helpers';
+import {
+  assertLocalSupabase,
+  fetchOnSaleListingIdWithPhoto,
+  login,
+  runPsql,
+  SEED_USER,
+} from './helpers';
 import { PROJECT_NAMES } from './project-names';
 
 assertLocalSupabase();
@@ -64,17 +70,31 @@ test('C1 로그인 → 로그아웃 왕복, /account 보호', async ({ page }) =
 test('C2 매물 목록 검색·필터', async ({ page }) => {
   const cards = () => page.locator('[role="listitem"]');
 
-  await page.goto('/search');
-  const totalCount = await cards().count();
-  expect(totalCount, '전체 매물 카드가 1개 이상이어야 비교가 의미 있음(로컬 DB on_sale 95건)').toBeGreaterThan(0);
+  // 화면에 그려진 **전체 건수**를 읽는다 — 카드 수가 아니다.
+  // ⚠️ 카드 수로 비교하면 안 된다(2026-08-06 실측, DW-689): `/search`는 `PAGE_SIZE = 24`로
+  // 잘라 그리므로 조건에 걸린 건수가 24를 넘으면 필터 전후가 **둘 다 24**가 되어, 필터가
+  // 정상 동작해도 "줄어들지 않았다"로 실패한다. 실제로 Story 13-10이 매물을 93→158건으로
+  // 늘리자(서울 43건 > 24) 이 단언이 red가 됐다. 즉 옛 단언은 필터가 아니라 **데이터 규모**를
+  // 보고 있었다. 총 건수는 페이지네이션과 무관하므로 데이터가 더 늘어도 이 검사는 살아 있다.
+  const totalOf = async () => {
+    const text = await page.getByText(/\d+건의 매물/).first().innerText();
+    const n = Number(text.match(/(\d+)건의 매물/)?.[1]);
+    expect(Number.isInteger(n), `총 건수 문구를 못 읽었다(받은 값: "${text}")`).toBe(true);
+    return n;
+  };
 
-  // 필터 하나 적용 — 지역=서울(실측 사전조회: on_sale 95건 중 24건).
+  await page.goto('/search');
+  const totalCount = await totalOf();
+  expect(totalCount, '전체 매물이 1건 이상이어야 비교가 의미 있음').toBeGreaterThan(0);
+  expect(await cards().count(), '첫 페이지에 카드가 그려져야 함').toBeGreaterThan(0);
+
+  // 필터 하나 적용 — 지역=서울.
   await page.getByLabel('지역').selectOption('서울');
   await page.getByRole('button', { name: '검색' }).click();
   await page.waitForURL((url) => url.searchParams.get('region') === '서울');
-  const filteredCount = await cards().count();
+  const filteredCount = await totalOf();
   expect(filteredCount, '필터 적용 후 결과가 0건이면 안 됨').toBeGreaterThan(0);
-  expect(filteredCount, '필터 적용 후 카드 수가 전체보다 줄어야 함(실측 비교)').toBeLessThan(totalCount);
+  expect(filteredCount, '필터 적용 후 전체 건수가 줄어야 함(실측 비교)').toBeLessThan(totalCount);
 
   // 키워드 검색 — 모델명 "스타리아"(실측 사전조회: on_sale 3건).
   await page.goto('/search');
@@ -197,4 +217,93 @@ test('C7 buyer가 /admin에 접근하면 차단된다', async ({ page }) => {
   // (admin)/layout.tsx의 requireRole(ADMIN) — 비관리자는 홈(/)으로 리다이렉트.
   await page.waitForURL((url) => url.pathname === '/');
   expect(new URL(page.url()).pathname, 'buyer의 /admin 접근은 requireRole(ADMIN)이 홈으로 보내야 함').toBe('/');
+});
+
+// ── C8 [desktop] role='buyer' 계정으로 /sell 접근 (spec-14-3, FR52) ───────
+// 소유권 기반 게이트 회귀 검사 — sell/layout.tsx가 requireRole(SELLER)에서 requireUser()로
+// 바뀐 뒤에도 role='buyer' 계정이 홈으로 튕기지 않고 매물 등록 화면에 도달하는지 확인한다.
+// 읽기 전용(폼 제출 없음) — 이 스펙 파일의 절대 규칙을 지킨다.
+test('C8 role=buyer 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
+  // 전제를 주석이 아니라 DB로 고정한다(C4가 sold id를 psql로 실측하는 것과 같은 관례).
+  // 이게 없으면 시드·가입 트리거가 바뀌었을 때 이 테스트는 "로그인 사용자가 /sell에 간다"로
+  // 조용히 약해지면서도 계속 초록이라, 정작 검사해야 할 FR52를 안 보게 된다.
+  // 계정은 SEED_USER 상수에서 읽는다 — 리터럴로 적으면 상수를 다른 계정으로 바꿨을 때
+  // "role을 검사한 계정"과 "실제로 로그인한 계정"이 갈라진 채로 초록이 된다.
+  const buyerRole = runPsql(
+    `select p.role from profiles p join auth.users u on u.id = p.id where u.email='${SEED_USER.email}'`,
+  ).trim();
+  expect(buyerRole, "C8은 role='buyer' 계정일 때만 FR52를 검사한다").toBe('buyer');
+
+  await login(page); // SEED_USER = buyer@test.com
+
+  await page.goto('/sell');
+  // 먼저 화면이 뜨는 것을 기다린다 — 리다이렉트가 있었다면 이 heading은 나오지 않는다.
+  // (goto 직후 pathname만 읽으면 아직 리다이렉트가 끝나지 않은 상태를 통과로 볼 수 있다.)
+  await expect(
+    page.getByRole('heading', { name: '매물 등록' }),
+    '/sell이 매물 등록 폼을 렌더해야 함(FR52)',
+  ).toBeVisible();
+  // 홈으로 튕기지 않아야 한다(구 동작이었다면 requireRole(SELLER)이 '/'로 리다이렉트했을 것).
+  expect(
+    new URL(page.url()).pathname,
+    'role=buyer도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
+  ).toBe('/sell');
+});
+
+// ── C9 [desktop] **새로 가입한** 계정으로 /sell 접근 (spec-14-2 + 14-3, FR52) ──
+// 왜 C8과 따로 필요한가(DW-691): 에픽 14의 최종 인수 조건은 "기존 buyer · 기존 seller ·
+// **신규 가입** 세 계정이 전부 /sell에 간다"인데, 앞의 둘만 자동 검사가 있었다.
+// 신규 축에 대해 14.2가 만든 것은 **반쪽 두 개**다 — 단위테스트는 "가입 화면이 role metadata를
+// 안 보낸다"까지, 실DB 통합테스트는 "트리거가 role 없으면 기본값을 넣는다"까지만 본다.
+// **그 둘을 이어붙인 "그래서 그 계정이 /sell에 간다"는 아무도 안 봤다.** 두 반쪽이 각각 초록인
+// 채로 합이 깨질 수 있다 — 판매 게이트가 다시 역할을 보게 바뀌면 둘 다 초록인데 신규 가입자만
+// 조용히 막힌다. 그게 정확히 14.2가 처음에 CRITICAL 에스컬레이션으로 멈춰 세웠던 결함이다.
+// 읽기 전용(매물 폼 제출 없음) — 이 스펙 파일의 절대 규칙을 지킨다. 계정 생성은 이 테스트가
+// 만든 것이므로 끝에서 직접 지운다(write-flows의 원복 증명 관례).
+test('C9 새로 가입한 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
+  // 실행마다 고유해야 재실행이 "이미 존재하는 이메일"로 실패하지 않는다.
+  const email = `e2e-c9-${Date.now()}@test.local`;
+  const password = 'seller123';
+
+  try {
+    await page.goto('/signup');
+    // 역할 선택이 **없어야** 한다(FR52 — 14.2가 제거). 있으면 이 테스트의 전제가 무너진다.
+    await expect(
+      page.getByLabel('역할'),
+      '가입 화면에 역할 선택이 남아 있으면 안 됨(14.2가 제거)',
+    ).toHaveCount(0);
+
+    await page.getByLabel('이메일').fill(email);
+    await page.getByLabel('비밀번호').fill(password);
+    await page.getByRole('button', { name: '가입하기' }).click();
+    // 가입 성공 = 로그인 상태로 홈 이동.
+    await page.waitForURL((url) => url.pathname === '/');
+
+    // 전제를 DB로 고정한다(C8과 같은 관례). 리터럴 'user'로 적지 않는다 — 기본값을 다른 값으로
+    // 바꾸면 이 테스트가 "기본값이 무엇인지"를 다투게 되는데, 여기서 지켜야 할 것은 그게 아니라
+    // **"판매자 역할이 아닌 계정도 /sell에 간다"**이다. 그래서 buyer/seller가 아님만 단언한다.
+    const newRole = runPsql(
+      `select p.role from profiles p join auth.users u on u.id = p.id where u.email='${email}'`,
+    ).trim();
+    expect(newRole, '신규 가입 계정에 role이 배정돼야 함(트리거 기본값)').not.toBe('');
+    expect(
+      ['buyer', 'seller'].includes(newRole),
+      `C9는 역할선택 없이 가입한 계정을 검사한다 — 받은 role='${newRole}'이 구 역할값이면 전제가 깨진 것`,
+    ).toBe(false);
+
+    await page.goto('/sell');
+    await expect(
+      page.getByRole('heading', { name: '매물 등록' }),
+      '신규 가입 계정도 /sell에서 매물 등록 폼을 봐야 함(에픽 14 최종 인수 조건)',
+    ).toBeVisible();
+    expect(
+      new URL(page.url()).pathname,
+      '신규 가입 계정도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
+    ).toBe('/sell');
+  } finally {
+    // 이 테스트가 만든 계정만 지운다. profiles는 auth.users FK cascade로 함께 사라진다.
+    runPsql(`delete from auth.users where email='${email}'`);
+    const leftover = runPsql(`select count(*) from auth.users where email='${email}'`).trim();
+    expect(leftover, 'C9가 만든 검증 계정이 남으면 안 됨(원복 증명)').toBe('0');
+  }
 });

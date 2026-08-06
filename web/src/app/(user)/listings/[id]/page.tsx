@@ -147,7 +147,7 @@ export default async function ListingDetailPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col items-center gap-4 p-6">
+        <main className="mx-auto flex w-full max-w-2xl flex-col items-center gap-4 p-6">
           {/* 상태 화면에도 h1을 남긴다 — 프리미티브(ErrorState·EmptyState)는 제목을 <p>로만 그리므로
               이게 없으면 이 화면엔 heading이 0개가 되어 문서 개요·heading 탐색이 끊긴다.
               관리자 매물 상세의 같은 분기도 <h1>매물 상세</h1>를 유지한다(리포 일관 패턴). */}
@@ -172,7 +172,7 @@ export default async function ListingDetailPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col items-center gap-2 p-6">
+        <main className="mx-auto flex w-full max-w-2xl flex-col items-center gap-2 p-6">
           {/* 위 에러 분기와 같은 이유로 h1을 남긴다(heading 0개 방지). */}
           <h1 className="text-section font-bold text-ink-primary">매물 상세</h1>
           <EmptyState

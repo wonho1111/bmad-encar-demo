@@ -146,6 +146,33 @@ def test_system_prompt_defines_both_sides_of_the_hybrid_boundary():
     )
 
 
+def test_system_prompt_treats_superlatives_as_structural_condition():
+    """최상급·정렬 표현이 구조조건 규칙에 박혀 있어야 한다(DW-611).
+
+    실측(2026-08-02 재캡처): "제일 싼 차 뭐야?"류가 다른 구체 조건 없이는 CLARIFY로
+    샜다 — 라우터가 최상급을 조건으로 세지 않았기 때문이다. 이 문자열들이 사라지면
+    같은 회귀가 재발한다.
+    """
+    prompt = rn._SYSTEM_PROMPT
+    assert "최상급" in prompt
+    assert "제일 싼 차 뭐야?" in prompt
+    assert "가장 비싼" in prompt
+
+
+def test_system_prompt_routes_replacement_requests_by_condition_presence():
+    """교체요청은 별도 갈래가 아니라 SQL/HYBRID 조건 유무로 갈린다(DW-612·DW-617 #1).
+
+    대조 예시 두 쌍이 프롬프트에 있어야 한다 — 명시 차종만 있는 교체요청은 SQL,
+    느낌이 섞이면 HYBRID(13.2 4분기 계약이 상위)라는 사실을 프롬프트가 명시해야
+    "교체 요청은 무조건 SQL"로 LLM이 오판해 13.2 계약(구조+의미=HYBRID)을 어기지 않는다.
+    """
+    prompt = rn._SYSTEM_PROMPT
+    assert "교체요청" in prompt
+    assert "쏘렌토 같은 SUV로 바꿔줘" in prompt
+    assert "가족이 타기 좋은 SUV로 바꿔줘" in prompt
+    assert "교체요청이라는 이유만으로 CLARIFY로 보내지 않는다" in prompt
+
+
 def test_missing_api_key_fails_loud(monkeypatch):
     # 키 부재 → require()가 RuntimeError(조용한 빈 결과 금지). _llm 실제 호출.
     monkeypatch.setattr(rn.settings, "gemini_api_key", None)

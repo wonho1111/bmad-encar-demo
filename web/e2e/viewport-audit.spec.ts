@@ -55,10 +55,11 @@ function expectedColsFor(testInfo: import('@playwright/test').TestInfo): number 
 // `white-space:nowrap`을 포함)이라 **구조적으로 줄바꿈이 불가능한 요소**다. 즉 이 검사가 실제로
 // 잡는 것은 "줄바꿈이 일어났는지"가 아니라 "그 truncate 계약(더 이상 접히지 않는다는 보장) 자체가
 // 깨졌는지"다 — 아래 `assertTruncatesNotWraps`가 그 계약을 white-space/text-overflow로 직접
-// 확인한다. 반면 D5가 접힘 예시로 든 진짜 후보(신뢰속성 행 — `TrustAttributes` variant="card",
-// `flex flex-wrap`, `web/src/components/listings/TrustAttributes.tsx:122`)는 현재 시드
-// 데이터(95장 전수 실측)에서 **0회 렌더**된다 — 그 행의 접힘 회귀는 이 스펙이 관측하지 못한다
-// (대장에 등재됨, docs/tech-debt.md).
+// 확인한다. 반면 D5가 접힘 예시로 든 진짜 후보(신뢰속성 뱃지 — `TrustAttributes` variant="card",
+// `flex flex-wrap`)는 2026-08-05부터 카드 본문 흐름 밖으로 빠져 사진 위 절대배치로 겹친다
+// (`web/src/components/listings/TrustAttributes.tsx`) — 줄바꿈 자체는 그대로 의도된 동작(3개
+// 뱃지가 좁은 폭에서 2줄로 접혀도 사진 밖으로 넘치지만 않으면 정상)이라 이 스펙의 관측 대상이
+// 아니다(대장에 등재됨, docs/tech-debt.md).
 async function assertFirstCardMetaLineSingleLine(container: import('@playwright/test').Locator) {
   const firstCard = container.locator('[role="listitem"]').first();
   // `.first()`를 세기 전 개수부터 확인한다(코드리뷰 patch, P5) — `.first()`로 먼저 좁히면

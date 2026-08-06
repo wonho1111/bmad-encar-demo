@@ -153,14 +153,25 @@ test.describe('스토리 11-2 상단 내비', () => {
     expect(url.searchParams.get('redirectedFrom')).toBe('/account');
   });
 
-  test('B8 [desktop] buyer가 /sell 접근하면 홈으로', async ({ page }, testInfo) => {
+  // spec-14-3에서 동작이 뒤집혔다: 이 케이스는 원래 "buyer가 /sell 접근하면 홈으로"였다.
+  // /sell 게이트가 requireRole(SELLER) → requireUser()로 바뀌어 role 값과 무관하게 통과하므로
+  // 옛 단언(홈 리다이렉트)은 이제 반드시 실패한다 — 삭제하지 않고 새 동작을 지키도록 뒤집는다.
+  test('B8 [desktop] buyer가 /sell 접근하면 그대로 머문다(소유권 기반 게이트)', async ({
+    page,
+  }, testInfo) => {
     test.skip(testInfo.project.name !== PROJECT_NAMES.desktop, '데스크톱 전용 케이스');
 
     await login(page);
     await page.goto('/sell');
-    await page.waitForURL((url) => url.pathname === '/');
+    // 매물 등록 화면이 실제로 렌더될 때까지 기다린 뒤 경로를 읽는다(리다이렉트가 있었다면 못 뜬다).
+    await expect(
+      page.getByRole('heading', { name: '매물 등록' }),
+      'role=buyer도 /sell의 매물 등록 화면에 도달해야 함(FR52)',
+    ).toBeVisible();
 
-    expect(new URL(page.url()).pathname).toBe('/');
+    expect(new URL(page.url()).pathname, 'buyer의 /sell 접근은 더 이상 홈으로 튕기지 않음').toBe(
+      '/sell',
+    );
   });
 });
 

@@ -184,13 +184,17 @@ def test_system_prompt_instructs_accident_free_bidirectionally():
     assert "accident_free = false" in _SYSTEM_PROMPT
 
 
-def test_system_prompt_instructs_not_filtering_by_all_null_bool_columns():
-    """코드리뷰 P5: is_single_owner·is_non_smoker는 지금 전부 NULL이라, 스키마에 광고돼 있다는
-    이유만으로 필터에 쓰면 "1인소유 차량 찾아줘" 같은 요청이 항상 0건이 된다. 그 두 컬럼으로
-    지금 필터하지 말라는 지시가 프롬프트에 있어야 한다."""
+def test_system_prompt_allows_filtering_by_trust_attribute_bool_columns():
+    """13-11 A-4(사용자 명시 승인) — 코드리뷰 P5가 넣은 "is_single_owner·is_non_smoker는
+    전부 NULL이니 필터로 쓰지 마라"는 지시는 13-10이 그 전제(1인소유 50건·비흡연 49건
+    실채움)를 깼으므로 폐기했다. 이제 프롬프트는 그 반대 — 사용자가 요구하면 두 컬럼을
+    정상 필터 조건으로 쓰라고 지시해야 한다. 옛 금지 문구가 되살아나면(회귀) 이 테스트가
+    잡는다."""
     from app.graph.sql_rag_node import _SYSTEM_PROMPT
 
-    assert "필터 조건으로 쓰지 마라" in _SYSTEM_PROMPT
+    assert "필터 조건으로 쓰지 마라" not in _SYSTEM_PROMPT
+    assert "is_single_owner = true" in _SYSTEM_PROMPT
+    assert "is_non_smoker = true" in _SYSTEM_PROMPT
 
 
 # --- Story 13.3: _DOMAIN_RULES 추출(경로 A·하이브리드 공유) 리팩터가 순서를 보존하는지 -----

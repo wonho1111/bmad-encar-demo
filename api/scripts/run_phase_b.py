@@ -20,7 +20,7 @@
   누락·중복 id·`--out` 상위 디렉터리 없음)는 **라이브 호출 전에** fail-fast로 즉시 raise한다
   (쿼터 낭비 방지 — 데이터가 깨졌으면 아예 시작하지 않는다). 반면 실행 중 발생하는 라이브
   실패(429·네트워크 등, run_search 호출 자체의 실패)는 item별로 잡아 그 item 결과에
-  `{"error": ...}`로 기록하고 다음 item으로 계속 진행한다 — 44개 전량 실행 중 하나가 죽어도
+  `{"error": ...}`로 기록하고 다음 item으로 계속 진행한다 — 47개 전량 실행 중 하나가 죽어도
   이미 확보한 앞선 결과가 통째로 날아가지 않는다. 매 item 처리 직후 `--out`에 지금까지의
   누적 결과를 원자적으로(임시파일 → replace) flush한다(중간에 프로세스가 죽어도 그 시점까지는
   파일에 남는다 — 직접 write_text는 truncate-then-write라 이 보장이 깨진다).
@@ -28,12 +28,22 @@
   `run_phase_b.py && score_ab.py ...`처럼 셸에서 체인해도 게이트 차단이나 부분 실패가
   조용히 삼켜지지 않는다. `--out`은 필수다(기본값이 커밋된 baseline 산출물 자체였다).
 
-실행 — 전량(44개, G2 baseline 정본. 2026-07-30 실행됨, DW-554 종료):
+실행 — 전량(47개. 큐리셋 2026-08-02 재설계(DW-609) 기준):
   api/ 에서 RUN_LIVE_SMOKE=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres \
-    .venv/bin/python scripts/run_phase_b.py --out docs/g2-baseline.json
+    .venv/bin/python scripts/run_phase_b.py --out docs/g2-exit-gate-YYYY-MM-DD.json
 
 실행 — 일부만(디버깅·재캡처용):
-  ... --subset A1,B1,C1 --out docs/g2-baseline-partial.json
+  ... --subset S1,H1,CL1 --out docs/g2-exit-gate-YYYY-MM-DD-partial.json
+
+⚠️ `--out`을 `scripts/baseline_guard.py`의 `PROTECTED_BASELINES` 목록(커밋된 G2 raw 캡처·
+  채점 리포트)으로 주지 말 것 — 그 목록은 G2 게이트가 대조 대상으로 읽는 커밋된 비교 근거다.
+  덮어쓰면 회귀 판정의 기준점이 사라지고, 그게 바로 위에서 `--out`을 필수로 만든 이유다. 이
+  규칙은 산문이 아니라 실행되는 검사다 — `main()`의 argparse와 `capture()` 진입부 양쪽에서
+  거부한다(CLAUDE.md B9). 목록을 score_ab.py와 공유하는 이유·경위는 DW-635 참조.
+  기준선을 의도적으로 다시 뜨는 것(re-baselining)은 별도 결정으로 다룬다.
+  (✎ 13.8 4차 리뷰 정정: 여기 "되돌리려면 유료 라이브 재캡처밖에 없다"고 적혀 있었으나 두
+   파일 모두 git 추적 중이라 `git restore`로 복구된다. 위험한 건 복구 불가가 아니라 파괴가
+   조용히 지나가는 것이다.)
 """
 
 from __future__ import annotations
@@ -47,6 +57,10 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(API_ROOT))
+
+# G2 게이트가 비교 대상으로 읽는 커밋된 기준선 — --out으로 지목하면 거부한다(main() 참조).
+# 목록은 score_ab.py와 공유한다(DW-635) — api/scripts/baseline_guard.py가 단일출처.
+from scripts.baseline_guard import is_protected  # noqa: E402
 
 
 def _card_id(card) -> str:
@@ -183,6 +197,15 @@ def capture(
     for item in items:
         _validate_item(item)  # 라이브 호출 0회 상태에서 전량 사전 검증(쿼터 낭비 방지)
     if out_path is not None:
+        # 기준선 보호는 main()의 argparse에도 있지만(아래), 파일을 실제로 비우는 것은 여기
+        # _flush()다 — capture()는 공개 함수라 테스트·스크립트가 main()을 거치지 않고 직접
+        # 부른다(13.8 4차 리뷰 실측: 직접 호출로 47항목 기준선이 0항목이 됐다). 검사는
+        # 파괴가 일어나는 층에 둔다(CLAUDE.md B9).
+        if is_protected(out_path):
+            raise ValueError(
+                f"out_path가 커밋된 G2 비교 기준선({out_path})을 가리킵니다 — "
+                "덮어쓰면 회귀 판정의 기준점이 사라집니다."
+            )
         out_parent = Path(out_path).parent
         if str(out_parent) not in ("", ".") and not out_parent.exists():
             raise ValueError(f"--out 상위 디렉터리가 존재하지 않습니다: {out_parent}")
@@ -240,8 +263,8 @@ def main() -> None:
     ap.add_argument("--queryset", default="docs/ai-ab-test-queryset.json")
     ap.add_argument(
         "--subset", default=None,
-        help="쉼표구분 item id 부분집합(예: A1,B1,C1). 생략하면 큐리셋 전량 — "
-             "44개 전량 실행은 Gemini 무료 티어 쿼터를 태울 수 있으니 신중히 사용할 것.",
+        help="쉼표구분 item id 부분집합(예: S1,H1,CL1). 생략하면 --queryset 전량 — "
+             "전량 실행은 실제 유료 API 호출을 발생시키니 신중히 사용할 것.",
     )
     # --out은 필수다(review pass 4) — 기본값이 커밋된 baseline 산출물
     # (docs/g2-baseline-partial.json) 자체였어서, --out을 깜빡하고 전량 실행하면 그 기준
@@ -250,6 +273,23 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="raw 결과를 기록할 경로(필수)")
     ap.add_argument("--model", default=None, help="raw 결과에 기록할 모델명(생략 시 gemini_generation_model 설정값)")
     args = ap.parse_args()
+
+    # 커밋된 기준선은 --out으로 지목할 수 없다(13.8 3차 리뷰 patch). 위 독스트링이 이미 같은
+    # 규칙을 ⚠️로 적었지만 주석은 실행되지 않는다(CLAUDE.md B9) — 실제로 재현해 보면
+    # capture()가 루프 진입 **전에** 첫 _flush를 하므로 라이브 호출 0회로 죽는 실행도
+    # 대상 파일을 이미 비운다(실측: 47항목 → 1항목). 의도적 re-baselining은 이 스크립트가
+    # 아니라 별도 결정으로 다룬다.
+    # ✎ 13.8 4차 리뷰 정정 — 이 자리에 "복구 수단은 유료 47문항 재캡처뿐"이라 적혀 있었으나
+    #   사실이 아니다. 보호 대상 2개 파일은 모두 git 추적 중이고, 3차 리뷰가 실제로 파괴했을
+    #   때도 `git restore`로 되돌렸다. 진짜 위험은 "복구 불가"가 아니라 **파괴가 exit 0으로
+    #   조용히 지나가 아무도 복구를 시도하지 않는 것**이다. 같은 검사가 capture() 진입부에도
+    #   있다 — main()을 거치지 않는 직접 호출이 실제 파괴 경로이기 때문이다(B9).
+    if is_protected(args.out):
+        ap.error(
+            f"--out이 커밋된 G2 비교 기준선({args.out})을 가리킵니다 — 덮어쓰면 회귀 판정의 "
+            "기준점이 사라집니다. 날짜형 캡처 경로(예: docs/g2-exit-gate-YYYY-MM-DD.json — "
+            "이 리포가 실제로 쓰는 이름)를 쓰세요."
+        )
 
     subset = None
     if args.subset is not None:

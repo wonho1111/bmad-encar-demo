@@ -93,7 +93,7 @@ export default async function WishlistPage() {
   return (
     <>
       <AppHeader roleLabel={roleLabel ?? undefined} email={user.email} currentPath="/wishlist" />
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
         <h1 className="text-2xl font-semibold">찜한 매물</h1>
 
         {'error' in result ? (

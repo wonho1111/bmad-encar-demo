@@ -411,6 +411,8 @@ location: `web/src/lib/api/aiSearch.ts:60-62`
 severity: medium
 reason: 드문 경로(이미 폐기된 토큰 보유)에서만 발생하고, 서버측 401은 계약상 의도된 동작이라 방어는 클라이언트 몫으로 남겨뒀다.
 trigger: 드문 경로(폐기된 토큰 보유).
+✎ 2026-08-02 사실 정정(사용자 지적으로 재확인) — **이 항목 본문의 "`/ai`는 공개 페이지"라는 전제는 지금 사실이 아니다.** `web/src/proxy.ts:30`의 `PROTECTED_PREFIXES`에 `/ai`가 들어 있어 비로그인은 페이지에 **도달조차 못 하고** `/login`으로 리다이렉트된다(같은 파일 20~21행이 이유를 적어둔다: "검색 1회 = Gemini 호출 3회 내외 = 실제 과금이고, 로그인이 호출자를 식별하는 유일한 수단"). API도 `api/app/routers/ai.py:42`의 `Depends(get_current_user)`로 JWT 필수다. 따라서 본문이 묘사한 "같은 사람이 시크릿창에선 멀쩡히 쓴다"는 역설은 **더 이상 재현되지 않는다** — 이 항목이 등재된 8.5 시점에는 공개였고 이후 과금 울타리로 보호된 것으로 보인다.
+✎ 2026-08-02 사용자 결정 — 선택지 [1](세션 만료 안내 + 로그인 링크)로 확정. **다만 착수 시 재현부터 한다**: 위 정정대로 `proxy.ts`가 이미 1차로 막으므로, "폐기된 토큰을 들고 `/ai`에 도달하는" 경로가 아직 남아 있는지(= proxy의 사용자 판정이 서버에 묻는지 캐시를 믿는지)를 먼저 실측하고, 재현이 안 되면 안내 문구를 새로 만들 게 아니라 이 항목을 닫는다. 재현되지도 않는 증상에 UI를 붙이지 않는다.
 status: open
 
 - **위치:** `web/src/lib/api/aiSearch.ts:60-62`
@@ -1661,6 +1663,14 @@ severity: medium
 reason: Epic 10 요구사항 문서(epic-10-context.md)에 신뢰속성 입력 UI가 없고, 표시(10.2) 스토리가 쓰기 폼까지 만드는 것은 범위 확장이라 시드 데이터로만 값을 채우고 등록 폼 UI는 만들지 않기로 판정했다.
 status: open
 
+✎ 2026-08-02 사용자 결정 — 선택지 [2](web 등록·수정 폼에 입력 UI 추가)로 확정한다. 근거는 계획 문서다: `research-data-trust-attributes.md`가 "모든 신뢰속성을 **자기신고**로 통일 처리하는 것이 가장 정직한 모델"이라 정했고, 서류 첨부(DW-538)는 같은 날 **보류**로 확정돼 "서류에서 추출" 경로가 닫혔다 — 남는 공급 경로는 판매자 입력뿐이다.
+✎ 2026-08-02 사용자 지시로 **두 컬럼 통합 설계를 확정**한다("둘을 합치거나 예전 것을 없애라"). **컬럼 드롭은 하지 않는다** — `accident_free` 참조가 코드 30개 파일에 퍼져 있고(web 상세·카드·등록폼, Flutter 앱 모델·폼, api의 `sql_guard` 허용컬럼 화이트리스트·Text-to-SQL 프롬프트·채점 하네스, 마이그레이션 0011/0020의 SELECT 목록, 시드 3종, 테스트 다수), 드롭은 이 전부를 동시에 고쳐야 하는 데다 CLAUDE.md B3("DB는 더하기만 — 기존 걸 지우거나 바꾸지 않는다")과 `0017` 주석의 명시적 약속에 정면으로 반한다. 대신 **사용자에게 보이는 층과 쓰기 층에서 실제로 하나가 되게** 합친다:
+  1. **입력 하나로** — 등록·수정 폼에서 '무사고' 체크박스를 없애고 `accident_status` 선택(무사고/단순교환/사고) **하나만** 둔다. 판매자가 사고 정보를 두 번 입력하는 자리를 없앤다.
+  2. **`accident_free`는 파생값으로 강등** — 사람이 입력하지 않고 `accident_status`에서 계산한다(`무사고`→true, `단순교환`·`사고`→false). 기존 소비처 30곳은 계속 이 컬럼을 읽으므로 안 깨진다.
+  3. **강제는 DB에서** — 앱 코드가 아니라 **트리거**로 `accident_status`가 채워질 때 `accident_free`를 자동 동기화한다(B9: 앱 코드로 막으면 화면 하나 더 만들 때 까먹지만 데이터 계층에 박으면 못 어긴다). 기존 100건(`accident_status` NULL)은 건드리지 않는다(B3 additive — backfill 없음).
+  4. **표시도 한 곳으로** — 상세에서 사고 정보는 **신뢰 뱃지 한 자리에만** 렌더하고 차량정보의 '사고이력' 행은 제거한다. `accident_status`가 없는 레거시 매물은 그 뱃지 값을 `accident_free`에서 파생해 보여준다(정보가 사라지지 않게).
+  → 이 설계가 서면 DW-412의 자기모순(초록 '무사고' 뱃지 아래 '사고이력 있음' 행)은 **표시 자리가 하나뿐이라 구조적으로 불가능**해지고, 값 어긋남은 트리거가 막는다. DW-412는 이 스토리에서 함께 닫는다.
+⚠️ **이 폼을 만드는 순간 DW-412가 살아난다.** 지금 상세 화면은 `accident_status`(신뢰 뱃지)와 `accident_free`(차량정보 '사고이력' 행)를 **교차검증 없이 나란히** 렌더하는데, 값이 어긋날 수 있는 쓰기 경로가 없어서 오늘은 사고가 안 난다(DW-412가 "현재는 발생하지 않는다"고 실측 기록). 입력 폼이 들어오면 판매자가 `accident_free=무사고`인데 `accident_status='사고'`를 고를 수 있게 되고, **초록 '무사고' 뱃지 바로 아래 '사고이력 있음' 행**이 뜨는 자기모순 화면이 실제로 가능해진다(CM-C 위반). `0017`의 CHECK는 이 모순을 안 잡는다(마이그레이션 주석이 그렇게 적어둠). 따라서 이 항목의 스토리는 **DW-412를 같은 범위에서 함께 해소**해야 한다 — 두 컬럼을 어떻게 할지(한쪽을 폼에서 빼기 / 파생값으로 잠그기 / 화면에서 한 곳만 노출)를 정하고 DB나 코드 한 곳에서 못 어기게 만든다.
 - **위치:** Epic 10 전 스토리 범위 — 판매자가 `accident_status`·`is_single_owner`·`is_non_smoker`를 입력하는 폼이 어디에도 없다(10.2=표시, 10.3/10.4=옵션, 10.5=찜, 10.6=판매자 정보 — 등록 폼을 손대는 스토리가 없다).
 - **내용:** Story 10.1이 컬럼(`supabase/migrations/0017_listings_trust_attributes.sql`)과 값이 흐르는 경로(SELECT_COLUMNS·ALLOWED_COLUMNS·web/app select·프롬프트)를 전부 열었지만, 값을 **넣을** 사람이 없다. 기존 100건은 전부 NULL이고, 신규 등록도 이 3필드를 받지 않는다.
 - **터지면:** 10.2가 신뢰 뱃지를 렌더해도 실제로 뱃지가 뜨는 매물이 0건이라 화면에서 검증할 게 없다(수동 시드 없이는 눈으로 못 본다). 10.7(통합 검증)도 같은 벽에 부딪힌다.
@@ -2081,6 +2091,9 @@ reason: 편집을 구현하려면 `profiles` UPDATE RLS(`profiles_update_self` �
 trigger: 향후 "계정 관리" 스토리가 생길 때 — 그 스토리의 인수조건에 (a) 닉네임 검증·저장/취소·토스트, (b) `profiles_update_self` RLS + GRANT 마이그레이션을 명시해서 심는다(B5).
 status: open
 
+✎ 2026-08-02 사용자 결정 — 선택지 [1](프로필 자기수정 신설)로 확정. "UX 문서에 명세가 있으면 문서대로 만드는 것이 맞다"는 판단이며, **만들기 전에 목업부터** 만든다.
+✎ 2026-08-02 경위 정정(사용자 지적) — 이 항목을 "UX대로 하려다 DB 권한 문제로 읽기전용으로 후퇴했다"로 읽으면 틀리다. 실제 순서는 ① **편집 기능을 만드는 스토리가 애초에 백로그에 없었다**(EXPERIENCE.md의 명세가 에픽·스토리로 변환되지 않은 누락) → ② Story 11.2가 프로필▾ 드롭다운에 '내 정보' 링크를 넣으면서 목적지가 없으면 404가 되므로 **자기 범위 안에서 읽기 전용 페이지만** 급히 만들었고, 그 스토리가 스스로 "신규 DB 마이그레이션 없음"을 Never로 걸어둬 편집을 넣을 수 없었다. 즉 DB 권한은 **막힌 원인이 아니라 11.2가 스스로 그은 경계**이고, 진짜 원인은 스토리 누락이다.
+✎ 2026-08-02 범위 정정(사용자 지적) — UX 결정로그의 "B안 마이페이지 탈락"은 **개인 메뉴의 진입 위치**(상단 드롭다운 vs 마이페이지 허브)에 대한 결정이지 "'내 정보' 화면을 만들지 않는다"는 결정이 아니다. 드롭다운이든 허브든 '내 정보' 화면 자체는 별개로 존재해야 한다 — 앞선 보고가 이 둘을 뭉뚱그려 전달했다. (결정로그가 "B안 /me 화면은 Flutter 하단 탭에서 재활용 가능"이라 적은 것도 같은 이유다: 웹은 PRD의 "마이페이지 지양"을 따르고, 앱은 하단 탭 구조라 /me 탭이 자연스럽다는 뜻이지 웹에 화면이 없어도 된다는 뜻이 아니다.)
 - **위치:** `web/src/app/(user)/account/page.tsx`(신규, 읽기전용) · `_bmad-output/planning-artifacts/ux-designs/ux-bmad-encar-demo-2026-07-12/EXPERIENCE.md`(Component Patterns, "내 정보 수정(프로필▾ → 내 정보)": 닉네임 변경 필수·공백/길이 검증·저장/취소·성공 토스트).
 - **내용:** EXPERIENCE.md는 "내 정보" 화면의 편집 동작을 상세히 명세했지만, 이를 구현하는 스토리가 백로그 어디에도 없다(Epic 6~14 전수 확인, spec-11-2 Design Notes). 이번 스토리는 프로필▾ 드롭다운의 "내 정보" 항목이 가리킬 목적지가 없으면 죽은 링크(클릭 시 404)가 되는 문제만 해소하려고, 이메일·역할·이름을 보여주기만 하는 최소 페이지를 만들었다. 편집 폼·저장·검증·토스트는 전부 없다.
 - **왜 지금 안 고치나:** 편집을 구현하려면 `profiles` UPDATE RLS(`profiles_update_self` 신설) + 컬럼 단위 GRANT 하드닝이 필요하다(Story 11.1의 view_count 쓰기 통로 하드닝과 동형의 별도 마이그레이션 작업). 이 스토리의 intent-contract가 "신규 DB 마이그레이션 없음 — 읽기 전용 표시만 한다"를 Never로 명시했다.
@@ -3471,7 +3484,14 @@ location: `api/scripts/run_phase_b.py`(`main()`, `model_name = args.model or set
 severity: low
 reason: 이 스토리는 baseline 단독 캡처만 다루므로 `--model` 생략이 지금은 안전하다(항상 현재 baseline 모델로 정확히 라벨링됨). 하지만 이 스크립트의 docstring이 이미 명시하듯 Story 13.8이 후보 모델 캡처에 이 스크립트를 재사용할 가능성이 있는데, 그때 `--model`을 깜빡하면 후보 결과가 baseline 모델명으로 조용히 오라벨링돼 A/B 비교 전체가 오염될 수 있다.
 trigger: Story 13.8이 후보 모델 캡처를 이 스크립트로 실행하기 직전 — 그 시점에 `--model`을 필수 인자로 바꿀지 검토한다.
-status: open
+status: done 2026-08-02
+resolution: **13.8 범위 밖으로 종결(모델 비교 아님)** — `spec-13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b.md`가
+  정정한 전제다. 이 항목은 "Story 13.8 = 후보 모델 A/B 채택 판단"을 전제로 defer됐으나,
+  `epics-increment-2026-07-12.md`의 실제 13.8 AC(967~1130줄)엔 모델 비교가 없다 — SM-F/SM-G/G2/CM-B
+  네 게이트(단일 코드 상태 post-13.7의 회귀 확인)뿐이다. 실제로 13.8은 `run_phase_b.py`를
+  `--model` 인자 없이(=현재 baseline 모델 그대로 라벨링) 오늘(2026-08-02) 47문항 재캡처에만
+  썼다 — 후보 모델 캡처는 이번에도 하지 않았다. 모델 후보 비교가 실제로 생기면 그때 이 항목을
+  다시 열어 `--model` 필수화를 검토한다.
 
 ### DW-557: `status='on_sale'` 강제가 "존재 확인"뿐이어서 `NOT status='on_sale'`로 판매완료 매물이 노출된다 (FR11 우회, 실측)
 
@@ -3557,7 +3577,22 @@ location: `api/scripts/score_ab.py`(`lexicographic_winner()` 1순위 `result_mea
 severity: medium
 reason: 사전식 승부는 `routing_correct`를 **절대 개수**로, `result_mean`을 **서로 다른 분모의 평균**으로 비교한다. 실측: 3/44 부분 baseline(라우팅 3/3 완벽)과 44/44 후보(라우팅 44/44 완벽)를 붙이면 "라우팅 정답 3 vs 44"로 후보가 이긴다 — 두 모델 다 완벽한데 승부가 커버리지 차이만으로 갈린다. `regression` 게이트도 같은 축에서 반대 방향으로 틀릴 수 있다. 리뷰 pass 4가 `coverage`/`is_partial`을 요약에 기록했지만 이 비교 함수는 그 값을 읽지 않는다. 정확히 DW-554(44건 전량 캡처 후 13.8이 후보와 비교)가 만드는 구도다.
 trigger: Story 13.8 스펙 작성 시(또는 DW-554 전량 캡처 직후 첫 A/B 비교 직전) — 두 요약의 채점된 id 집합이 다르면 비교를 거부할지, 교집합으로 재채점할지, 비율로 비교할지를 그 스펙에서 정하고 `lexicographic_winner()`에 반영한다.
-status: open
+status: done 2026-08-02
+resolution: **13.8 범위 밖으로 종결(모델 비교 아님, 위 DW-556과 동일 근거)**. `lexicographic_winner()`는
+  후보 모델 채택 판단(2파일 모드)에서만 쓰이는데, 13.8이 실제로 실행한 `score_ab.py` 호출은
+  baseline(`docs/g2-baseline.json`)과 오늘 재캡처(`docs/g2-exit-gate-2026-08-02.json`)를 함께
+  넣긴 했지만 둘 다 **같은 코드 상태·같은 큐리셋 47/47 완전 커버리지**(`is_partial:false` 양쪽)라
+  이 항목이 우려하는 "커버리지가 다른 두 요약의 절대 개수 비교" 왜곡이 애초에 발생할 조건이
+  아니었다(실측: 두 요약이 `routing_correct=54/57`·`result_mean=0.894`로 완전 동일 — 재현성
+  확인이지 커버리지가 다른 후보 비교가 아니다). 판정도 `lexicographic_winner()`의 랭킹이 아니라
+  `regression_block`(단일 불리언, `candidate.result_mean < baseline.result_mean` → False)만 게이트로
+  썼다. 모델 후보 비교가 실제로 생기면(커버리지가 다른 두 캡처를 비교하게 되면) 그때 다시 연다.
+  ✎ 리뷰(verification-gap 렌즈)가 "요약 수치가 같다"만으로는 파일을 복사한 것과 구분 안 된다는
+  의심을 실제로 검증했다 — `docs/g2-baseline.json`과 `docs/g2-exit-gate-2026-08-02.json`을
+  `latency_ms` 필드만 제외하고 diff한 결과 route·id·answer·clarify 페이로드는 전부 바이트
+  단위로 동일하되 `latency_ms`는 항목마다 다르게 나왔다(진짜 독립된 라이브 재실행이라는
+  증거 — 값을 복사했다면 latency까지 같았을 것이다). 요약 수치의 완전 동일은 파일 재사용이
+  아니라 진짜 재현성으로 확인됐다.
 
 ### DW-565: 유일한 raw 캡처 러너가 구조적으로 N=1·토큰 0이라 사전식 3·4순위(flaky·비용)가 영구 미측정이다
 
@@ -3566,7 +3601,15 @@ location: `api/scripts/run_phase_b.py`(`_run_single`/`_run_multiturn` — 1회 �
 severity: medium
 reason: 리뷰 pass 4가 "미측정 축이 승부를 내지 않게" 두 tier를 건너뛰도록 고친 것 자체는 옳다. 다만 이 레포가 실제로 만들 수 있는 유일한 raw는 이 러너의 출력뿐이고 그건 항상 N=1·토큰 0이므로, 두 tier가 **영원히 실행되지 않는다** — 사전식 승부는 사실상 결과집합·라우팅·지연 3축으로 줄었고, 그중 지연은 로컬 컨테이너 기준이라 모델 선택 신호로 검증된 적이 없다. 즉 "조작된 값이 결정한다"는 문제는 "결정 근거가 없다"로 옮겨갔을 뿐이다.
 trigger: Story 13.8(모델 A/B 채택 판단) 스펙 작성 시 — N>1 반복 실행과 토큰 실측을 러너에 넣을지, 아니면 두 tier를 걷어내고 사전식 기준을 명시적으로 3축으로 줄일지 결정한다.
-status: open
+status: done 2026-08-02
+resolution: **13.8 범위 밖으로 종결(모델 비교 아님, 위 DW-556/564와 동일 근거)**. N>1 반복 실행·토큰
+  실측 확장은 "사전식 3·4순위(flaky·비용)로 후보 모델을 가른다"는 전제에서만 의미가 있는데,
+  13.8은 단일 코드 상태(post-13.7)의 회귀만 확인하므로 flaky·비용 축 자체가 판정에 관여하지
+  않는다 — G2 게이트 정의는 `contamination==0 and deadend==0 and errored_n==0 and scored_n>0` +
+  `result_mean` 비하락뿐이다(Design Notes). 오늘 재캡처도 러너를 그대로(N=1·토큰 0) 썼고
+  `flaky_measured:false`·`tokens_measured:false`로 정직하게 남았다(미측정이지 "흔들림 없음"이
+  아님 — DW-554 resolution과 동일 주의). 모델 후보 비교가 실제로 생기면 그때 N>1·토큰 실측
+  확장을 결정한다.
 
 ### DW-566: 러너 테스트가 `RUN_LIVE_SMOKE=1`을 켠 채 돌아, 쿼터 보호가 모킹 대상 1곳에만 의존한다
 
@@ -3704,7 +3747,9 @@ location: `api/tests/demo_queries.py`(`SEMANTIC_B` 목록) · `api/tests/test_de
 severity: medium
 reason: 13.2의 새 프롬프트는 "명시 조건 + 용도·느낌 조건이 둘 다면 HYBRID(최우선)"인데, ② 목록의 `연비 좋은 전기차 추천`은 전기차(=연료, 명시 조건) + `연비 좋은`(느낌)이라 이 규칙대로 HYBRID로 간다. 실측(라이브 LLM): ② 4개 중 `연비 좋은 전기차 추천`만 **HYBRID**, 나머지 3개는 CLARIFY. ③ 회색지대 3개 중 `너무 비싸지 않은 중형차`도 **HYBRID**. 그런데 `test_sm3_pathB_returns_listings`는 `_patch_route(monkeypatch, "CLARIFY")`로 route를 **강제 주입**하므로, 라우터가 실제로 그 질의를 어디로 보내든 게이트는 초록이다 — 즉 SM3(데모 인수)가 이 질의에 대해 아무것도 보장하지 않는다. DW-573은 같은 파일의 "구어휘·죽은 상수·문서가 정본으로 가리킴"을 다루지만, **② 목록 자체의 소속이 실측과 다르다**는 이 사실은 그 항목에 없다.
 trigger: DW-573을 손대는 같은 작업에서 함께(`api/docs/ai-demo-queries.md`를 신어휘로 옮길 때) — 그때 ②·③ 목록을 실측 분류로 재배치하고, `test_sm3_pathB_returns_listings`가 route를 강제 주입하는 대신 목록별 기대 route를 받도록 바꿀지 정한다. 데모 시연 전이라면 그 전에 한다(데모 당일 이 질의가 문서와 다른 경로를 탄다).
-status: open
+status: open (부분 해소, 2026-08-02)
+✎ 2026-08-02 부분 해소(story 13-8, intent-alignment 리뷰가 발견) — ①②④ 목록을 4분기 어휘로 옮기는 작업(13.8)에서 ②·③의 구체적 질의를 실제로 교체했다: ②에서 `연비 좋은 전기차 추천`(이 항목이 지적한 오분류 질의)을 빼고 `출퇴근하기 편한 차`로, ③ 회색지대 3개도 전부 새 질의로 교체했다 — 이 항목이 근거로 든 구체 질의는 더 이상 파일에 없으므로 그 부분의 실측 증거는 낡았다. 다만 **핵심 결함(route 강제 주입)은 그대로 남는다** — `_patch_route(monkeypatch, route)`는 여전히 라우터를 우회하므로, 새 목록도 실제 분류와 다시 어긋날 수 있고 SM3는 그걸 못 잡는다. 남은 범위를 좁힌다: "②·③ 목록이 실측과 맞는가"는 매번 문서를 고칠 때 수동 확인해야 하고, "SM3가 실제 라우팅을 검증하지 않는다"는 구조적 문제로 남는다.
+trigger(갱신): SM3 판정을 라이브 라우터 결과 기반으로 바꿀지(비용·결정론성 트레이드오프 발생) 결정하는 스토리에서 — 그 전까지는 문서·목록을 고칠 때마다 실측 재분류를 수동으로 병행한다.
 
 ### DW-577: 라이브 스모크 파일이 `route`를 단언하지 않고 HYBRID 질의도 없어, 4갈래 회귀를 재실행 가능한 형태로 잡지 못한다
 
@@ -3802,6 +3847,7 @@ severity: medium
 reason: api는 이번 스토리(13.4)로 `/ai/search` 응답에 `clarify: {question, chips[]} | null`을 실제로 채워 보내기 시작했다. Flutter 앱은 Story 16.5가 이 필드를 렌더할 예정이지만, 웹은 그 필드를 소비할 스토리가 애초에 카탈로그에 없어 계획조차 안 돼 있었다 — 게다가 `aiSearch.ts`의 `SearchResult` 타입에 그 필드가 아예 없어서, 다음에 이 파일을 여는 사람은 서버가 그런 필드를 보낸다는 사실 자체를 알 방법이 없었다(칩 UI 미구현이 아니라 필드의 존재 자체가 안 보이는 문제). 이번 리뷰에서 `SearchResult`에 `clarify?: { question: string; chips: string[] } | null`을 추가해 최소 가시성만 확보했다(파싱·렌더링 로직은 없음, 범위 밖).
 trigger: 다음 스프린트 플래닝이 웹 AI 검색 UI를 다시 열 때, 또는 에픽 13/16을 완전히 닫힌 것으로 판단하기 전 — 그때 웹 쪽 되묻기 칩 렌더링 스토리를 신설하고 이 항목을 그 스토리로 닫는다.
 status: open
+retarget (2026-08-05 회고): **Epic 15(관리자 웹 UI 통일)**. 서버는 `clarify.chips`를 정확히 보내는데 웹이 안 그린다 — 같은 web 워크스트림이라 Epic 15 인수조건 체크박스로 심는다(A4와 동일 처리).
 
 ### DW-588: `score_ab.py`의 `doc_hit` 지표가 CLARIFY 항목에 대해 조용히 항상 false가 된다
 
@@ -3847,6 +3893,7 @@ severity: medium
 reason: 13.4 이전에는 CLARIFY가 `doc_rag_node`로 임시 배선돼 있어서, 앱에서 "패밀리카로 무난한 거" 같은 애매한 질의를 던지면 **실제 매물 카드**가 돌아왔다. 13.4가 CLARIFY를 고정 템플릿 되묻기로 재배선하면서 그 응답은 `listings: []` + `clarify: {question, chips}`가 됐다. 그런데 앱은 `clarify`를 파싱조차 하지 않으므로(repo 전체 `*.dart`에서 `clarify` 검색 결과 0건), 사용자에게는 **질문 한 줄만 뜨고 카드도 칩도 없는 화면**이 된다 — FR46의 상한이 막으려던 바로 그 막다른 느낌이 앱에서 먼저 나타난다. 웹은 이번 스토리 리뷰에서 최소한 값을 실어 나르도록 고쳤지만(DW-587), 앱은 필드 자체가 없다. DW-587은 "앱은 Story 16.5가 맡는다"는 근거로 웹만 다뤘는데, 16.5는 `backlog`라 착수 일정이 없다. 즉 api를 운영에 반영하는 순간부터 16.5가 끝날 때까지 앱 사용자에게 이 상태가 노출된다. 지금은 api가 운영에 반영되지 않아 실피해가 없다(로컬/개발만).
 trigger: **api(`encar-ai-api` 운영)에 13.4를 반영하기 직전** — 그 배포 판단과 같은 자리에서 (a) 앱에 `clarify` 파싱+칩 렌더를 먼저 넣을지, (b) 16.5를 backlog에서 끌어올릴지, (c) 앱이 따라올 때까지 api 운영 반영을 미룰지 중 하나를 고르고 이 항목을 그 결정으로 닫는다. 16.5 착수가 먼저 오면 거기서 닫아도 된다.
 status: open
+retarget (2026-08-05 회고): 고칠 자리는 **`16-5-4분기-ai-응답-되묻기-칩-앱`**(백로그에 실재)이고, 그와 **별도로 배포 차단 조건**을 함께 건다: **에픽 13이 `main`(운영)에 병합되기 전에 16-5가 끝나 있거나, 아니면 병합을 미룬다.** 조건만 적고 스토리를 안 가리키면 `#73`이 비판한 "날짜 없는 조건"이 되므로 둘 다 적는다(B8). 2026-08-05 실측으로 **지금은 안 터진다**는 것을 확인했다: 운영 api(`encar-ai-api`)에 `가성비 좋은 차 알려줘`를 직접 호출하니 응답 키가 `['answer','listings']`뿐이고 `clarify` 키가 아예 없다(에픽 13 이전 코드). 앱 Dart 코드에 `clarify` 참조가 0건인 것도 확인 — 즉 '앱이 못 읽는다'는 사실은 맞지만, 운영이 아직 되묻기를 안 보내므로 현재 사용자 피해는 없다. **에픽 13을 운영에 올리는 순간 빈 화면이 된다.**
 
 ### DW-593: `/ai/search` 응답 객체 생성이 try/except **밖**이라, 응답 스키마 검증 오류는 CORS 헤더 없는 500이 된다
 
@@ -3891,6 +3938,7 @@ severity: low
 reason: 13.5는 서버 계약(`narrowed_by` 고정 상수 배선)까지가 범위다. `clarify.chips`가 13.4에서 값만 배선되고 렌더는 DW-587(웹)·Story 16.5(앱)로 미뤄진 것과 동일한 경계를 REJECT에도 그대로 적용했다 — 탭하면 그 조건으로 재검색하는 UI를 만들려면 별도 컴포넌트 작업(웹·앱 둘 다)이 필요하고 이번 스토리 크기를 넘는다. 지금은 실피해가 없다 — REJECT 응답은 여전히 텍스트 안내(Voice 표 문구)만으로 완결되고, `narrowed_by`가 렌더되지 않아도 사용자 경험이 깨지지 않는다(칩이 "없던 채로 정상 동작"하던 이전 상태와 같다).
 trigger: `clarify.chips` 렌더링 스토리(DW-587 웹 / Story 16.5 앱)를 착수할 때 — 같은 컴포넌트(칩 배열 → 탭 가능 버튼 → 재검색)를 REJECT의 `narrowed_by`에도 재사용할 수 있는지 그 자리에서 함께 판단하고 닫는다. 두 필드가 같은 UI 패턴(문자열 배열 → 칩)을 쓰므로 한 번에 처리하면 컴포넌트를 두 번 만들지 않아도 된다.
 status: open
+retarget (2026-08-05 회고): **Epic 15(관리자 웹 UI 통일)**. DW-587·600과 한 덩어리(웹이 wire 필드를 안 그리는 문제).
 
 ### DW-598: SQL/HYBRID 0건 응답에 `narrowed_by`를 확장하는 일반화(실제 추출 SQL 조건 기반)는 범위 밖
 
@@ -3918,6 +3966,7 @@ severity: low
 reason: 정본 AC와 CR4가 쓰는 동사는 "조립"이고, 기대가 사는 표면은 **사용자가 읽는 answer 문장**이다. 실제 구현이 도달한 표면은 **응답 JSON 필드**까지이며, 리포지토리 전체에서 `narrowed_by`와 `answer`를 연결짓는 단언은 0개다(유일한 다중 질의 테스트는 오히려 불변성을 못박는다). 이 격차 중 "칩 UI 렌더"는 DW-597이, "SQL/HYBRID 0건 확장"은 DW-598이 잡고 있으나, **"답변 문장 조립"과 "원 조건(맥락) 복원"** 두 조각은 어느 항목에도 없고 스펙 Design Notes의 산문 근거로만 존재한다. 스펙의 좁은 해석 자체는 FR47의 무상태·결정론 요구와 정합해 이번 스토리에서 뒤집을 사안이 아니다(1·2차 리뷰 모두 동일 판단) — 문제는 **격차가 장부에 없다는 것**이다.
 trigger: Story 13.6(가이드 활용)이 `answer_node`의 응답 조립 로직을 손대는 시점 — 같은 함수를 여는 자리이므로 그때 (a) 고정 상수를 한국어 문장으로 렌더해 answer에 붙일지, (b) 정본 AC/`epic-13-context.md` 문구를 "값 배선까지"로 정정할지 택일하고 닫는다. 어느 쪽이든 `narrowed_by`와 `answer`를 연결짓는 단언이 하나는 생겨야 한다.
 status: open
+retarget (2026-08-05 회고): **Epic 15(관리자 웹 UI 통일)**. DW-587·597과 한 덩어리.
 
 ### DW-601: DW-593이 닫은 CORS-500 보호에 남은 노출면 — `response_model` 재검증은 여전히 `try` 밖에서 돈다
 
@@ -4023,7 +4072,8 @@ reason: 재캡처 47/47에서 라우팅 오답 3건 중 2건이 같은 뿌리다
 ✎ 2026-08-02 원인 실측(추측 정정) — 최초 기록은 "'보여줘'류 동사가 붙으면 SQL로 갈리는 것으로 보인다"고 적었으나 **그 가설은 반증됐다**. `router_node`를 변형 12건에 직접 돌린 결과: `제일 싼 차 뭐야?`·`제일 싼 차 보여줘`·`제일 싼 차 알려줘`·`가장 비싼 차 뭐야?` → 전부 **CLARIFY**(동사 무관), `제일 싼 SUV 보여줘`·`가장 비싼 매물 하나 보여줘` → **SQL**. 즉 갈림은 동사가 아니라 **"최상급 말고 다른 구체 조건이 하나라도 있는가"**다 — 차종(SUV)이 있으면 SQL, 최상급 + 일반명사("차"·"거")뿐이면 CLARIFY. 라우터가 최상급을 조건으로 세지 않기 때문이며, S7이 SQL로 간 것은 "매물 **하나**"의 개수 지정이 조건으로 읽힌 것으로 보인다(이 부분은 미확정 추정).
 ✎ 2026-08-02 함께 드러난 별개 결함 — `contextualize_query("제일 싼 거 하나만 알려줘", <M1의 2턴 맥락>)`이 질의를 **한 글자도 재작성하지 않고 그대로 반환했다**(실측). 즉 REFINE 턴인데 앞선 SUV·3천만원·서울 조건이 독립 질의로 접히지 않았고, 라우터는 조건 없는 문장만 보게 된다 — 이 턴이 CLARIFY로 샌 직접 원인이다. 최상급 규칙을 고쳐도 이쪽을 안 고치면 `M1.t2`의 top-N 채점은 되살아나지 않는다. 같은 스토리에서 함께 다룰 것.
 trigger: **Story 13.9(라우팅 안정화 — 최상급·교체요청·맥락재작성)의 인수조건으로 심었다**(2026-08-02, `epics-increment-2026-07-12.md` Epic 13 · `sprint-status.yaml` backlog). 라우터가 최상급·정렬 표현을 구조조건으로 취급하게 하고 `S6`·`M1.t2`가 SQL로 라우팅되는지 재캡처로 확인하며, 맥락 재작성 결함(아래 ✎)도 같은 스토리에서 함께 다룬다. 착수는 13.8 이후다. 그 전까지 이 두 문항의 오답은 기준선(0.894/54·57)에 포함된 상태이며, 고치면 기준선이 **올라가는** 방향이라 13-8의 회귀 게이트를 막지 않는다.
-status: open
+status: done 2026-08-03
+resolution: Story 13.9가 처리했다. `router_node._SYSTEM_PROMPT`에 "최상급·정렬 표현(\"제일\"·\"가장\" + 싸다·비싸다 등)은 그 자체로 명시적 구조조건"이라는 규칙과 예시("제일 싼 차 뭐야?"→SQL)를 추가했다(`test_system_prompt_treats_superlatives_as_structural_condition`으로 고정). 별도로 `contextualize_node._REFINE_MARKERS`에 "제일"·"가장"을 추가해 M1.t2류 REFINE 턴이 주제전환으로 오판되던 버그(reason의 ✎ 항목)도 함께 닫았다. **실측 확인(2026-08-03, 라이브 Gemini)**: `contextualize_query("제일 싼 거 하나만 알려줘", <SUV·3천만원·서울 맥락>)` → `"3천만원 이하 서울 지역 SUV 중 가장 저렴한 매물 하나만 알려줘"`로 조건이 실제로 접혔고, 그 재작성 질의를 `router_node()`에 통과시키면 **SQL**로 라우팅됐다 — 재현 확인 완료. `api/docs/ai-demo-queries.md` ⑤절 표를 이 실측값으로 갱신했다. **G2 재기준선 실제 실행으로 최종 확인함**: 라우팅 54/57 → **57/57**, 결과집합정확도 0.894 → **0.954**(하락 없이 개선), 가이드 인용 12/13·되묻기 9/9 유지, 오염 0·dead-end 0, `gate_pass:true`(4축 전부 비하락) — `api/docs/g2-baseline.json`을 이 결과로 교체했다.
 
 ### DW-612: 예시를 든 주제전환("아니 쏘렌토 같은 SUV로 바꿔줘")이 CLARIFY로 새서 RESET 오염 게이트가 그 문항에서 무력화된다
 
@@ -4033,11 +4083,872 @@ severity: medium
 reason: `M6`는 "차형 교체(준중형→SUV)는 RESET이며 직전 조건이 남으면 오염"을 잡으라고 만든 회귀 문항이다. 재캡처에서 `M6.t0 "아반떼 같은 준중형 보여줘"` → SQL(정답)인데 `M6.t1 "아니 쏘렌토 같은 SUV로 바꿔줘"` → **CLARIFY**(매물 0건)로 샜다. `score_ab.score_model`의 하드 오염 게이트는 `route in ("SQL","HYBRID")`일 때만 발화하므로(CLARIFY/REJECT에서 같은 차종이 떠도 그건 의미검색의 우연이지 조건 잔존이 아니라는 기존 판단), **이 문항은 지금 오염을 볼 수 없다** — 게이트가 초록인 것이 "오염이 없다"가 아니라 "안 보고 있다"는 뜻인 상태가 M6에 한해 재현됐다(DW-607이 doc_hit에서 겪은 것과 같은 구조). 다행히 같은 부류의 `M3`(중형세단→초보 첫차)는 의도대로 CLARIFY가 정답이라 영향이 없고, `M7`(페이지네이션)·`M8`(금융 거절)은 정상 관측된다.
 ✎ 2026-08-02 원인 실측 — `router_node` 변형 실행 결과 `SUV로 바꿔줘` → **SQL**, `SUV 보여줘` → **SQL**, `아반떼 같은 준중형 보여줘` → **SQL**인데 `쏘렌토 같은 SUV로 바꿔줘` → **CLARIFY**, `아니 쏘렌토 같은 SUV로 바꿔줘` → **CLARIFY**다. 즉 "차명 예시(`X 같은`)"만으로 갈리는 것도, "바꿔줘"만으로 갈리는 것도 아니다(`아반떼 같은 준중형 보여줘`가 SQL이고 `SUV로 바꿔줘`도 SQL이다) — **같은 형태의 질의가 조합에 따라 다르게 분류되는 불안정**이며, 재현 가능한 단일 규칙으로 설명되지 않는다. 프롬프트가 이 형태를 다루는 예시를 갖고 있지 않아 LLM 판단이 표면 표현에 흔들리는 것으로 본다. 또한 `contextualize_query`는 이 턴을 재작성 없이 그대로 반환했다(RESET 턴이므로 조건을 안 넘기는 것 자체는 옳다 — DW-611의 REFINE 사례와 달리 여기선 결함이 아니다). 덧붙여 `SUV`는 명백한 구조조건이므로 되묻기는 측정 문제 이전에 **제품 동작으로도 아쉽다**(사용자가 조건을 줬는데 다시 묻는다).
 trigger: **Story 13.9(라우팅 안정화)의 인수조건으로 심었다**(2026-08-02, DW-611과 같은 스토리) — "아니 …로 바꿔줘"처럼 **명시 차종이 들어 있는 교체 요청**이 SQL로 가도록 규칙·예시를 보강하고, `M6.t1`이 SQL로 라우팅돼 오염 게이트가 실제로 발화 가능한 상태가 되는지 확인한다(발화 가능 = 일부러 오염 데이터를 넣었을 때 red가 되는지까지 본다, B4). 그 전까지 `M6`의 오염 커버리지는 없는 것으로 간주한다.
-status: open
+status: done 2026-08-03
+resolution: Story 13.9가 처리했다. `router_node._SYSTEM_PROMPT`에 교체요청 규칙("~같은 ~로 바꿔줘"류는 명시 조건만 있으면 SQL, 느낌이 섞이면 HYBRID — 13.2 4분기 계약이 상위)과 대조 예시 두 쌍(`"아니 쏘렌토 같은 SUV로 바꿔줘"→SQL`, `"가족이 타기 좋은 SUV로 바꿔줘"→HYBRID`)을 추가했다(`test_system_prompt_routes_replacement_requests_by_condition_presence`로 고정). **실측 확인(2026-08-03, 라이브 Gemini)**: `router_node("아니 쏘렌토 같은 SUV로 바꿔줘")` → **SQL**(재현 전 CLARIFY였던 것과 대비), `router_node("가족이 타기 좋은 SUV로 바꿔줘")` → **HYBRID**(13.2 계약대로 느낌 섞인 교체요청은 HYBRID로 유지됨을 함께 확인). RESET 오염 게이트가 이제 M6.t1에서 실제로 발화 가능한 상태(route=SQL)가 됐고, **일부러 오염 데이터를 주입해 실제로 검증**했다 — M6.t1(SUV 전용 턴) 결과 id 목록에 준중형차 매물 1건을 인위로 추가한 뒤 채점하니 `오염(하드): 1`·`게이트: FAIL`로 실제 red가 됐다(임시 파일로만 실험, 실제 캡처는 원상태 유지). 존재 확인이 아니라 작동 확인까지 마쳤다(B4).
 
 ### DW-610: Follow-up review still recommended for 13-6-가이드-문서-content-활용-거리-컷오프 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-180320-15df; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-613: Story 13.9 초안(epic-13-context.md·epics-increment)에 DW-611/612가 안 덮는 인접 엣지케이스 6건이 남아있다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 리뷰 패스(edge-case-hunter 렌즈) — epic-13-context.md 재캡파일이 이번 diff에 포함되면서 곁다리로 발견됨. LangSmith 트레이싱과는 무관하고, 전적으로 Story 13.9(라우팅 안정화) 초안의 완성도 문제.
+source_spec: `epic-13-context.md`(요건 문단) · `epics-increment-2026-07-12.md`(Epic 13, Story 13.9)
+severity: low
+reason: Story 13.9 AC가 다루는 "최상급·교체요청·맥락재작성" 범주 안에서, DW-611(가격 최상급)·DW-612(명시 차종 교체)가 좁게 실측·확정한 케이스의 인접 변형이 AC 문구에 아직 안 잡혀 있다 — 각각 실측 없이 발견됐으므로 재현 확인 전까지는 "다뤄야 할 후보"로만 취급한다.
+  1. 가격처럼 정렬 가능한 컬럼이 없는 주관적 최상급("제일 좋은 차")이 구조조건인지 되묻기인지 AC에 없음.
+  2. 차종을 명시하지 않은 교체 요청("다른 거 보여줘")의 기대 라우팅이 AC에 없음(DW-612는 차종이 명시된 경우만 다룸).
+  3. RESET 오염 게이트의 반대 방향(정상 세션을 오탐 차단하는 경우)이 AC 검증 항목에 없음(DW-612는 게이트가 안 걸리는 방향만 다룸).
+  4. `contextualize_query`가 예외 없이 "성공"하지만 조건을 잘못 접어넣는 경우(DW-611은 "재작성을 안 함" 케이스만 다룸)의 폴백 조건이 AC에 없음.
+  5. epic-13-context.md의 "13.9는 13.8 완료 후 착수" 문구가 "13.8 스토리 종료"와 "13.8이 요구하는 G2 게이트 통과" 중 무엇을 뜻하는지 모호함.
+  6. 13.9 완료 후 재캡처한 기준선이 13.8의 G2 게이트 재실행에서 다시 불합격하면 다음 행동(재작업·롤백·에픽 보류)이 문서에 없음.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** 위 6항목을 인수조건 후보로 검토한다 — 13.9는 13.8 완료 후에만 착수하므로 그 전까지는 열어만 둔다.
+✎ 2026-08-03 해소(오케스트레이터) — 이 항목이 지적한 사항을 `epics-increment-2026-07-12.md`의 **Story 13.9 본문에 직접 반영**했다(초안 정리, 커밋은 아래 참조). 장부에 처방만 적어두면 step-02 planning이 그걸 읽지 않을 수 있으므로, 구현자가 반드시 읽는 스토리 문서 자체를 고쳤다.
+status: done 2026-08-03
+resolution: Story 13.9 초안을 직접 수정해 해소했다 — G2 자기참조를 2단계 판정(이전 기준선으로 판정 → 통과 후에만 갱신)으로 교체, 교체요청의 사분면 귀속을 "의미조건이 섞이면 HYBRID"로 확정(13.2 계약과의 충돌 제거), 성립 불가한 "결정론 단위테스트가 프롬프트 흔들림을 잡는다" 요건 삭제 후 "코드가 판정하는 부분만 결정론 고정 + 프롬프트 흔들림은 라이브 재캡처가 잡는다"로 교체, 추출-후-분기 대안의 REJECT 붕괴·SQL/HYBRID 경계 공백을 Design Notes에 경고로 명시, 최상급×HYBRID 정렬 충돌(sql_guard 2차 정렬키 차단)을 결정 항목으로 등재, RESET 오염 데이터 teardown을 인수조건화, 에픽 착수·종료 조건을 명문화, 승격 안 한 인접 케이스 6건을 "명시적으로 판단하고 이유를 적을 것"으로 남겼다.
+
+### DW-614: Story 13.9 초안에 "적힌 내용 자체가 성립하지 않는" 논리 결함 7건이 있다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 **후속 리뷰 패스**(adversarial·edge-case-hunter 렌즈 독립 수렴) — epic-13-context.md 재캡파일이 diff에 포함되며 발견. LangSmith와 무관.
+source_spec: `epic-13-context.md`(Requirements·Technical Decisions·Dependencies) · `epics-increment-2026-07-12.md`(Epic 13, Story 13.9)
+severity: medium
+reason: DW-613과 **층위가 다르다** — DW-613은 "AC가 안 다룬 인접 케이스"(빠진 것)이고, 이 항목은 "문서에 적힌 지시가 서로 모순되거나 실행하면 목적을 배반하는 것"(틀린 것)이다. 중복 없음.
+  1. **G2 재실행이 자기참조라 항상 통과한다.** "완료 시 기준선을 재캡처해 13.8의 G2 게이트를 다시 실행해 통과를 확인한다"는 순서상, 변경 후 코드로 캡처한 기준선과 변경 후 코드를 비교하게 된다 — 회귀가 얼마든 나도 동률이라 통과. 에픽의 유일한 회귀 게이트가 하필 그걸 가장 깨기 쉬운 스토리에서 무력화된다. (DW-613 #6은 "재캡처 후 불합격 시 행동 부재"만 다뤄 이 반대 갈래를 안 덮는다.)
+  2. **"조건 추출 우선" 대안 구조를 택하면 REJECT 분기가 붕괴한다.** 무관/법적 질의는 정의상 구조조건이 0개라 "추출 실패=되묻기" 규칙에서 CLARIFY로 떨어진다 — 같은 문장이 지키라고 못박은 13.2 4분기 인수조건과 `test_live_smoke_pathC`(route==REJECT)를 동시에 깬다.
+  3. **같은 대안 구조에서 SQL/HYBRID 경계가 미정의다.** "추출 실패=되묻기" 한 갈래만 정의하고, 추출 성공 이후 두 갈래를 가르는 기준이 없다(4분기 중 2개의 경계가 빈다).
+  4. **최상급 × 하이브리드는 정렬을 표현할 자리가 없다.** 요건은 최상급을 "구조조건으로 SQL 라우팅"까지만 규정하는데, 의미조건이 섞이면 HYBRID이고 그 경로의 `ORDER BY`는 벡터 거리절이 점유한다. `api/app/db/sql_guard.py`(L266~275, DW-555 근거 주석)가 2차 정렬키(`... ::vector, price`)를 **명시적으로 차단**한다 — 실물 확인함. "제일 싼 패밀리카"류에서 최상급이 조용히 버려질 수 있다.
+  5. **에픽 종료조건이 재정의되지 않았다.** 13.8이 "exit-gate(G2 미통과 시 에픽 종료 불가)"인데 13.9가 그 뒤로 배치됐다 — 이제 무엇이 종료 판정인지 문서에 없다. (DW-613 #5는 "13.9 *착수* 시점"의 모호함이고, 이건 "에픽 *종료* 시점".)
+  6. **"결정론적 단위테스트가 프롬프트 흔들림을 먼저 잡는다"는 요건이 성립 불가.** api 단위테스트의 표준은 LLM을 fake로 교체하는 것(project-context 규칙 12)이라 fake 응답은 프롬프트 변경에 반응하지 않는다. 트리거 조건이 정의상 발동하지 않는 검사를 요건이 요구하고 있다.
+  7. **RESET 오염 데이터의 정리·격리가 미규정.** "실제 오염 데이터를 넣어 검사가 실패로 잡히는지 확인"만 있고 teardown이 없다 — 같은 에픽이 공용 DB에서 G2 기준선을 재캡처하므로 잔존 행이 그 캡처에 섞인다.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** 위 7항목을 먼저 해소한다 — 특히 1번은 스펙에 "G2는 13.9 이전 기준선으로 판정하고, 통과한 뒤에만 기준선을 갱신한다"는 두 단계 순서로 못박아야 한다.
+✎ 2026-08-03 해소(오케스트레이터) — 이 항목이 지적한 사항을 `epics-increment-2026-07-12.md`의 **Story 13.9 본문에 직접 반영**했다(초안 정리, 커밋은 아래 참조). 장부에 처방만 적어두면 step-02 planning이 그걸 읽지 않을 수 있으므로, 구현자가 반드시 읽는 스토리 문서 자체를 고쳤다.
+status: done 2026-08-03
+resolution: Story 13.9 초안을 직접 수정해 해소했다 — G2 자기참조를 2단계 판정(이전 기준선으로 판정 → 통과 후에만 갱신)으로 교체, 교체요청의 사분면 귀속을 "의미조건이 섞이면 HYBRID"로 확정(13.2 계약과의 충돌 제거), 성립 불가한 "결정론 단위테스트가 프롬프트 흔들림을 잡는다" 요건 삭제 후 "코드가 판정하는 부분만 결정론 고정 + 프롬프트 흔들림은 라이브 재캡처가 잡는다"로 교체, 추출-후-분기 대안의 REJECT 붕괴·SQL/HYBRID 경계 공백을 Design Notes에 경고로 명시, 최상급×HYBRID 정렬 충돌(sql_guard 2차 정렬키 차단)을 결정 항목으로 등재, RESET 오염 데이터 teardown을 인수조건화, 에픽 착수·종료 조건을 명문화, 승격 안 한 인접 케이스 6건을 "명시적으로 판단하고 이유를 적을 것"으로 남겼다.
+
+### DW-615: langchain 계열 버전이 안 고정돼 있어, 자동 계측이 조용히 깨질 수 있고 그걸 잡을 검사는 CI에서 안 돈다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 후속 리뷰 패스(verification-gap·adversarial 렌즈) — Story 13.7이 추가한 트레이싱 회귀 테스트가 "실제로는 아무것도 자동으로 지키지 못한다"는 지적에서 나온 근본 원인. Story 13.7 자체의 결함이 아니라 저장소 전반의 의존성 정책 문제.
+source_spec: `api/requirements.txt` · `api/pyproject.toml` · `api/Dockerfile` · `.github/workflows/tests.yml`
+severity: medium
+reason: 실물 확인함 — (a) `langchain-google-genai`가 두 매니페스트 모두에서 **버전 무고정**이고 `langsmith`는 아예 미선언(`langchain-core`의 전이 의존 `langsmith<1.0.0,>=0.3.45`로만 들어온다), (b) `api/Dockerfile`은 `pip install --no-cache-dir -r requirements.txt`라 **컨테이너를 다시 빌드할 때마다 재해석**된다, (c) 저장소에 커밋된 `api/uv.lock`은 CI·Dockerfile·스크립트 어디에서도 쓰이지 않는다(`uv sync`/`uv pip`/`uv.lock` 전체 검색 0건). 즉 LangSmith 자동 계측(FR51)이 의존성 업그레이드로 끊겨도 배포는 초록으로 통과하고, 유일한 검사(`test_live_smoke_langsmith_tracing`)는 라이브·과금 테스트라 CI에서 의도적으로 안 돈다(project-context 규칙 12 — 이 절충 자체는 유지가 맞다).
+trigger: **다음번 api 의존성 작업(패키지 추가·업그레이드) 또는 Cloud Run 재배포 준비 시.** 선택지: langchain 계열 3종을 핀 고정하거나, `uv.lock`을 CI·Dockerfile에 실제로 배선한다. 둘 다 안 할 거면 "재빌드마다 계측이 갈릴 수 있음"을 배포 런북에 명시한다.
+status: open
+
+### DW-616: 루트/api `.env.example` 락스텝이 "관례"로만 존재하고 검사로 강제되지 않는다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 후속 리뷰 패스(adversarial·verification-gap 렌즈) — 두 번의 리뷰 패스가 "두 파일 주석 복붙" 지적을 **"의도된 락스텝 관례"라는 근거로 기각**했는데, 정작 그 락스텝을 지키는 장치가 없다는 것이 드러남.
+source_spec: `.env.example` · `api/.env.example`
+severity: low
+reason: CLAUDE.md B9("지켜야 하는 규칙이면 실행되는 검사로 바꾼다") 위반. 두 파일은 이미 문구·경로(`source api/.env` vs `source .env`)·배치가 다르므로 단순 동일성 비교로는 안 되고, **키 이름 집합의 일치**를 보는 검사여야 한다. 이 스토리가 만든 검사들과 달리 이 검사는 secrets·네트워크 없이 CI(api 잡)에서 실제로 돌 수 있는 유일한 종류다. 실패 모드는 "트레이싱을 설정했는데 트레이스가 안 남는다" — 이 스토리가 없애려던 바로 그 함정이다.
+trigger: **`.env.example`에 키를 추가·변경하는 다음 스토리 착수 시** 파리티 테스트(`api/tests/`에 루트 견본의 api 섹션 키 집합 == `api/.env.example` 키 집합 단언)를 함께 넣는다.
+status: open
+
+### DW-617: Story 13.9 초안에 라우팅 사분면 충돌·맥락 재작성 경계 2건이 더 있다
+
+origin: 2026-08-02, 13-7-langsmith-트레이싱 **3차 리뷰 패스**(edge-case-hunter 렌즈) — epic-13-context.md 재캡파일이 이번 diff에 포함되며 발견. LangSmith와 무관.
+source_spec: `epic-13-context.md`(Requirements, 13.9 라우팅 요건 2개 문단)
+severity: low
+reason: DW-613(AC가 안 다룬 인접 케이스)·DW-614(적힌 지시가 성립하지 않음)와 층위가 또 다르다 — 이건 **새 요건 두 문장이 각각 기존 계약과 충돌하거나 경계를 안 정한 것**이다.
+  1. **교체 요청 + 의미조건이 겹치면 어느 사분면인가.** 새 요건은 "명시 차종이 든 교체 요청은 SQL로 라우팅되어야 한다"를 무조건으로 적었는데, 13.2의 4분기 계약은 구조조건+의미조건이 섞이면 HYBRID다. "가족이 타기 좋은 SUV로 바꿔줘"가 두 규칙을 동시에 만족하며 서로 다른 답을 낸다. 같은 문단이 "13.2의 4분기 인수조건은 깨지 않아야 한다"고 못박아 둔 터라 구현자는 둘 중 하나를 반드시 어긴다. (DW-614 #4는 HYBRID **안에서의 정렬 표현** 문제라 이 사분면 귀속 문제와 다르다.)
+  2. **이어받을 조건이 없는 턴·조건 폐기 규칙이 없다.** 새 요건은 `contextualize_query`가 "이전 조건을 접어 넣는" 방향만 정의한다. (a) 직전 턴이 CLARIFY/REJECT라 확정 조건이 0개인 상태 — `run_search`가 context를 무조건 넘기므로 실제로 도달 가능한 상태다(`api/app/graph/graph.py` 확인), (b) 같은 축을 다시 명시하는 후속 질의("아니 5천만원대로")에서 이전 값을 **누적할지 대체할지**가 미정의다. DW-613 #4는 "재작성이 성공하지만 잘못 접어넣는" 폴백 얘기라 이 두 갈래를 안 덮는다.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** DW-613·614와 함께 검토한다 — 특히 1번은 "교체 요청도 의미조건이 섞이면 HYBRID"인지 아닌지를 인수조건에 한 줄로 확정해야 구현자가 계약을 안 어긴다.
+✎ 2026-08-03 해소(오케스트레이터) — 이 항목이 지적한 사항을 `epics-increment-2026-07-12.md`의 **Story 13.9 본문에 직접 반영**했다(초안 정리, 커밋은 아래 참조). 장부에 처방만 적어두면 step-02 planning이 그걸 읽지 않을 수 있으므로, 구현자가 반드시 읽는 스토리 문서 자체를 고쳤다.
+status: done 2026-08-03
+resolution: Story 13.9 초안을 직접 수정해 해소했다 — G2 자기참조를 2단계 판정(이전 기준선으로 판정 → 통과 후에만 갱신)으로 교체, 교체요청의 사분면 귀속을 "의미조건이 섞이면 HYBRID"로 확정(13.2 계약과의 충돌 제거), 성립 불가한 "결정론 단위테스트가 프롬프트 흔들림을 잡는다" 요건 삭제 후 "코드가 판정하는 부분만 결정론 고정 + 프롬프트 흔들림은 라이브 재캡처가 잡는다"로 교체, 추출-후-분기 대안의 REJECT 붕괴·SQL/HYBRID 경계 공백을 Design Notes에 경고로 명시, 최상급×HYBRID 정렬 충돌(sql_guard 2차 정렬키 차단)을 결정 항목으로 등재, RESET 오염 데이터 teardown을 인수조건화, 에픽 착수·종료 조건을 명문화, 승격 안 한 인접 케이스 6건을 "명시적으로 판단하고 이유를 적을 것"으로 남겼다.
+
+### DW-618: Follow-up review still recommended for 13-7-langsmith-트레이싱 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-7-langsmith-트레이싱.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-165936-4495; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: done 2026-08-03
+resolution: 독립 후속 리뷰를 실제로 수행했다(2026-08-03, 새 세션·opus, 커밋 `6e427e7`). 3차 패스가 고쳤다고 주장한 high 2건(노드 스팬 이중 계수·견본의 틀린 우선순위 주장)을 **라이브와 돌연변이 양쪽으로 재현해 실제로 고쳐져 있음을 확인**했다 — 그래프 노드 스팬만 제거하면 라이브 테스트가 FAILED가 되어 초록을 얻을 수 없다. 이번 패스가 새로 찾은 것: ① env 계약 검사에 "빈 값·공백은 미설정으로 보고 다음 후보로 내려간다" 규칙을 지키는 검사가 없었다(가짜 SDK를 끼워도 10건 전부 초록 — 3차가 잡은 "한 갈래를 두 번 세기"와 같은 종류) → 검사 신규 추가. ② DW-616이 적어둔 해법(두 `.env.example`의 키 집합 일치 단언)은 그대로 쓰면 첫 실행부터 red다(`api/.env.example`에만 `CORS_ORIGINS`·`CORS_ORIGIN_REGEX` 2개가 더 있음 — 루트 9 vs api 11 실측) → 측정된 비대칭 2건을 **동결**하는 양방향 파리티 검사로 대체. ③ 스펙 `## Verification` 3번 명령이 새 셸에서 401로 죽었다(앞 명령의 `source .env`가 남아 있다는 숨은 전제 — 이 스토리가 없애려던 "파일에 값이 있음 ≠ 프로세스에 노출됨" 함정 그 자체) → 명령 정정. 테스트 399→**402 passed**·85 skipped, 회귀 0. 리뷰 판단은 "추가 패스 불필요"이며 남은 low 2건은 DW-641로 13.9에 묶었다. 이 항목을 닫는다.
+
+### DW-619: `docs/conventions.md` §6 FR11 강제 지점 목록에 하이브리드 벡터검색(`hybrid_rag_node`)이 등록되지 않았다
+
+origin: story 13-8(RAG exit-gate 검증) 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 conventions.md §6 원문으로 확인
+location: `docs/conventions.md`(§6 "매물 축" 불릿, 140~145줄) · `api/app/graph/hybrid_rag_node.py`(코드 자체는 `WHERE status='on_sale'`을 실제로 강제하고 있음 — 실측 결함 아님, 등록 누락)
+severity: medium
+reason: `project-context.md` 규칙7은 "새 조회 경로를 열면 §6의 강제 지점 목록에 반드시 함께 등록한다"고 명시하는데, §6의 "매물 축" 불릿은 여전히 RLS·`sql_guard.py`·문서 RAG 필터 3곳만 나열한다. `hybrid_rag_node`는 13.1~13.3(2026-07-30~31)이 이미 만든, 4번째로 늘어난 FR11 강제 지점인데 그때도 지금(13.8)도 이 목록에 오르지 않았다 — 정확히 규칙7이 경고하는 실패 모드이자, §6 자신이 9.4/9.5/9.6 이미지 축에서 겪었던 것과 같은 종류의 누락(148줄 "이 목록에 한 번도 오른 적이 없었다" 사례와 동형)이다. 코드 자체는 정상 작동한다(13.8의 CM-B 라이브 검증으로 확인) — §6만 읽는 다음 사람이 이 강제 지점의 존재를 모른다는 것이 문제다.
+trigger: `docs/conventions.md`를 다음에 손댈 때, 또는 §6을 참조해 새 AI 검색/조회 경로를 여는 다음 스토리 착수 시 — "매물 축" 불릿에 `hybrid_rag_node`(`api/app/graph/hybrid_rag_node.py`, 코드가 `WHERE status='on_sale'` 절을 템플릿으로 붙임, 강제 장치: `api/tests/test_hybrid_rag_node.py`)를 추가한다.
+status: done 2026-08-03
+resolution: Story 13.9가 `docs/conventions.md` §6 "매물 축" 불릿에 `hybrid_rag_node`(코드가 `WHERE status = 'on_sale'` 절을 템플릿으로 붙임, 강제 장치 `api/tests/test_hybrid_rag_node.py`)를 추가했다. 이제 §6이 FR11 매물 축 강제지점 4곳(RLS·sql_guard·문서 RAG 필터·하이브리드)을 전부 나열하는 정본이 됐다 — DW-625가 요구한 "로스터를 §6에서 뽑는다" 전제가 성립한다.
+
+### DW-620: `epic-13-context.md`(및 상위 계획 문서)의 "가이드 문서 12개"가 실제 활성 코퍼스(10개)와 어긋난다
+
+origin: story 13-8(RAG exit-gate 검증) 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 `api/corpus/` 디렉터리로 실측 확인
+location: `_bmad-output/implementation-artifacts/epic-13-context.md`(Requirements) · `api/corpus/`(활성 10개, `_excluded/`에 2개: `08-할부-리스-현금-비교`·`09-보험-세금-기초`) · `api/scripts/score_ab.py`(`DOC_STEM_TO_TITLE` 채점 맵도 10개 항목)
+severity: low
+reason: "12개"라는 수치는 13.8 이전부터(적어도 13.1~13.6 시점부터) 계획 문서·epic 컨텍스트에 반복돼 온 것으로, 13.8의 diff가 새로 만든 오차가 아니다 — epic-13-context.md 재컴파일(13.8 step-01)도 원본 그대로 옮겼을 뿐이다. 실제로 `doc_rag_node`/`hybrid_rag_node`가 로드하는 코퍼스는 10개뿐이고, 채점 도구의 인용 매핑도 10개와 일치한다. 같은 문단이 청킹 도입 임계값을 "문서 ≥20개"로 적어 두므로, 활성 문서 수를 정확히 아는 게 그 임계값과의 거리 판단에 실질적으로 영향을 준다.
+trigger: 가이드 코퍼스 문서를 추가·제외하는 다음 작업(corpus/ 디렉터리를 손대는 스토리) 착수 시 — 그때 "12개"를 "10개(활성) / 12개(전체, 2개 제외)"로 명확히 하거나, `_excluded/`의 2개를 아예 코퍼스 계획에서 제외 확정한다.
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
+status: done 2026-08-03
+resolution: Story 13.9가 `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`의 "가이드 문서 12개" 3곳(FR48, Story 13.6 AC 2곳)을 "활성 10문서, 전체 12개 중 2개는 `_excluded/`"로 정정했다(`api/corpus/`에 활성 10개 + `_excluded/`에 2개 실측 확인, `ls` 결과와 일치). `epic-13-context.md`에는 현재 이 수치가 없어(재확인 결과 이미 사라진 상태) 추가 정정이 불필요했다.
+
+### DW-621: G2 exit-gate는 실행된 형태상 "회귀 검사"가 아니라 "재현성 검사"다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial·verification-gap·intent-alignment 세 렌즈가 독립적으로 같은 결론, 오케스트레이터가 두 캡처 파일 per-item 대조로 확인
+location: `api/docs/g2-baseline.json` ↔ `api/docs/g2-exit-gate-2026-08-02.json` · `api/scripts/score_ab.py`(`regression = candidate.result_mean < baseline.result_mean`) · `_bmad-output/implementation-artifacts/epic-13-context.md`(게이트 정의: "G2(회귀 — Phase B baseline 이하로 떨어지면 실패)")
+severity: medium
+reason: 에픽 정의상 G2는 "13.1~13.7이 품질을 떨어뜨리지 않았음"을 증명하는 회귀 게이트다. 그런데 비교 대상 baseline은 DW-609가 2026-08-02에 **이미 13.6까지 들어간 코드**로 뜬 것이라, 후보 캡처와 baseline이 **같은 코드 상태**다. 실측: 두 파일의 47개 항목이 `latency_ms`를 빼면 바이트 단위로 동일하고, `git log --since=2026-08-02 -- api/app`은 커밋 0건이다. 즉 `regression_block:false`는 구조적으로 참일 수밖에 없고, 13.1~13.7이 실제로 만든 품질 변화는 양쪽에 똑같이 녹아 있어 이 게이트가 원리적으로 볼 수 없다. 13.8 스펙의 Design Notes는 이 사실을 이미 정직하게 적어 뒀다("어제 캡처와 오늘 재캡처의 재현성 확인이 G2의 실질") — 문제는 **에픽 레벨 게이트 문구는 여전히 "회귀"**라, 이 문서만 읽는 사람은 에픽이 회귀 증거 위에서 닫혔다고 믿는다. 13.8이 만든 결함이 아니라 baseline이 늦게 심긴 데서 온 선재 조건이다(그래서 defer). 재현성 확인 자체는 무가치하지 않다 — 라우팅이 비결정적으로 흔들리지 않음을 증명한다.
+trigger: **Story 13.9 완료 후 기준선을 재캡처할 때** — 13.9는 어차피 baseline을 다시 떠야 하므로(epic-13-context.md Cross-Story Dependencies) 그 자리가 정확히 이 결정을 내릴 지점이다. 그때 (a) 13.9 이전 코드로 뜬 캡처를 baseline으로 고정해 진짜 "이전 vs 이후" 비교를 만들거나, (b) 만들 수 없으면 에픽 게이트 문구를 "재현성"으로 정정해 무엇이 증명됐고 무엇이 안 됐는지를 문서가 정직하게 말하게 한다.
+status: open
+
+### DW-622: 스킵된 보안 테스트가 통과와 구별되지 않는다 — 환경변수 이름 하나로 게이트가 조용히 사라진다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial 렌즈가 발견, 오케스트레이터가 스펙에 적힌 커맨드를 그대로 재실행해 재현
+location: `api/tests/integration/*_real_db.py`(가드 변수 = `TEST_DATABASE_URL`) · `api/tests/test_readonly.py`(가드 변수 = `DATABASE_URL`) · `.github/workflows/tests.yml`(`api-db` 잡만 `TEST_DATABASE_URL`을 준다)
+severity: medium
+reason: 13.8은 CM-B(보안 게이트)를 "실DB로 확인했다"고 기록했지만, 스펙에 적힌 커맨드가 `test_fr11_cover_images_real_db.py`에 `DATABASE_URL`을 넘겼다 — 이 파일이 보는 변수는 `TEST_DATABASE_URL`이라 실제로는 `1 skipped`였고, pytest 종료코드가 0이라 초록으로 읽혔다. 같은 이유로 `test_readonly.py`(ai_readonly 롤 격리) 2건도 스킵된 채 "147 passed, 2 skipped"로 통과 보고됐다. **커맨드는 이번 후속 리뷰에서 고쳤고 세 축 전부 실제로 돌려 green을 확인했다**(FR11 실DB 1 passed · ai_readonly 2 passed · SECURITY DEFINER 5 passed) — 그러나 고친 건 이 스토리의 커맨드 한 줄뿐이고, **"보안 테스트가 스킵되면 눈에 띈다"는 구조적 보장은 여전히 없다.** 두 종류의 실DB 테스트가 서로 다른 변수명을 쓴다는 것 자체가 다음 사람에게 같은 함정을 다시 놓는다. CLAUDE.md B9("규칙은 어길 수 없는 자리에 박는다") 위반이다.
+trigger: **api 테스트 실행 방식이나 CI 잡을 다음에 손댈 때** — 두 변수명을 하나로 합치거나(하나가 다른 하나를 fallback으로 읽게), 보안 표식(`@pytest.mark.security`)이 붙은 테스트가 스킵되면 스위트를 실패시키는 conftest 훅을 넣는다. 최소한 로컬 실행 문서에 두 변수를 모두 적는다.
+status: open
+
+### DW-623: DW-576의 `status:` 값이 sweep 파서 문법 밖이라 장부에서 조용히 사라질 수 있다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial·edge-case 두 렌즈가 독립 발견
+location: `_bmad-output/implementation-artifacts/deferred-work.md`(DW-576 블록의 `status:` 줄, 그리고 같은 블록의 `trigger(갱신):` 줄) · `.claude/skills/bmad-loop-sweep/deferred-work-format.md`(문법 정의) · `.claude/skills/bmad-loop-sweep/automation-mode.md`
+severity: medium
+reason: 13.8이 DW-576을 부분 종결하며 `status: open (부분 해소, 2026-08-02)`로 적었다. 장부 전체에서 이 값 하나만 문법 밖이다(나머지는 전부 `open` 또는 `done <날짜>`). sweep 스킬은 "`status:` 줄이 `open`인 블록"을 고르고, automation-mode는 "open_ids가 장부의 `status: open` 항목과 **정확히** 일치해야 한다"고 요구한다 — 어긋나면 결과 전체가 무효가 되고 재시도를 태운다. 즉 DW-576(회색지대 route가 `_patch_route`로 강제 주입돼 SM3가 실제 라우팅을 보장하지 못하는 **구조적** 결함)이 열린 것도 닫힌 것도 아닌 상태로 빠질 수 있다. 같은 블록에 `trigger:`와 `trigger(갱신):`가 둘 다 있는 것도 표준 키 하나 원칙에서 벗어난다. **이 항목을 직접 고치지 않은 이유**: 이번 실행의 지시가 "기존 장부 항목은 수정·재개봉·재작성하지 말고 신규만 추가하라"였다 — 기존 항목의 상태·해소는 오케스트레이터 소관이다.
+trigger: **오케스트레이터가 다음 sweep을 돌리기 전** — DW-576의 `status:`를 `open`으로 되돌리고 "부분 해소(2026-08-02)"는 본문 주석(`✎`)으로 옮기며, `trigger(갱신):`을 표준 `trigger:` 한 줄로 합친다.
+status: open
+
+### DW-624: 13.8 diff가 기존 장부 항목 6건의 사실관계를 바꿨는데 그 항목들이 갱신되지 않았다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial·edge-case 렌즈 발견, 오케스트레이터가 각 항목 원문과 코드로 대조
+location: `_bmad-output/implementation-artifacts/deferred-work.md` — DW-573 · DW-577 · DW-590 · DW-556 · DW-564 · DW-565
+severity: low
+reason: 세 갈래다. (1) **트리거가 실제로 발동했는데 기록이 없다** — DW-573의 트리거는 "`api/docs/ai-demo-queries.md`를 손대는 다음 작업 시"인데 13.8이 바로 그 파일을 다시 썼고 신어휘 이관도 절반 했지만 항목은 손대지 않은 채 `open`이다(남은 절반: 소비처 0인 죽은 상수 `DEMO_QUERIES`, `docs/learning/06-file-reference.md`의 "단일 출처" 표현). DW-590도 "DW-573/576을 다루는 같은 작업"을 트리거로 적었는데 그 작업이 일어났고 세 항목 전부 미이행이다. (2) **적힌 사실이 이제 거짓이다** — DW-577은 "`test_live_smoke.py`에 `out['route']` 단언 0건, 'HYBRID' 등장 0회"라고 적었는데 현재 그 파일은 SQL/CLARIFY/REJECT/HYBRID 네 route를 전부 단언하고 13.8은 그걸 SM-F/SM-G 증거로 썼다. (3) **닫으면서 다시 열 자리를 안 정했다** — DW-556·564·565는 "모델 후보 비교가 실제로 생기면 그때 다시 연다"는 산문만 남기고 `done`이 됐다. CLAUDE.md B8은 "미룬 항목엔 언제·어디서 고칠지를 대장에 함께 적고, 지정한 곳에도 실제로 심으라"고 요구한다 — 지금 상태면 첫 모델 A/B를 하는 사람이 장부에 "열린 것 없음"을 보고 세 개의 알려진 채점 왜곡 위에서 시작한다. **직접 고치지 않은 이유는 DW-623과 같다**(신규 등재만 허용).
+trigger: **오케스트레이터가 다음 sweep을 돌릴 때** DW-623과 함께 처리한다 — DW-573·590에 부분 해소 주석과 좁힌 잔여 범위를, DW-577에 종결(또는 남은 범위)을, DW-556·564·565에 구체적 재개봉 지점("첫 모델 후보 비교 스토리의 스펙 작성 시")을 적는다.
+status: open
+
+### DW-625: CM-B의 FR11 강제지점 로스터가 `conventions.md` §6이 아니라 임의 목록에서 나왔다
+
+origin: story 13-8(RAG exit-gate 검증) **후속 리뷰** — adversarial 렌즈 발견, 오케스트레이터가 §6 원문과 실제 실행으로 확인
+location: `_bmad-output/implementation-artifacts/spec-13-8-...md`(Always절·AC3의 CM-B 로스터) · `docs/conventions.md` §6(축 3개: 매물·이미지·SECURITY DEFINER 함수) · `api/tests/integration/test_seller_summary_real_db.py`
+severity: low
+reason: 13.8의 CM-B는 "판매완료 매물이 **4개 지점 어디서도** 노출되지 않음"을 실DB로 확인했다고 적었는데, 그 4개는 §6의 축 분류가 아니라 이 스펙이 따로 세운 목록이었다. §6이 등록한 **SECURITY DEFINER 함수 축**(`get_seller_public_summary` — 정의자 함수 안에선 RLS가 안 걸려 **함수 본문 인라인 조건이 유일한 강제 지점**인, 가장 새기 쉬운 축)은 스펙의 Verification 커맨드 어디에도 없었다. 로스터를 정본 문서에서 뽑지 않고 손으로 나열하면 이런 누락이 조용히 생긴다. **실제 위험은 확인 결과 없다** — 이번 후속 리뷰에서 `test_seller_summary_real_db.py`를 실DB로 돌려 **5 passed**(sold 매물이 몇 건이 추가돼도 카운트에서 계속 빠짐)를 확인했다. 남는 건 "다음 번 CM-B류 검증도 같은 방식으로 축을 빠뜨릴 수 있다"는 절차 결함이다.
+trigger: **CM-B(또는 FR11 전수 확인)를 다시 수행하는 다음 스토리 착수 시** — 강제지점 로스터를 손으로 적지 말고 `docs/conventions.md` §6의 축 목록에서 뽑아 세 축을 모두 실행 대상에 넣는다. DW-619(§6에 `hybrid_rag_node` 미등록)를 먼저 처리하면 §6이 정확한 정본이 되어 이 방식이 성립한다.
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
+status: done 2026-08-03
+resolution: 이 항목이 요구한 전제(DW-619 처리로 §6이 정확한 정본이 되는 것)를 Story 13.9가 충족했다 — §6 "매물 축" 불릿에 `hybrid_rag_node`를 추가해 이제 §6이 매물 축 FR11 강제지점 4곳을 전부 나열한다. 같은 스토리가 §6의 **문서 RAG 필터** 축(`doc_rag_node`)에 실DB 검증을 새로 추가해(DW-627, `api/tests/integration/test_doc_rag_node_real_db.py`) 로스터의 실행 커버리지도 넓혔다. 13.9 자체는 CM-B 전수 재실행을 스코프에 두지 않았으므로(그건 13.8이 이미 했다), "다음 CM-B류 검증이 로스터를 §6에서 뽑는다"는 절차가 실제로 성립하는지는 그 다음 CM-B 재실행 시점에 확인된다 — 이 항목은 그 전제(§6 정본화)가 충족된 것으로 닫는다.
+
+### DW-626: G2 회귀 게이트가 네 축 중 `result_mean` 하나만 baseline과 비교한다 — 13.4·13.6 기능이 전멸해도 초록
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈가 커밋된 캡처를 변형해 실증, adversarial 렌즈가 독립적으로 같은 결론
+location: `api/scripts/score_ab.py`(`regression = candidate["result_mean"] < baseline["result_mean"] - 1e-9` · `gate_pass`는 contamination/deadend/errored_n/scored_n만 본다) · `api/scripts/score_ab.py`의 `result_scores_clean` 조립부(primary SQL/HYBRID·non-gray 항목만 들어가 `result_n=33/47`)
+severity: medium
+reason: 에픽 게이트 문구와 13.8 AC2는 G2가 "품질이 baseline 이하로 안 떨어짐"을 보증한다고 읽히지만, 자동 판정에 들어가는 축은 `result_mean` **하나뿐**이고 그조차 47문항 중 33개의 평균이다. `routing_correct`·`doc_hit_n`·`clarify_ok_n`은 리포트에 기록만 될 뿐 baseline과 비교되지 않는다. **실증(리뷰가 실제로 돌림)**: 커밋된 `docs/g2-exit-gate-2026-08-02.json`을 ① 모든 답변에서 가이드 인용 `(참고: …)` 16곳 제거 → doc_hit 12/13 → 0/13, ② `primary_path=CLARIFY`인 7항목을 SQL 응답으로 치환 → routing 54 → 47, clarify_ok 9/9 → 2/9. **두 경우 모두 `gate_pass:true`·`regression_block:false`로 통과**했다. 즉 13.6이 만든 가이드 질의확장과 13.4가 만든 되묻기가 통째로 죽어도 에픽 종료 게이트가 선다. 13.8은 이 세 축을 사람이 두 리포트를 눈으로 대조해 확인했고(이번엔 정확히 일치) 스펙 AC2도 3차 리뷰에서 그렇게 정정했지만, **사람 확인은 다음 재실행에 상속되지 않는다**(CLAUDE.md B9). 열린 DW-621(재현성 vs 회귀)은 baseline 시점 문제만 다루므로 13.9가 기준선을 다시 떠도 이 축 누락은 그대로 남는다.
+trigger: **Story 13.9 완료 후 G2를 재실행하기 직전**(DW-621과 같은 자리 — 그때 기준선을 어차피 다시 뜬다) — `score_ab.py` 2-file 모드의 `regression_block`에 세 축의 비하락을 OR로 합치거나, 두 리포트 JSON을 읽어 네 축을 비교하는 결정론 테스트를 `tests/test_ab_scoring.py`에 넣는다. 어느 쪽이든 "사람이 눈으로 대조"를 실행되는 검사로 바꾸는 것이 요지다.
+status: done 2026-08-03
+resolution: `score_ab.py`의 `regression_axes` dict가 이제 네 축(`result_mean`·`routing_correct`·`doc_hit_n`·`clarify_ok_n`)을 각각 baseline과 비교하고, `regression_block`은 하나라도 하락하면 True다(리포트에 `regression_axes`·top-level `gate_pass`로 축별 결과를 남김). **양방향 실증(B4)**: `test_regression_block_flags_doc_hit_and_clarify_regression_even_when_result_mean_ties`가 result_mean은 동률인데 doc_hit·clarify만 죽은 raw 쌍으로 red를 재현했고(리뷰가 실증했던 바로 그 시나리오), 4축을 3축으로 되돌리는 뮤테이션을 주입해 이 테스트가 실제로 실패함을 확인한 뒤 원복해 green을 재확인했다. `test_regression_block_false_when_all_four_axes_hold`가 양성 대조군이다.
+
+### DW-627: FR11 강제지점 4곳 중 `doc_rag_node` 축은 실DB 검증이 없어 필터 무력화를 못 잡는다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈가 뮤테이션으로 실증(원복 확인), adversarial·intent-alignment가 같은 표면 혼동을 독립 지적
+location: `api/tests/test_doc_rag_node.py`(`assert "status = 'on_sale'" in listing_q` — 문자열 포함 검사) · `api/app/graph/doc_rag_node.py`(매물 의미검색 `WHERE status = 'on_sale' AND embedding IS NOT NULL`) · `api/tests/integration/`(이 축을 보는 실DB 테스트 없음)
+severity: medium
+reason: `doc_rag_node`의 매물 의미검색은 **sql_guard를 거치지 않고**(자기 독스트링이 명시), `listings`의 ai_readonly RLS 정책이 `using(true)`라 행 필터도 걸리지 않는다 — 즉 그 `WHERE status = 'on_sale'` 한 줄이 **유일한 FR11 강제 지점**이다. 그런데 그걸 지키는 검사는 생성된 SQL 문자열에 그 글자가 들어 있는지 보는 단위테스트뿐이다. **실증**: `WHERE (status = 'on_sale' OR true)`로 바꾼 뒤 13.8 스펙의 CM-B 커맨드 전량을 그대로 실행하니 유닛 5파일 149 passed·FR11 실DB 1 passed·전체 394 passed로 **스펙에 기록된 수치와 완전히 동일**했다(수행 후 `git checkout` 원복, `grep "OR true" api/app/graph/` 0건 확인). 대조군으로 `hybrid_rag_node`에 같은 변형을 넣으면 14건이 red가 된다 — 그 축은 조립 SQL 전문을 단언하므로 실제로 보호된다. 이 경로는 CLARIFY 상한 초과 강제 제시와 하이브리드 구조조건 추출 실패 폴백이 타므로 죽은 코드가 아니다. FR11은 보안 블로커 등급이고, `test_listing_cards.py`가 자기 독스트링에 "가짜 DB는 조건을 **지우면** 잡지만 **무력화하면**(`OR true`·`AND false`) 전부 초록"이라고 이미 적어 둔 바로 그 한계다.
+trigger: **FR11 강제지점을 다시 손대거나 CM-B류 전수 확인을 수행하는 다음 스토리 착수 시**(DW-625와 같은 자리) — `tests/integration/test_fr11_cover_images_real_db.py`와 같은 층(실 Postgres + sold 1건·on_sale 1건 시드)에서 `doc_rag_node`의 매물 쿼리를 실행해 sold id가 결과에 없음을 단언하는 통합 테스트를 추가한다. 문자열 검사는 그대로 두고 층을 하나 얹는 것이다.
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
+status: done 2026-08-03
+resolution: `api/tests/integration/test_doc_rag_node_real_db.py`(신규)를 `test_fr11_cover_images_real_db.py`와 동일 패턴으로 추가했다 — 실 Postgres(로컬 Supabase, `TEST_DATABASE_URL`)에 on_sale 1건·sold 1건(동일 임베딩)을 심고 `doc_rag_node(query, qvec=...)`를 직접 호출해 sold id가 결과에 없음을 단언한다. **양방향 실증(B4)**: `WHERE status = 'on_sale'` → `WHERE (status = 'on_sale' OR true)`로 무력화하자 이 신규 테스트는 실제로 **red**가 됐다(sold id가 결과에 포함됨을 확인) — 동시에 기존 `tests/test_doc_rag_node.py`(문자열 검사)는 같은 뮤테이션에서도 전부 green으로 남아, reason이 지적한 "문자열 검사가 무력화를 못 잡는다"는 공백을 그대로 재현했다. 뮤테이션을 원복해 신규 테스트가 다시 green임을 확인했고, 시드 데이터는 테스트 후 rollback으로 정리해 잔존 행이 없음을 `psql` count로 재확인했다(DW-614 #7과 같은 teardown 원칙).
+
+### DW-628: `test_readonly.py`(ai_readonly 롤 격리)를 실행하는 CI 잡이 하나도 없다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — adversarial 렌즈 발견, 오케스트레이터가 `.github/workflows/tests.yml`과 스킵 가드 원문으로 확인
+location: `api/tests/test_readonly.py`(가드 = `settings.database_url`, 즉 `DATABASE_URL`) · `.github/workflows/tests.yml`(`api` 잡은 `DATABASE_URL`을 **의도적으로** 안 준다 — 13줄 주석: "있으면 운영 Supabase에 실제 접속한다" · `api-db` 잡은 `TEST_DATABASE_URL`로 `tests/integration`만 실행)
+severity: medium
+reason: CM-B가 지키는 세 안전장치 중 하나(커넥션 풀 재사용 시 ai_readonly 롤이 누수되지 않음, Epic 8 AC-DB-1)가 **어느 CI 잡에서도 돌지 않는다**. `api` 잡은 운영 DB 접속 위험 때문에 `DATABASE_URL`을 일부러 비우므로 이 파일이 항상 skip되고, `api-db` 잡은 대상 디렉터리가 `tests/integration`으로 한정돼 이 파일을 수집하지 않는다. 두 결정 각각은 옳은데 교집합에서 이 축이 통째로 빠졌다. 13.8이 기록한 "149 passed, 0 skipped"는 사람이 손으로 한 번 친 로컬 실행이고, 롤 격리를 깨는 커밋이 들어와도 CI는 영구히 초록이다. DW-622는 "스킵이 통과와 구별 안 된다"는 가시성 문제를 다루지, "애초에 CI에서 실행되지 않는다"는 이 사실은 다루지 않는다.
+trigger: **CI 워크플로(`tests.yml`)를 다음에 손댈 때**(DW-622와 같은 자리) — `test_readonly.py`를 컨테이너 Postgres에서 돌 수 있게 `TEST_DATABASE_URL`을 읽도록 이식해 `api-db` 잡 범위에 넣는다. 그게 어려우면 최소한 `project-context.md` §12의 "CI에 안 도는 것" 목록에 이 파일을 명시적으로 올린다(지금은 안 올라 있어 돈다고 오해된다).
+status: open
+
+### DW-629: DW-622가 제안한 해법(환경변수 fallback)을 그대로 구현하면 통합 테스트가 운영 DB에 쓴다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — adversarial 렌즈 발견, 오케스트레이터가 워크플로 주석과 통합 테스트 픽스처로 확인
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-622 `trigger:` 줄(두 변수명을 합치거나 "하나가 다른 하나를 fallback으로 읽게") · `api/tests/integration/conftest.py` · `.github/workflows/tests.yml`(13줄)
+severity: medium
+reason: DW-622는 "`TEST_DATABASE_URL`과 `DATABASE_URL` 두 이름이 함정을 만든다"는 옳은 진단을 담았지만, 적어 둔 해법 중 하나가 위험하다 — `tests/integration/*`가 `TEST_DATABASE_URL` 부재 시 `DATABASE_URL`로 폴백하게 만들면, 이 프로젝트에서 `DATABASE_URL`은 **운영 Supabase를 가리키는 변수**다(`tests.yml` 13줄이 명시적으로 그렇게 경고하며 `api` 잡에서 일부러 비운다). 통합 테스트는 사용자·매물을 실제로 INSERT하므로, 개발자 셸에 `DATABASE_URL`이 떠 있는 상태에서 `pytest` 한 번이면 운영 DB에 테스트 데이터가 들어간다. 장부의 산문은 다음 사람이 그대로 구현하는 지시로 읽힌다 — **DW-622의 두 갈래 중 fallback 안은 채택하지 말 것.** (이 항목을 DW-622 본문 수정이 아니라 신규 등재로 남기는 이유: 이번 실행의 지시가 "기존 장부 항목은 수정·재개봉·재작성 금지, 신규만 추가"였다.)
+trigger: **DW-622를 실제로 처리하는 그 작업의 착수 시점** — 두 항목을 같이 읽고, fallback이 아니라 나머지 갈래(보안 표식이 붙은 테스트가 스킵되면 스위트를 실패시키는 conftest 훅)로 방향을 고정한다. 변수명을 합쳐야 한다면 방향은 반대여야 한다 — 통합 테스트가 `DATABASE_URL`을 읽는 게 아니라, 운영을 가리킬 수 있는 변수는 통합 테스트에서 아예 못 읽게 막는 쪽이다.
+status: open
+
+### DW-630: 라이브 스모크가 전부 스킵돼도 exit 0이라 SM-F/SM-G가 거짓 초록이 될 수 있다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈 발견, 오케스트레이터가 스킵 가드 원문으로 확인
+location: `api/tests/test_live_smoke.py`(파일 전체가 `RUN_LIVE_SMOKE != "1"`에서 collect-skip · `_run_or_skip`이 429·quota·RESOURCE_EXHAUSTED·키/DB 부재를 `pytest.skip`으로 흡수) · 13.8 스펙 Verification 커맨드 1
+severity: medium
+reason: SM-F(기존 시연 3종 유지)·SM-G(신규 3분기 실동작) 게이트의 유일한 증거가 이 파일의 라이브 실행인데, `RUN_LIVE_SMOKE`를 빠뜨리거나 쿼터가 마르면 `6 skipped`·exit 0이 나온다. 기대값이 "5건 PASSED"라는 사람이 읽는 문장뿐이라, 다음 재실행자가 초록만 보고 SM-F/SM-G를 통과로 기록할 수 있다. **이건 가설이 아니다** — 이 스토리에서 CM-B의 두 축(FR11 실DB·ai_readonly)이 정확히 그 방식으로 스킵인 채 "통과"로 닫혔다가 후속 리뷰에서야 드러났다(그 사건이 DW-622를 만들었다). 다만 DW-622의 범위는 `*_real_db.py`/`test_readonly.py`의 환경변수명과 보안 표식으로 한정돼 이 라이브 축을 포함하지 않는다. 429 자동 스킵 자체는 의도된 쿼터 보호이므로 없애면 안 되고, 필요한 건 "스킵됐다"가 게이트 판정자에게 **보이게** 만드는 것이다.
+trigger: **SM-F/SM-G를 다시 판정하는 다음 실행(13.9 종료 검증)의 커맨드를 짤 때** — `RUN_LIVE_SMOKE=1`인데 라이브 표식 테스트가 스킵되면 스위트를 실패시키는 conftest 훅(DW-622가 보안 표식에 제안한 것과 같은 형태로 묶어서), 또는 최소한 커맨드에 `-rs`를 붙이고 기대값을 "6 collected / 0 skipped(langsmith 제외)"처럼 개수로 못박는다.
+status: done 2026-08-03
+resolution: 13.9 종료 검증에서 `RUN_LIVE_SMOKE=1 ... pytest tests/test_live_smoke.py -v -rs`를 실제로 실행했다 — 결과 **10 passed, 1 skipped**(skip은 langsmith 계측 env 게이트 하나뿐, 사유가 정확히 표시됨). 채택한 것은 trigger의 두 대안 중 **후자**(개수·사유를 -rs로 못박는 절차)다 — conftest 훅(전자)은 이 스토리의 코드 변경 범위(Tasks 목록)에 없어 구현하지 않았다. DW-641이 이 파일의 라이브 단언 로직을 순수 함수로 분리하면서 6개 라이브 테스트 각각에 개별 skipif 마커를 붙였고(모듈 단위 skipif 제거), 그 리팩터가 이번 실측에도 그대로 반영돼 있다.
+
+### DW-631: G2 캡처 아티팩트에 실행 시각·커밋 해시가 없어 "어느 코드 상태의 캡처인가"를 파일로 증명할 수 없다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — verification-gap 렌즈 발견
+location: `api/scripts/run_phase_b.py`(`capture()`가 남기는 최상위 메타 = `{"model": …}` 뿐) · `api/docs/g2-baseline.json` · `api/docs/g2-exit-gate-2026-08-02.json`
+severity: low
+reason: 두 캡처 파일의 최상위 키는 `model`과 `results`뿐이다. 그래서 "이 캡처가 어느 코드에서 떴나"를 파일 자체로는 알 수 없고, 이번 리뷰도 `git log --since=... -- api/app`으로 사후 추론해야 했다(그 추론이 DW-621의 근거다). DW-621이 예정한 **13.9 재기준선 작업**에서는 "13.9 이전 코드로 뜬 캡처"를 기준선으로 고정하는 것이 핵심인데, 그 사실을 파일이 스스로 말하지 못하면 같은 사후 추론을 반복해야 하고 파일이 섞이면 구분할 방법이 없다.
+trigger: **DW-621을 처리하는 13.9 재기준선 작업과 같은 자리** — `capture()` 결과 메타에 `captured_at`(ISO)·`git_sha`(`git rev-parse HEAD`)를 함께 기록하고, `score_ab.py`가 리포트에 그대로 실어 준다. 기존 캡처 2개는 메타가 없으므로 소급하지 말고 "메타 없음 = 2026-08-02 이전 캡처"로 둔다.
+status: open
+
+### DW-632: `ai-demo-queries.md` ①②④ 표 12행 중 8행이 관측된 적 없는 기대값이다
+
+origin: story 13-8(RAG exit-gate 검증) **3차 리뷰** — adversarial·edge-case 두 렌즈 발견, 오케스트레이터가 큐리셋·라이브 스모크와 대조해 행별로 확인
+location: `api/docs/ai-demo-queries.md`(표 ①②④) · `api/tests/demo_queries.py`(`STRUCTURED_A`·`SEMANTIC_B`·`UNRELATED_C`) · `api/docs/ai-ab-test-queryset.json`
+severity: low
+reason: 이 문서는 스스로를 라우터 기대동작의 "단일출처"라 선언하고 각 행의 "기대 분류"는 *라우터가 그 질의를 어디로 보내는가*에 대한 주장이다. 실측 대조 결과 근거가 있는 것은 4행뿐이다 — `3천만원 이하 흰색 SUV`(SQL)·`패밀리카로 무난한 거`(CLARIFY)·`오늘 날씨 어때?`(REJECT)는 `test_live_smoke.py`가 라이브로 route를 단언하고, `출퇴근용으로 편한 차 추천해줘`는 큐리셋 CL4와 같은 문자열이다. 나머지 8행(`2020년 이후 제네시스`·`10만km 미만 디젤`·`서울 경차 보여줘`·`초보운전자에게 좋은 차`·`가성비 좋은 차 없을까?`·`파이썬 코드 짜줘`·`안녕`·`1+1은 뭐야?`)은 큐리셋에도 라이브 테스트에도 없고, 결정론 테스트는 `_patch_route`로 경로를 강제 주입하므로 실제 분류를 보지 않는다. **3차 리뷰에서 표 앞에 근거 강도를 밝히는 주석을 달아 오해는 막았지만**(어느 4행이 실측인지 명시), 8행의 기대값 자체를 실측으로 뒷받침하는 일은 남는다. 이건 DW-576(SM3가 라우팅을 강제 주입해 실제 라우팅을 보장하지 못함)의 문서 쪽 표면이다.
+trigger: **DW-576(회색지대 route 강제 주입)을 구조적으로 해소하는 그 작업에서 함께** — 라이브 라우터 결과 기반 판정을 도입한다면 그 대상 목록이 곧 이 12행이 된다. 그 전에 데모 시연이 잡히면 그때 8행을 한 번 라이브로 돌려 실측 라우트를 표에 병기한다(비용은 질의 8건).
+✎ 2026-08-03 trigger 재지정(오케스트레이터) — 위 trigger가 가리키는 "다음 스토리"가 백로그에 실재하지 않아 영영 발화하지 않는다는 지적(DW-640)에 따라, **Story 13.9(라우팅 안정화)의 인수조건으로 재지정**한다. 13-9는 `sprint-status.yaml`에 실재하는 backlog 스토리이며, 해당 인수조건을 실제로 심었다(B8: 지정한 곳에 실제로 심는다).
+status: done 2026-08-03
+resolution: trigger가 제안한 대로 "데모 시연이 잡힌" 이 스토리에서 8행을 실제로 라이브 1회 돌렸다(2026-08-03, `router_node()` 직접 호출, 라우터 프롬프트 갱신 후). 결과: 8행 전부 문서의 "기대 분류"와 정확히 일치했다(`2020년 이후 제네시스`→SQL, `10만km 미만 디젤`→SQL, `서울 경차 보여줘`→SQL, `초보운전자에게 좋은 차`→CLARIFY, `가성비 좋은 차 없을까?`→CLARIFY, `파이썬 코드 짜줘`→REJECT, `안녕`→REJECT, `1+1은 뭐야?`→REJECT). `ai-demo-queries.md` 상단 노트를 "12행 중 4행만 실측"에서 "12행 전부 실측(13.9가 나머지 8행을 라이브로 확인)"으로 갱신했다 — 단, 이 실측은 문서를 고친 시점의 스냅샷이며 상시 회귀 게이트가 아니라는 것도 명시했다(결정론 테스트는 여전히 `_patch_route` 강제 주입이라 DW-576 자체는 별개로 열려 있다). `demo_queries.py`는 질의 문자열·기대 route 값 자체가 바뀌지 않아 수정 불필요.
+
+### DW-633: Follow-up review still recommended for 13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260802-213104-8dec; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: done 2026-08-03
+resolution: 독립 후속 리뷰(4차)를 실제로 수행했다(2026-08-03, 새 세션·opus, 커밋 `ebf4d8a`·`86e4fb4`). 3차가 남긴 신규 14건(DW-619~632)을 코드·CI 설정과 하나씩 대조해 **틀리거나 과장되거나 이미 해결된 항목 0건**임을 확인했다. 새로 나온 high 2건은 둘 다 **3차가 "일부러 깨서 red를 봤다"고 기록한 검사 자신의 결함**이었다(기록은 사실이었고, 문제는 **한 방향으로만 깨본 것**): ① 회색지대 락스텝 검사가 질의셋을 표의 키로 먼저 걸러 비교해, 표에서 행을 지우면 양쪽이 같이 줄어 통과했다(3행 게이트를 1행으로 잘라도 전량 초록 — 세 레이어가 각각 독립 실증) → 반대 방향까지 보게 수정. ② 기준선 거부 테스트가 **실제 기준선 경로**로 스크립트를 호출해, 가드가 회귀하는 바로 그 순간 `pytest` 한 번이 47문항 기준선을 0으로 비웠다(md5 실측) → 검사를 파괴가 일어나는 층으로 내리고 사후 바이트 대조 추가. 그 외 `## Verification`의 G2 채점 명령이 `DATABASE_URL` 누락으로 실행조차 안 됐고(2차가 같은 유형을 이미 잡았는데 네 번째 명령에 남아 세 패스가 놓침), `ai-demo-queries.md` 서두의 "회색지대는 CLARIFY"가 같은 문서 표 3행 중 2행과 모순이었다. 399 passed·85 skipped, 앱 코드 무변경. 리뷰 권고는 "5차 패스보다 13.9에서 게이트를 실행되는 검사로 바꾸고 양방향 뮤테이션을 관례화하라"이며 이를 13.9 인수조건으로 심었다. 이 항목을 닫는다.
+
+### DW-634: SM3 ①② 게이트에는 노드 식별 단언이 없어 `SQL→hybrid` 오배선이 초록으로 지나간다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — adversarial 렌즈가 뮤테이션으로 실증, 오케스트레이터가 코드로 재확인
+location: `api/tests/test_demo_acceptance.py`(`test_sm3_pathA_returns_listings`·`test_sm3_pathB_returns_listings`) · `api/docs/ai-demo-queries.md`(SM3 매핑 표 ①②행)
+severity: medium
+reason: 3차 리뷰가 회색지대 테스트에는 노드별 카드 id(`s1`/`h1`) 단언을 넣어 분기 오배선을 잡게 만들었지만, 같은 파일의 ① 게이트는 여전히 `assert out["listings"]`(비어있지 않음)만 본다. **실증**: `conditional_edges`를 `"SQL" → hybrid`로 오배선해도 ① 게이트 4건이 전부 초록이다(회색지대 테스트는 red가 되므로 리포 전체로는 탐지되지만, `ai-demo-queries.md`의 SM3 매핑 표가 ① 행의 검사로 지목하는 것은 이 테스트다). 즉 문서가 "이 검사가 ①을 지킨다"고 적은 것과 실제 탐지 범위가 다르다. `_patch_route`가 이미 노드별로 구분되는 카드 id를 주입하므로 각 테스트에 한 줄 추가하면 닫힌다. **이 스토리(13.8)가 만든 결함은 아니다** — ①② 테스트는 13.8 이전부터 이 형태였고, 3차 리뷰가 회색지대만 보강하면서 비대칭이 드러난 것이다.
+trigger: **Story 13.9(라우팅 안정화)의 인수조건으로 함께 확인한다** — 13.9는 라우터 분류를 바꾸는 스토리라 분기 오배선 탐지가 정확히 그 자리에서 필요하다. `test_sm3_pathA_returns_listings`에 `assert out["listings"][0]["id"] == "s1"`, `pathB`는 이미 `clarify` 페이로드를 단언하므로 유지. 넣은 뒤 일부러 오배선해 red를 확인한다(B4).
+status: open
+
+### DW-635: `score_ab.py --out`에는 기준선 보호 검사가 없고, 자기 독스트링 예시가 커밋된 리포트를 가리킨다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — adversarial·edge-case 두 렌즈 독립 지적
+location: `api/scripts/score_ab.py`(`--out` 인자 · 독스트링 1파일 모드 예시) · `api/docs/g2-baseline-report.json`
+severity: medium
+reason: 13.8 3차 리뷰가 `run_phase_b.py`에 `_PROTECTED_BASELINES` 가드를 넣었고 4차 리뷰가 그것을 `capture()` 층까지 내렸지만, **쌍둥이 스크립트인 `score_ab.py`에는 같은 보호가 전혀 없다.** `--out`은 필수도 아니고(기본값 `docs/ab-eval-report.json`), 독스트링의 1파일 모드 예시가 `--out docs/g2-baseline-report.json`을 그대로 제시한다. 그 파일은 AC2의 **Manual checks가 대조하는 유일한 기준 수치**(54/57·0.8936·12/13·9/9)를 담고 있고, DW-626이 확인했듯 `routing_correct`·`doc_hit_n`·`clarify_ok_n` 세 축은 어떤 자동 게이트도 비교하지 않으므로 이 파일이 세 축의 유일한 기준점이다. 부분 캡처로 한 번 채점하면 47항목 기준이 3항목 리포트로 바뀐다. 가드를 한쪽 스크립트에만 넣은 탓에 보호 범위가 **사람 눈으로만 확인되는 축이 시작되는 바로 그 지점에서 끊긴다.**
+trigger: **`score_ab.py`를 다음에 손댈 때**(DW-626이 예정한 13.9 재기준선 작업에서 `regression_block`에 세 축을 합치는 그 자리) — `run_phase_b.py`의 보호 검사를 공용 헬퍼로 빼서 두 스크립트가 함께 부르게 하고, 독스트링 예시의 `--out`을 날짜형 경로로 바꾼다.
+status: done 2026-08-03
+resolution: `run_phase_b.py`의 `_PROTECTED_BASELINES`를 공용 헬퍼 `api/scripts/baseline_guard.py`(`PROTECTED_BASELINES`·`is_protected()`)로 뽑아 두 스크립트가 함께 참조하게 했다. `score_ab.py`의 `main()`에 `--out` 보호 검사를 추가했고, 독스트링 1파일 모드 예시를 `--out docs/g2-baseline-report.json`에서 `docs/g2-recapture-report.json`(비커밋 날짜형 경로)으로 정정했다. **양방향 실증(B4)**: 보호 검사를 지운 채 `test_out_path_pointing_at_committed_baseline_report_is_rejected`를 돌리자 **실제로 커밋된 `docs/g2-baseline-report.json`이 877줄→16줄로 덮어써졌다**(정확히 이 항목이 경고한 파괴가 재현됨) — `git checkout`으로 즉시 복구하고 보호 검사를 되돌려 테스트가 green임을 재확인했다.
+
+### DW-636: 0건 캡처가 "캡처 완료" + exit 0이고, 커밋된 증거 아티팩트는 보호 밖이다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case·adversarial 두 렌즈 실증
+location: `api/scripts/run_phase_b.py`(`main()`의 종료 처리 — `errored`만 exit 1을 만든다) · `api/scripts/run_phase_b.py`의 `_PROTECTED_BASELINES`(2개 파일만 등록) · `api/docs/g2-exit-gate-2026-08-02.json`
+severity: medium
+reason: 두 사실이 겹쳐 하나의 조용한 파괴 경로가 된다. (1) `--queryset` 오타나 매칭 0인 `--subset`이면 `capture()`가 루프 진입 전 `_flush()`로 대상 파일을 빈 상태로 만들고 `main()`은 `0개 item 캡처 완료(실패 0건)` + **exit 0**을 낸다 — 이 파일 독스트링이 스스로 세운 원칙("체인이 조용히 진행되지 않게 0이 아닌 코드로 종료")과 어긋난다. (2) `_PROTECTED_BASELINES`는 `g2-baseline.json`·`g2-baseline-partial.json` 2개만 덮고, **13.8의 AC2 증거인 `g2-exit-gate-2026-08-02.json`은 보호 밖**인데 스펙 Verification 커맨드 2번이 `--out`으로 정확히 그 경로를 가리킨다. 즉 13.9가 그 커맨드를 복붙해 돌리다 실패하면 증거가 0항목이 되고 종료코드는 0이다. 보호 집합에 그냥 추가할 수는 없다 — 그러면 문서화된 재캡처 커맨드 자체가 거부된다. 필요한 것은 파일명 열거가 아니라 "git이 추적 중인 캡처는 새 날짜 경로로만 쓴다"는 규칙이다. (복구 자체는 `git restore`로 가능하다 — 진짜 문제는 exit 0이라 아무도 복구를 시도하지 않는 것이다.)
+trigger: **`run_phase_b.py`를 다음에 손댈 때** — ① `if not raw["results"]: sys.exit(1)`로 0건 캡처를 실패로 만들고, ② 보호를 "`git ls-files api/docs/*.json`에 잡히는 경로면 거부"로 바꿔 날짜형 새 경로만 허용한다(원래 trigger의 ③은 Story 13.9가 아래 ✎로 이행했다).
+✎ 2026-08-03 부분 진척(Story 13.9) — reason의 두 사실 중 (2)만 이번 스토리가 닫았다: 공유 `baseline_guard.PROTECTED_BASELINES`에 `g2-exit-gate-2026-08-02.json`·`g2-exit-gate-report.json`을 추가해 "13.8 AC2 증거가 보호 밖" 공백을 닫았다(`test_run_phase_b.py`의 `test_main_refuses_to_overwrite_committed_baseline` parametrize에 두 파일을 추가해 거부를 실측 확인). **(1)의 0건 캡처 exit 0과 원래 trigger의 ②(git ls-files 기반 동적 보호)는 구현하지 않았다** — Story 13.9의 Tasks 목록이 커밋한 범위는 "보호 패턴 재사용 + docstring 정정"뿐이고, 파일명 열거 대신 동적 판별로 바꾸는 것은 별도 설계 판단이 필요해 스코프 밖으로 남긴다. 위 trigger는 남은 두 항목으로 좁혔다.
+status: open
+
+### DW-637: G2 회귀 판정의 **방향**이 `--raw` 인자 순서로만 정해지고 리포트에 그 순서가 안 남는다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case 렌즈가 양방향 채점으로 실증, 오케스트레이터가 코드·리포트로 재확인
+location: `api/scripts/score_ab.py`(`baseline, candidate = summaries[0], summaries[1]` · `report = {"baseline": baseline["name"], "candidate": candidate["name"], …}`) · `api/docs/g2-exit-gate-report.json`
+severity: medium
+reason: DW-626은 "네 축 중 한 축만 비교한다"를 다루는데, 그 **한 축조차 방향이 검증되지 않는다**. `regression = candidate["result_mean"] < baseline["result_mean"]`이고 둘의 배정은 오직 `--raw`에 준 파일 순서다. **실증**: 결과집합을 훼손한 저하판을 만들어 `--raw <기준선> <저하판>`으로 채점하면 `regression_block:true`, 순서만 뒤집으면 **`regression_block:false`**로 통과한다(result_mean 0.894 vs 0.269). 그런데 리포트의 `baseline`/`candidate` 필드에 들어가는 것은 **파일 경로가 아니라 모델명**이고, 13.8은 같은 모델을 자기 자신과 비교하므로 양쪽 다 `gemini-3.1-flash-lite`다 — 즉 **산출된 아티팩트만 봐서는 어느 파일이 기준선이었는지 알 방법이 전혀 없다**(커밋된 `g2-exit-gate-report.json`에서 직접 확인). 13.9가 재기준선을 뜨면 두 캡처가 서로 다른 코드 상태가 되므로 순서 실수의 대가가 지금보다 커진다(그때는 진짜 회귀가 통과할 수 있다). DW-631(캡처에 시각·커밋 해시 없음)과 인접하지만 같지 않다 — 그건 캡처 파일의 출처, 이건 채점 리포트의 역할 배정이다.
+trigger: **DW-626·DW-631을 처리하는 13.9 재기준선 작업과 같은 자리** — 리포트에 `baseline_raw`/`candidate_raw`(원본 파일 경로)를 함께 싣고, 두 raw의 `model`이 같으면 `--baseline`/`--candidate` 명시를 요구하거나 최소한 경고를 찍는다. 순서를 바꿔도 같은 리포트가 나오지 않는지 확인하는 결정론 테스트를 `test_ab_scoring.py`에 함께 넣는다(B4).
+status: done 2026-08-03
+resolution: 2파일 모드 리포트에 `baseline_raw`/`candidate_raw`(`--raw`에 준 원본 파일 경로 그대로)를 추가했다. 두 raw의 모델명이 같으면(자기비교) 콘솔에 `⚠️ baseline·candidate 모델명이 같습니다 — 파일 경로로만 방향을 구분할 수 있습니다: baseline_raw=..., candidate_raw=...` 경고를 찍는다(trigger가 제시한 "필수 요구" 대신 "경고" 쪽을 택했다 — 자기비교 자체가 정당한 사용 패턴이라 강제 거부는 과잉이라고 판단). `test_ab_scoring.py`에 `test_report_records_raw_file_paths_and_self_comparison_warning`(경고 문구·파일 경로 단언)과 `test_swapping_raw_argument_order_changes_recorded_baseline_direction`(순서를 바꾼 두 리포트가 `baseline_raw`/`candidate_raw`도 함께 뒤집힘을 확인)을 추가했다 — 후자가 정확히 이 항목의 실증 시나리오(방향 뒤집기)를 결정론으로 고정한다.
+
+### DW-638: `--subset`이 id 없는 큐리셋 항목을 만나면 친절한 검증 전에 맨 `KeyError`로 죽는다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case 렌즈
+location: `api/scripts/run_phase_b.py`(`main()`의 `missing = set(subset) - {it["id"] for it in queryset["items"]}`) · 같은 파일 `capture()`의 `missing item id at index {idx}` 사전검증
+severity: low
+reason: `capture()`는 review pass 5에서 "id 없는 item은 원인을 말해주는 ValueError로 거부"하도록 고쳐졌지만, `main()`의 `--subset` 검증이 **그보다 먼저** `{it["id"] for it in ...}`로 색인하므로 `--subset`을 쓰는 경로에서는 여전히 맨 `KeyError: 'id'`가 난다. 그 수정이 없애려던 증상(어느 item이 문제인지 알 수 없음)이 한 갈래에 그대로 남아 있다. 큐리셋을 손으로 편집하는 작업(13.9가 `acceptable_paths`를 좁히며 하게 된다)에서 마주칠 자리다.
+trigger: **큐리셋(`ai-ab-test-queryset.json`)을 편집하는 다음 작업 시**(13.9 라우팅 안정화가 `acceptable_paths`를 조정하는 자리) — `main()`의 subset 검증 앞에 `capture()`와 같은 id 존재 검사를 두거나, subset 필터링을 `capture()` 안으로 밀어 검증 순서를 하나로 만든다.
+status: open
+
+### DW-639: `epic-13-context.md`가 "47개 질의" 사본을 새로 심었다 — 같은 커밋이 다른 곳의 하드코딩 수치를 뺀 이유와 정면으로 어긋난다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — adversarial 렌즈, git으로 신규 추가임을 확인(5fd4b67엔 없음)
+location: `_bmad-output/implementation-artifacts/epic-13-context.md`(실측 기준선 서술의 "47개 질의") · 대조: `api/scripts/run_phase_b.py`의 `--subset` help(같은 커밋이 "전량(47개)"에서 수치를 뺐다)
+severity: low
+reason: 13.8의 명시 목적 중 하나가 "수치 사본은 늙는다"(13-7 리뷰가 지적한 패턴)를 고치는 것이었고, 3차 리뷰는 그 이유로 `--subset` help에서 하드코딩된 개수를 제거했다. 그런데 **같은 커밋이 epic 컨텍스트에는 새 수치 사본을 넣었다**. 하필 그 파일은 **Story 13.9의 스펙이 만들어지는 문서**이고, 13.9는 **기준선을 재캡처하는 스토리**라 질의 수가 바뀔 수 있는 바로 그 작업이다. 지금은 값이 맞으므로 코드 동작에 영향은 없다.
+trigger: **Story 13.9 step-02 planning(스펙 초안 작성) 시** — 수치를 빼고 `api/docs/ai-ab-test-queryset.json`을 정본으로 가리키는 포인터만 남긴다(`--subset` help가 이미 그렇게 한다). 재캡처로 질의 수가 바뀌면 이 한 줄을 고치는 대신 사본이 애초에 없게 만든다.
+status: open
+
+### DW-640: 열린 장부 항목 4건의 `trigger:`가 예정에 없는 스토리에 걸려 있어 영영 발화하지 않을 수 있다
+
+origin: story 13-8(RAG exit-gate 검증) **4차 리뷰(DW-633)** — edge-case 렌즈가 장부 전수 대조로 발견
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-620·DW-625·DW-627·DW-632 `trigger:` 줄 · 대조: DW-621·DW-626·DW-630·DW-631(실재하는 Story 13.9에 묶여 건전)
+severity: medium
+reason: CLAUDE.md B8은 미룬 항목에 "언제·어디서 고칠지"를 적으라고 요구하는데, 네 항목의 트리거는 **백로그에 존재하지 않는 스토리**를 조건으로 건다 — DW-625·DW-627은 "CM-B류 전수 확인을 수행하는 다음 스토리 착수 시", DW-632는 DW-576에 체인(그 DW-576은 `status:` 값 자체가 sweep 문법 밖이라 DW-623이 열려 있다), DW-620은 문서 드리프트 일반. 그중 **DW-627은 3차 리뷰가 `(status='on_sale' OR true)` 뮤테이션으로 실증한 FR11 보안 공백**(CM-B 커맨드 전량이 초록이었다)이고 severity가 medium인데, 그걸 고칠 담당 스토리가 없다. 반면 같은 패스에서 나온 DW-621·626·630·631은 실재하는 13.9(이미 G2 재캡처를 인수조건으로 가짐)에 묶여 있다 — 즉 이 문제는 장부 전체가 아니라 **이 네 건에 한정된 것**이다. 기존 항목 수정이 이번 실행에서 금지돼 있어 신규 등재로 남긴다.
+trigger: **오케스트레이터가 다음 sweep을 돌릴 때** DW-623·DW-624와 함께 처리한다 — 네 항목의 트리거를 실재하는 Story 13.9의 인수조건(체크박스)으로 재지정하고, 지정한 그 자리에도 실제로 심는다(CLAUDE.md B5·B8: "회고 약속은 회고 문서에만 두면 이행되지 않는다"). 특히 **DW-627은 보안 축이므로 13.9 인수조건으로 올리는 것을 기본값으로 본다**.
+status: done 2026-08-03
+resolution: 네 항목(DW-620·625·627·632) 모두 Story 13.9가 처리를 완료했다(각 항목의 `status: done 2026-08-03`·`resolution:` 참조) — DW-627(보안 축, 실DB 테스트 신설)을 포함해 전부 실제로 발화했다. "예정에 없는 스토리에 걸려 발화하지 않는다"는 이 항목의 우려가 실제로 해소된 것으로 닫는다.
+
+### DW-641: 라이브 트레이싱 단언의 로직이 재검증 불가능한 자리에 있고, 두 견본의 CORS 비대칭은 의도인지 미확인이다
+
+origin: 2026-08-03, story 13-7-langsmith-트레이싱 **독립 후속 리뷰 패스**(DW-618이 남긴 권고를 새 세션에서 소진) — 라이브 양방향 재현 + 돌연변이 검사 과정에서 나옴
+location: `api/tests/test_live_smoke.py`(`test_live_smoke_langsmith_tracing` 본문 209~249줄) · `api/tests/test_env_example_parity.py`(`_KNOWN_API_ONLY`) · `.env.example`(api 섹션) · `api/.env.example`(CORS 블록)
+severity: low
+reason: 실측 확인함 —
+  1. **단언 로직이 테스트 함수 본문에 인라인이라 결정론으로 재검증할 방법이 없다.** 노드 스팬 단언(`r.name in node_names`)이 실제로 "노드 계측이 죽은 상태"를 잡는지는 이번 패스에서 라이브로 확인했지만(노드 이름 스팬을 서버 응답에서 걸러내 red 재현), 그 확인은 **매번 손으로 돌연변이를 만들어야만** 가능하다 — 3차 리뷰도 같은 일을 합성 스팬으로 따로 했다. 같은 검증을 두 번 손으로 한 것 자체가 신호다. 판정 로직을 순수 함수(예: `_missing_span_kinds(runs, node_names) -> list[str]`)로 빼면 라이브 없이 결정론 검사가 붙고, 3차가 잡은 "한 갈래를 두 번 세는" 착시도 CI가 지킨다. 지금은 **사람이 라이브로 돌릴 때만** 지켜진다(라이브 실행 자체를 CI로 옮기자는 얘기가 아니다 — 그 절충은 project-context 규칙 12로 유지).
+  2. **루트 `.env.example`의 api 섹션과 `api/.env.example`의 키 비대칭 2건(`CORS_ORIGINS`·`CORS_ORIGIN_REGEX`)이 의도인지 누락인지 확인되지 않았다.** 이번 패스가 추가한 파리티 검사는 이 2건을 `_KNOWN_API_ONLY`로 **동결**해 두었을 뿐이다(새 비대칭은 양방향으로 red). DW-616이 제안했던 "키 집합 완전 일치" 단언은 이 상태에서 그대로 red가 나므로 채택할 수 없었다 — 판단(루트 견본에 CORS를 추가할지, 비대칭을 근거와 함께 확정할지)은 견본 파일을 실제로 손대는 스토리의 몫이다.
+trigger: **Story `13-9-라우팅-안정화-최상급-교체요청-맥락재작성` 착수 시**(sprint-status.yaml에 실재하는 다음 스토리) — 1번은 13.9가 라우팅 노드를 바꾸면서 이 단언이 실제로 흔들리는 유일한 시점이므로 그때 순수 함수로 분리하고 결정론 검사를 붙인다. 2번은 그보다 먼저 **`.env.example`을 다음에 손대는 스토리**가 있으면 그쪽이 가져가도 된다(DW-616과 같은 자리).
+status: done 2026-08-03
+resolution: **항목 1(단언 로직 순수 함수화)은 Story 13.9가 처리했다** — `test_live_smoke.py`에 `_missing_span_kinds(runs, node_names) -> list[str]`를 추출해 `test_live_smoke_langsmith_tracing`의 폴링 루프·최종 단언이 이 함수를 호출하게 바꿨다. 모듈 단위 `pytestmark` skipif를 6개 라이브 테스트 각각의 `@_live_only` 데코레이터로 바꿔, 이 순수 함수의 단위테스트(`test_missing_span_kinds_*` 5건)가 `RUN_LIVE_SMOKE`와 무관하게 항상 돈다(**"그 함수만 단위테스트한다"** 요건 충족). 양방향 실증(B4): `node` 판정 분기를 지우자 `test_missing_span_kinds_detects_missing_node_span`·`test_missing_span_kinds_detects_both_missing` 2건이 실제로 red가 됐고, 원복해 green 재확인했다. **항목 2(CORS 견본 비대칭)는 13.9가 다루지 않는다** — `.env.example`을 손대는 스토리가 아니므로 trigger가 예정한 대로 그 스토리에 넘긴다. 이 이월을 "지정한 곳에 심는다"(B8)는 원칙에 따라 DW-642로 재등재했다.
+
+### DW-642: 루트/api `.env.example`의 CORS 키 비대칭 2건이 의도인지 누락인지 아직 미확인이다
+
+origin: DW-641 항목 2를 Story 13.9가 그대로 이월(2026-08-03) — 13.9는 `.env.example`을 손대는 스토리가 아니라 판단을 내리지 않았다.
+location: `.env.example`(루트, api 섹션) · `api/.env.example`(CORS 블록) · `api/tests/test_env_example_parity.py`(`_KNOWN_API_ONLY`가 `CORS_ORIGINS`·`CORS_ORIGIN_REGEX` 2건을 동결)
+severity: low
+reason: `api/.env.example`에만 있는 `CORS_ORIGINS`·`CORS_ORIGIN_REGEX` 2개가 (a) 루트 견본에 일부러 안 옮긴 것인지, (b) 옮기는 걸 깜빡한 것인지 판단된 적이 없다. 현재 파리티 테스트는 이 2건을 `_KNOWN_API_ONLY`로 동결해 새 비대칭만 잡고 이 2건은 통과시킨다 — 안전하지만 "왜 다른가"라는 질문 자체는 열려 있다.
+trigger: **`.env.example`(루트 또는 api)을 다음에 손대는 스토리 착수 시** — 그 스토리가 (a) 루트 견본에 CORS 키를 추가해 완전 일치시키거나, (b) "CORS는 api 전용이라 루트엔 안 둔다"를 근거와 함께 확정하고 `_KNOWN_API_ONLY`에 그 근거를 주석으로 남긴다.
+status: open
+
+### DW-643: `_bmad-output/implementation-artifacts/epic-13-context.md`의 작업트리 내용이 커밋(HEAD)보다 오래된 판본으로 되돌려져 있다
+
+origin: Story 13.9 작업 중(2026-08-03) 우연히 발견 — 이 파일을 스펙 Code Map이 지정하지 않아 직접 손대지 않았으나, `git status`에서 미커밋 수정으로 나타남.
+location: `_bmad-output/implementation-artifacts/epic-13-context.md`
+severity: low
+reason: `git diff`로 확인한 결과, 작업트리의 현재 내용이 HEAD(커밋 `1cf5d7a`, 13.9 착수 시점의 최신 커밋)에 있는 **더 상세한 판본**(13.9 라우팅 결함·RESET teardown·G2 두-단계 판정 등을 담은 문단)을 **더 단순하고 오래된 문단**으로 되돌린 상태다. 이 세션은 이 파일을 한 번도 Edit하지 않았고(Code Map에도 없음), mtime 분석 결과 이 변경은 세션 시작 전부터 작업트리에 있었던 것으로 보인다(정확한 원인 미상 — 동시에 실행 중이었을 수 있는 다른 프로세스/세션의 산물일 가능성). CLAUDE.md B3(외과적 변경)에 따라 이 스토리 스코프 밖의 변경을 되돌리거나 덮어쓰지 않고 그대로 두었다.
+trigger: **다음에 이 파일을 여는 사람이 즉시 판단** — `git diff -- _bmad-output/implementation-artifacts/epic-13-context.md`로 실제 차이를 확인하고, 의도된 변경이 아니면 `git checkout -- <path>`로 HEAD 판본을 복원한다. 의도된 변경(예: 별도 세션이 문서를 의도적으로 단순화)이면 이 항목을 닫고 이유를 남긴다.
+status: done 2026-08-03
+resolution: 원인이 확인됐다 — 별도 프로세스가 아니라 **이 스토리를 착수한 같은 세션의 step-01**이다. `epics-increment-2026-07-12.md`(직전 커밋 `1cf5d7a`가 13.9 초안을 본문에 반영하며 갱신)가 캐시된 `epic-13-context.md`보다 최신이라 무효 판정돼, `compile-epic-context.md` 절차로 재컴파일됐다(계획 산출물만 소스로 삼음). 더 "상세한" HEAD 판본은 사실 13.8 후속 리뷰가 `compile-epic-context.md` 자신의 규칙("Nothing derivable from the codebase" · "No story-level details" · "describe by purpose, not by source")을 어기고 코드리뷰발 세부사항(상수명·DW 번호·파일 경로)을 되채워 넣은 상태였다 — 재컴파일이 그 규칙 위반을 되돌려 정상화한 것이지 정보가 유실된 게 아니다. **연속성 손실 없음**: 이 스토리의 계획(step-02)은 캐시가 아니라 `epics-increment-2026-07-12.md` 원문을 직접 읽어 13.9 요구사항을 확보했으므로, 재컴파일이 지운 세부사항에 의존하지 않았다. 에픽 13은 이 스토리로 종료되므로 다음 재컴파일 시점도 없다.
+
+### DW-644: `epics-increment-2026-07-12.md`가 되묻기 상한을 "클라이언트가 강제"한다고 적어 실제 코드(서버 강제)와 반대다
+
+origin: Story 13.9 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 `api/app/graph/graph.py`의 `_CLARIFY_TURN_CAP`·`_clarify_step` 원문으로 반대 사실을 확인. Story 13.9 diff가 같은 파일의 다른 자리(가이드 문서 개수, DW-620)를 이미 고쳤으나 이 줄은 스펙 스코프 밖이라 손대지 않음.
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(Story 13.4 되묻기 상한 서술 근처, "클라이언트가 강제" 표현)
+severity: medium
+reason: 실제로는 서버(`graph.py`의 `_CLARIFY_TURN_CAP`·`_clarify_step`)가 클라이언트 협조와 무관하게 상한을 강제한다 — 이는 DW-563이 이미 "클라이언트만 세는 상한은 상한이 아니다"로 확정한 설계 결정이고 `epic-13-context.md`에는 이 반대 방향(서버 강제)이 이미 정확히 반영돼 있다. 원본 계획 문서에만 뒤집힌 문장이 남아, 이 문서만 읽는 다음 사람이 "클라이언트가 알아서 멈추므로 서버 쪽엔 안전장치가 없다"고 오해하면 향후 변경에서 서버측 강제를 실수로 제거해도 문제로 안 보일 위험이 있다.
+trigger: `epics-increment-2026-07-12.md`의 Story 13.4 절을 다음에 손대는 사람 — "클라이언트가 강제"를 "서버(`_CLARIFY_TURN_CAP`)가 강제, 클라이언트는 참고만"으로 정정한다.
+status: open
+
+### DW-645: 라우터의 최상급 규칙이 가격 축에만 닫혀 있다 — 연식·주행거리·연비 최상급은 여전히 CLARIFY로 샌다
+
+origin: Story 13.9 후속 리뷰 — edge-case-hunter 렌즈 발견, 오케스트레이터가 `_SYSTEM_PROMPT` 원문과 `_has_superlative` 실행으로 확인.
+location: `api/app/graph/router_node.py`(`_SYSTEM_PROMPT` 최상급 규칙·예시), `api/app/graph/hybrid_rag_node.py`(`_SUPERLATIVE_PRICE_RE`), `api/app/graph/contextualize_node.py`(`_SUPERLATIVE_PRICE_RE`)
+severity: medium
+reason: 13.9가 넣은 규칙은 "제일/가장 + 싸다·비싸다·저렴하다"(가격 형용사)만 구조조건으로 인정한다. 그런데 `listings`에는 정렬 가능한 축이 더 있다 — `year`·`mileage`·`displacement`. "제일 주행거리 짧은 차"·"가장 최신 연식"은 주관적 최상급이 아니라 명백한 구조조건인데도 규칙·예시가 없어 DW-611이 고치려던 CLARIFY 오분류가 그대로 남는다. 스펙 Never 절이 범위 밖으로 명시한 것은 "주관적 최상급"(제일 좋은·가장 예쁜)이지 객관적 정렬축이 아니므로, 이 축은 의도적 유예가 아니라 미처 못 본 자리다. 세 파일이 같은 어휘 정의를 각자 들고 있어(Design Notes의 "공유 유틸 대신 지역 상수" 결정) 축을 넓힐 때 세 곳을 함께 봐야 한다.
+trigger: 다음 라우팅·큐리셋 관련 스토리 착수 시(가격 외 정렬축 질의를 큐리셋에 추가하는 시점) — 규칙·예시를 넓히고 재캡처로 실측 확인한다.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. 위 correction으로 범위가 축소된 잔여분(비가격 최상급에서 맥락 리셋 판정·캐비엇 문구가 동작하지 않음)만 다룬다.
+correction (2026-08-05): **제목의 핵심 주장("연식·주행거리 최상급은 CLARIFY로 샌다")은 실측으로 반증됐다 — 이 항목의 범위를 좁힌다.** 원 등재는 `_SYSTEM_PROMPT` 원문 읽기 + `_has_superlative` 정규식 직접 실행으로 판정했는데, **둘 다 파이프라인의 실제 동작이 아니다**(정규식은 라우팅에 관여하지 않는다 — 아래). 라이브 재현 결과(로컬 API, LangSmith 트레이싱 ON, 2026-08-05):
+  · `연식 가장 최신인 차` → **SQL**, 5건 전부 2023년(정렬 정확) ✅
+  · `주행거리 제일 적은 차` → **SQL**, `14000·14000·17000·18000·18000`km 오름차순(정렬 정확) ✅
+  · `제일 싼차`·`가장 싼거`(붙여쓰기, DW-653이 빠졌다고 본 형태) → **SQL**, 가격 오름차순 정확 ✅
+  되묻기로 새는 질의는 **0건**이었다. 이유는 구조에 있다: 4분기 라우팅은 **오직 LLM**(`router_node.py:133-138`, `RouterDecision.route`의 `Literal` 강제)이 정하고, `_SUPERLATIVE_PRICE_RE`는 라우팅에 **전혀 관여하지 않는다** — 그 정규식이 실제로 쓰이는 곳은 ① `contextualize_node._is_topic_shift`(멀티턴 맥락을 유지할지 리셋할지) ② `hybrid_rag_node._has_superlative`(HYBRID 결과에 "가격 정렬 미반영" 캐비엇 문구를 붙일지) 둘뿐이다. 프롬프트의 최상급 예시가 가격에 치우친 것은 사실이나, LLM은 그 예시에 없는 축(연식·주행거리)도 "명시적 조건"으로 일반화해 SQL로 보낸다.
+  **남는 진짜 범위(이것만 유효)**: (a) 두 정규식이 가격 축에만 열려 있어 **비가격 최상급에서는 맥락 리셋 판정·캐비엇 문구가 동작하지 않는다**(결과가 틀리는 게 아니라 부가 판단이 빠진다), (b) 프롬프트 예시에 비가격 축이 없어 향후 모델 교체 시 회귀 위험이 남는다. 실피해 등급을 medium → **low**로 낮춘다.
+  **교훈(B4)**: 이 항목도, 같이 취소된 DW-656도, 원인이 같다 — **보조 함수·프롬프트 원문을 읽고 사용자 대면 동작을 단정했다.** 최상급·라우팅 관련 주장은 반드시 `/ai/search`를 실제로 호출해 확인할 것.
+
+### DW-646: G2 게이트가 `scored_n` 개수만 비교하고 채점된 **문항 집합**은 비교하지 않는다
+
+origin: Story 13.9 후속 리뷰 — edge-case-hunter 렌즈 발견, 오케스트레이터가 `score_ab.py`의 `coverage` 구조로 확인.
+location: `api/scripts/score_ab.py`(`coverage_matches` 계산부), `score_model()`의 `coverage` 딕트
+severity: low
+reason: 13.9가 넣은 커버리지 가드는 `baseline["coverage"]["scored_n"] == candidate["coverage"]["scored_n"]`로 **개수**만 본다. 개수가 같아도 서로 다른 문항 집합이 채점된 경우(예: baseline은 S계열 3건이 죽고 candidate는 M계열 3건이 죽은 부분 재캡처)는 통과하고, 그러면 분모는 같지만 비교 대상이 달라 개수 3축이 조용히 무의미해진다. `coverage`에 이미 `missing_ids`가 있으므로 채점된 id 집합을 함께 실어 비교하면 닫히지만, `score_model()` 반환 구조를 손대는 일이라 13.9 스코프 밖으로 미룬다.
+trigger: `score_ab.py`의 `coverage` 구조를 다음에 손대는 스토리, 또는 부분 재캡처가 실제로 필요해지는 시점 — `scored_ids` 집합 비교로 바꾸고 red/green으로 확인한다.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. DW-647과 같은 채점기 파일을 건드리므로 함께 한다.
+
+### DW-647: 큐리셋의 `count_range`를 스코어러가 한 번도 읽지 않는다 — 선언만 있고 검사가 없다
+
+origin: Story 13.9 후속 리뷰 — intent-alignment 렌즈 발견, 오케스트레이터가 `grep count_range api/scripts/` 0건으로 확인.
+location: `api/docs/ai-ab-test-queryset.json`(S6·M1.t2·M2.t3 등의 `predicate.count_range`), `api/scripts/score_ab.py`(topn 채점부)
+severity: low
+reason: 큐리셋은 S6에 `count_range:[1,1]`을 선언하지만 스코어러의 topn 모드는 `returned[:len(gold_order)]`, 즉 **선두 N건만** 비교한다. 실제 2026-08-03 재캡처에서 S6·M2.t3은 5건을 반환했는데도 `result:1.0`이다 — "제일 싼 차 뭐야?"에 `LIMIT 1`이 걸렸는지는 게이트가 보지 않는다. 에픽 13이 반복해 학습한 "선언만 하고 못 잡는 게이트"의 또 다른 사례이며, 스펙 I/O 매트릭스가 `ORDER BY price ASC LIMIT 1`을 기대값으로 적은 것과도 어긋난다. 다만 라우팅 정답률·결과집합 정확도라는 주 지표는 이 축 없이도 성립하므로 회귀는 아니다.
+trigger: 큐리셋·스코어러를 다음에 손대는 스토리 — `count_range`를 실제 채점 축으로 넣고, 일부러 개수를 어긋나게 해 red를 확인한다.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. DW-652와 반드시 같은 작업에서 — 채점이 개수를 보기 시작하면 S6가 즉시 red가 되므로, 생성 쪽(LIMIT 1)을 같이 안 고치면 게이트만 빨개진다.
+
+### DW-648: 최상급+가격형용사가 비-매물 주제에 붙으면 여전히 맥락이 접힌다 (13.9 P3/P4 수정의 알려진 잔여 구멍)
+
+origin: Story 13.9 후속 리뷰 — edge-case-hunter 렌즈 발견, 오케스트레이터가 수정 후 `_is_topic_shift`를 직접 실행해 잔존 확인.
+location: `api/app/graph/contextualize_node.py`(`_is_topic_shift` 3단계, `_SUPERLATIVE_PRICE_RE`)
+severity: low
+reason: 후속 리뷰가 "제일 좋은 자동차보험 알려줘"류(최상급이지만 가격 형용사 없음)의 오판을 고치면서, 판정 기준을 라우터 프롬프트와 같은 "최상급 부사 + 가격 형용사 결합"으로 맞췄다. 그 결과 `제일 좋은 자동차보험`·`제일 인기있는 여행지`는 정상적으로 리셋되지만, `가장 싼 할부 이자율이 뭐야?`처럼 **가격 형용사를 포함한 비-매물 주제**는 여전히 리파인으로 오판돼 앞선 매물 조건(차종·가격)이 접혀 들어간다. 제대로 닫으려면 비-매물 주제 어휘(보험·할부·이자율·여행 등)를 판정에 넣어야 하는데, 그건 새 어휘 사전을 도입하는 별개 설계라 13.9의 최소 침습 범위 밖이다. 실피해는 REJECT 분기가 뒤에서 걸러 주므로 제한적이다.
+trigger: `contextualize_node`의 주제전환 판정을 다음에 손대는 스토리, 또는 비-매물 질의 오분류가 실제 재캡처에서 관측되는 시점.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건.
+
+### DW-649: DW-625·DW-630이 요구한 작업의 일부가 미이행인 채 종결됐다 — 잔여분을 여기서 이어받는다
+
+origin: Story 13.9 후속 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 두 항목의 resolution 원문과 실제 코드로 확인. 기존 항목의 status·resolution은 오케스트레이터 소관이므로 수정하지 않고 잔여 의무만 신규로 등재한다.
+location: `api/tests/conftest.py`(라이브 스모크 스킵 감지 훅 부재), 13.8 CM-B 재실행 절차
+severity: medium
+reason: 두 가지다. (1) DW-630은 "라이브 스모크가 전량 스킵돼도 게이트가 초록으로 보인다"는 문제였고 두 가지 조치(conftest 훅 / 커맨드에 `-rs`+개수 못박기) 중 후자를 택했다고 기록됐으나, 13.9 스펙에 커밋된 커맨드엔 실제로 `-rs`가 없었다(후속 리뷰가 P12로 스펙 커맨드는 정정했다). 남은 것은 **커맨드가 아니라 코드로 강제하는 층** — 사람이 커맨드를 복붙하지 않고 CI가 돌 때도 전량 스킵이 실패로 보이게 하려면 conftest 훅이 필요하다(CLAUDE.md B9: 규칙은 어길 수 없는 자리에 박는다). (2) DW-625는 resolution 자신이 "13.9는 CM-B 전수 재실행을 스코프에 두지 않았으므로 그 다음 CM-B 재실행 시점에 확인된다"고 적고도 종결됐고, 그 확인 의무를 이어받는 항목이 없었다.
+trigger: 다음 CM-B(에픽 검증 커맨드 묶음) 전수 재실행 시점 — 그때 (2)의 확인을 수행하고, 같은 작업에서 (1)의 conftest 훅을 넣어 전량 스킵을 red로 만든다(일부러 스킵시켜 red 확인).
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건.
+
+### DW-650: DW-644의 `trigger:`가 실제 파일에 없는 문자열을 인용하고 있어 담당자가 못 찾을 수 있다
+
+origin: Story 13.9 후속 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 `epics-increment-2026-07-12.md` 원문 grep으로 확인. 기존 항목 본문은 오케스트레이터 소관이라 수정하지 않고 정정 사항만 신규로 남긴다.
+location: `_bmad-output/implementation-artifacts/deferred-work.md`(DW-644의 location·trigger), `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(1029행 "클라 강제 I12", 173행 UX-DR23, 1412행)
+severity: low
+reason: DW-644는 정정 대상 표현을 "클라이언트가 강제"로 인용했는데 파일의 실제 표현은 **"클라 강제 I12"**다. 그대로 grep하면 0건이 나와 담당자가 "이미 고쳐졌다"고 판단해 닫아버리기 쉽다. 또 되묻기 상한 서술은 한 자리가 아니라 최소 세 자리(173·1029·1412행)에 흩어져 있어, 한 곳만 고치면 나머지가 남는다. DW-644가 근거로 든 "`epic-13-context.md`에는 서버 강제가 정확히 반영돼 있다"는 서술 자체는 유효하다(같은 커밋의 재컴파일이 그 줄을 지웠던 것을 후속 리뷰 P9가 복원했다).
+trigger: DW-644를 실제로 처리하는 사람 — 이 항목을 함께 읽고 "클라 강제 I12"로 검색해 세 자리를 모두 정정한다.
+status: open
+
+### DW-651: 스펙이 약속한 "최상급×HYBRID 재검토 트리거" 장부 항목이 실제로는 등재된 적이 없다
+
+origin: Story 13.9 3차 리뷰 — adversarial 렌즈 발견, 오케스트레이터가 `deferred-work.md` 전문 grep(패밀리카·최상급×HYBRID·정렬 미적용·캐비엇) 0건으로 확인.
+location: `_bmad-output/implementation-artifacts/spec-13-9-라우팅-안정화-최상급-교체요청-맥락재작성.md`(Design Notes "옵션(b) 채택 근거" 마지막 문장) · `api/app/graph/hybrid_rag_node.py`(캐비엇 부착부)
+severity: medium
+reason: 스펙 Design Notes는 옵션(b)를 택하면서 "이 조합이 실제로 관측되면(향후 큐리셋에 항목이 생기면) 그때 (a)/(c)를 재검토한다 — deferred-work.md에 그 트리거로 신규 항목을 남긴다"고 명시적으로 약속했는데, 장부에 그 항목이 없다. 그래서 지금 "제일 싼 패밀리카"류는 라우터 프롬프트가 최상급을 구조조건이라 선언해 놓고도 HYBRID 경로에서 정렬을 버리고 캐비엇 문장으로 대체하는 상태이며, 그 사실이 코드 주석과 사용자 응답 문자열에만 산다. DW-645(가격 외 정렬축)·DW-647(count_range 미채점)은 인접하지만 다른 축이다 — 이 항목만이 "최상급이 HYBRID에서 통째로 버려진다"를 다룬다. CLAUDE.md B8("미룬 것도 대장에 적는다 — 미루는 판단은 틀린 게 아니고 안 적는 게 틀린 거다")이 정확히 이 자리를 가리킨다.
+trigger: **큐리셋(`api/docs/ai-ab-test-queryset.json`)에 "최상급+의미조건" 항목이 처음 추가되는 시점** — 그때 옵션(a)(SQL로 보내 정렬 살리기)와 (c)(`sql_guard` 2차 정렬키 차단 재검토, 보안 결정)를 실측 근거 위에서 재검토한다. 그 전까지는 옵션(b)(정렬 포기 + 캐비엇 고지)가 확정된 동작이다.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. 이 항목의 원래 trigger('큐리셋에 최상급+의미조건 항목이 처음 추가되는 시점')는 2026-08-05 하이브리드 15문항 추가(H13~H27)로 **이미 도래했다** — 그 문항들이 최상급을 안 쓰긴 하지만 큐리셋을 손댄 시점 자체가 재검토 자리였다.
+
+### DW-652: `제일 싼 차 뭐야?`가 여전히 5건을 반환한다 — 큐리셋의 `predicate.limit:1`을 SQL 생성이 지키지 않는다
+
+origin: Story 13.9 3차 리뷰 — adversarial·intent-alignment 렌즈 독립 일치, 오케스트레이터가 커밋된 재캡처 원문으로 확인.
+location: `api/app/graph/sql_rag_node.py`(LLM SQL 생성 프롬프트) · `api/app/db/sql_guard.py`(`DEFAULT_LIMIT=5` 주입) · `api/docs/ai-ab-test-queryset.json`(S6의 `predicate: {order: "price ASC", limit: 1}`)
+severity: low
+reason: 13.9는 S6를 CLARIFY→SQL로 고쳤고 그것이 라우팅 57/57의 근거지만, 커밋된 `docs/g2-recapture-2026-08-03.json`의 S6는 매물 **5건**(`"조건에 맞는 매물 5건을 찾았어요."`)을 반환한다 — 생성 SQL에 `LIMIT 1`이 없어 `sql_guard`의 `DEFAULT_LIMIT=5`가 주입된 결과다. 스펙 I/O 매트릭스가 기대출력으로 적은 `ORDER BY price ASC LIMIT 1`의 **정렬 절반만** 달성된 셈이다. 실피해는 제한적이다 — 정렬은 실제로 맞고(스코어러의 `score_path_a`가 순서 민감 top-1 비교로 `result:1.0`을 준다) 사용자는 최저가 매물을 첫 번째로 본다. DW-647은 이 문제의 **게이트 쪽 절반**(스코어러가 `count_range`를 안 읽어 관측 자체가 안 된다)만 다루고, **생성 쪽 절반**(LLM이 최상급 질의에 `LIMIT 1`을 안 낸다)은 어느 항목도 안 맡고 있다. 13.9의 Code Map·Approach가 `sql_rag_node`를 손대지 않기로 했으므로 이 스토리 범위 밖이지만, 스토리 이름이 된 바로 그 질의라 기록 없이 두면 "S6는 닫혔다"로 읽힌다.
+trigger: **DW-647을 처리해 `count_range`가 실제 채점 축이 되는 그 자리** — 채점이 개수를 보기 시작하면 S6가 즉시 red가 되므로, 같은 작업에서 `sql_rag_node` 프롬프트에 "최상급 질의는 `LIMIT 1`" 규칙·예시를 넣고 재캡처로 실측 확인한다. 둘을 따로 하면 게이트만 빨개지고 원인은 안 고쳐진다.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. 2026-08-05 라이브 재현으로 현상 재확인: `제일 싼 차 뭐야?` → 생성 SQL이 `ORDER BY price ASC LIMIT 5`. 정렬은 맞고 **개수만 안 줄인다**(DW-656 취소로 확정).
+
+### DW-653: 3차 리뷰 P2가 최상급 정규식을 좁히면서 띄어쓰기 없는 `가장 싼거`·`제일 싼차`가 함께 빠졌다
+
+origin: Story 13.9 3차 리뷰 P2 적용 중 구현 서브에이전트가 자진 신고, 오케스트레이터가 `_has_superlative` 직접 실행으로 확인.
+location: `api/app/graph/hybrid_rag_node.py`(`_SUPERLATIVE_PRICE_RE`) · `api/app/graph/contextualize_node.py`(같은 상수, 락스텝)
+severity: low
+reason: P2는 `가장 싼타페`·`제일 싸지 않은 차`류 오발동을 없애려고 어간형 형용사 뒤에 음절 경계를 요구했다(`(싼|싸|비싼|비싸)(?![가-힣])`, `저렴`은 `저렴한`의 어미 때문에 경계 제외). 그 부작용으로 **띄어쓰기를 생략한** `가장 싼거`·`제일 싼차`가 P2 이전 True에서 False로 바뀌었다 — 어간 바로 뒤에 한글이 붙는다는 점에서 `싼타페`와 정규식상 구분되지 않기 때문이다. 실피해는 작다: 큐리셋의 최상급 문항(S6·S7·M1.t2·M2.t3)은 전부 띄어쓰기 정상형이고, `_REFINE_MARKERS`에 `"더 싼"`이 따로 있어 리파인 신호가 완전히 사라지지는 않는다. 다만 이 좁힘을 고정하는 테스트가 없어, 다음에 정규식을 손대는 사람이 이 경계를 모른 채 되돌리거나 더 좁힐 수 있다.
+trigger: **`_SUPERLATIVE_PRICE_RE`를 다음에 손대는 스토리**(DW-645가 연식·주행거리 축으로 넓히는 그 자리) — 그때 형태소 경계를 어간+조사/어미 목록으로 다루도록 바꾸고, `가장 싼거`·`제일 싼차`를 양성 케이스로, `가장 싼타페`를 음성 케이스로 같은 테이블에 함께 고정한다(둘을 한 테스트에서 대조해야 다음 사람이 경계를 본다).
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. 단, 2026-08-05 라이브 실측에서 `제일 싼차`·`가장 싼거`(띄어쓰기 없음)가 **정상적으로 SQL 경로를 타고 가격 오름차순으로 답한다** — 이 정규식은 라우팅에 관여하지 않으므로 사용자 피해는 없다(DW-645 correction 참조). 실피해는 맥락 리셋 판정·캐비엇 부착에 한정된다.
+
+### DW-654: Follow-up review still recommended for 13-9-라우팅-안정화-최상급-교체요청-맥락재작성 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-13-9-라우팅-안정화-최상급-교체요청-맥락재작성.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260803-013219-ca30; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-655: Epic 13의 열린 AI 후속 항목 8건이 **백로그에 없는 작업**을 trigger로 걸고 있다 — DW-640이 닫은 병이 재발했다
+
+origin: Story 13.9 독립 후속 리뷰(DW-654 수행) — 오케스트레이터가 `sprint-status.yaml` 전문과 열린 항목 8건의 `trigger:`를 직접 대조.
+location: `_bmad-output/implementation-artifacts/deferred-work.md`(DW-645·646·647·648·649·651·652·653의 `trigger:`) · `_bmad-output/implementation-artifacts/sprint-status.yaml`(Epic 13 블록 — 13-1~13-9 전부 `done`, 남은 항목은 `epic-13-retrospective: optional` 하나)
+severity: medium
+reason: 위 8건의 trigger를 실측 대조한 결과, **어느 것도 `sprint-status.yaml`에 실재하는 스토리를 가리키지 않는다** — "다음 라우팅·큐리셋 관련 스토리"(DW-645) · "`score_ab.py`의 coverage 구조를 다음에 손대는 스토리"(DW-646) · "큐리셋·스코어러를 다음에 손대는 스토리"(DW-647) · "`contextualize_node`의 주제전환 판정을 다음에 손대는 스토리"(DW-648) · "다음 CM-B 전수 재실행 시점"(DW-649) · "큐리셋에 최상급+의미조건 항목이 처음 추가되는 시점"(DW-651) · "DW-647을 처리하는 그 자리"(DW-652, 없는 스토리에 연쇄) · "`_SUPERLATIVE_PRICE_RE`를 다음에 손대는 스토리(DW-645가 넓히는 자리)"(DW-653, 역시 연쇄). Epic 13은 13-1~13-9가 전부 `done`이라 그 "다음 스토리"가 존재하지 않고, 백로그에 남은 Epic 14(계정 역할 통합)·15(관리자 UI)·16(Flutter 증분)은 어느 것도 AI 검색 RAG 코드를 건드리지 않는다. **이건 DW-640이 4건에 대해 이미 진단하고 닫은 것과 똑같은 병이 8건 규모로 재발한 것이다** — 그때의 해법(trigger를 실재 스토리의 인수조건으로 재지정)이 절차로 남지 않아서다. 지금 Epic 13을 종료하면 8건이 전부 조용히 사라진다(CLAUDE.md B8: "미룬 항목엔 언제·어디서 고칠지를 대장에 함께 적는다 — '이월'만 적으면 조용히 또 밀린다"). 실피해 등급은 medium이다: 8건 중 기능 결함은 DW-645(가격 외 정렬축이 CLARIFY로 샘)·DW-652(`제일 싼 차 뭐야?`가 5건 반환)뿐이고 나머지는 게이트 정밀도·문서 정합이지만, 둘 다 이 에픽의 헤드라인 질의에 직접 걸린다.
+trigger: **`epic-13-retrospective`**(`sprint-status.yaml`에 실재하는 항목, 현재 `optional`) — 에픽 13 종료 판단을 하는 그 자리에서 위 8건을 한 번에 훑고, (a) Epic 13에 스토리를 하나 더 열어 흡수할지 (b) 새 에픽으로 묶을지 (c) 명시적으로 수용(닫음)할지를 사용자와 함께 정한 뒤, 남기기로 한 항목의 trigger를 그때 실재하게 된 스토리 키로 재지정한다. 회고를 `optional`로 건너뛰면 이 항목도 함께 사라지므로, **에픽 13은 회고를 돌리기 전에는 닫지 않는다**가 이 항목의 요지다.
+status: done
+resolution (2026-08-05 회고): **해소.** 이 항목이 요구한 대로 `epic-13-retrospective`에서 열린 AI 후속 항목을 전수 훑고 처분을 정했다 — (a)안을 택해 **에픽 13에 스토리 2개를 신설**(`13-10-검색-데이터-보강`·`13-11-sql-생성-정비-채점축-확장-재캡처`)하고 각 항목의 trigger를 그 실재 스토리 키로 재지정했다(이 파일의 `retarget (2026-08-05 회고):` 줄들). **`epic-13`은 `done`이 아니라 `in-progress`로 뒀다** — 닫힌 에픽 안의 스토리를 가리키면 이 병이 세 번째로 재발하기 때문이다(회고 진행 중 사용자가 지적). 13-11 완료 시 에픽을 닫는다.
+
+### DW-656: `제일 싼 차 뭐야?`는 개수뿐 아니라 **정렬도 틀렸다** — DW-652가 절반만 기록했다
+
+origin: 2026-08-03 사용자 수동 확인 요청으로 오케스트레이터가 커밋된 캡처 원문을 매물 단위로 대조하다 발견. DW-652의 인접 사실이지만 **다른 결함**이다(기존 항목 무수정 원칙에 따라 신규 등재).
+location: `api/app/graph/sql_rag_node.py`(LLM SQL 생성 — `ORDER BY`를 안 냄) · `api/docs/g2-baseline.json`의 `S6` · `api/scripts/score_ab.py`(`score_path_a`의 topn 분기)
+severity: medium
+reason: DW-652는 "`limit:1`을 안 지켜 5건이 나온다"만 적었다. 그런데 커밋된 최신 캡처(13.9 반영본)의 S6 반환 5건을 실제 매물로 펼쳐 보면 **가격 오름차순이 아니다** — `아반떼MD 650만 · 스파크 580만 · 아반떼MD 520만 · 스파크 580만 · 올란도 490만` 순으로, **최저가(490만)가 맨 마지막**이다. 즉 `ORDER BY price ASC` 자체가 생성되지 않았고, "제일 싼 차"라는 질의의 **핵심 의미가 결과에 반영되지 않았다.** 개수만 1건으로 줄여도(DW-652 처방) 정렬이 없으면 **엉뚱한 1건**(650만 아반떼)이 나온다 — 두 결함을 함께 고쳐야 질의가 실제로 답해진다.
+  ⚠️ 채점이 이것을 놓친 이유도 함께 기록한다: `score_path_a`는 `predicate`에 `limit`과 `order`가 **둘 다** 있을 때만 topn(순서 민감) 모드로 채점하고, 그 모드는 `returned[:len(gold)]`로 **선두 1건만** 골든과 대조한다. S6의 골든 1건(올란도 490만)이 반환 5건 안에 **포함돼 있기만 하면**… 실제로는 선두가 아니라 5번째라 topn은 0.0이어야 맞는데, 커밋된 리포트의 S6는 `result: 1.0`이다. **채점기와 캡처 중 하나가 어긋나 있으므로 이 항목의 착수 시 그 불일치부터 재현해 원인을 확정한다**(코드를 읽어 추정하지 말 것 — B4).
+trigger: **DW-652·DW-645·DW-647을 함께 처리하는 그 작업에서 같이 한다**(DW-655가 제안한 "AI 후속 스토리"의 범위 — 최상급 정렬축 확장 + `LIMIT 1` + `count_range` 채점 + 라이브 재캡처). 정렬은 그 묶음의 첫 항목이다: 정렬이 없으면 `LIMIT 1`은 오히려 결과를 더 나쁘게 만든다. 해당 스토리가 아직 백로그에 없으므로 **에픽 13 회고에서 그 스토리를 만들 때 이 항목을 범위에 포함**한다.
+status: invalid
+resolution: **2026-08-05 오진으로 확인 — 취소한다.** 이 항목의 전제("최저가가 맨 마지막")가 틀렸다. 원인은 등재 당시의 확인 방법이다: 캡처 파일(`g2-baseline.json`)은 반환 **순서대로** `ids_last`에 id만 저장하는데, 그 id들을 `SELECT ... WHERE id IN (...)`로 조회해 가격을 붙였다. **`IN` 조회의 반환 순서는 인자 순서와 무관**하므로 그 임의 순서를 결과 순서로 착각했다. 실제 `ids_last`를 순서 그대로 펼치면 `올란도 490만 → 아반떼MD 520만 → 스파크 580만 → 스파크 580만 → 아반떼MD 650만`으로 **가격 오름차순이 맞다**. 2026-08-05 라이브 재현(로컬 API, LangSmith 트레이싱 ON)에서도 동일하게 오름차순이었고, 생성 SQL이 `ORDER BY price ASC LIMIT 5`임을 트레이스로 직접 확인했다 — `ORDER BY`는 정상 생성된다. 따라서 `score_path_a`가 S6에 `result:1.0`을 준 것도 채점기·캡처의 불일치가 아니라 **정상 판정**이며, 이 항목이 제기한 "재현해서 원인을 확정하라"는 숙제는 재현으로 해소됐다. 남는 진짜 결함은 **개수뿐**이며 그건 DW-652가 이미 맡고 있다(중복 없음).
+
+### DW-657: 모델명을 `=` 정확일치로 찾아 `아반떼 보여줘`가 **0건**이다 — 세대명이 붙은 국산 인기 차종 전반이 깨진다
+
+origin: 2026-08-05 사용자 보고(5번 "쏘렌토 하나만 나온다") 조사 중 오케스트레이터가 발견. 라이브 재현 + LangSmith 트레이스로 생성 SQL 직접 확인.
+location: `api/app/graph/sql_rag_node.py`(LLM SQL 생성 프롬프트 — 스키마 설명 42행이 `model(모델·자유값)`이라고만 적고 매칭 방식을 규정하지 않음)
+severity: **high**
+reason: LLM이 모델명 조건을 `model = '아반떼'`로 생성한다. 그런데 DB의 `model`은 자유 입력값이라 실제 저장된 값은 `아반떼 MD` · `아반떼MD` · `아반떼 CN7` · `아반떼 하이브리드`뿐이고 **`아반떼`라는 값은 하나도 없다** → 라이브 실측 **0건**(`"조건에 맞는 매물이 없어요"`). 같은 이유로 `쏘렌토 보여줘`는 `쏘렌토 MQ4`가 빠져 2건 중 **1건만** 나온다. 소나타·그랜저·K5 등 세대명·트림명이 붙은 매물 전반이 같은 구조이므로, **모델명 검색이라는 가장 흔한 사용 방식이 광범위하게 깨져 있다.** 큐리셋이 이 결함을 못 잡은 이유도 함께 기록한다: 62항목 중 모델명을 단독 조건으로 쓰는 문항이 없다(`predicate`에 `model` 키 자체가 없고 `build_golden_sql`도 지원하지 않는다) — 게이트의 사각지대다.
+trigger: **DW-652·DW-645·DW-647·DW-653을 함께 처리하는 "SQL 생성 프롬프트 + 재캡처" 스토리**(에픽 13 회고에서 생성). 같은 프롬프트 파일을 고치고 같은 재캡처로 검증하므로 반드시 함께 한다. 처방: 모델명은 `ILIKE '%<모델명>%'` 부분일치로 생성하게 규칙·예시를 넣는다. **동시에 큐리셋에 모델명 단독 문항을 최소 1개 추가**하고(`build_golden_sql`에 `model_like` 지원 추가), 일부러 `=`로 되돌려 red를 확인한다 — 안 그러면 다음에 또 조용히 깨진다.
+status: open
+retarget (2026-08-05 회고): **`13-11-sql-생성-정비-채점축-확장-재캡처`** 인수조건. 이 스토리의 존재 이유이자 최우선 항목이다(high, 실사용자가 바로 만나는 결함).
+
+### DW-658: LangSmith 트레이싱이 **한 번도 켜진 적이 없다** — `.env`에 값이 있는데 `Settings`가 버린다 (Story 13.7 / FR51 산출물 무효)
+
+origin: 2026-08-05 사용자가 "LangSmith로 판단 근거를 보고 싶다"고 요청 → 오케스트레이터가 LangSmith REST API로 직접 조회해 확인.
+location: `api/app/config.py:12-38`(`Settings`가 `langchain_*` 필드 미선언 + `extra="ignore"`) · `scripts/dev-api.sh:34-43`(`LANGCHAIN_*`를 export 안 함) · Cloud Run `encar-ai-api-dev` 환경변수
+severity: **high**
+reason: `api/.env`에 `LANGCHAIN_TRACING_V2=true`와 실제 API 키가 채워져 있으나, 앱은 pydantic-settings로 `.env`를 읽고 `extra="ignore"`라 선언되지 않은 `LANGCHAIN_*`를 **조용히 버린다**. 반면 langsmith SDK는 `Settings`가 아니라 **`os.environ`을 직접** 읽으므로(견본 파일 `api/.env.example:22-40`이 이 사실을 이미 문서화하고 있다) 값이 전달되지 않는다. 실측: 평소 실행 경로에서 `tracing_is_enabled() == False`. LangSmith `default` 프로젝트의 마지막 run이 **2026-08-02**(전부 가짜 LLM 단위테스트 흔적)이고 그 이후 **0건** — 그 사이 배포 서버가 계속 돌았으므로 **로컬·배포 양쪽 모두 꺼져 있었다**. 즉 Story 13.7이 산출물이라고 주장한 관측 능력이 실제로는 존재한 적이 없고, 이번에 사용자가 보고한 결함 2건(5·6번)을 사후 조사할 수단이 없어 **라이브 재현으로 다시 만들어야 했다**. 에픽 13이 다섯 번 반복 학습한 "선언은 있는데 실제로는 안 도는" 패턴의 또 다른 사례다. 임시 해소는 확인됨 — 기동 전 두 값을 OS 환경변수로 export하면 `True`가 되고 트레이스가 실제로 업로드된다(2026-08-05 프로젝트 `repro-2026-08-05`로 실증).
+trigger: **다음에 `api/app/config.py` 또는 배포 환경변수를 손대는 스토리**(없다면 에픽 13 회고에서 신규 스토리로 생성 — DW-659와 한 묶음). 처방 3종: ① 앱 기동 시 `.env`의 `LANGCHAIN_*`를 `os.environ`으로 승격 ② Cloud Run에도 동일 환경변수 주입 ③ **실제로 트레이스가 1건이라도 업로드되는지 확인하는 검사**(①②만 하면 또 조용히 꺼져도 아무도 모른다 — B9). ③이 이 항목의 핵심이며, "환경변수 해석 규칙"만 보는 기존 `tests/test_langsmith_env_contract.py`는 이 축을 보지 않는다(그 파일 자신이 "안 보는 것"으로 명시).
+status: done
+resolution (2026-08-05): **해소.** `api/app/config.py`가 `.env`의 `LANGCHAIN_*`를 모듈 로드 시점에 `os.environ`으로 승격한다(OS 값이 있으면 덮지 않음, pytest 세션은 건너뜀). 커밋 `9988976`. 실측: 평소 실행 경로(`bash scripts/dev-api.sh`)로 기동해 질의 1건 → LangSmith `default` 프로젝트에 `2026-08-05T13:05:56 success` 업로드 확인(08-02 이후 3일 만의 첫 트레이스). 배포(Cloud Run 운영·개발)는 사용자가 환경변수를 넣고 재배포했고, 배포 서버를 직접 호출해 `2026-08-05T13:23:49 success` 트레이스 업로드를 실측 확인했다. 신규 검사 `api/tests/test_langsmith_env_promotion.py`(4건, OS 우선 가드를 지우면 red).
+
+### DW-659: 앱 로그의 INFO가 전부 버려진다 — `logging.basicConfig`가 없어 라우팅 결정·생성 SQL·결과 건수가 아무 데도 안 남는다
+
+origin: 2026-08-05 DW-658과 같은 조사에서 발견. 오케스트레이터가 uvicorn 로깅 설정을 실제로 재현해 확인.
+location: `api/app/main.py` · `api/app/config.py`(둘 다 `logging.basicConfig`/`LOG_LEVEL` 없음) · `api/app/graph/*.py`의 `logger.info` 호출부
+severity: medium
+reason: 그래프 노드들은 진단에 필요한 값을 이미 `logger.info`로 남기도록 짜여 있다 — `router_node.py:147`(질의+결정 경로), `contextualize_node.py:306`(재작성된 질의), `sql_rag_node.py:168`(**생성 SQL 전문**), `hybrid_rag_node.py:206`(추출 구조조건), `doc_rag_node.py:125-127`(질의+결과 건수+근거 가이드). 그런데 `logging.basicConfig`가 어디에도 없어 루트 로거가 파이썬 기본값 WARNING(30)에 머물고, uvicorn이 적용하는 `dictConfig`는 `uvicorn*` 로거만 INFO로 올릴 뿐 `app.graph.*`를 건드리지 않는다(실측 재현 확인). 결과적으로 **위 INFO 로그 전부가 소리 없이 버려지고** WARNING만 서식 없이 stderr로 샌다. 파일 핸들러도 없어 저장되지 않으며, AI 대화를 담는 DB 테이블도 없다(무상태 — 의도된 설계). 그래서 사용자 보고 결함의 사후 조사 수단이 LangSmith(DW-658으로 역시 꺼짐)와 로그 **양쪽 다** 없는 상태였다.
+trigger: **DW-658과 같은 스토리에서 함께 처리한다** — 둘 다 "관측 수단이 있다고 믿었는데 없었다"는 같은 병이고, 같은 파일권(`api/app/` 기동부)을 건드린다. 처방: 로그 레벨·서식 설정 1곳 추가(환경변수로 조절 가능하게) + **INFO 한 줄이 실제로 출력되는지 확인하는 검사**. 배포(Cloud Run)는 stdout을 자동 수집하므로 레벨만 열면 수집될 것으로 보이나 **이 PC에 gcloud가 없어 미확인** — 착수 시 실측할 것(B4: 재보기 전엔 선언하지 않는다).
+status: done
+resolution (2026-08-05): **해소.** `api/app/main.py`가 루트 로거 레벨을 `LOG_LEVEL`(기본 INFO)로 설정하고 stdout + `.logs/api.log`(5MB×3 회전)에 남긴다. 커밋 `9988976`. 실측: 라이브 질의 1건에 `router_node … → route=HYBRID` · `find_relevant_guide 거리=0.2695 …` · `hybrid_rag_node attempt 1 구조조건: …`이 실제로 파일에 기록됨. 웹 쪽(커밋 `dabfd9a`)은 `aiSearch.ts`·`ChatAssistant.tsx`가 실패 원인(네트워크/HTTP 상태+본문/JSON 파싱)을 `console.error`로 남기게 했다 — 실패 3종을 실제 재현해 확인. 신규 검사 `api/tests/test_logging_setup.py`(4건, `setLevel`을 지우면 red). **남는 미확인**: Cloud Run이 stdout을 실제로 수집하는지는 여전히 미확인(gcloud는 2026-08-05에 설치했으나 인증 미완) — 그 확인은 A4(#168)와 함께 Epic 15에서 한다.
+
+### DW-660: 조건이 많이 섞인 질의일수록 가이드가 안 붙는다 — 컷오프 0.3이 짧은 질의 기준으로 잡혀 있다
+
+origin: 2026-08-05 Story 13-11 재캡처에서 가이드 인용이 12/13(92%) → 18/28(64%)로 떨어진 것을 오케스트레이터가 추적. `find_relevant_guide`를 직접 호출해 거리를 실측.
+location: `api/app/graph/doc_rag_node.py`(`_GUIDE_DISTANCE_CUTOFF = 0.3`) · `api/docs/ai-ab-test-queryset.json`(H13·H18~H27 등 조건 밀집 문항)
+severity: medium
+reason: 가이드는 질의 임베딩과 가이드 문서의 코사인 거리가 **0.3 이내일 때만** 주입된다. 그런데 조건을 여러 개 붙일수록 질의 임베딩의 의미 중심이 어느 가이드에서도 멀어져 컷오프를 넘는다. 실측(같은 가이드 '패밀리카로 무난한 차종 고르기'에 대한 거리):
+  · `3천만원 이하로 무난한 패밀리카 찾아줘`(21자) → **0.2575** 통과
+  · `캠핑 다니기 좋은 차`(11자) → **0.2987** 통과
+  · `3천만원 이하 무사고 패밀리카 중에 후방카메라랑 통풍시트 둘 다 있는 걸로 보여줘`(45자) → **0.3005** 탈락(**0.0005 차이**)
+  · `4천만원 이하로 캠핑 다니기 좋은 차 중에 파노라마선루프 있고 무사고인 거`(41자) → **0.3182** 탈락
+즉 **의미는 같은데 조건을 더 적었다는 이유만으로** 가이드가 떨어져 나간다. 0.3이라는 값은 짧은 개념형 질의 위주였던 옛 큐리셋(47문항)의 거리 분포로 잡힌 것이고, 사용자가 요청해 2026-08-05에 추가한 "신뢰속성·옵션·SQL·참고문서를 최대한 많이 섞은" 문항들이 정확히 그 경계 바로 바깥에 놓인다. 결과 품질 자체는 나쁘지 않다(결과집합 정확도 0.950) — 명시 조건이 많아 가이드 없이도 잘 걸러지기 때문이다. 손해는 **"AI가 문서를 읽고 골랐다"는 근거 표시가 사라지는 것**과, 가이드가 있어야만 되는 매핑(해치백→소형/준중형 등)이 조건에 명시돼 있지 않으면 못 푸는 것이다.
+⚠️ 컷오프를 그냥 올리면 안 된다 — 느슨하게 하면 무관한 가이드가 주입돼 엉뚱한 조건이 생긴다(그 위험 때문에 0.3이 실측으로 정해졌다). 후보: (a) 질의 길이·조건 수에 따라 컷오프를 조정 (b) 구조조건을 떼어낸 "의미 부분"만 임베딩해 가이드를 찾기 (c) 컷오프를 재측정해 새 문항 분포까지 포함하는 값으로 다시 잡기 — 어느 쪽이든 **무관한 가이드가 붙는 비율을 함께 재야** 판단할 수 있다.
+⚠️ **정정(2026-08-05, 등재 당일)**: 처음에 "결과 정확도엔 영향이 없다(0.950)"고 적었는데 **총평이 개별 문항을 가렸다.** 문항별로 다시 재니:
+  · 가이드가 붙은 문항 평균 결과점수 **0.960** vs 안 붙은 문항 **0.778**
+  · 특히 **용어 매핑형**이 무너진다 — `H6 2500만원 이하 해치백 있어?` **0.2**, `H18 3천만원 이하 무사고 해치백` **0.2**, `H27 …안전 옵션 갖추고…` **0.2**. 셋 다 라우터가 SQL로 보냈고, 가이드가 없으니 `해치백`→소형차·준중형차 같은 **매핑을 풀 근거가 사라진다**.
+  즉 이건 표시(인용 문구)만의 문제가 아니라 **그 문항들에서는 실제 결과가 틀린다.**
+⚠️ **다만 이번에 생긴 회귀는 아니다**(실측): 옛 기준선(매물 93건·47문항)에서도 `H6`는 이미 `doc_hit=False`에 결과 **0.0**이었다. 2026-08-05에 추가한 조건 밀집 문항들이 **같은 병의 사례 수를 늘려 눈에 띄게 만든 것**이지, 없던 병을 만든 것이 아니다. 새 기준선이 그 상태를 수치로 고정한다(가이드 인용 18/28, 위 세 문항 0.2) — 이제부터의 악화는 게이트가 잡는다.
+trigger: **Epic 15에서 웹이 AI 응답의 `(참고: 문서명)`·되묻기 칩을 실제로 화면에 그리는 자리**(DW-587·597·600과 같은 스토리). 근거: ① 그때 인용률이 **사용자 눈에 보이는 값**이 되어 품질 목표로 삼을지 말지를 그 자리에서 정하게 된다 ② 지금은 서버만 보내고 웹이 안 그려서 64%든 92%든 화면상 차이가 없다. ⚠️ **고치는 코드는 백엔드**(`doc_rag_node` 컷오프·검색 방식)라 Epic 15 스토리의 인수조건으로 "이 항목을 판단한다"만 심고, 실제 수정이 필요하다고 결론나면 그때 AI 스토리를 하나 연다 — 판단 자리와 수정 자리를 구분해 적는다.
+status: open
+
+- source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+  summary: `scripts/check_migrations.py`(마이그레이션 게이트)는 이 마이그레이션의 실제 CHECK 내용(즉 buyer/seller가 정말 완화됐는지)을 전혀 검증하지 못한다 — self-containment(파일명·번호·적용 성공 여부·listings/guide_documents 축 3개)만 본다.
+  evidence: 리뷰 중 `0027_role_check_relax.sql`의 새 CHECK를 원래의 3값 enum(`role in ('buyer','seller','admin')`)으로 되돌려(=이 스토리의 목적을 완전히 무효화) 같은 게이트를 재실행했더니 **동일하게 exit 0으로 통과**했다(파일은 즉시 원복). 즉 이 스토리의 스펙이 유일한 자동 검증으로 제시한 커맨드가, 이 스토리가 실제로 잘못돼도 못 잡는다. 게이트 자체의 설계 범위(self-containment)가 원래 이렇고 이 스토리가 새로 만든 결함은 아니지만, "CHECK 내용까지 매 마이그마다 자동 검증할지"는 게이트 설계자의 판단이 필요하다.
+  trigger: 다음에 `profiles.role`(또는 유사한 도메인 규칙을 강제하는 CHECK) 관련 마이그레이션을 또 작성할 때, 혹은 `scripts/check_migrations.py`를 다른 이유로 손대는 스토리에서 — 그때 "마이그별 내용 검증을 프로브에 추가할지"를 판단한다.
+
+- source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+  summary: `docs/conventions.md §9.1`이 명시적으로 승인한 forward-only 예외 4가지(정책 재생성·트리거 재생성·함수 EXECUTE 회수·GRANT 축소)에 "CHECK 제약을 drop 후 같은 이름으로 재생성"이 들어있지 않다 — 이 스토리(`0027_role_check_relax.sql`)가 그 패턴을 처음 썼는데 문서화되지 않았다.
+  evidence: 코드리뷰(adversarial 렌즈)가 지적. §9.1은 "근거 없는 선례 복사"를 막기 위해 각 예외의 안전 조건을 명시해왔는데(예: GRANT 축소는 "축소 방향만" 허용), CHECK 제약은 정책/트리거와 달리 **데이터 무결성을 가른다** — 이번처럼 기존 값의 상위집합으로만 넓히는 경우는 안전하지만, 좁히는 replace는 기존 행을 위반 상태로 만들 수 있다(이 스펙의 Design Notes에 그 위험을 직접 서술해뒀다). 그 안전 조건("넓히는 방향만")을 정확히 문서에 새기지 않으면 다음 사람이 "CHECK도 drop-recreate 하면 된다"고 좁히는 방향으로 오용할 위험이 있다.
+  trigger: 다음에 기존 CHECK 제약을 drop 후 재생성하는 마이그레이션을 작성할 때 — 그때 §9.1에 이 예외를 "넓히는 방향만" 조건으로 명시해 추가한다(GRANT 축소 예외의 반대 방향 버전으로 서술).
+
+### DW-661: 마이그레이션 게이트(CI)가 `test/bmad-loop` 브랜치에서 한 번도 돌지 않아, "에픽 첫 마이그 스토리는 게이트 통과가 DoD"가 Epic 14에서 충족되지 않았다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 후속 리뷰(adversarial 렌즈)가 지적, 리뷰 세션이 워크플로 파일과 브랜치 이력으로 확인.
+location: `.github/workflows/migration-gate.yml`(트리거 절) · 현재 작업 브랜치 `test/bmad-loop`
+severity: medium
+summary: `docs/conventions.md` §9.4와 `project-context.md` 규칙 10이 "각 에픽 첫 마이그레이션 스토리는 마이그레이션 게이트(CI) 통과가 DoD"라고 못박았는데, 그 게이트는 `develop`/`main` push 또는 PR에서만 돈다. Epic 14의 첫 마이그(`0027`)는 `test/bmad-loop`에 있고 PR도 없어 게이트가 실행된 적이 없다.
+evidence: 워크플로의 트리거가 `develop`/`main`·PR로 한정돼 있고 현재 브랜치는 둘 다 아니다. 이 스토리가 통과를 선언한 것은 로컬 `python3 scripts/check_migrations.py`인데, 스펙 자신이 이걸 "로컬 검증 커맨드"라고 부른다 — 즉 DoD가 지정한 CI 실행과 같은 사실이 아니다. ⚠️ **이 스토리 혼자 해결할 수 없다**: bmad-dev-auto 워크플로는 커밋만 하고 push를 하지 않으며(step-04 "Do not push"), `develop` 병합·push는 CLAUDE.md B3에 따라 사람의 판단 영역이다. 게이트 자체는 정상이고 로컬 재현(동적 Docker 검사 포함)은 exit 0으로 통과했으므로 코드 결함 신고가 아니라 **절차 공백 신고**다.
+trigger: **`test/bmad-loop`의 작업을 `develop`으로 처음 병합·push하는 자리에서** — 그때 게이트가 실제로 초록인지 확인하고, 초록이면 이 항목을 닫는다. 무인 루프를 계속 돌릴 계획이면 그 전에 판단할 것: (a) 게이트 트리거에 이 브랜치를 추가할지 (b) 루프가 도는 브랜치를 `develop`으로 바꿀지 (c) 에픽 종료 시 사람이 일괄 확인하는 것으로 DoD 문구를 조정할지. 지금처럼 두면 **에픽마다 같은 공백이 반복된다**.
+status: open
+
+### DW-662: 이 장부의 마지막 2개 항목(Story 14.1 1차 리뷰가 등재)이 `### DW-<번호>` 형식을 따르지 않아 번호로 조회되지 않는다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 후속 리뷰(adversarial 렌즈)가 지적. 같은 스토리의 **1차 리뷰 패스**가 만든 것이다.
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-660 바로 뒤 — `- source_spec:` 불릿으로 시작하는 2개 항목(게이트 사각지대 / `conventions.md §9.1` 문서화 공백)
+severity: low
+summary: 그 2건은 `### DW-<번호>` 제목도, 번호도, `severity:`·`status:`도 없이 불릿으로만 붙어 있다. 장부의 다른 660개 항목과 형식이 다르다.
+evidence: bmad-dev-auto의 step-04가 지정하는 defer 형식(`- source_spec:`/`summary:`/`evidence:`)과 이 프로젝트 장부의 정본 형식(`### DW-N` + `origin/location/severity/reason/trigger/status`)이 서로 다른데, 1차 패스가 전자만 따랐다. 결과적으로 그 2건은 **DW 번호로 지목할 수 없고**, 제목(`### DW-`)을 기준으로 항목을 나누는 조회·sweep은 이 둘을 DW-660 본문의 일부로 읽는다. 장부에 올렸다는 기록만 남고 실제로는 검색되지 않는 상태 — CLAUDE.md B8이 막으려는 "미룬 일이 조용히 사라지는" 실패 모드 그 자체다. 내용 자체는 둘 다 유효하다(사실관계 재확인함). ⚠️ **이번 리뷰가 직접 고치지 않은 이유**: 이 실행의 지시가 "기존 장부 항목을 수정·재개·재작성하지 말고 신규 항목만 추가하라(기존 항목의 상태와 처리는 오케스트레이터 소유)"였다. 그래서 신고만 한다.
+trigger: **오케스트레이터가 이 장부를 다음에 sweep(정리)할 때** — 그때 두 항목에 DW-661 이전 번호(예: DW-660-a/b) 또는 새 번호를 배정하고 6필드로 승격한다. 함께 판단할 것: bmad-dev-auto의 defer 형식과 이 프로젝트 장부 형식이 다르다는 **구조적 원인**을 스킬 커스터마이즈(`_bmad/custom/bmad-dev-auto.toml`)로 맞출지 — 안 맞추면 dev-auto가 defer할 때마다 같은 불일치가 재발한다.
+status: open
+
+### DW-663: 통합테스트 공용 픽스처가 **가입 트리거의 기본 role을 단언**해, Story 14.2가 트리거를 바꾸는 순간 실DB 테스트가 무더기로 깨진다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(adversarial·edge-case 두 렌즈가 독립적으로 지적), 리뷰 세션이 `conftest.py`와 사용처를 직접 읽어 확인.
+location: `api/tests/integration/conftest.py`의 `_create_user()` — `assert row[0] == role` 줄. 이 헬퍼를 쓰는 파일: `test_role_check_relax_real_db.py`(15건) + `test_chat_realtime_broadcast_real_db.py` 등 형제 파일들(`grep -ln '_create_user' api/tests/integration/*.py`로 확인).
+severity: medium
+summary: `_create_user()`는 유저를 만든 뒤 "가입 트리거가 `user_metadata`의 role을 그대로 `profiles.role`에 반영했는가"까지 단언한다. Story 14.2는 바로 그 트리거(`handle_new_user`)의 기본 role 로직을 바꾸는 스토리다 — 바뀌는 순간 이 단언이 **픽스처 setup 단계에서** AssertionError를 내고, 그 헬퍼를 쓰는 모든 실DB 테스트가 자기가 검증하려던 것과 무관한 이유로 죽는다.
+evidence: `conftest.py`의 해당 단언은 Story 12.1이 겪은 실제 결함(판매자 유저에 role="buyer"를 하드코딩)을 막으려고 **의도적으로** 넣은 것이라 그냥 지우면 그 방어가 사라진다. 즉 14.2는 "트리거를 바꾼다 + 이 단언을 트리거의 새 계약에 맞게 고친다"를 **한 커밋 안에서** 해야 한다. 지금 이 사실이 적힌 곳은 conftest 주석뿐이고, 14.2 스토리 문서에는 없다. Story 14.1이 새로 추가한 테스트 15건도 같은 헬퍼를 쓰므로 폭발 반경이 이번 스토리로 더 커졌다(그래서 여기 등재한다).
+trigger: **Story 14.2 착수 시(트리거 기본값을 바꾸는 그 작업 안에서)** — 14.2의 인수조건에 "`conftest._create_user`의 role 단언을 새 트리거 계약에 맞게 갱신하고, `pytest tests/integration` 전체가 초록임을 확인한다"를 심는다. 14.2가 시작될 때 이 항목을 열어 확인할 것.
+status: done 2026-08-06
+resolution: Story 14.2(0028_handle_new_user_default_role.sql)가 `conftest.py`·`test_chat_idempotency_real_db.py`의 `_create_user()`를 새 트리거 계약(role=None→'user', buyer/seller 그대로, 그 외 전부→'user')에 맞게 갱신했다. `role=None`(메타데이터 자체를 안 보내는 경로) 인자를 새로 지원해 web 신규 가입 경로를 재현한다. `pytest tests/integration` 99건 전체 통과 확인(로컬 pgvector, 0001~0028 전체 적용 후) — 갱신 전 트리거로 되돌려 새로 추가한 4건이 실제로 red가 됨을 먼저 확인한 뒤(B4), 되돌리고 다시 green을 확인했다.
+
+### DW-664: `tests.yml`(api-db·web 잡)도 `test/bmad-loop`에서 안 돈다 — Story 14.1이 새로 만든 검사 15건이 CI에서 한 번도 실행되지 않았다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(verification-gap 렌즈)가 지적, 리뷰 세션이 워크플로 트리거 절과 브랜치 위치를 직접 확인.
+location: `.github/workflows/tests.yml`의 `on.push.branches: [develop, main]` — 현재 작업 브랜치 `test/bmad-loop`(develop 대비 28커밋 앞, PR 없음)
+severity: medium
+summary: DW-661은 `migration-gate.yml`(레포만으로 DB가 서는가)만 지목했다. 그런데 Story 14.1이 "검사를 실행되는 자리에 박았다"며 만든 `api/tests/integration/test_role_check_relax_real_db.py`(15건)와 `web/src/lib/__tests__/roleLabelFallback.test.ts`가 실제로 의존하는 것은 **`tests.yml`의 `api-db`·`web` 잡**이고, 그 워크플로도 같은 브랜치 제한을 받는다. 즉 그 검사들이 초록인 근거는 아직 로컬 1회 실행뿐이다.
+evidence: `tests.yml`의 트리거는 `push: branches: [develop, main]` + `pull_request`(브랜치 필터 없음). 현재 브랜치는 둘 다 아니고 `gh pr list --head test/bmad-loop`도 0건이다. **DW-661과 원인은 같지만 대상이 다르므로 따로 적는다** — DW-661을 닫을 때 `migration-gate.yml`만 보고 닫으면 이쪽은 그대로 남는다. ⚠️ 이 워크플로(bmad-dev-auto)는 push를 하지 않으므로 여기서 해결할 수 없다. 해결책은 DW-661과 동일한 자리에서 함께 판단하는 것이 자연스럽다: PR 하나를 열면 두 워크플로의 `pull_request` 트리거가 **동시에** 켜진다(둘 다 브랜치 필터가 없다).
+trigger: **DW-661을 처리하는 그 자리에서 함께** — `test/bmad-loop`을 `develop`으로 병합·push하거나 draft PR을 여는 시점. 그때 `api-db`·`web` 잡이 실제로 초록인지 확인하고 닫는다.
+status: open
+
+### DW-665: 마이그레이션이 CI·원격 적용 경로에서 **원자적이지 않다** — 실패하면 앞부분만 적용된 채 남는다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(adversarial·edge-case 렌즈)가 지적, 리뷰 세션이 워크플로의 psql 호출과 `scripts/check_migrations.py`를 대조해 확인.
+location: `.github/workflows/tests.yml`의 "마이그레이션 적용" 스텝(`psql -v ON_ERROR_STOP=1 -q -f "$f"`) vs `scripts/check_migrations.py:172`(`--single-transaction` **있음**) · 원격 `apply_migration`(트랜잭션 의미 미문서화, `docs/deployment-runbook.md:126`)
+severity: low
+summary: 마이그 게이트는 파일을 `--single-transaction`으로 적용하지만 `tests.yml`의 api-db 잡과 원격 적용 경로는 그렇지 않다. 그래서 파일 중간에서 실패하면 **앞선 문장은 이미 커밋된 채** 마이그가 실패로 보고된다. 0027이 구체적 사례다: 이름 드리프트로 사후조건이 발화하거나, `role=''` 행이 있어 `add constraint`가 실패하면, 앞의 `drop constraint`는 이미 적용돼 profiles에 role CHECK가 아예 없는 상태로 남는다.
+evidence: 세 적용 경로의 트랜잭션 의미가 서로 다르다는 것은 `docs/deployment-runbook.md:126`이 이미 다른 각도(트랜잭션 밖에서만 되는 문)로 기록해 둔 사실이다. 현재 27개 마이그 중 명시적 `begin;`/`commit;`을 쓰는 파일은 **0개**라, 0027 하나만 감싸면 레포에 없던 관례가 생긴다(게이트의 `--single-transaction`과 중첩되면 동작도 달라진다). 게다가 0027을 그대로 감싸면 이번 리뷰가 추가한 재실행 검사(`test_migration_aborts_when_drop_is_a_no_op` 등 — 파일 본문을 테스트 트랜잭션 안에서 다시 실행한다)가 내부 `commit;` 때문에 격리를 잃는다. 즉 **파일 하나의 문제가 아니라 "마이그레이션을 어떻게 적용하는가"라는 레포 전체 관례의 공백**이라 여기 등재한다. 실패 시에도 메시지가 무엇이 잘못됐는지 정확히 알려주므로 전진 수복은 가능하다(그래서 low).
+trigger: **다음 마이그레이션 스토리(Epic 15의 Story 15-4가 마이그레이션 1개를 포함한다)를 착수할 때** — 그때 셋 중 하나로 정한다: (a) `tests.yml`의 적용 스텝에도 `--single-transaction`을 붙여 게이트와 맞춘다(가장 좁은 변경, 파일은 안 건드림) (b) 마이그 파일마다 명시적 트랜잭션을 쓰기로 `docs/conventions.md` §9에 관례를 세운다 (c) 실패 시 부분 적용이 허용되는 것으로 명시하고 런북에 수복 절차를 적는다. 정한 결과를 §9에 적어야 다음 사람이 동전을 던지지 않는다.
+status: open
+
+### DW-666: `sprint-status.yaml`이 `epic-14: backlog`인데 그 첫 스토리 `14-1`은 `done` — 파일이 스스로 정의한 상태 전이가 빠졌다
+
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+origin: 2026-08-06 Story 14.1 3차 리뷰(adversarial·edge-case 두 렌즈가 독립적으로 지적), 리뷰 세션이 해당 파일의 범례와 값을 직접 읽어 확인.
+location: `_bmad-output/implementation-artifacts/sprint-status.yaml` — `epic-14:` 줄과 `14-1-role-check-완화-마이그레이션:` 줄 · 파일 상단 `# last_updated:` 블록
+severity: low
+summary: 같은 파일 상단 범례가 "backlog → in-progress: 첫 스토리를 만들 때 자동 전이"라고 못박고 있는데, Epic 14는 첫 스토리가 `done`인 지금도 `backlog`로 남아 있다. 또 이 변경에서 `# last_updated:` 블록이 갱신되지 않아, 파일의 유일한 사람용 이력에 Story 14.1이 남지 않았다.
+evidence: 파일을 열어 확인함 — `epic-14: backlog` 바로 아래 줄이 `14-1-...: done`이다. 상태로 분기하는 사람·도구가 "Epic 14 미착수"로 읽는데 실제로는 스키마 변경이 이미 커밋돼 있다. ⚠️ **이번 리뷰가 직접 고치지 않은 이유**: `sprint-status.yaml`은 bmad-loop 오케스트레이터가 소유하는 상태 파일이고, 이 실행의 지시가 오케스트레이터 소유 항목의 상태를 건드리지 말라는 것이었다. 그래서 신고만 한다(내용 자체는 사실 확인 완료).
+trigger: **오케스트레이터가 Story 14.2를 착수하는 자리에서** — 그때 `epic-14`를 `in-progress`로 올리고 `last_updated`에 14.1·14.2 항목을 남긴다. 함께 볼 것: 전이가 "자동"이라고 적혀 있는데 실제로 자동으로 일어나지 않았다면, 그 자동화가 어디서 끊겼는지(스토리 생성 경로를 안 거치는 무인 루프인지)를 확인해야 같은 누락이 에픽마다 반복되지 않는다.
+status: open
+
+### DW-667: Follow-up review still recommended for 14-1-role-check-완화-마이그레이션 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-023902-0381; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-668: Flutter 앱이 아직 "판매 = 역할" 모델이다 — 같은 계정이 web에선 팔 수 있고 앱에선 차단된다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 지적, 리뷰 세션이 Dart 파일 4곳을 직접 grep해 확인.
+location: `app/lib/features/listings/sell_screen.dart:152` · `my_listings_screen.dart:26` · `edit_listing_screen.dart:28`(모두 `if (role != UserRole.seller)` 하드 게이트) · `app/lib/features/chat/chat_list_screen.dart:39`(빈 채팅목록 문구가 `role == UserRole.seller`로 2분기 — web에서는 이번 스토리가 역할 중립 문구로 통일한 바로 그 코드)
+severity: high
+summary: Story 14.3이 web의 판매 게이트를 소유권 기반으로 풀었지만 Flutter 앱은 그대로 역할 게이트다. 그래서 `role='buyer'` 계정이 **web에서는 매물을 등록·수정할 수 있는데 앱에서는 차단 화면을 본다** — 같은 계정이 플랫폼에 따라 다른 권한을 갖는, 사용자가 직접 관측 가능한 불일치다. Story 14.2가 가입 트리거 기본값을 바꾸면 더 나빠진다: `app/lib/features/auth/user_role.dart`의 기존 주석이 이미 경고하듯 metadata에 role이 안 실리면 `fromValue(null) → null`이 되어 **신규 가입자는 앱의 판매자 화면 전체에 영영 못 들어간다**.
+evidence: 위 4개 파일의 조건문을 직접 확인함. `app/test/`에는 이 게이트를 단언하는 검사가 없다(`widget_test.dart`는 enum 값·파싱만 본다). Story 14.3의 스펙은 Never 절에서 "Flutter 변경은 에픽 범위 밖"이라고 명시하고 "DW 등재는 아직 안 됐다"고 스스로 인정했다 — 이 항목이 그 등재다. **코드를 지금 안 고치는 이유**는 에픽 14의 범위가 web 한정으로 사용자 확정돼 있기 때문이지, 문제가 아니어서가 아니다. 2026-08-06 Story 14.2 리뷰에서 실측 확인됨 — DW-678 참고(같은 리뷰가 severity를 medium→high로 갱신).
+trigger: **Epic 16(앱 정합성 에픽)의 첫 스토리를 만들 때 인수조건으로 심는다.** 그보다 먼저 Story 14.2가 가입 트리거 기본값을 바꾸는 시점이 오면, 그 스토리의 리뷰에서 "앱 신규 가입자가 role=null로 전 판매화면 차단"이 실제로 발생하는지 먼저 확인한다(그 경우 severity가 high로 올라간다). (2026-08-06 확인 완료, DW-678로 상세 등재)
+status: open
+
+### DW-669: 정지(`status='suspended'`)된 회원의 판매를 아무것도 막지 않는다 — 게이트에도 RLS에도 status 검사가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰(edge-case 렌즈) 지적, 리뷰 세션이 마이그레이션과 web 게이트를 직접 grep해 확인.
+location: `supabase/migrations/0001_profiles.sql:15`(`status text not null default 'active' check (status in ('active','suspended'))`) · `supabase/migrations/0002_listings.sql`의 INSERT/UPDATE/DELETE 정책(모두 `seller_id = auth.uid()`만 검사) · `web/src/app/(user)/sell/layout.tsx`(`requireUser()` — status를 안 읽는다)
+severity: medium
+summary: 관리자가 회원을 정지시켜도(`0005_admin_policies.sql`이 제공하는 기능) 그 회원은 계속 로그인해 매물을 등록·수정·삭제할 수 있다. 정지 상태를 읽어 행동을 막는 지점이 web 게이트·RLS 어디에도 없다.
+evidence: `grep -rln "suspended"` 결과 매치는 `0001_profiles.sql`(컬럼 정의)·`0005_admin_policies.sql`(관리자가 값을 바꾸는 정책)·`0027_role_check_relax.sql`·`MemberActions.tsx`(관리자 UI)·`constants.ts`(상수)뿐 — **정지 여부로 무언가를 거부하는 코드는 0건**이다. ⚠️ **이것은 Story 14.3이 만든 문제가 아니다**: 이전 게이트 `requireRole(SELLER)`도 role만 봤으므로 정지된 seller는 예전에도 그대로 팔 수 있었다. 다만 게이트가 풀리면서 이제 정지된 **모든** 계정으로 범위가 넓어졌다. 이 프로젝트의 원칙(CLAUDE.md B9 "중요한 값은 데이터 계층이 직접 구한다")대로면 해결 자리는 앱 게이트가 아니라 `listings` RLS에 `exists(select 1 from profiles where id=auth.uid() and status='active')`를 더하는 쪽이다.
+trigger: **관리자 회원관리를 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 "정지"의 의미를 화면에서 다루므로, 정지가 실제로 무엇을 막는지도 그 자리에서 정한다. 정하면 `docs/conventions.md` §8(접근 게이트 계약)에 한 줄로 적어야 다음 사람이 다시 묻지 않는다.
+status: open
+
+### DW-670: `profiles` 행이 없는 로그인 사용자가 매물을 등록하면 FK 오류(23503)가 정체불명 문구로 뜬다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰(edge-case 렌즈) 지적, 리뷰 세션이 `SellForm.tsx`의 에러 매핑과 `0002_listings.sql`의 FK를 직접 확인.
+location: `web/src/app/(user)/sell/SellForm.tsx:117-124`(`toKoreanError`가 `23514`·`42501`만 한국어로 매핑) · `supabase/migrations/0002_listings.sql:28`(`seller_id ... references public.profiles(id)`)
+severity: low
+summary: `auth.users`에는 있으나 `profiles` 행이 없는 세션으로 매물을 등록하면 INSERT가 외래키 위반(23503)으로 실패하는데, 그 코드가 한국어 매핑 목록에 없어 15개 필드를 다 채운 사용자가 무슨 일인지 알 수 없는 일반 오류만 본다.
+evidence: `toKoreanError`의 분기를 직접 읽음 — `23514`(CHECK 위반)와 `42501`(RLS 거부)만 처리한다. 그런 사용자가 실제로 생길 수 있는 경로도 실재한다: `web/src/app/(admin)/admin/members/MemberActions.tsx`가 "profiles 행은 DELETE 되지만 `auth.users`는 service_role 키가 없어 못 지운다"고 스스로 명시하고 있어, 관리자가 회원을 지운 뒤에도 그 사람의 세션은 살아 있다. ⚠️ Story 14.3 이전에는 `/sell`의 `requireRole(SELLER)`이 profiles를 읽어 비교했기 때문에 **우연히** 존재 검사 역할을 했고 그런 세션은 홈으로 튕겼다. 게이트가 `requireUser()`로 바뀌며 그 우연한 방어가 사라져 이 경로가 열렸다(발생 조건이 좁아 low).
+trigger: **`SellForm.tsx`의 에러 처리나 매물 등록 실패 문구를 다음에 손대는 스토리에서** — 그때 `23503`을 한국어 문구("프로필 정보가 없어 등록할 수 없습니다. 다시 로그인해주세요.")로 매핑한다. 함께 판단할 것: 관리자 회원 삭제가 세션을 무효화하지 못하는 구조(service_role 키 부재) 자체는 별개의 오래된 제약이므로 여기서 풀려 하지 않는다.
+status: open
+
+### DW-671: 라우트 게이트를 바꿔도 E2E **전량**을 돌리라는 강제가 없다 — Story 14.3에서 실제로 모순된 테스트를 놓쳤다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 같은 사고를 지적, 리뷰 세션이 `nav-and-hero.spec.ts`를 열어 확인 후 그 자리에서 테스트를 고쳤다.
+location: `web/e2e/*.spec.ts`(9개 파일) · 각 스펙 문서의 `## Verification` 절에 손으로 적는 Playwright 명령
+severity: low
+summary: Story 14.3은 `/sell` 게이트를 뒤집어 놓고 검증을 `core-flows.spec.ts write-flows.spec.ts` 두 파일로만 돌렸다. 그런데 옛 동작(`buyer가 /sell 접근하면 홈으로`)을 단언하는 테스트는 손대지 않은 `nav-and-hero.spec.ts`(B8)에 있었다. 결과적으로 **`npm run test:e2e` 전량은 red인데 스토리는 초록으로 닫혔다**. 이번 후속 리뷰가 B8을 새 동작으로 뒤집어 개별 사고는 해소했지만, "부분 실행을 검증으로 인정하는" 구조 자체는 그대로다.
+evidence: `grep -rn "'/sell'" web/e2e/*.spec.ts` → `core-flows`·`write-flows` 외에 `nav-and-hero.spec.ts:160`이 나온다. 스펙의 Verification Evidence는 두 파일만 실행했다고 명시한다. ⚠️ 이 사고가 **조용히** 지나간 이유는 DW-664가 기록한 별개 사실(E2E 잡이 CI에 아예 없다)과 겹친다 — 사람이 로컬에서 고른 파일만 돌리는 것이 유일한 실행 경로다.
+trigger: **다음에 라우트 게이트·접근 제어를 바꾸는 스토리(Epic 15 Story 15-3이 관리자 회원관리를 건드린다)를 계획할 때** — 그 스펙의 Verification에 파일 목록 대신 `npm run test:e2e`(전량)를 적는다. 더 근본적으로는 DW-661·DW-664를 처리해 PR을 여는 자리에서, E2E 잡을 CI에 배선할지(헤드리스 브라우저·로컬 Supabase 컨테이너 필요, `docs/tech-debt.md` #168이 비용을 이미 산정해 뒀다) 함께 판단한다.
+status: open
+
+### DW-672: `/sell/[id]/edit`에서 타인 매물 폼을 막는 실주체는 앱측 `seller_id` 필터인데, 그 필터를 지키는 자동 검사가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰 — adversarial·verification-gap 두 렌즈가 독립 지적, 리뷰 세션이 마이그레이션과 e2e 스위트를 직접 열어 확인.
+location: `web/src/app/(user)/sell/[id]/edit/page.tsx:44`(`.eq('seller_id', user?.id ?? '')`) · `supabase/migrations/0002_listings.sql:94-95`(`listings_select_on_sale`)
+severity: medium
+summary: SELECT RLS는 "on_sale ∪ 본인 ∪ 관리자"의 OR 결합이라 **타인의 판매중 매물도 읽힌다**. 폼이 안 뜨게 막는 것은 RLS가 아니라 이 페이지의 앱측 `seller_id` 필터 한 줄인데, 그 줄이 사라져도 실패하는 테스트가 하나도 없다. 이 스토리로 `/sell/[id]/edit`에 도달할 수 있는 사람이 `role='seller'`에서 로그인 사용자 전원으로 넓어져 노출면이 커졌다.
+evidence: `grep -rn "본인 매물만|접근 권한이 없습니다" web/e2e web/src --include=*.spec.ts` → 0건. `write-flows.spec.ts:161`은 **본인** 매물 edit URL만 연다. 스펙 I/O 매트릭스 4행의 유일한 검증 기록은 2차 리뷰 세션의 브라우저 수동 재현 1회다(`## Verification Evidence`). ⚠️ 필터 자체는 지금 정상 동작한다 — 없는 것은 동작이 아니라 **그 동작을 지키는 검사**다. 3차 리뷰에서 이 페이지 헤더 주석이 "본인 매물 여부는 RLS가 집행한다"고 잘못 서술한 것은 고쳤지만(그대로 믿으면 필터를 중복이라 여겨 지울 수 있었다), 주석은 계약이 아니다(CLAUDE.md B9).
+trigger: **`web/e2e/write-flows.spec.ts`나 `/sell` 수정 흐름을 다음에 손대는 스토리에서** — 그 자리에 교차 소유자 케이스를 추가한다(BUYER 로그인 → SELLER 소유 on_sale 매물의 `/sell/[id]/edit` 직접 접속 → 안내 문구 노출 + 폼 미렌더 단언). 읽기 전용이라 `core-flows.spec.ts`에 둬도 된다.
+status: open
+
+### DW-673: role='buyer' 계정이 실제로 매물을 **등록**할 수 있는지는 어떤 테스트도 확인하지 않는다 — FR52의 절반이 무검사다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰 — adversarial·edge-case 두 렌즈가 독립 지적, 리뷰 세션이 e2e 스위트 전량을 grep해 확인.
+location: `web/e2e/core-flows.spec.ts:212`(C8, 읽기 전용이라 등록 불가) · `web/e2e/write-flows.spec.ts:108,156,216`(등록·수정·구매완료 전부 `seller@test.com`)
+severity: medium
+summary: C8과 B8은 role='buyer' 계정이 `/sell` **화면에 도달**하는 것까지만 단언한다. 실제로 등록 버튼을 눌러 매물이 생기는지는 아무도 안 본다 — 쓰기 흐름은 전부 `role='seller'` 계정으로만 돈다. 스토리의 인수조건이 "화면이 렌더된다"까지라 이 스토리는 정당하게 닫혔지만, 에픽 목표(FR52 "로그인만 하면 누구나 사고팔 수 있다")의 실질은 검사 밖이다.
+evidence: `core-flows.spec.ts` 파일 헤더가 "읽기 전용 — DB에 INSERT/UPDATE/DELETE 하지 않는다. 폼 제출도 하지 않는다"를 절대 규칙으로 못박고 있어 C8이 구조적으로 등록을 검사할 수 없다. `write-flows.spec.ts`의 BUYER 계정 사용은 채팅(180행) 한 곳뿐이다. ⚠️ 지금 동작은 한다 — `listings_insert_own`이 role을 안 보므로 buyer 계정 INSERT는 통과한다(3차 리뷰가 정책 본문을 직접 확인). 없는 것은 **회귀 시 잡아줄 장치**다: Story 14.2가 가입 트리거를 바꾸거나 누군가 INSERT 경로에 role 검사를 되살려도 스위트는 초록을 유지한다.
+trigger: **Story 14.2(가입 트리거 기본값 변경)를 구현할 때 그 스토리의 인수조건으로 심는다** — 14.2가 "신규 가입자가 곧바로 팔 수 있다"를 약속하므로 등록 성공까지 단언하는 것이 그 스토리의 자연스러운 DoD다. 자리는 `write-flows.spec.ts`(등록 → 확인 → afterAll에서 삭제하는 기존 관례가 92행에 이미 있다).
+status: open
+
+### DW-674: `listings` 소유권 RLS 자체를 지키는 반복 실행 검사가 저장소에 없다 — 이 스토리가 그것을 유일한 방어선으로 승격시켰는데도
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰(verification-gap 렌즈) 지적, 리뷰 세션이 `api/tests/integration` 전량과 저장소 SQL 테스트를 직접 조사.
+location: `supabase/migrations/0002_listings.sql:104-118`(`listings_insert_own`·`listings_delete_own`) · `supabase/migrations/0015_listings_update_not_sold.sql:24-29`(`listings_update_own` 현행판)
+severity: medium
+summary: Story 14.3이 앱 계층 역할 게이트를 없애면서 "누가 남의 매물을 바꿀 수 있나"의 방어선은 이제 `listings` RLS 하나뿐이다. 그런데 그 정책이 느슨해져도 실패하는 자동 검사가 저장소 어디에도 없다 — 확인 기록은 전부 사람이 psql로 한 번씩 해본 것이다.
+evidence: `find . -name '*.sql' -path '*test*'` → 0건(pgTAP 없음). `api/tests/integration`의 10개 파일 중 listings 소유권 거부를 단언하는 파일 없음. 기록된 검증은 Story 2-1·2-3(2026-06)의 수동 임퍼소네이션과 Story 14.3 2차 리뷰 세션의 psql 1회(스펙 `## Verification Evidence`)뿐이다. ⚠️ 실행 자리는 이미 있다 — CI의 `api-db` 잡이 전 마이그레이션을 실제 Postgres에 적용하고, `test_chat_unread_real_db.py:91-106`·`test_role_check_relax_real_db.py:145-155`가 `set local role authenticated` + `set local request.jwt.claim.sub`로 세션을 흉내 내는 관례를 이미 쓴다. 새 인프라가 아니라 그 관례를 한 번 더 쓰는 일이다. 선례도 있다: `0015`가 `listings_update_own`을 drop 후 재생성했다 — 정책은 실제로 교체된다.
+trigger: **`listings` RLS 정책을 다음에 건드리는 마이그레이션 스토리에서**(DW-669의 정지 회원 검사를 RLS에 넣는 작업이 유력한 첫 후보다) — 그 마이그레이션과 같은 스토리에서 `api/tests/integration`에 비소유자 UPDATE/DELETE가 0행, 타인 명의 INSERT가 42501임을 단언하는 pytest를 추가한다. 그래야 CI(`api-db` 잡)가 실제로 돌린다.
+status: open
+
+### DW-675: admin 계정이 `/sell`에 들어오는 것은 "의도된 결과"로 선언됐지만, 그 선언을 지키는 검사가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰 — edge-case·verification-gap 두 렌즈가 독립 지적, 리뷰 세션이 `web/e2e/*.spec.ts` 전량에서 `/sell` 접근 케이스를 grep해 확인.
+location: `web/src/app/(user)/sell/layout.tsx:14`(`requireUser()` — role을 아예 안 읽는다) · `web/e2e/core-flows.spec.ts:16`(`ADMIN_USER` 상수는 이미 있다)
+severity: low
+summary: `requireUser()`는 role을 안 보므로 `{buyer, seller, admin}` 셋 다 통과한다. buyer는 C8·B8이, seller는 `write-flows`가 간접적으로 덮지만 **admin 경로는 아무 케이스도 없다**. 스펙 Design Notes가 admin 진입을 "의도된 귀결"로 명시 선언했고 2차 리뷰가 "admin을 막자"는 제안을 계약 위반이라며 기각까지 했는데, 그 결정은 문서에만 있고 실행되는 검사가 아니다(CLAUDE.md B9 — 주석·문서는 계약이 아니다).
+evidence: `grep "'/sell'" web/e2e/*.spec.ts` 전수 → admin 계정으로 `/sell`을 여는 케이스 0건. `admin@test.com`은 `core-flows.spec.ts:16`·`nav-and-hero.spec.ts:18`에 상수로 이미 있지만 `/admin` 케이스(C6·C7·B4)에만 쓰인다. ⚠️ 지금 동작은 정상이다(`requireUser()`가 role을 안 읽으므로 통과). 문제는 누군가 "관리자가 매물 파는 건 이상하다"며 admin 제외 분기를 넣어도 전량 E2E가 초록이라는 것 — 즉 스펙이 계약 위반이라 판정한 바로 그 변경이 무검사로 들어올 수 있다.
+trigger: **관리자 화면·권한을 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 admin 권한 경계를 다루므로 그 자리에서 한 줄 추가한다(`core-flows.spec.ts`의 C8 옆에 ADMIN_USER로 `/sell` 도달을 단언, 읽기 전용이라 그 파일의 절대 규칙에 맞는다). 함께 판단할 것: 그때도 admin 진입을 유지할지 여부 자체를 재확인한다 — 유지가 결론이면 검사로 못박고, 뒤집는다면 스펙 Always부터 고쳐야 한다.
+status: open
+
+### DW-676: `/account`가 "역할: 구매자"를 실제 화면에 표시한다 — 그 값이 더 이상 무엇을 할 수 있는지 말해주지 않는데도
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
+origin: 2026-08-06 Story 14.3 3차 리뷰(edge-case 렌즈) 지적, 리뷰 세션이 `account/page.tsx`를 직접 열어 렌더 여부를 확인.
+location: `web/src/app/(user)/account/page.tsx:65-66`(`<dt>역할</dt><dd>{roleLabel ?? '-'}</dd>`)
+severity: low
+summary: Story 14.3 이후 `profiles.role`은 판매 가능 여부와 아무 관계가 없다(로그인만 하면 누구나 판다). 그런데 `/account`는 여전히 "역할: 구매자"를 **실제로 렌더**한다 — 매물을 등록해 팔고 있는 사용자가 자기 계정 화면에서 "구매자"라고 읽는다.
+evidence: `AppHeader`의 `roleLabel`은 admin 분기에서만 렌더돼 소비자 화면에 안 보이지만(그래서 DW-453의 죽은 prop 문제와는 별개다), `account/page.tsx:65-66`의 `<dd>`는 consumer 화면에 그대로 그려진다 — 3차 리뷰가 파일을 열어 확인했다. ⚠️ DW-453의 범위가 **아니다**: 그 항목은 "6개 페이지가 렌더되지도 않을 `roleLabel`을 만들려고 요청마다 profiles를 조회한다"는 낭비를 다루고, 여기는 값이 실제로 보이는데 그 의미가 낡았다는 문제다. Story 14.3이 만든 버그도 아니다 — 이 스토리가 role의 의미를 축소하면서 **드러난** 표시다.
+trigger: **Story 14.2(가입 화면의 역할 선택 정리)를 구현할 때 그 스토리의 인수조건으로 함께 심는다** — 14.2가 "가입 시 역할을 고르는 것이 무의미해졌다"를 다루므로, "이미 가입한 사람에게 역할을 보여주는 것도 무의미한가"를 같은 자리에서 정하는 것이 자연스럽다. 결론이 "숨긴다"면 `<dt>/<dd>` 쌍을 지우고, "관리자만 의미 있다"면 admin일 때만 표시한다. 정한 뒤 `docs/conventions.md`에 role 값의 현재 의미를 한 줄로 남긴다.
+status: open
+
+### DW-677: Follow-up review still recommended for 14-3-소유권-기반-판매-게이트 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-14-3-소유권-기반-판매-게이트.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-678: web 신규 가입 계정은 metadata에 role이 없어, Flutter 앱의 역할 기반 화면 5곳이 그 계정에서 판매자 기능을 숨긴다
+
+source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 구현 — spec의 Always 절이 이 갭을 신규 DW로 등재하라고 명시했다(스펙 자신이 "이 변경이 여는 새 갭"이라고 인정한 자리, 구현 세션이 직접 확인).
+location: `app/lib/features/auth/auth_controller.dart:28`(`currentRoleProvider`, `user_metadata['role']` 파싱) · 그걸 읽는 5개 화면 — `app/lib/features/listings/sell_screen.dart:146` · `edit_listing_screen.dart:25` · `my_listings_screen.dart:23` · `app/lib/features/auth/home_screen.dart:28` · `app/lib/features/chat/chat_list_screen.dart:22` (모두 `ref.watch(currentRoleProvider)`, `grep -rn currentRoleProvider app/lib`로 확인).
+severity: medium
+summary: 이 스토리(14.2)가 web 가입 화면의 역할 선택 UI·전송을 없애고 트리거 기본값을 'user'로 바꿨다. 그 결과 web에서 새로 가입한 계정은 `auth.users.raw_user_meta_data`에 role 키가 아예 없다. Flutter의 `currentRoleProvider`는 `profiles.role`이 아니라 이 metadata를 읽으므로 `UserRole.fromValue(null) → null`이 되고, 위 5개 화면이 그 null을 "판매자 아님"으로 해석해 판매자 기능을 숨긴다 — web에서는 팔 수 있는 계정이 앱에서는 영구히 못 파는 상태가 된다.
+evidence: `app/lib/features/auth/user_role.dart`의 기존 주석(1~8행)이 정확히 이 결과를 예견하고 있었다("14.2는 이 파일과 그 provider를 함께 봐야 한다"). 실제로 web에서 role metadata 없이 가입한 뒤(이 세션이 브라우저로 직접 검증, `spec142-e2e-check@example.test`) `profiles.role='user'`·`raw_user_meta_data`에 role 키 없음을 DB에서 확인했다 — 그 계정으로 Flutter 앱을 실행하는 것까지는 이 스토리 범위 밖이라 하지 않았지만, `currentRoleProvider`의 파싱 로직(`fromValue(null) → null`)과 5개 화면의 분기 조건은 코드로 직접 확인했다. `main.dart:77`도 같은 provider를 읽지만 admin 여부만 판별하는 `AuthGate` 용도라 role=null이어도 buyer/seller와 동일하게 동작하므로 이 항목의 대상 화면 수(5개)에서 제외한다. DW-668(Story 14.3이 이미 등재)과 다른 항목이다 — DW-668은 "role='buyer'인데 web은 소유권 기반이라 열려 있고 앱은 역할 게이트라 막혀 있다"는 기존 계정 불일치를 다루고, 이 항목은 "web 신규 가입 계정은 앱이 파싱할 role 값 자체가 없다"는 이 스토리가 새로 연 갭이다 — 원인도 다르다(DW-668은 앱의 하드 역할 게이트, 이 항목은 metadata 누락). DW-668을 이 리뷰에서 severity high로 갱신함(이 항목이 그 확인 근거).
+trigger: **Flutter 쪽 역할 통합 미러링을 다루는 다음 스토리 착수 시**(spec-14-2 Always 절이 지정한 트리거 문구 그대로) — DW-668이 이미 지정한 Epic 16(앱 정합성 에픽) 첫 스토리와 같은 자리에서 함께 처리하는 것이 자연스럽다. 그 스토리는 `currentRoleProvider`가 무엇을 읽을지(예: `profiles.role`을 직접 조회하도록 바꾸거나, 앱도 소유권 기반으로 게이트를 바꾸는 쪽)부터 정해야 한다.
+status: open
+
+### DW-679: 신규 web 가입자가 `/sell`에 실제로 들어가는지(FR52) 확인하는 자동화 테스트가 없다
+
+source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 리뷰(adversarial 렌즈) — DB 트리거 레벨(pytest)은 신규 회귀 4건으로 잘 덮였지만, 이 스토리가 존재하는 이유(FR52) 자체를 지키는 화면 레벨 확인은 이번 세션이 브라우저로 수동 1회 확인한 것뿐이라는 지적.
+location: `web/e2e/core-flows.spec.ts:208-235`(C8 — 기존 시드 계정 `role='buyer'`가 `/sell`에 들어가는지만 확인. 그 자체 주석이 "트리거가 바뀌면 이 테스트가 조용히 무의미해진다"고 경고하고 있었는데, 이번에 실제로 트리거가 바뀌었다).
+severity: medium
+summary: Story 14.2가 신규 web 가입자의 기본 role을 'user'로 바꾸고, 그 계정이 `/sell`(소유권 기반 게이트, Story 14.3)에 들어갈 수 있어야 FR52("로그인만 하면 누구나 사고팔 수 있다")가 성립한다. 이 핵심 경로 — "메타데이터 없이 가입 → role='user' → /sell 접근 가능" — 를 지키는 자동화된 E2E 테스트가 없다. C8은 여전히 role='buyer'인 기존 시드 계정만 본다.
+evidence: `web/e2e/*.spec.ts` 전체를 검색(core-flows·write-flows·nav-and-hero·nav-interactions·realtime-chat·landing-and-view-count·viewport-audit)해 role=null 신규가입→/sell 경로를 확인하는 테스트가 없음을 확인. 이번 스토리의 구현 세션이 이 경로를 브라우저로 1회 수동 검증했지만(spec Verification 절의 "브라우저로 실제 가입→로그인→로그아웃" 항목), 그 결과가 코드로 남지 않아 이후 누군가 `guard.ts`를 `requireRole(SELLER)`로 되돌리거나 트리거 기본값을 실수로 바꿔도 CI에서 아무 것도 안 걸린다(첫 시도 run 0381이 CRITICAL로 멈췄던 바로 그 모순이 재발해도 자동으로 알 방법이 없다).
+trigger: **`web/e2e/*.spec.ts`를 다음으로 손대는 스토리 착수 시** — C8과 같은 패턴으로 "메타데이터 없이 가입 → role='user' → /sell 접근 가능"을 확인하는 E2E 테스트를 추가한다(DW-664가 열려 있는 한 CI에서는 안 돌지만, 로컬 `npm run test:e2e` 회귀 방어로는 유효하다).
+status: open
+
+### DW-680: DW-668의 severity를 high로 올린 근거가 "실측"이 아니다 — 앱을 실제로 돌린 적이 없고, 기존 항목을 제자리에서 고쳐 쓰기까지 했다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰(adversarial 렌즈 지적, 이 리뷰 세션이 장부 헤더·DW-668·DW-678 본문을 직접 읽어 확인).
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-668 `severity:`·`evidence:`·`trigger:` 줄(2026-08-06 커밋 `4defd61`이 제자리 수정) · 대조 대상은 같은 커밋의 DW-678 `evidence:`
+severity: medium
+summary: 두 가지가 겹쳐 있다. (1) DW-668의 `trigger:`는 "앱 신규 가입자가 role=null로 전 판매화면 차단이 **실제로 발생하는지** 먼저 확인한다(그 경우 severity가 high로 올라간다)"였는데, 실제로 한 것은 Dart 소스의 분기 조건을 읽은 것뿐이다. 같은 커밋의 DW-678이 "그 계정으로 Flutter 앱을 실행하는 것까지는 이 스토리 범위 밖이라 하지 않았다"고 스스로 밝히고 있다. 그런데 DW-668의 evidence에는 "실측 확인됨"이라고 적혔다. (2) 그 갱신이 **제자리 수정**이었다 — 이 파일 헤더가 "append-only, 기존 항목을 지우거나 고쳐 쓰지 않는다"로 못박은 규칙 위반이라 2026-08-06 이전의 원래 평가 문구가 복구 불가능하다.
+evidence: 장부 헤더 6행 "이 파일은 **append-only** — 기존 항목을 지우거나 고쳐 쓰지 않는다. 끝나면 지우지 말고 `status: done <날짜>` + `resolution:`으로 닫는다." — 유일하게 허용된 제자리 변경은 '닫기'뿐인데 DW-668은 닫힌 것도 항목이 덧붙은 것도 아니다(`git show 4defd61 -- _bmad-output/implementation-artifacts/deferred-work.md`로 `-severity: medium` / `+severity: high` 확인). "실측"에 대해서는 CLAUDE.md B4가 "**존재 확인은 작동 확인이 아니다**"·"정연한 논증도, 여러 에이전트의 합의도 검증이 아니다"로 이 프로젝트의 기준을 이미 정해 두었다. ⚠️ **결론 자체가 틀렸다는 뜻은 아니다** — 코드 분기(`fromValue(null) → null` → 5개 화면이 판매 기능 숨김)는 명확해서 high가 과한 평가로 보이지도 않는다. 틀린 것은 **근거의 등급 표시**이고, 그게 "코드 읽기 = 실측"이라는 선례로 남는 것이 위험하다. 이 항목을 DW-668 본문 수정이 아니라 **새 항목으로** 여는 이유: 이번 리뷰 세션은 오케스트레이터로부터 "기존 장부 항목을 수정·재개봉·재작성하지 말고 신규 항목만 추가하라"는 지시를 받았다.
+trigger: **Epic 16(앱 정합성 에픽) 첫 스토리를 만들 때** — 그 스토리는 어차피 실기기/에뮬레이터로 앱을 띄우므로, 그 자리에서 "web 신규가입 계정으로 앱 로그인 → 판매 화면 차단"을 **실제로 재현**하고 그 결과를 DW-668·DW-678의 `resolution:`에 적는다. 그때 이 항목도 함께 닫는다.
+status: open
+
+### DW-681: `docs/conventions.md`에 role 어휘 절이 아예 없다 — 새 기본값 `'user'`가 크로스-파트 값인데 정본이 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 지적, 리뷰 세션이 `grep -niE "role" docs/conventions.md`로 직접 확인.
+location: `docs/conventions.md`(없는 절) · 어휘 사본이 흩어져 사는 3곳 — `web/src/lib/constants.ts:24-32`(`USER_ROLE`에 `'user'` 있음) · `supabase/migrations/0028_handle_new_user_default_role.sql:33-38`(그 값을 쓰는 쪽) · `app/lib/features/auth/user_role.dart:1-8`(3값 enum, `'user'` 없음 + 헤더 주석이 이미 거짓)
+severity: medium
+summary: `profiles.role`의 어휘는 web·app·db 경계를 가로지르는 값인데, 그 값들의 정본이어야 할 `docs/conventions.md`에 role 절이 없다. 0027이 DB CHECK를 걷어내면서 "어휘가 무엇인가"를 말해주는 층이 DB에서도 사라져, 지금 `'user'`의 정의는 코드 주석 3개뿐이고 그중 하나(`user_role.dart`)는 이미 사실과 다르다.
+evidence: `_bmad-output/project-context.md` 규칙 1이 "web·app·api·db 경계를 가로지르는 값은 **전부 거기(conventions.md) 정의돼 있다**. 코드보다 그 문서를 먼저 고친다"로 못박았고, `constants.ts` 헤더도 "docs/conventions.md(단일 출처)와 값이 일치해야 한다"고 적혀 있다. 그런데 `grep -niE "role" docs/conventions.md`는 `service_role` 키(§5)·ARIA role(§접근성)·`information_schema.role_table_grants` 쿼리만 반환하고 `profiles.role` 어휘를 다루는 절은 0건이다. `app/lib/features/auth/user_role.dart:2`의 "(DB 트리거 handle_new_user 가 여전히 이 문자열만 배정한다)"는 0028 이후 **거짓**이며, 그 enum엔 `user` 멤버가 없어 `fromValue('user') → null`이다. project-context.md:26이 기록한 이 리포의 반복 실패 모드("요약이 원본보다 늙어 틀린 값이 에이전트에 주입됐다 — 3건 실측")가 재발하기 좋은 자리다.
+trigger: **Epic 16(앱 정합성 에픽) 첫 스토리를 만들 때, `currentRoleProvider`가 무엇을 읽을지 정하는 그 자리에서** — 어차피 그 결정이 role 어휘의 의미를 확정하므로, 확정과 동시에 `docs/conventions.md`에 한 절을 추가한다(트리거가 buyer/seller만 통과시키고 나머지는 전부 `'user'`로 강제 · 0027 이후 DB는 어휘를 강제하지 않음 · `is_admin()`은 `'admin'` 정확일치 · 락스텝 갱신 대상 3곳). DW-678·DW-682와 같은 스토리에서 함께 처리하는 것이 자연스럽다.
+status: open
+
+### DW-682: `0028`의 buyer/seller 통과 분기에 제거 트리거가 어디에도 없다 — Flutter가 role 전송을 멈추는 순간 영구 사문화된다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰(adversarial 렌즈) — 리뷰 세션이 `0028` 본문과 `app/lib/features/auth/signup_screen.dart`를 직접 확인.
+location: `supabase/migrations/0028_handle_new_user_default_role.sql:33-35`(`if v_meta_role in ('buyer','seller') then v_role := v_meta_role;`) · 그 분기가 존재하는 유일한 이유인 송신부 `app/lib/features/auth/signup_screen.dart`(가입 시 `data: {'role': role.value}` 전송)
+severity: low
+summary: 0028이 buyer/seller metadata를 그대로 반영하는 분기를 남긴 것은 오직 "Flutter 앱이 아직 role을 보내니까"라는 하위호환 목적인데(spec Design Notes), 그 전제가 사라질 때 이 분기를 걷어내라고 말하는 항목이 장부에 없다. 그 결과 지금 계정 모집단이 **클라이언트별로 갈린다** — 앱 가입자는 buyer/seller, web 가입자는 user.
+evidence: 0028의 주석이 그 분기의 근거를 "Flutter 앱은 이번 스토리에서 UI를 안 건드리므로 여전히 role metadata를 보낸다"로 명시한다 — 즉 조건부 코드인데 해제 조건이 코드에도 장부에도 안 적혀 있다. DW-678은 앱이 role을 **읽는** 쪽(`currentRoleProvider`)만 다루고 **보내는** 쪽은 범위에 없다. CLAUDE.md B8: "미룬 항목엔 '언제·어디서 고칠지'를 대장에 함께 적는다 — '이월'만 적으면 조용히 또 밀린다."
+trigger: **Epic 16에서 Flutter 가입 화면의 역할 선택을 제거할 때(DW-678과 같은 스토리)** — 그 커밋이 role 전송을 멈추는 순간 이 분기는 도달 불가가 되므로, 같은 스토리의 인수조건에 "0028의 buyer/seller 통과 분기를 제거하는 마이그레이션을 추가한다"를 심는다. 배포 순서 때문에 앱 갱신이 사용자에게 다 퍼진 뒤여야 안전하다는 점(구버전 앱이 여전히 role을 보냄)도 그때 함께 판단한다.
+status: open
+
+### DW-683: `test_fr11_cover_images_real_db.py`의 픽스처는 "판매자를 만들었다"고 믿지만 그 INSERT는 항상 no-op다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰(edge-case 렌즈) — 리뷰 세션이 해당 픽스처와 `0028` 트리거를 직접 읽어 확인.
+location: `api/tests/integration/test_fr11_cover_images_real_db.py:67-72`(`insert into auth.users (id, email)` → 메타 없음, 이어서 `insert into public.profiles (id, role) values (%s,'seller') on conflict (id) do nothing`)
+severity: low
+summary: `auth.users` INSERT의 AFTER 트리거(`handle_new_user`)가 같은 문장에서 이미 profiles 행을 만들어 두므로, 뒤따르는 `on conflict (id) do nothing` INSERT는 **한 번도 적용된 적이 없다**. 이 픽스처가 만든 계정의 role은 `'seller'`가 아니라 트리거 기본값이며, Story 14.2 이후 그 값은 `'buyer'`에서 `'user'`로 바뀌었다.
+evidence: 두 문장을 직접 읽어 확인했다 — 트리거가 먼저 행을 만들므로 명시 INSERT는 항상 conflict 경로다. 지금 아무것도 안 깨지는 이유는 `supabase/migrations` 어디에도 `role='seller'`로 분기하는 RLS 정책이나 GRANT가 없기 때문이다(`grep -rn "role = 'seller'" supabase/migrations` → 0건. `is_admin()`만 role을 보고, 그건 `'admin'` 정확일치다). **이 스토리가 만든 문제는 아니다**(그 전에도 'seller'가 아니라 'buyer'였다) — 다만 값이 한 칸 더 멀어졌고, 형제 파일들이 쓰는 `conftest._create_user`는 이제 role 계약을 단언하는데 이 파일만 그 방어 밖에 있다. 나머지 5개 통합 테스트 파일은 `'{"role":"seller"}'` 메타를 명시하거나 `_create_user`를 쓴다.
+trigger: **`test_fr11_cover_images_real_db.py`를 다음으로 손대는 스토리 착수 시**, 또는 그보다 먼저 **`profiles.role`을 읽는 RLS 정책·GRANT가 처음 생길 때**(그 순간 이 픽스처는 "판매자가 아닌 행"으로 정책을 시험하며 조용히 통과하게 된다). 고치는 법은 시드 파일들이 이미 쓰는 패턴 — `on conflict` INSERT를 `update public.profiles set role='seller' where id=%s`로 바꾸거나 `conftest._create_user(cur, email, role='seller')`를 쓰는 것.
+status: open
+
+### DW-684: 통합 테스트 계정 모집단이 운영과 갈라졌다 — `role='user'` 계정으로 도는 시나리오 테스트가 0건이다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(adversarial 렌즈) — 리뷰 세션이 `_create_user` 호출부를 전수 확인(`grep -rn "_create_user(" api/tests/`).
+location: `api/tests/integration/conftest.py:45`(`def _create_user(cur, email, role="buyer")` — 기본 인자) · 그 기본값을 그대로 쓰는 호출부 12곳(`test_chat_unread_real_db.py`·`test_chat_idempotency_real_db.py`·`test_chat_realtime_broadcast_real_db.py`·`test_role_check_relax_real_db.py`)
+severity: medium
+summary: Story 14.2가 신규 가입 기본 role을 `'user'`로 바꿨는데, 통합 테스트 헬퍼의 기본 인자는 여전히 `"buyer"`다. 그래서 채팅·안읽음·Realtime·조회 같은 **실제 시나리오** 테스트는 전부 `buyer`/`seller` 계정으로 돌고, `'user'` 계정이 등장하는 곳은 이번에 추가한 트리거 계약 테스트뿐이다. 즉 운영의 신규 가입자 유형(전부 `'user'`)에 대해 시나리오가 한 번도 검사되지 않는다.
+evidence: 호출부 전수 확인 결과 `role=` 인자를 명시하는 곳은 seller가 필요한 자리뿐이고, 나머지는 전부 기본값 `"buyer"`를 탄다. 지금 아무것도 안 깨지는 이유는 `supabase/migrations` 어디에도 `profiles.role`로 분기하는 RLS 정책·GRANT가 없기 때문이다(`is_admin()`만 role을 보고 그건 `'admin'` 정확일치). 그래서 **오늘의 버그가 아니라 함정**이다 — `profiles.role`을 읽는 정책이 처음 생기는 날, 그 정책은 실제 사용자 유형에 대해 한 번도 검사되지 않은 채 배포된다. DW-683(`test_fr11_cover_images_real_db.py`의 seller 픽스처가 실은 no-op)과 같은 축의 문제이며, 그 항목이 지목한 "정책이 처음 생길 때"가 이 항목의 발화 시점이기도 하다.
+trigger: **`profiles.role`을 읽는 RLS 정책·GRANT가 처음 생기는 스토리 착수 시**(그 스토리의 인수조건에 "정책 테스트를 `role='user'` 계정으로도 돈다"를 심는다), 또는 그보다 먼저 **Epic 16의 앱 role 정합성 스토리에서 `currentRoleProvider`가 무엇을 읽을지 정할 때**. 고치는 법은 `_create_user`의 기본 인자를 `None`(메타데이터 없음 = 운영 신규 가입과 동일)으로 뒤집고, buyer가 실제로 필요한 호출부만 명시하게 하는 것 — DW-683과 한 커밋에서 처리하는 것이 자연스럽다.
+status: open
+
+### DW-685: role 관련 DW 5건이 전부 "Epic 16 첫 스토리"를 트리거로 지목했는데, 그 스토리(16.1)에는 role 얘기가 한 줄도 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(adversarial 렌즈) — 리뷰 세션이 `epics-increment-2026-07-12.md`의 Epic 16 절 전문을 직접 읽어 확인.
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:1340-1400`(Epic 16: 16.1 디자인 토큰 미러 + 하단 4탭 내비 · 16.2 이미지·카드 · 16.3 신뢰속성·찜 · 16.4 실시간 채팅 — 어디에도 가입·인증·role 없음) · 그 자리를 지목한 장부 항목 DW-668·DW-678·DW-680·DW-681·DW-682의 `trigger:` 줄
+severity: medium
+summary: 위 5개 항목은 전부 "Epic 16(앱 정합성 에픽) 첫 스토리를 만들 때 인수조건으로 심는다"를 해제 조건으로 적었다. 그런데 Epic 16의 첫 스토리는 디자인 토큰·내비이고 16.2~16.4도 role과 무관하다. 그리고 epics 문서에도 `sprint-status.yaml`에도 아무것도 심어두지 않았다 — 지정만 하고 심지 않은 상태다.
+evidence: CLAUDE.md B8이 정확히 이 실패를 경고한다 — "미룬 항목엔 '언제·어디서 고칠지'를 대장에 함께 적는다. '이월'만 적으면 다음 작업은 대장이 아니라 상위 문서를 보고 만들어지므로 조용히 또 밀린다 — 그 자리를 지정하고, **지정한 곳에도 실제로 심는다**(B5)." 지금은 앞 절반만 됐다. Epic 16을 만드는 사람이 참조할 문서는 epics-increment이고, 거기엔 role 얘기가 없으므로 5건이 통째로 한 번 더 밀린다. 실피해는 DW-678이 이미 기술한 것 — web 신규 가입 계정이 Flutter 앱에서 판매자 기능을 영영 못 본다.
+trigger: **Epic 16의 스토리를 실제로 만드는 순간(=`bmad-create-story` 또는 스프린트 계획으로 16.1을 여는 시점)** — 그보다 먼저 손댈 수 있으면 더 좋다: `epics-increment-2026-07-12.md`의 Epic 16 절에 "앱 역할 통합 미러링" 스토리를 하나 추가하고(내용: `currentRoleProvider`가 `profiles.role`을 읽게 하거나 앱 게이트를 소유권 기반으로 전환 + `docs/conventions.md`에 role 어휘 절 추가 + 0028의 buyer/seller 통과 분기 제거 판단), 위 5개 항목의 `trigger:`가 가리키는 대상을 그 스토리로 특정한다. ⚠️ 이 항목을 닫을 때 DW-668·678·680·681·682의 본문을 고치지 말 것 — 장부는 append-only이므로, 새 스토리가 생겼다는 사실은 이 항목의 `resolution:`에 적는다.
+status: open
+
+### DW-686: Flutter 앱 테스트가 14.2가 깨뜨린 계약을 "정상"으로 단언하고 있다 — `flutter test`는 영원히 초록이다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(verification-gap 렌즈) — 리뷰 세션이 `app/test/widget_test.dart`와 `app/lib/features/auth/user_role.dart`를 직접 읽고, `grep -rln` 으로 앱 테스트가 대상 화면을 하나도 안 건드림을 확인.
+location: `app/test/widget_test.dart:24-27`(`expect(UserRole.fromValue(null), isNull)` · `expect(UserRole.fromValue('unknown'), isNull)`) · `app/lib/features/auth/user_role.dart:10-13`(enum에 `user` 멤버 없음 → `fromValue('user')`도 null)
+severity: medium
+summary: DW-678은 **행동**의 갭(web 신규 가입 계정이 앱 판매화면에서 차단됨)을 등재했다. 이 항목은 그 갭의 **검증층**이 비어 있다는 별개의 사실이다 — 앱 테스트는 "role metadata가 없으면 null이 맞다"를 정답으로 단언하므로, CI의 app 잡(`flutter test`)은 이 스토리가 만든 불일치가 지속되는 내내 초록이다. 즉 앱 쪽에서 이 문제를 red로 알려줄 검사가 하나도 없다.
+evidence: `widget_test.dart`가 단언하는 것은 옛 계약(role은 buyer/seller/admin 셋뿐)이고, 0028 이후 DB가 실제로 배정하는 `'user'`는 그 enum에 아예 없다. `grep -rln "sell_screen|my_listings|edit_listing|home_screen|chat_list_screen|currentRoleProvider" app/test/` → 0건(다섯 화면 어느 것도 앱 테스트가 건드리지 않는다). 그래서 "앱 CI가 초록"은 "앱이 정상"이 아니라 "앱이 무엇을 약속하는지 아무도 안 본다"를 뜻한다. **지금 당장 red가 되는 단언을 심는 것은 일부러 CI를 깨는 것**이라 이번 스토리에서 하지 않았다 — 앱이 새 계약을 채택하는 스토리와 같은 커밋에 들어가야 한다.
+trigger: **Epic 16의 앱 role 정합성 스토리(DW-685가 만들도록 지정한 그 스토리) 착수 시** — 그 스토리의 인수조건에 "`app/test/`에 `currentRoleProvider`가 role 없는 세션에서 무엇을 돌려주는지 단언하는 검사를 추가한다(채택 전에는 red, 채택과 함께 green)"를 심는다. DW-678(행동)·DW-680(근거 등급)과 한 스토리에서 함께 닫는다.
+status: open
+
+### DW-687: web 배포와 원격 `0028` 적용 사이의 창에서 가입한 계정은 영구히 `'buyer'`로 남는다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(edge-case 렌즈) — 두 변경의 적용 경로가 다르다는 점을 리뷰 세션이 확인(web=Git 연동 자동 배포, 마이그=수동 적용).
+location: `supabase/migrations/0028_handle_new_user_default_role.sql`(아직 원격 미적용) · `web/src/app/(auth)/signup/page.tsx:61`(role 미전송) · 절차 문서 `docs/deployment-runbook.md`
+severity: low
+summary: 이 스토리의 web 변경과 DB 변경은 한 커밋이지만 **배포 경로가 다르다**. web이 먼저 나가면 그 사이 가입한 계정은 0009의 옛 기본값 `'buyer'`를 받고, forward-only 원칙상 백필이 없으므로 그대로 굳는다. 결과적으로 계정 모집단이 3분된다 — Flutter 가입자(buyer/seller) · 이 창의 web 가입자(buyer) · 그 이후 web 가입자(user).
+evidence: CLAUDE.md B3이 이미 순서를 정해두었다 — "배포 순서는 만드는 쪽 → 읽는 쪽: 데이터 구조(DB) 먼저, 그걸 읽는 API·화면이 나중." 이 스토리는 그 순서를 지키면 창이 열리지 않는데, 지금 스펙의 잔여 위험 목록엔 "원격에 0028 미적용"만 적혀 있고 **순서 제약이 명시돼 있지 않다**. 실피해는 크지 않다(판매 게이트는 14.3이 소유권 기반으로 바꿔 role을 안 보고, 영향은 역할 라벨 표시와 Flutter 화면 분기 정도) — 하지만 되돌릴 수 없는 종류라 등재한다. 0027이 DB CHECK를 걷어냈으므로 잘못된 값이 자동으로 걸리지도 않는다.
+trigger: **`0028`을 원격(운영) Supabase에 적용할 때 = 이 브랜치를 `main`에 병합하기 직전** — 마이그레이션을 **먼저** 적용하고 그 다음에 web 배포가 나가도록 순서를 고정한다. 이미 창이 열린 뒤라면 그 사이 가입한 계정 목록(`select id, email, created_at from auth.users where created_at between …`)을 확인해 기록만 남긴다(일괄 UPDATE는 이 스펙의 Never 절이 금지한다 — 별도 판단 필요).
+status: open
+
+### DW-688: Follow-up review still recommended for 14-2-가입-역할선택-제거-트리거-기본-role after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-689: E2E `C2 매물 목록 검색·필터`가 13-10 데이터 보강으로 무효화됐다 — 필터가 안 걸려도 초록이 될 수 없어 red
+origin: 2026-08-06 Epic 14 마감 E2E 실행(사람). Epic 14가 만든 회귀가 아니다.
+location: `web/e2e/core-flows.spec.ts:70-83`
+severity: medium
+summary: `totalCount`(필터 없음)와 `filteredCount`(지역=서울)를 **첫 페이지의 카드 수**로 세고 `filteredCount < totalCount`를 단언하는데, 둘 다 `PAGE_SIZE`에 걸려 24로 같아져 실패한다.
+evidence: 추정이 아니라 실측·산술로 확정했다 — `web/src/app/(user)/search/page.tsx:65`의 `PAGE_SIZE = 24`, 로컬 DB `on_sale` **158건**, `region='서울'` **43건**. 43 > 24이므로 필터를 걸어도 첫 페이지는 24장 그대로다. 테스트 주석 자체가 낡은 전제를 적고 있다("로컬 DB on_sale 95건", "서울 24건") — Story **13-10 검색 데이터 보강**(2026-08-05, 매물 93→158)이 그 전제를 깼다. Epic 14는 `web/src/components/`·검색 경로를 하나도 건드리지 않았다(`git log 12e1db9..HEAD -- web/src/components/` 0건).
+why_it_matters: 이 검사는 **필터가 실제로 결과를 좁히는가**를 보는데, 지금은 결과와 무관하게 red다. 즉 필터 회귀를 못 잡는다. 11-4가 11-1의 실DB 테스트를 무효화하고 6일간 아무도 몰랐던 것(#180)과 **같은 유형**이다 — 한 스토리의 변경이 다른 스토리의 검사를 무효화했고, E2E가 verify 게이트에 없어서 에픽 마감까지 아무도 몰랐다.
+fix_sketch: 카드 수가 아니라 페이지네이션 총계(헤더의 전체 건수)로 비교하거나, 첫 페이지 안에서 확실히 좁혀지는 조건(예: `region='서울'` 대신 24건 미만인 값)으로 바꾼다. 어느 쪽이든 **일부러 필터를 무력화해 red를 확인**한 뒤 원복해 green을 확인할 것(CLAUDE.md B4 — 만들었다가 아니라 잡는다가 완료다).
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점). 그 전에 사용자가 지시하면 즉시.
+status: ✅ 해소 (2026-08-06, 사용자 지시로 즉시 수정). `core-flows.spec.ts`의 C2가 카드 수 대신 **화면에 그려진 총 건수**(`{totalCount}건의 매물`)를 읽어 비교하도록 고쳤다 — 총 건수는 페이지네이션과 무관하므로 데이터가 더 늘어도 살아 있다. red/green 실측: `search/page.tsx:180`의 지역 필터를 무력화하자 `Expected: < 158 / Received: 158`로 red(옛 단언이라면 24 vs 24라 필터와 무관하게 red였다), 원복 후 green.
+
+### DW-690: E2E `image-fallback` /search·/ai가 **2026-07-29 next/image 전환 이후 8일간 red**였고 아무도 몰랐다
+origin: 2026-08-06 Epic 14 마감 E2E 실행(사람). Epic 14가 만든 회귀가 아니다.
+location: `web/e2e/image-fallback.spec.ts:43-46`(abort 라우트 패턴) · 대상 `web/src/components/listings/ListingCardImage.tsx`
+severity: medium
+summary: 스펙이 `page.route('**/storage/v1/object/public/**')`로 **브라우저의 스토리지 직접 요청**을 가로채 이미지 전면 장애를 재현하는데, 매물 카드가 `next/image`로 바뀐 뒤로는 브라우저가 `/_next/image?url=…`만 요청하고 스토리지는 **서버가** 대신 가져간다. 그래서 abort 카운터가 0이 되고, 스펙에 심어둔 "0-of-0 침묵 통과 방지" 가드가 red를 낸다.
+evidence: 커밋 이력으로 시점을 특정했다 — 스펙은 `51c6154`(Story 11-5)가 가드까지 포함해 만들었고 그 뒤 **한 번도 수정되지 않았다**. 카드 이미지는 `b39a2b2`(DW-541, 2026-07-29 "매물 카드 사진을 next/image로 전환 — 장당 194KB → 8KB")가 바꿨다. 같은 실행에서 **상세(`/listings/[id]`)의 같은 테스트는 통과**했는데, `ListingGallery.tsx:141`이 의도적으로 평범한 `<img>`를 쓰기 때문이다(파일 주석에 근거 명시) — 통과/실패가 정확히 그 경계로 갈린다.
+why_it_matters: 이 검사가 지키던 것은 **"매물은 뜨는데 사진만 전면 실패해도 깨진 아이콘 0개 + 플레이스홀더 전량 발동"**(대장 #73)이다. 8일간 그 보호가 사실상 없었다. ⚠️ 동시에 **가드가 제 일을 했다** — 카운터가 없었다면 "깨진 이미지 0개"만 보고 **조용히 초록**이 됐을 것이고, 검사가 아무것도 안 보는 상태가 발각되지 않았다.
+fix_sketch: abort 패턴에 `**/_next/image**`를 추가(카드 경로)하고 스토리지 패턴은 유지(상세 경로). 고친 뒤 **두 경로 각각에서 카운터가 0이 아님**을 확인할 것 — 한쪽만 걸려도 나머지는 다시 0-of-0이 된다.
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점). 그 전에 사용자가 지시하면 즉시.
+status: ✅ 해소 (2026-08-06, 사용자 지시로 즉시 수정). abort 라우트에 `**/_next/image**`를 **추가**했다(스토리지 패턴은 유지 — 카드는 next/image, 상세는 평범한 `<img>`라 소비처마다 브라우저가 부르는 URL이 다르다). red/green 실측: `ListingCardImage`의 `onError` 폴백과 `naturalWidth===0` 보정을 둘 다 무력화하자 `/search`·`/ai`가 **"깨진 이미지가 0개여야 함"**으로 red — 전에는 "abort가 한 번도 안 걸렸음"이었으니 이제야 **실제 폴백 동작을 검사**한다. 같은 실행에서 상세는 통과해(거긴 안 깨뜨렸다) red가 정확히 깨뜨린 자리에만 났음도 확인. 원복 후 green.
+
+### DW-691: "신규 가입 계정이 실제로 `/sell`에 도달한다"를 **자동으로 보는 검사가 없다** — 사용자가 명시한 인수 조건인데 사람만 확인했다
+origin: 2026-08-06 Epic 14 마감 검증(사람). 세 축 중 이 축만 자동 검사가 없어 손으로 확인했다.
+location: `web/e2e/core-flows.spec.ts`(C8 옆이 자연스러운 자리) · 현존 부분검사 `web/src/app/(auth)/signup/__tests__/signupNoRoleMetadata.test.ts` · `api/tests/integration/test_role_check_relax_real_db.py`
+severity: medium
+summary: 사용자가 에픽 14의 최종 조건으로 **세 계정(기존 buyer·기존 seller·신규 가입)이 전부 `/sell`에 도달**할 것을 명시했다. ①은 E2E `C8`, ②는 E2E `E1~E5`가 본다. **③만 자동 검사가 없다.**
+evidence: 14-2가 만든 것은 두 개의 **반쪽 검사**다 — 단위테스트는 "가입 화면이 role metadata를 안 보낸다"까지만 보고, 실DB 통합테스트는 "트리거가 role 없으면 'user'를 넣는다"까지만 본다. **그 둘을 이어붙인 "그래서 그 계정이 /sell에 간다"는 아무도 안 본다.** 14-2는 `web/e2e/`를 하나도 건드리지 않았다(`git show --stat f1ae434 | grep e2e` 0건). 사람이 실브라우저로 확인해 **실제로 통과함**은 확인했으나(가입→role='user' 확인→/sell 폼 렌더), 그 확인은 재실행되지 않는다.
+why_it_matters: 이 프로젝트가 반복해서 데인 자리다 — "존재 확인 ≠ 작동 확인"(CLAUDE.md B4). 두 반쪽이 각각 초록인 채로 합이 깨질 수 있다. 예: 판매 게이트가 나중에 다시 역할을 보게 바뀌면(Epic 15의 관리자 역할 통합 반영 등) 단위·통합 테스트는 그대로 초록인데 신규 가입자만 조용히 막힌다. 그게 정확히 14-2가 처음에 에스컬레이션했던 그 결함이다.
+fix_sketch: `C8` 바로 옆에 `C9`를 추가한다 — 고유 이메일로 가입 → `runPsql`로 그 계정의 `role`이 트리거 기본값임을 고정(리터럴로 'user'를 적지 말고 "buyer/seller가 아님"을 단언해도 됨) → `/sell`에서 '매물 등록' heading 렌더 확인 → **테스트가 만든 계정 삭제**(write-flows가 쓰는 원복 증명 관례를 따를 것). 폼 제출은 하지 않는다(core-flows는 읽기 전용 스펙).
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점) — DW-689·690과 같은 자리에서 함께 고친다. 그 전에 사용자가 지시하면 즉시.
+status: ✅ 해소 (2026-08-06, 사용자 지시로 즉시 수정). `core-flows.spec.ts`에 **C9**를 신설했다 — 고유 이메일로 실제 가입 → 가입 화면에 역할 선택이 없음을 단언 → psql로 배정된 role이 buyer/seller가 **아님**을 고정(리터럴 'user'로 적지 않는다 — 지켜야 할 것은 기본값이 무엇인가가 아니라 "판매자 역할이 아닌 계정도 /sell에 간다"이다) → `/sell` 폼 렌더 확인 → `finally`에서 계정 삭제 + 0건 원복 증명. red/green 실측: `sell/layout.tsx`를 옛 `requireRole(USER_ROLE.SELLER)`로 되돌리자 C8·C9 둘 다 red(=C9가 14.2의 원래 에스컬레이션 결함을 실제로 잡는다), 원복 후 green. 실패했을 때도 검증 계정이 남지 않음을 DB로 확인했다.
+
+### DW-692: 기존 계정의 buyer/seller 역할을 없앨 수 있는가 — **조사 완료: 가능하다.** 실행은 별도 결정
+origin: 2026-08-06 사용자 질문("기존 계정들의 역할을 없앨 수 있는지 확인 필요"). 에픽 14는 신규 가입만 바꿨고 기존 행은 forward-only 원칙과 14.2 스펙의 `Never`("기존 계정 일괄 UPDATE 금지")로 손대지 않았다.
+location: `profiles.role`(기존 9행: buyer 3 · seller 5 · user 1 · admin 1) · 소비처는 아래 evidence
+severity: medium
+summary: **결론 = 가능하고, DB 층에서는 막는 것이 하나도 없다.** 남은 영향은 **화면 라벨뿐**이다. 다만 되돌릴 수 없는 변경이라(B3) 실행은 스토리로 다룬다.
+evidence: 문서가 아니라 DB·코드에서 직접 확인했고, 마지막엔 **실제로 UPDATE를 실행해 보고 롤백**했다(트랜잭션, 부작용 0).
+  · **RLS: `role`을 참조하는 정책이 0개다** — `pg_policies`를 조건 검색한 결과 `qual`/`with_check` 어디에도 role이 없다. 즉 역할 값을 바꿔도 행 접근 권한은 전혀 안 움직인다.
+  · **`is_admin()`은 `role = 'admin'` 정확일치만 본다** — `pg_proc`에서 본문 확인. admin을 UPDATE 대상에서 빼면 관리자 기능은 무변(FR54 존치).
+  · **`requireRole()`의 남은 호출처는 `(admin)/layout.tsx`의 ADMIN 하나뿐이다** — `/sell`은 14.3이 `requireUser()`로 옮겼다. buyer/seller로 막는 자리가 web에 없다.
+  · **web의 나머지 `profiles.role` 소비처는 전부 표시용이다** — `search`·`wishlist`·`ai` 페이지의 상단바 `roleLabel`, `admin/members`의 역할 열. 전부 `ROLE_LABEL[...] ?? role` 폴백을 쓰므로 모르는 값이 와도 안 깨진다(14.1이 심고 `roleLabelFallback.test.ts`가 강제).
+  · **Flutter 앱은 `profiles.role`을 아예 안 읽는다** — `currentRoleProvider`(auth_controller.dart)가 읽는 것은 세션의 `user_metadata['role']`이다. 즉 이 UPDATE는 앱 화면에 영향이 없다(앱의 판매자 게이트 3곳은 Epic 16 몫으로 그대로 남는다).
+  · **실행 실험(2026-08-06, 트랜잭션 후 rollback)**: `update profiles set role='user' where role<>'admin'` → `UPDATE 9`, admin 1명 유지, role 참조 RLS 0개, on_sale 158건·채팅방 5개 불변. 0027이 완화한 CHECK가 새 값을 받아준다는 것도 이 성공 자체가 증거다.
+why_it_matters: 지금은 **계정 모집단이 갈라져 있다** — 옛 web/앱 가입자(buyer·seller)와 14.2 이후 web 가입자(user). 화면에는 "구매자"·"판매자"·"회원"이 섞여 보이는데, 역할 통합 이후 그 구분은 **아무 기능도 하지 않는다**(권한은 소유권으로 판정). 즉 뜻 없는 라벨이 남아 사용자와 관리자를 헷갈리게 한다.
+open_questions_for_human:
+  · 앱 사용자의 `user_metadata['role']`도 함께 지울 것인가 — 지우면 Flutter의 판매자 화면 3곳이 그 계정에 숨겨진다(Epic 16이 앱을 고치기 전까지). **지우지 않는 쪽이 안전**하고, `profiles.role`만 정리해도 web 목적은 달성된다.
+  · 시드 스크립트(`supabase/seed-local/01_accounts.sql`·`seed.sql`)가 계정을 buyer/seller로 되돌려 놓으므로, 로컬을 다시 시드하면 원상복귀한다 — 시드도 함께 바꿀지.
+  · 되돌릴 수 없다(B3). 누가 원래 판매자였는지는 `listings.seller_id`로 여전히 알 수 있으므로 실질 정보 손실은 없다는 점을 확인했다.
+trigger: **Epic 15의 `15-3-회원관리-역할통합-반영` 스토리** — 그 스토리가 이미 "관리자 회원관리 화면의 구매자/판매자 필터 정리(FR61)"를 소유한다. 화면에서 그 구분을 걷어내는 자리와 데이터에서 걷어내는 자리는 같이 판단해야 한다(따로 하면 화면은 정리됐는데 데이터만 남거나 그 반대가 된다). 마이그레이션 1개(일괄 UPDATE)를 그 스토리 범위에 추가할지 사용자가 결정한다.
 status: open

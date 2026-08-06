@@ -1,6 +1,10 @@
 // 본인 매물 수정 화면 (FR6) — 서버 컴포넌트.
 // 라우트: /sell/[id]/edit  (라우트 그룹 (user)는 URL에 미포함)
-// 역할 게이트는 상위 (user)/sell/layout.tsx의 requireRole(seller)이 담당한다(하위 라우트 자동 적용).
+// 게이트는 상위 (user)/sell/layout.tsx의 requireUser()가 로그인만 확인한다(하위 라우트 자동 적용).
+// 즉 이 화면을 "열 수 있는" 사람은 role과 무관하게 로그인 사용자 전원이다(spec-14-3).
+// 그래서 "본인 매물이냐"를 가르는 것은 아래 2)의 앱측 seller_id 필터다 — RLS 소유권 정책
+// (listings_update_own·listings_delete_own)은 그 뒤의 UPDATE/DELETE만 0행으로 막을 뿐,
+// 조회(SELECT) 단계에서 폼이 뜨는 것 자체는 막지 못한다(바로 아래 ⚠️ 참고).
 //
 // 동작:
 //   1) 현재 로그인 판매자 확인.
@@ -51,7 +55,7 @@ export default async function EditListingPage({
   // 본인 매물이 아니거나 존재하지 않음 → 수정 폼을 노출하지 않고 한국어 안내(AC4).
   if (!listing) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">매물 수정</h1>
         <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           매물을 찾을 수 없거나 접근 권한이 없습니다. 본인 매물만 수정할 수 있습니다.
@@ -71,7 +75,7 @@ export default async function EditListingPage({
   //   상태 전환(구매완료/되돌리기)은 2-4 소관이라 여기서 다루지 않는다(스코프 침범 금지).
   if (listing.status === LISTING_STATUS.SOLD) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">매물 수정</h1>
         <p role="alert" className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
           판매완료된 매물은 수정할 수 없습니다.
@@ -109,7 +113,7 @@ export default async function EditListingPage({
   );
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6">
       <section className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">매물 수정</h1>
         <p className="text-sm text-zinc-500">

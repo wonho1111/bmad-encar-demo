@@ -96,6 +96,45 @@ _GUIDE_BLOCK_TEMPLATE = """
 _ANSWER_FOUND = "조건에 맞는 매물 {n}건을 찾았어요."
 _ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."  # FR17 조건 완화 안내
 
+# 최상급×HYBRID 정렬 충돌 — 옵션(b) 채택(spec-13-9 Design Notes). HYBRID는 벡터 유사도로만
+# 정렬하고 최상급이 요구하는 가격 등 정렬은 반영하지 않는다(오늘도 이미 그렇게 동작 중) —
+# 이 상수·헬퍼는 그 사실을 답변에 알리는 캐비엇만 추가한다(sql_guard·SQL 조립은 미변경).
+# contextualize_node._SUPERLATIVE_PRICE_RE와 같은 어휘·모양("제일"·"가장" + 가격 형용사
+# 근접)을 감지 목적만 다르게 쓴다 — 공유 유틸로 뽑지 않고 파일마다 지역 상수로 둔다
+# (3줄 중복 < 조기 추상화, A2, Design Notes).
+#
+# ⚠️ 순서 무관 AND는 부족하다(코드리뷰 정정) — "제일"과 가격 형용사가 각각 문장 어디에나
+# 있기만 하면 결합으로 오판된다. 실측: "가장 인기있는 싼타페 보여줘"는 "싼"이 "싼타페"의
+# 부분문자열이라 매칭되고("싼" ⊂ "싼타페"), "가장 인기 많고 저렴한 SUV"·"제일 안전한 차인데
+# 가격도 싸게"도 부사·형용사가 멀리 떨어진 서로 무관한 절인데 걸린다. 최상급 부사 바로 뒤
+# 0~4자 이내에 가격 형용사가 와야만 "가격 정렬 요청"으로 본다(contextualize_node와 동일 정규식).
+#
+# ⚠️ 근접만으론 부족하다(코드리뷰 정정, 13.9 3차) — `\S{0,4}?`는 0자도 허용하므로 부사 **바로
+# 뒤**에 차종명이 오면 여전히 오탐이었다(실측: "가장 싼타페 보여줘"·"제일 싼타페 보여줘"가
+# True). 그래서 가격 형용사 뒤에 한글 음절이 이어지면 매칭하지 않는다 — "싼타페"의 "싼",
+# "싸지 않은"의 "싸", "비싸도 되는"의 "비싸"가 여기서 걸러진다. `저렴`만 예외인데,
+# "저렴한"처럼 관형형 어미가 붙는 게 정상 표기라 경계를 걸면 정상 질의가 죽는다(실측).
+_SUPERLATIVE_PRICE_RE = re.compile(r"(제일|가장)\s*\S{0,4}?((싼|싸|비싼|비싸)(?![가-힣])|저렴)")
+# ⚠️ 문구를 한 문장으로 줄였다(사용자 결정, 2026-08-05). 원래는 뒤에 "구조적 조건만으로 다시
+# 물어보시면 가격순으로 볼 수 있어요(예: …)"라는 재질의 안내가 붙어 있었는데, 실제 답변 본문이
+# "조건에 맞는 매물 5건을 찾았어요." 한 줄이라 **안내가 답변보다 길었고**, 자기가 못 한 일을
+# 사용자 숙제로 넘기는 인상이었다. 고지 자체는 남긴다 — 없애면 "제일 싼"이라고 물은 사용자가
+# 가격순이 아닌 결과를 아무 설명 없이 받게 된다(그게 이 상수의 존재 이유다).
+_SUPERLATIVE_CAVEAT = "가격순 정렬은 반영되지 않았어요."
+
+
+def _has_superlative(query: str) -> bool:
+    """질의에 최상급 부사("제일"·"가장")와 가격 형용사가 근접해서 함께 있는지.
+
+    router_node의 프롬프트 규칙(최상급 부사+가격 형용사 결합만 구조조건)과 판정 기준을
+    맞춘다 — 부사만 있는 비가격 최상급("가장 안전한", "가장 인기있는")은 여기서 False다.
+    부사·형용사가 문장 안에 각각 따로 있어도(순서 무관 AND) 결합으로 오판하지 않도록
+    근접 정규식으로 판정한다(코드리뷰 정정 — "가장 인기있는 싼타페"의 "싼"이 차종명
+    "싼타페"의 부분문자열일 뿐인데 결합으로 잘못 잡히던 문제 포함).
+    """
+    return bool(_SUPERLATIVE_PRICE_RE.search(query))
+
+
 # 폴백 신호(NONE) 인식 — 정확히 "NONE"만 보면 LLM이 `NONE.`·`"NONE"`처럼 살짝 어긋나게
 # 낼 때 폴백을 놓치고, 그 문자열이 조건으로 조립돼 가드 차단(400)까지 간다(실측: `NONE.`
 # → forbidden_column). 따옴표·백틱·마침표·공백만 두른 형태는 전부 폴백으로 읽는다.
@@ -176,7 +215,13 @@ def hybrid_rag_node(query: str) -> dict:
             # 않고 기존 벡터검색을 그대로 재사용한다. 빈 응답을 NONE과 다르게 취급하면
             # 아래에서 `AND ()`라는 깨진 SQL이 조립돼(가드는 다른 AND항인 status='on_sale'
             # 만으로 통과시키므로 못 잡는다) 실행 단계에서 psycopg 문법 오류로 죽는다.
-            return doc_rag_node(query, qvec=qvec)  # 위에서 계산한 임베딩 재사용(코드리뷰 — 재임베딩 제거)
+            result = doc_rag_node(query, qvec=qvec)  # 위에서 계산한 임베딩 재사용(코드리뷰 — 재임베딩 제거)
+            # 이 폴백은 스펙 예시("제일 싼 패밀리카")가 실제로 타는 경로다(구조조건이 하나도
+            # 없는 순수 최상급+의미 질의) — 정상 SQL 조립 분기에만 캐비엇을 붙이면 바로 이
+            # 예시 케이스가 캐비엇 없이 나간다(코드리뷰 정정).
+            if result["listings"] and _has_superlative(query):
+                result = {**result, "answer": f"{result['answer']} {_SUPERLATIVE_CAVEAT}"}
+            return result
 
         # psycopg는 params가 있으면(아래 run_select) SQL 문자열 전체에서 '%'를 자리표시자로
         # 스캔한다 — 따옴표 리터럴 안(예: `model LIKE '%아반떼%'`)도 예외가 아니다. sql_guard의
@@ -201,6 +246,10 @@ def hybrid_rag_node(query: str) -> dict:
             # test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
             if listings and guide and guide[0]:
                 answer += f" (참고: {guide[0]})"  # doc_rag_node와 동일한 결정론적 인용(AC2)
+            if listings and _has_superlative(query):
+                # 최상급이 있어도 HYBRID는 벡터 정렬만 적용한다 — 그 사실을 알린다(옵션 b).
+                # 0건이면(listings 없음) 이 캐비엇도 인용과 같은 이유로 붙이지 않는다.
+                answer += f" {_SUPERLATIVE_CAVEAT}"
             return {"answer": answer, "listings": listings}
         except SqlGuardError as exc:
             # 가드 차단만 재시도 대상 — LLM이 조건을 고치면 통과할 여지가 있다.

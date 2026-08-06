@@ -80,20 +80,43 @@ _LISTING_COLS = (
 
 
 def _create_user(cur, email, role="buyer"):
+    """auth.users에 유저를 만들고, 가입 트리거(handle_new_user)가 새 계약(Story 14.2, 0028)대로
+    profiles.role을 채웠는지 확인한다.
+
+    role=None이면 metadata에 role 키 자체를 안 보낸다(web 신규 가입 경로와 동일) → 'user' 배정.
+    role이 'buyer'/'seller'면 metadata 그대로 반영한다(하위호환 — Flutter 가입 경로) → 그 값 배정.
+
+    그 밖의 값은 **거부한다**(conftest._create_user와 동일 계약 — 이 파일은 그 사본이다).
+    트리거가 전부 'user'로 강제하므로 role="admin" 요청을 조용히 재해석하면 "관리자를 만들었다"고
+    믿는 테스트가 경고 없이 통과한다. 관리자가 필요하면 만든 뒤 profiles를 UPDATE로 올린다.
+    """
+    if role not in (None, "buyer", "seller"):
+        raise ValueError(
+            f"가입 트리거가 배정할 수 없는 role={role!r} — 트리거는 이 값을 'user'로 강제한다. "
+            "필요하면 생성 후 `update public.profiles set role = …`로 올릴 것."
+        )
     user_id = uuid.uuid4()
-    cur.execute(
-        "insert into auth.users (id, email, raw_user_meta_data) "
-        "values (%s, %s, jsonb_build_object('role', %s::text))",
-        (user_id, email, role),
-    )
-    # 0001의 가입 트리거가 profiles 행을 만든다 — listings/chat_rooms FK가 이를 요구한다.
+    if role is None:
+        cur.execute(
+            "insert into auth.users (id, email, raw_user_meta_data) values (%s, %s, '{}'::jsonb)",
+            (user_id, email),
+        )
+    else:
+        cur.execute(
+            "insert into auth.users (id, email, raw_user_meta_data) "
+            "values (%s, %s, jsonb_build_object('role', %s::text))",
+            (user_id, email, role),
+        )
     # role까지 대조하는 이유: 이 인자를 받아만 두고 확인하지 않으면 "판매자를 만들었다"가
     # 검사되지 않는 주장으로 남는다. 트리거가 raw_user_meta_data->>'role' 읽기를 멈추면
     # 여기서 잡힌다(B4 — 만드는 것이 아니라 잡는 것이 완료다).
+    expected_role = role if role in ("buyer", "seller") else "user"
     cur.execute("select role from public.profiles where id = %s", (user_id,))
     row = cur.fetchone()
     assert row is not None, "가입 트리거가 profiles 행을 만들지 않았다"
-    assert row[0] == role, f"가입 트리거가 role 메타데이터를 반영하지 않았다({row[0]} != {role})"
+    assert row[0] == expected_role, (
+        f"가입 트리거가 role 계약을 지키지 않았다({row[0]} != {expected_role})"
+    )
     return user_id
 
 

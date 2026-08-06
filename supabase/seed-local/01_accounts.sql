@@ -80,7 +80,7 @@ begin
       );
     end if;
 
-    -- 트리거(handle_new_user)가 만든 profiles(기본 buyer)를 목표 role/name으로 맞춘다(멱등).
+    -- 트리거(handle_new_user)가 만든 profiles(0028 이후 기본 role='user')를 목표 role/name으로 맞춘다(멱등).
     update public.profiles
        set role = v_role, name = v_name
      where id = v_id

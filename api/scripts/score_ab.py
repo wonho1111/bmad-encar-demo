@@ -20,7 +20,26 @@
   api/ 에서  .venv/Scripts/python.exe scripts/score_ab.py \
           --queryset docs/ai-ab-test-queryset.json \
           --raw docs/g2-baseline-partial.json \
-          --out docs/g2-baseline-report.json
+          --out docs/g2-recapture-<YYYY-MM-DD>-report.json
+
+⚠️ `--out`을 커밋된 채점 리포트(`docs/g2-baseline-report.json` 등, `scripts/baseline_guard.py`의
+  `PROTECTED_BASELINES` 목록)로 주지 말 것 — 그 파일은 사람이 눈으로 대조하는 세 축(라우팅·
+  가이드인용·되묻기)의 유일한 기준점이라 부분 캡처로 덮어쓰면 조용히 사라진다(DW-635). 위
+  예시(`<YYYY-MM-DD>`는 실제 날짜로 치환)는 그래서 날짜형 재캡처 경로를 쓴다 — 단, **이미
+  커밋된 날짜형 증거 파일(예: `g2-recapture-2026-08-03.json`류)은 그 자체가 보호 목록에
+  들어가므로 `--out`으로 재사용하지 말 것**, 매번 새 날짜로 써야 한다. `main()`이 이 목록을
+  실제로 거부한다(CLAUDE.md B9).
+
+종료 코드(두 모드 공통): 게이트가 떨어지면 **1**로 끝난다.
+  · 2파일 모드 — top-level `gate_pass`가 false일 때(회귀·검증불가·개별 summary FAIL 어느 쪽이든).
+  · 1파일 모드 — 그 raw의 `gate_pass`가 false일 때. 1파일 모드는 "이 캡처를 새 기준선으로
+    올린다"는 자리라(G2 2단계), 여기서 exit 0을 내면 `score_ab.py … && cp … g2-baseline.json`
+    같은 체인이 오염·전량 실패 캡처를 그대로 기준선으로 승격시킨다(실측: 47건 전량 errored인
+    raw가 콘솔에 `게이트: FAIL`을 찍고도 exit 0이었다 — DW-636이 run_phase_b에서 닫은 것과
+    같은 부류가 이쪽에 남아 있었다, 13.9 독립 후속 리뷰).
+  위 실행 예시처럼 `run_phase_b.py … && score_ab.py …`로 이어 붙일 때 체인이 조용히 진행되지
+  않게 하기 위해서다(run_phase_b.py와 같은 규칙).
+  리포트 파일과 콘솔 요약은 종료 전에 이미 다 쓴다 — 게이트가 떨어져도 산출물은 남는다.
 """
 
 from __future__ import annotations
@@ -32,6 +51,9 @@ from pathlib import Path
 
 API_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(API_ROOT))
+
+# 커밋된 G2 비교 근거(raw 캡처·채점 리포트) 보호 — run_phase_b.py와 목록을 공유한다(DW-635).
+from scripts.baseline_guard import is_protected  # noqa: E402
 
 # 앱 기본 매물 개수(경로 A/B 공통 LIMIT). 결과집합 채점에서 "보여준 개수 상한"으로 쓴다.
 try:
@@ -84,6 +106,10 @@ _CMP = {
     "year_min": ("year", ">="), "year_max": ("year", "<="),
     "seats_min": ("seats", ">="), "seats_max": ("seats", "<="),
 }
+# 부분일치 키 → 컬럼(13-11 A-1 짝 — model ILIKE '%<모델명>%' 골든). _CMP와 같은 관례로
+# "predicate 키 → 컬럼" 매핑만 두고, 값 감싸기(%…%)는 아래 루프에서 한다(연산자가 아니라
+# 값 형태 자체가 다르므로 _CMP 딕셔너리에 억지로 끼워 넣지 않는다).
+_LIKE_COLS = {"model_like": "model"}
 _VALID_ORDER = {"price ASC", "price DESC", "mileage ASC", "mileage DESC",
                 "year ASC", "year DESC"}
 
@@ -93,7 +119,8 @@ def build_golden_sql(predicate: dict) -> tuple[str, list]:
 
     지원 키: 카테고리 등호(manufacturer/body_type/fuel/color/region/transmission, 값 str|list),
       accident_free(bool), price/mileage/year/seats의 min·max, options_all(list, 각 =ANY(options)),
-      order(화이트리스트), limit(int). 값은 전부 %s 파라미터로만 바인딩(인젝션 0).
+      model_like(str, model ILIKE '%값%'), order(화이트리스트), limit(int).
+      값은 전부 %s 파라미터로만 바인딩(인젝션 0).
     """
     conds = ["status = 'on_sale'"]
     params: list = []
@@ -112,6 +139,11 @@ def build_golden_sql(predicate: dict) -> tuple[str, list]:
         if key in predicate:
             conds.append(f"{col} {op} %s")
             params.append(predicate[key])
+
+    for key, col in _LIKE_COLS.items():
+        if key in predicate:
+            conds.append(f"{col} ILIKE %s")
+            params.append(f"%{predicate[key]}%")
 
     if "accident_free" in predicate:
         conds.append("accident_free = %s")
@@ -211,6 +243,24 @@ def score_path_hybrid(returned_ids: list[str], golden_ids: set) -> dict:
             "returned_n": len(returned), "golden_n": len(golden)}
 
 
+def count_range_ok(returned_n: int, count_range: list[int], predicate: dict) -> bool:
+    """반환 건수(returned_n)가 큐리셋의 count_range 안에 드는가(DW-647).
+
+    count_range는 recount_queryset.py가 predicate를 DB에 그대로 돌려 만든 "골든 매칭
+    건수"다 — predicate에 명시적 limit이 **없으면** 그 값은 앱의 기본 상한(DEFAULT_LIMIT)보다
+    클 수 있다(예: SUV 3천만원 이하 매칭 25~29건). 그런 경우 앱은 정상적으로 DEFAULT_LIMIT만
+    반환하므로, count_range를 그대로 반환 건수와 비교하면 정상 동작(5건 반환)이 항상 오탐
+    처리된다 — 그래서 predicate에 limit이 없을 때만 양끝을 DEFAULT_LIMIT으로 자른다.
+    predicate에 limit이 있으면(top-N, 예: "제일 싼 차") count_range 자체가 이미 그 limit로
+    골든을 만들 때 잘려 있으므로(build_golden_sql이 LIMIT을 SQL에 붙인다) 그대로 비교한다 —
+    바로 이 경로가 DW-656("제일 싼 차"가 5건을 반환해도 만점이던 버그)을 잡는다.
+    """
+    lo, hi = count_range
+    if "limit" not in predicate:
+        lo, hi = min(lo, DEFAULT_LIMIT), min(hi, DEFAULT_LIMIT)
+    return lo <= returned_n <= hi
+
+
 def doc_hit(answer: str, doc_refs: list[str]) -> bool:
     """HYBRID 경로: answer의 '(참고: <title>)'에 기대 가이드 제목이 들어있나(인용 recall).
 
@@ -287,13 +337,18 @@ def _require_route_labels(primary: str, acceptable: list[str] | None, where: str
 def captured_route(value: str) -> str:
     """이미 캡처된 raw의 route 값을 신버전 어휘로 올린다(읽는 지점에서만).
 
-    13.2 이후 라우터가 내는 값은 항상 신버전이지만, **13.1이 캡처해 리포에 커밋한
-    `docs/g2-baseline.json`(44개 전량)은 구어휘 A/B/C다.** 그 파일을 지금 코드로
-    재채점하면 라우팅이 50/55 → 0/55로 무너지고(review-4 실측), 멀티턴 하드 오염
-    게이트는 조건에 걸리지 않아 오염이 있어도 조용히 통과한다(실측: 동일 오염
-    데이터가 route="A"면 contamination=0·gate_pass=True, "SQL"이면 1·False).
-    DW-562가 막으려던 "전량 오판"이 방향만 바뀌어 되살아난 것이라, 캡처 어휘를
-    읽는 지점에서 한 번 올려 준다. 신버전 캡처에는 별칭표가 걸리지 않아 무영향이다.
+    13.2 이후 라우터가 내는 값은 항상 신버전이다. 이 별칭표는 **구어휘 A/B/C로 캡처된
+    옛 raw**를 위한 것이다 — 그런 파일을 지금 코드로 재채점하면 라우팅이 50/55 → 0/55로
+    무너지고(review-4 실측), 멀티턴 하드 오염 게이트는 조건에 걸리지 않아 오염이 있어도
+    조용히 통과한다(실측: 동일 오염 데이터가 route="A"면 contamination=0·gate_pass=True,
+    "SQL"이면 1·False). DW-562가 막으려던 "전량 오판"이 방향만 바뀌어 되살아난 것이라,
+    캡처 어휘를 읽는 지점에서 한 번 올려 준다. 신버전 캡처엔 별칭표가 안 걸려 무영향이다.
+
+    ⚠️ 수치·상태 사본 주의(13.8 3차 리뷰 정정): 이 독스트링은 원래 "커밋된
+    `docs/g2-baseline.json`(44개 전량)은 구어휘 A/B/C다"라고 단정했는데 **지금은 거짓**이다
+    — DW-609가 2026-08-02에 재캡처해 그 파일은 47항목이고 route 값도 전부 신어휘다(실측).
+    즉 현재 리포의 어떤 커밋된 raw도 이 별칭표를 타지 않는다. 여기 파일명·개수를 다시 적지
+    말 것(사본은 늙는다) — 실제 파일을 열어 확인한다.
 
     `route_ok()`의 계약(actual은 번역하지 않는다)은 그대로다 — 어휘를 올리는 것은
     route_ok의 책임이 아니라 "구어휘로 캡처된 raw"라는 입력 파일의 성질이다.
@@ -445,6 +500,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
     clarify_ok_n = 0
     clarify_total = 0
     clarify_chips_unobserved = 0
+    # 반환 건수(count_range) 관측(DW-647) — count_range가 선언된 SQL·HYBRID 문항에서만 센다.
+    # doc_hit·clarify와 같은 분자/분모 관례(0/0과 0/12를 구분).
+    count_range_ok_n = 0
+    count_range_total = 0
     flaky_n = 0
     flaky_measured = False  # N>1로 실제 반복 실행된 item이 하나라도 있어야 True(review pass 4)
     errored_n = 0
@@ -453,6 +512,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
     deadend = 0
     total_in = total_out = 0
     latencies: list[float] = []
+    # 실제로 채점된 문항 id(DW-646) — scored_n은 "몇 개"만 말하고 "어떤 문항"인지는 말하지
+    # 않는다. baseline·candidate가 다른 문항 집합을 우연히 같은 개수로 채점하면 아래
+    # coverage["scored_n"]만 보는 비교는 그걸 놓친다(main()의 coverage_matches가 이 집합을 쓴다).
+    scored_ids: list[str] = []
 
     for rid, runs in raw["results"].items():
         item = items.get(rid)
@@ -473,6 +536,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
             })
             continue
 
+        scored_ids.append(rid)
         # N회 실행 중 대표(첫 실행) + flaky 판정 — usable_runs만 본다(에러 run은 서명에서 제외).
         rep = usable_runs[0]
         if len(usable_runs) > 1:
@@ -508,6 +572,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                 rec["score"] = sc
                 if not gray:
                     result_scores_clean.append(sc["result"])
+                cr = item.get("count_range")
+                if cr:
+                    ok = count_range_ok(len(rep["ids_last"]), cr, item["predicate"])
+                    rec["count_range_ok"] = ok
+                    count_range_total += 1
+                    count_range_ok_n += int(ok)
             elif primary == "HYBRID":
                 # 결과집합(가이드가 실제로 좁혔나) + 인용(가이드가 실제로 쓰였나) 둘 다 본다.
                 # 라우터가 다른 경로로 새서 매물이 0건이면 precision이 0이 되어 그대로 감점된다.
@@ -520,6 +590,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                 rec["doc_hit"] = hit
                 doc_hit_total += 1
                 doc_hit_n += int(hit)
+                cr = item.get("count_range")
+                if cr:
+                    ok = count_range_ok(len(rep["ids_last"]), cr, item["predicate"])
+                    rec["count_range_ok"] = ok
+                    count_range_total += 1
+                    count_range_ok_n += int(ok)
             elif primary == "CLARIFY":
                 q_ok = clarify_question_ok(rep["answer_last"])
                 clarify_total += 1
@@ -613,6 +689,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                     trec["score"] = sc
                     if not gray:
                         result_scores_clean.append(sc["result"])
+                    cr = turn.get("count_range")
+                    if cr:
+                        ok = count_range_ok(len(tr["ids"]), cr, turn["predicate"])
+                        trec["count_range_ok"] = ok
+                        count_range_total += 1
+                        count_range_ok_n += int(ok)
                 elif primary == "HYBRID" and turn.get("predicate"):
                     golden = run_golden_ids(turn["predicate"])
                     sc = score_path_hybrid(tr["ids"], golden)
@@ -623,6 +705,12 @@ def score_model(queryset: dict, raw: dict) -> dict:
                     trec["doc_hit"] = hit
                     doc_hit_total += 1
                     doc_hit_n += int(hit)
+                    cr = turn.get("count_range")
+                    if cr:
+                        ok = count_range_ok(len(tr["ids"]), cr, turn["predicate"])
+                        trec["count_range_ok"] = ok
+                        count_range_total += 1
+                        count_range_ok_n += int(ok)
                 turn_recs.append(trec)
             rec["turns"] = turn_recs
 
@@ -648,6 +736,7 @@ def score_model(queryset: dict, raw: dict) -> dict:
     queryset_total = len(items)
     scored_n = len(per_item) - errored_n
     missing_ids = sorted(set(items.keys()) - set(raw["results"].keys()))
+    scored_ids_sorted = sorted(set(scored_ids))
 
     return {
         "name": model,
@@ -663,6 +752,10 @@ def score_model(queryset: dict, raw: dict) -> dict:
         "clarify_ok_n": clarify_ok_n,
         "clarify_total": clarify_total,
         "clarify_chips_unobserved": clarify_chips_unobserved,
+        # 반환 건수(count_range) 관측(DW-647) — 분모(_total)는 doc_hit·clarify와 같은 이유로
+        # 함께 남긴다(0/0과 0/12를 구분).
+        "count_range_ok_n": count_range_ok_n,
+        "count_range_total": count_range_total,
         "flaky_n": flaky_n,
         "flaky_measured": flaky_measured,
         "contamination": contamination,
@@ -686,6 +779,8 @@ def score_model(queryset: dict, raw: dict) -> dict:
             "errored_n": errored_n,
             "missing_n": len(missing_ids),
             "missing_ids": missing_ids,
+            # 채점된 문항 id 집합(DW-646) — "몇 개"가 아니라 "어느 문항"까지 비교 가능하게 한다.
+            "scored_ids": scored_ids_sorted,
         },
         "is_partial": scored_n < queryset_total,
         "per_item": per_item,
@@ -703,10 +798,31 @@ def _observability_line(s: dict) -> str:
 
     doc = _ratio(s.get("doc_hit_n", 0), s.get("doc_hit_total", 0), "해당 문항 없음 ⚠")
     clar = _ratio(s.get("clarify_ok_n", 0), s.get("clarify_total", 0), "해당 문항 없음 ⚠")
-    line = f"  가이드 인용(HYBRID): {doc} | 되묻기 발동(CLARIFY): {clar}"
+    cnt = _ratio(s.get("count_range_ok_n", 0), s.get("count_range_total", 0), "해당 문항 없음 ⚠")
+    line = f"  가이드 인용(HYBRID): {doc} | 되묻기 발동(CLARIFY): {clar} | 개수범위(count_range): {cnt}"
     if s.get("clarify_chips_unobserved"):
         line += f"  (칩 미캡처 {s['clarify_chips_unobserved']}건 — 질문 문구만으로 판정)"
     return line
+
+
+def _resolve_evidence_path(raw_path: str) -> str:
+    """리포트에 기록할 raw 경로를 해석한다(P7) — 스크래치패드 등 세션 한정 상대경로를 그대로
+    남기면 그 세션이 끝난 뒤엔 산출물만 봐도 어느 파일을 가리키는지 되짚을 수 없다(DW-637
+    "산출물만 봐도 방향을 되짚을 수 있어야 한다"는 목적 위반). resolve()해 API_ROOT(이 파일의
+    api/ 루트) 기준 상대경로로 표현 가능하면 그걸 쓰고(리포 안 파일이 흔한 경우이므로 짧고
+    이식성 있음), 리포 밖 경로(예: /tmp)면 해석된 절대경로 그대로 남긴다(폴백).
+
+    ⚠️ repo-relative 표현은 항상 `/` 구분자로 낸다(P8) — `str(PurePath)`는 OS 네이티브
+    구분자라 이 모듈의 독스트링이 문서화한 Windows(`.venv/Scripts/python.exe`)에서는
+    `docs\\g2-baseline.json`이 나온다. 리포트는 OS를 건너 공유되는 커밋 산출물이고
+    테스트도 `docs/g2-baseline.json`으로 못박혀 있으므로, 구분자를 플랫폼에 맡기지 않는다.
+    (폴백인 리포 밖 절대경로는 그 OS의 실제 경로여야 의미가 있으므로 그대로 둔다.)
+    """
+    resolved = Path(raw_path).resolve()
+    try:
+        return resolved.relative_to(API_ROOT).as_posix()
+    except ValueError:
+        return str(resolved)
 
 
 def main() -> None:
@@ -726,6 +842,14 @@ def main() -> None:
 
     if len(args.raw) not in (1, 2):
         ap.error("--raw는 1개(베이스라인 단독) 또는 2개(베이스라인 후보)만 허용합니다.")
+
+    # --out이 커밋된 G2 비교 근거를 가리키면 거부한다(DW-635 — run_phase_b.py와 목록 공유).
+    if is_protected(args.out):
+        ap.error(
+            f"--out이 커밋된 G2 비교 근거({args.out})를 가리킵니다 — 덮어쓰면 채점 기준점이 "
+            "사라집니다. 날짜형 리포트 경로(예: docs/g2-recapture-<YYYY-MM-DD>-report.json, "
+            "실제 날짜로 치환)를 쓰세요 — 이미 커밋된 날짜형 파일은 재사용하지 마세요."
+        )
 
     queryset = json.loads(Path(args.queryset).read_text(encoding="utf-8"))
     raws = [json.loads(Path(p).read_text(encoding="utf-8")) for p in args.raw]
@@ -763,16 +887,88 @@ def main() -> None:
         )
         print(f"리포트: {args.out}")
         print("=" * 70)
+        # 1파일 모드도 게이트 탈락은 0이 아닌 코드로 끝낸다(13.9 독립 후속 리뷰) — 이 모드는
+        # G2 2단계("이 캡처를 새 기준선으로 올린다")가 쓰는 자리라, 여기서 조용히 0을 내면
+        # 뒤따르는 `cp … g2-baseline.json`이 오염·전량 실패 캡처를 기준선으로 승격시킨다.
+        # 아래 2파일 모드와 같은 규칙이며, 리포트는 위에서 이미 썼으므로 산출물은 남는다.
+        if not baseline_only["gate_pass"]:
+            sys.exit(1)
         return
 
     baseline, candidate = summaries[0], summaries[1]
 
     verdict = lexicographic_winner(baseline, candidate)
-    # 베이스라인 회귀 게이트 — 후보가 베이스라인보다 결과정확도 하락 시 채택 불가.
-    regression = candidate["result_mean"] < baseline["result_mean"] - 1e-9
+    # 베이스라인 회귀 게이트(DW-626) — 예전엔 result_mean 한 축만 봤다. 13.4(되묻기)·13.6
+    # (가이드 인용)이 통째로 죽어도 그 축들은 사람이 눈으로만 대조했다(리뷰가 뮤테이션으로
+    # 실증: 인용 전량 제거·CLARIFY 전량 SQL 치환 둘 다 gate_pass:true로 통과했다). 이제 다섯
+    # 축 전부를 자동 비교한다(13-11 — DW-647이 count_range를 다섯 번째로 추가) — 하나라도
+    # 하락하면 regression_block이다.
+    #
+    # ⚠️ 네 축(routing_correct·doc_hit_n·clarify_ok_n·count_range_ok_n)은 **원시 개수**다
+    # (코드리뷰 정정) — result_mean처럼 문항 수로 나눈 평균이 아니다. baseline·candidate가
+    # 서로 다른 개수의 문항을 채점했다면(부분 재캡처 등, coverage.scored_n 참조) 후보가 더
+    # 적게 채점됐다는 이유만으로 이 네 개수가 항상 더 낮아 보여 실제로는 회귀가 아닌데
+    # regression_block이 뜬다. scored_n이 같을 때만 이 네 축을 신뢰하고, 다르면 "하락 아님"
+    # 으로 조용히 넘기지 않고 리포트에 검증 불가로 명시한다.
+    #
+    # ⚠️ DW-646 — scored_n(개수)만 같아도 **채점된 문항 자체**가 다를 수 있다(우연의 일치,
+    # 또는 서로 다른 이유로 서로 다른 문항이 실패한 부분 재캡처). 그러면 개수는 같아 보여도
+    # 위 네 축의 원시 개수 비교는 "다른 시험지"를 비교하는 셈이라 의미가 없다 — id **집합**이
+    # 완전히 같을 때만 coverage가 일치한다고 본다(집합이 같으면 개수도 자동으로 같다).
+    coverage_matches = (
+        set(baseline["coverage"]["scored_ids"]) == set(candidate["coverage"]["scored_ids"])
+    )
+    # result_mean도 같은 종류의 커버리지 함정이 있다(코드리뷰 정정, P6) — 분모가 scored_n이
+    # 아니라 result_n(clean SQL+HYBRID 채점 문항 수)이고, 그 값은 정확히 라우팅 스토리가
+    # 흔드는 값이다(HYBRID로 새로 라우팅되는 문항이 늘면 result_n도 함께 늘어난다). result_n이
+    # 다르면 평균끼리 비교해도 "더 많이/적게 채점된 평균"을 섞어 비교하는 셈이라, coverage_matches
+    # 와 별도로 result_n도 확인한다.
+    result_n_matches = baseline["result_n"] == candidate["result_n"]
+    _count_axes = {
+        "routing_correct": candidate["routing_correct"] < baseline["routing_correct"],
+        "doc_hit_n": candidate["doc_hit_n"] < baseline["doc_hit_n"],
+        "clarify_ok_n": candidate["clarify_ok_n"] < baseline["clarify_ok_n"],
+        "count_range_ok_n": candidate["count_range_ok_n"] < baseline["count_range_ok_n"],
+    }
+    regression_axes: dict = {}
+    unverifiable_axes: list[str] = []
+    if result_n_matches:
+        regression_axes["result_mean"] = candidate["result_mean"] < baseline["result_mean"] - 1e-9
+    else:
+        unverifiable_axes.append("result_mean")
+    if coverage_matches:
+        regression_axes.update(_count_axes)
+    else:
+        unverifiable_axes.extend(_count_axes.keys())
+    # ⚠️ 비교 축이 하나도 없는 경우(P4) — coverage_matches·result_n_matches가 **둘 다** 거짓이면
+    #   네 축 전부가 unverifiable_axes로 빠져 regression_axes가 빈 dict가 된다. `any({})`는
+    #   False라 그대로 두면 커밋된 리포트에 `regression_block: false`가 박히는데, 그건 "회귀를
+    #   찾지 못했다"가 아니라 "아무것도 비교하지 못했다"이다 — 산출물만 읽는 다음 사람에게
+    #   정반대로 읽힌다. 그 경우만 None(JSON에선 null = 판정 불가)으로 명시한다.
+    #   gate_pass는 이미 unverifiable_axes로 걸러 False지만, regression_block 자체가 거짓말을
+    #   하면 안 된다(B8 — 대장은 "안 한 것"과 "했는지 모르는 것"을 구별해야 한다).
+    regression = any(regression_axes.values()) if regression_axes else None
+    # DW-637 — 리포트의 baseline/candidate는 모델명 문자열이라, 같은 모델을 자기 자신과
+    # 비교하면(13.9 재기준선처럼) 어느 파일이 baseline이었는지 산출물만으로 알 수 없다.
+    # 원본 파일 경로를 함께 실어 순서(=방향)를 항상 되짚을 수 있게 한다.
+    self_comparison = baseline["name"] == candidate["name"]
     report = {
         "baseline": baseline["name"], "candidate": candidate["name"],
+        "baseline_raw": _resolve_evidence_path(args.raw[0]),
+        "candidate_raw": _resolve_evidence_path(args.raw[1]),
+        "self_comparison": self_comparison,
         "verdict": verdict, "regression_block": regression,
+        "regression_axes": regression_axes, "unverifiable_axes": unverifiable_axes,
+        # 위(4축) 회귀가 전부 없어도, 개수 축이 커버리지 불일치로 검증 불가 상태(unverifiable_axes)
+        # 이거나 개별 summary 자체가 자기 게이트(오염·dead-end·미측정)에서 FAIL이면 top-level도
+        # PASS라고 말하면 안 된다(P2) — 예전엔 `not regression`만 봐서 (a) 부분 재캡처로 세 축이
+        # 전부 unverifiable이 돼도, (b) gray 문항의 오염처럼 result_mean에 안 잡히는 개별
+        # summary 실패가 있어도 top-level gate_pass가 True로 나갔다(실측: RESET 오염이 gray
+        # M6류 항목에서만 터지면 result_mean이 안 움직여 네 축 전부 초록인데 그 summary
+        # 자신은 "게이트: FAIL"을 찍는 모순).
+        "gate_pass": (not regression) and not unverifiable_axes and all(
+            s["gate_pass"] for s in summaries
+        ),
         "summaries": [
             {k: v for k, v in s.items() if k != "per_item"} for s in summaries
         ],
@@ -781,6 +977,27 @@ def main() -> None:
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("=" * 70)
+    if self_comparison:
+        print(
+            f"⚠️ baseline·candidate 모델명이 같습니다({baseline['name']}) — 파일 경로로만 "
+            f"방향을 구분할 수 있습니다: baseline_raw={report['baseline_raw']}, "
+            f"candidate_raw={report['candidate_raw']}"
+        )
+    if unverifiable_axes:
+        print(f"⚠️ 검증 불가 축: {', '.join(unverifiable_axes)}")
+        if not coverage_matches:
+            print(
+                f"  · 채점 문항 수가 다릅니다(baseline scored_n="
+                f"{baseline['coverage']['scored_n']} vs candidate scored_n="
+                f"{candidate['coverage']['scored_n']}) — 개수 기반 축(routing_correct·"
+                "doc_hit_n·clarify_ok_n)은 부분 캡처를 회귀로 오판하지 않기 위해 판정에서 제외."
+            )
+        if not result_n_matches:
+            print(
+                f"  · result_mean 분모(result_n)가 다릅니다(baseline={baseline['result_n']} "
+                f"vs candidate={candidate['result_n']}) — 라우팅 변화로 채점 대상 문항 수 자체가"
+                " 달라져 평균을 직접 비교할 수 없으므로 result_mean도 판정에서 제외."
+            )
     for s in summaries:
         print(f"[{s['name']}]")
         print(f"  결과집합정확도(clean SQL+HYBRID, n={s['result_n']}): {s['result_mean']:.3f}")
@@ -793,7 +1010,13 @@ def main() -> None:
     # 최종 채택 = 회귀 게이트가 후보를 거부하면 베이스라인 유지(사전식이 후보 손을 들어도).
     if regression:
         final = baseline["name"]
-        print(f"⚠️ 회귀 게이트 발동: 후보 결과정확도({candidate['result_mean']:.3f}) < 베이스라인({baseline['result_mean']:.3f}) → 후보 채택 불가")
+        regressed = [axis for axis, hit in regression_axes.items() if hit]
+        print(f"⚠️ 회귀 게이트 발동(하락 축: {', '.join(regressed)}) → 후보 채택 불가")
+        print(f"➡️ 최종 채택: {final} (베이스라인 유지)")
+    elif regression is None:
+        # 위 P4 — 비교한 축이 0개다. "회귀 없음"이 아니라 "판정 불가"이므로 후보를 올리지 않는다.
+        final = baseline["name"]
+        print("⚠️ 비교 가능한 축이 0개(regression_block=null) → 회귀 여부를 판정하지 못함, 후보 채택 불가")
         print(f"➡️ 최종 채택: {final} (베이스라인 유지)")
     else:
         final = verdict["winner"] or baseline["name"]
@@ -802,6 +1025,13 @@ def main() -> None:
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"리포트: {args.out}")
     print("=" * 70)
+
+    # 게이트 탈락은 0이 아닌 코드로 종료한다(P3) — 예전엔 경고만 찍고 항상 0으로 끝나서,
+    # 문서화된 `run_phase_b.py … && score_ab.py …` 체인이 진짜 회귀를 만나고도 그대로 다음
+    # 단계로 넘어갔다(run_phase_b.py는 이미 같은 규칙으로 1을 낸다). 리포트 파일 쓰기와 콘솔
+    # 요약은 위에서 끝났으므로 **산출물은 항상 남는다** — 종료 코드만 사실을 말하게 한다.
+    if not report["gate_pass"]:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

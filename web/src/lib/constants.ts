@@ -21,11 +21,15 @@ export const PROFILE_STATUS = {
 } as const;
 export type ProfileStatus = (typeof PROFILE_STATUS)[keyof typeof PROFILE_STATUS];
 
-/** 사용자 역할 enum (profiles.role CHECK와 일치). */
+/** 사용자 역할 enum. buyer/seller 값은 앱 코드가 계속 쓰지만, profiles.role의 DB CHECK는
+ * Epic 14(Story 14.1)로 완화되어 이 세 값만 허용하지 않는다 — 더 이상 CHECK와 1:1 대응이 아니다.
+ * 'user'는 Story 14.2(0028_handle_new_user_default_role.sql)의 가입 트리거 기본값 — 역할 선택
+ * 없이 가입한 신규 계정이 이 값을 받는다. */
 export const USER_ROLE = {
   BUYER: 'buyer',
   SELLER: 'seller',
   ADMIN: 'admin',
+  USER: 'user',
 } as const;
 export type UserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];
 
@@ -34,6 +38,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   [USER_ROLE.BUYER]: '구매자',
   [USER_ROLE.SELLER]: '판매자',
   [USER_ROLE.ADMIN]: '관리자',
+  [USER_ROLE.USER]: '회원',
 };
 
 /** 수치 필드 저장 단위 (표시·검색 전 구간 동일, docs/conventions.md §3). */

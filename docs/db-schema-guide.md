@@ -85,7 +85,7 @@
 | 컬럼 | 자료형 | 제약 | 자료형·설계를 그렇게 정한 이유 |
 |---|---|---|---|
 | `id` | `uuid` | PK, FK→`auth.users.id` | 로그인 계정 ID를 그대로 프로필 ID로 씀(1:1 보장). 계정이 삭제되면 프로필도 같이 삭제(`on delete cascade`). |
-| `role` | `text` | `buyer`/`seller`/`admin`만 허용 | 역할은 정해진 3가지뿐이라 `CHECK` 제약으로 오타·잘못된 값을 DB가 막음. 숫자코드 대신 글자라 읽기 쉬움. |
+| `role` | `text` | 빈 문자열만 금지(`CHECK`), `admin` 값만 특별 취급 | 원래는 `buyer`/`seller`/`admin` 3값만 허용했으나, 역할 통합(Epic 14, Story 14.1 — `0027_role_check_relax.sql`)으로 buyer/seller 구분이 무의미해져 CHECK를 완화. `is_admin()`이 여전히 `role='admin'`만 관리자로 식별. |
 | `status` | `text` | `active`/`suspended`, 기본 `active` | 관리자가 회원을 정지(suspended)할 수 있어 상태값 필요. 역시 두 값만 `CHECK`로 강제. |
 | `created_at` | `timestamptz` | 기본 `now()` | 가입 시각. 시간대 포함형(`timestamptz`)이라 서버·사용자 위치가 달라도 정확. |
 | `name` | `text` | nullable | 화면 표시용 이름 = 이메일의 `@` 앞부분. 관리자가 회원을 UUID 대신 이름으로 식별하려고 추가(0009). |

@@ -55,7 +55,7 @@ export default async function AdminListingDetailPage({
   // 조회 실패(네트워크·RLS·DB) — "없음"과 구분해 빨강 에러 안내.
   if (error) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">매물 상세</h1>
         <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
           매물 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
@@ -68,7 +68,7 @@ export default async function AdminListingDetailPage({
   // 못 찾음(존재하지 않는 id·이미 삭제됨).
   if (!listing) {
     return (
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         <h1 className="text-2xl font-semibold">매물 상세</h1>
         <p role="alert" className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
           매물을 찾을 수 없습니다. 이미 삭제된 매물일 수 있습니다.
@@ -82,7 +82,7 @@ export default async function AdminListingDetailPage({
   const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
       {/* 제목 = 제조사·모델 + 상태 배지(판매중=초록/판매완료=회색, 목록 화면과 동일 규칙) */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2">

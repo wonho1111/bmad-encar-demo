@@ -464,6 +464,217 @@ def test_blank_guide_is_neither_injected_nor_cited(monkeypatch, guide_row):
     assert "참고 가이드 문서" not in system_prompt
 
 
+# ── 최상급×HYBRID 정렬 캐비엇(옵션 b, spec-13-9 Design Notes) ───────────
+def test_superlative_query_appends_sort_caveat(monkeypatch):
+    """최상급 표현("제일"·"가장")이 섞인 HYBRID 질의는 정렬 미적용 캐비엇이 답변에 붙는다.
+
+    캐비엇 문구는 "조건을 더 구체적으로 말씀해주세요"류 실행 불가능한 조언이면 안 된다
+    (P11 — HYBRID는 벡터 정렬만 적용해 조건을 더 붙여도 여전히 HYBRID로 남는다. 가격
+    정렬은 순수 구조질의(SQL 경로)에서만 가능하므로 그런 조언은 지킬 수 없는 약속이다).
+
+    ⚠️ **P11의 나머지 절반은 2026-08-05 사용자 결정으로 뒤집혔다.** 원래 P11은 "실제로
+    가격순을 볼 수 있는 방법을 **구체 예시와 함께** 알려줘야 한다"까지 요구했고, 그래서
+    캐비엇에 `구조적 조건만으로 다시 물어보시면 …(예: "3천만원 이하 SUV 가격 낮은 순")`
+    이 붙어 있었다. 실제 답변 본문이 `조건에 맞는 매물 5건을 찾았어요.` 한 줄인데 안내가
+    그보다 길어져, 사용자가 "잔소리"로 판단해 한 문장으로 줄이기로 했다(선택지 A 유지/
+    B 축약/C 삭제 중 B). 그래서 "구체 예시가 있어야 한다"는 단언은 여기서 뺀다 —
+    **고지 자체가 남아 있어야 한다는 요구(위 첫 단언)는 그대로다.** 삭제(C)를 안 택한
+    이유가 그것이다: 없애면 "제일 싼"이라고 물은 사용자가 가격순이 아닌 결과를 아무
+    설명 없이 받는다.
+    """
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("제일 싼 패밀리카")
+
+    assert node._SUPERLATIVE_CAVEAT in result["answer"]
+    assert "조건을 더 구체적으로 말씀해" not in result["answer"]  # 실행 불가능한 옛 조언 제거
+    # 축약 후에도 "정렬이 반영되지 않았다"는 사실 자체는 문구에 남아 있어야 한다 —
+    # 상수를 빈 문자열로 만들거나 무관한 문구로 갈아끼우면 여기서 red가 난다(실측 확인).
+    assert "정렬" in node._SUPERLATIVE_CAVEAT and "반영되지 않" in node._SUPERLATIVE_CAVEAT
+
+
+def test_non_superlative_query_omits_sort_caveat(monkeypatch):
+    """최상급 표현이 없으면 캐비엇을 붙이지 않는다(과잉 경고 방지)."""
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("3천만원 이하로 무난한 패밀리카")
+
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
+
+
+def test_superlative_empty_result_omits_caveat(monkeypatch):
+    """매물 0건이면 최상급이 있어도 캐비엇을 붙이지 않는다(0건 안내와 모순되는 답변 방지,
+    guide 인용의 `test_hybrid_empty_result_with_guide_omits_citation`과 동일 원칙)."""
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("제일 싼 패밀리카")
+
+    assert result["listings"] == []
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
+
+
+def test_non_price_superlative_query_omits_sort_caveat(monkeypatch):
+    """가격과 무관한 최상급("가장 안전한")은 캐비엇을 붙이지 않는다(코드리뷰 정정).
+
+    router_node 프롬프트는 최상급 부사("제일"·"가장") + 가격 형용사(싸다·비싸다·저렴하다)의
+    **결합**만 구조조건으로 본다. `_has_superlative`가 부사만으로 판정하면 "가장 안전한
+    SUV"·"가장 인기있는 SUV로 바꿔줘"처럼 가격과 무관한 최상급에도 캐비엇이 잘못 붙는다.
+    """
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["body_type = 'SUV'"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("가장 안전한 SUV")
+
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
+
+
+def test_superlative_query_via_none_fallback_appends_sort_caveat(monkeypatch):
+    """spec의 예시("제일 싼 패밀리카")는 구조조건을 못 뽑아 doc_rag_node로 폴백하는 경로를
+    타는데(느낌 표현뿐이라 LLM이 NONE을 낸다), 캐비엇 부착 로직이 SQL 조립 분기에만 있으면
+    바로 이 실제 케이스가 캐비엇 없이 나간다(코드리뷰 정정) — 폴백 경로에도 적용한다.
+    """
+    def fake_doc(query, qvec=None):
+        return {
+            "answer": "'제일 싼 패밀리카'에 어울리는 매물 3건을 찾았어요.",
+            "listings": ["d1", "d2", "d3"],
+        }
+
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["NONE"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+    _patch_guide_lookup(monkeypatch)
+
+    result = node.hybrid_rag_node("제일 싼 패밀리카")
+
+    assert node._SUPERLATIVE_CAVEAT in result["answer"]
+    assert result["listings"] == ["d1", "d2", "d3"]
+
+
+def test_non_superlative_none_fallback_omits_sort_caveat(monkeypatch):
+    """폴백 경로도 최상급이 없으면 캐비엇을 붙이지 않는다(회귀 대조군)."""
+    def fake_doc(query, qvec=None):
+        return {"answer": "'패밀리카로 무난한 거'에 어울리는 매물 1건을 찾았어요.", "listings": ["d1"]}
+
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["NONE"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+    _patch_guide_lookup(monkeypatch)
+
+    result = node.hybrid_rag_node("패밀리카로 무난한 거")
+
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
+
+
+def test_superlative_none_fallback_empty_result_omits_caveat(monkeypatch):
+    """폴백 경로도 0건이면 캐비엇을 붙이지 않는다(정상 SQL 분기와 동일 원칙)."""
+    def fake_doc(query, qvec=None):
+        return {"answer": "조건에 맞는 매물이 없어요.", "listings": []}
+
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["NONE"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(node, "doc_rag_node", fake_doc)
+    _patch_guide_lookup(monkeypatch)
+
+    result = node.hybrid_rag_node("제일 싼 패밀리카")
+
+    assert result["listings"] == []
+    assert node._SUPERLATIVE_CAVEAT not in result["answer"]
+
+
+# ── P5 — `_has_superlative`가 순서 무관 substring AND가 아니라 근접 결합만 잡는지 ──────
+def test_has_superlative_false_for_santafe_substring_false_positive():
+    """"싼타페"의 "싼"이 가격 형용사로 오매칭되면 안 된다(실측 버그, P5)."""
+    assert node._has_superlative("가장 인기있는 싼타페 보여줘") is False
+
+
+def test_has_superlative_false_for_unrelated_adverb_and_adjective_in_same_sentence():
+    """최상급 부사와 가격 형용사가 서로 다른 절에 각각 있으면(순서 무관 AND) 결합이 아니다."""
+    assert node._has_superlative("가장 인기 많고 저렴한 SUV") is False
+    assert node._has_superlative("제일 안전한 차인데 가격도 싸게") is False
+
+
+def test_has_superlative_false_for_non_price_superlative():
+    assert node._has_superlative("가장 안전한 SUV") is False
+
+
+def test_has_superlative_true_for_adjacent_price_combo():
+    assert node._has_superlative("제일 싼 패밀리카") is True
+    assert node._has_superlative("가장 비싼 차") is True
+    assert node._has_superlative("제일 저렴한 SUV") is True
+
+
+# ── P2(13.9 3차 리뷰) — 근접 정규식만으론 "싼타페" 오탐이 안 잡혔다 ──────────────────
+# 위 `test_has_superlative_false_for_santafe_substring_false_positive`는 부사와 차종명 사이에
+# 다른 낱말("인기있는")이 낀 변형만 덮어서, 부사 **바로 뒤**에 차종명이 오는 원형(`\S{0,4}?`가
+# 0자를 허용하므로 그대로 매칭)은 통과한 채로 남아 있었다(실측: 넷 다 True).
+# 가격 형용사 뒤 음절 경계 `(?![가-힣])`가 이 넷을 거른다.
+@pytest.mark.parametrize(
+    "query",
+    [
+        "가장 싼타페 보여줘",      # 부사 바로 뒤 차종명 — "싼"이 "싼타페"의 첫 음절일 뿐
+        "제일 싼타페 보여줘",
+        "제일 싸지 않은 차",       # "싸지 않은" = 부정 — 가격 정렬 요청이 아니다
+        "가장 비싸도 되는 차",     # "비싸도" = 양보 — 정렬이 아니라 허용 범위 언급
+    ],
+)
+def test_has_superlative_false_when_price_adjective_continues_into_another_syllable(query):
+    assert node._has_superlative(query) is False
+
+
+# ── DW-653 — 음절 경계가 만든 "알려진 구멍"을 양성/음성과 같은 표에 함께 고정한다 ─────────
+# 이 검사가 왜 있나: 위 P2가 넣은 `(?![가-힣])`는 `가장 싼타페`(오탐)를 막는 대신 띄어쓰기를
+#   생략한 `가장 싼거`·`제일 싼차`(정상 질의)도 함께 떨어뜨렸다. 정규식만 보면 둘이 구분되지
+#   않는다. 그 경계가 **어디에 있는지**를 고정하는 테스트가 없어서, DW-653은 "다음에 정규식을
+#   손대는 사람이 이 경계를 모른 채 되돌리거나 더 좁힌다"를 위험으로 적었다 — 그 항목이
+#   요구한 "셋을 한 테스트에서 대조"가 이것이다.
+# ⚠️ `가장 싼거`·`제일 싼차`의 기대값 False는 **옳아서가 아니라 지금 그렇기 때문이다.**
+#   DW-653을 실제로 고치면(어간+조사/어미 목록으로 전환) 이 두 줄이 red가 된다 —
+#   그때 기대값을 True로 바꾸고 DW-653을 닫아라. red가 나는 것이 이 검사의 목적이다.
+@pytest.mark.parametrize(
+    ("query", "expected", "why"),
+    [
+        ("가장 싼 거", True, "양성 — 띄어쓰기 정상형(큐리셋 M1.t3 계열)"),
+        ("제일 싼 차", True, "양성 — 띄어쓰기 정상형(큐리셋 S6)"),
+        ("가장 저렴한 SUV", True, "양성 — `저렴`은 어미 때문에 음절 경계에서 제외됨"),
+        ("가장 싼타페", False, "음성 — `싼`이 차명 첫 음절일 뿐(P2가 닫으려던 오탐)"),
+        ("제일 싼타페", False, "음성 — 위와 같음"),
+        ("가장 싼거", False, "⚠ 알려진 구멍(DW-653) — 정규식상 `싼타페`와 구분되지 않는다"),
+        ("제일 싼차", False, "⚠ 알려진 구멍(DW-653) — 위와 같음"),
+    ],
+)
+def test_has_superlative_syllable_boundary_covers_positive_negative_and_known_gap(
+    query, expected, why
+):
+    assert node._has_superlative(query) is expected, why
+
+
+def test_superlative_price_re_identical_in_both_modules():
+    """P7 — 두 사본이 같다는 계약을 주석이 아니라 실행되는 검사로 못박는다(CLAUDE.md B9).
+
+    `hybrid_rag_node`·`contextualize_node`는 같은 어휘·모양의 정규식을 각자 지역 상수로
+    둔다(공유 유틸로 뽑지 않기로 한 Design Notes 결정). 지금까지 그 "동일하다"는 계약은
+    양쪽 주석에만 있었고, 실제로 한쪽만 넓혀도 전체 스위트가 초록이었다(실측). 이 한 줄이
+    그 lockstep을 실행 가능한 계약으로 바꾼다.
+    """
+    from app.graph import contextualize_node
+
+    assert node._SUPERLATIVE_PRICE_RE.pattern == contextualize_node._SUPERLATIVE_PRICE_RE.pattern
+
+
 def test_guide_present_condition_is_assembled_and_cited(monkeypatch):
     """가이드가 주입된 상태에서 조건이 SQL로 조립되고 answer에 결정론적 인용이 붙는다(AC2).
 

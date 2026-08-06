@@ -1,0 +1,1247 @@
+{
+  "model": "gemini-3.1-flash-lite",
+  "results": {
+    "S1": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "d517c985-a333-48e1-bd92-7a442b0d20aa"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2115.242583997315
+      }
+    ],
+    "S2": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "9d626bf3-ac81-43fc-8d89-c81b38b16883",
+          "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+          "b37d43c1-8565-4445-9fe7-90871be8aadb",
+          "b00a0cf3-fef8-4937-9fe0-54d4b879fc40"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1965.1440129964612
+      }
+    ],
+    "S3": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "83042a40-7242-4e0e-a140-72d45f3d6300",
+          "a2a398f7-0baa-4f41-b889-ae44745f5925",
+          "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+          "faaa369f-e373-4510-ba0f-a8d45ca26da7",
+          "08a59827-bd66-40e6-a198-90938070f9f8"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1991.558914000052
+      }
+    ],
+    "S4": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "f278c9a6-6075-4276-9a4e-d63a6b44d296",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1800.0898090031114
+      }
+    ],
+    "S5": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "0c141d38-7cf2-4fc5-8992-5563a56b45f7",
+          "18dc251d-a230-455f-8c0b-0f0b0b94d1eb",
+          "332ed598-8623-4fcf-9ff0-3a83a495a827",
+          "4f3d5b2c-7f55-48fe-b911-a2716164b85f"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2008.3059069947922
+      }
+    ],
+    "S6": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "fc084a8f-bb65-47e5-8268-6a1ddc603291"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1896.6269020020263
+      }
+    ],
+    "S7": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "4cc01bfd-46f7-4e93-b3de-358052bb213a"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1999.716422003985
+      }
+    ],
+    "S8": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "50295f8b-a23e-4f04-b735-be87ca019716",
+          "80730d06-bd53-42f2-9292-94c05655da4c"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1902.5901220011292
+      }
+    ],
+    "S9": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "e18ef5c7-58b6-443b-8c37-43654d5759ba"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1899.590906999947
+      }
+    ],
+    "S10": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "b70313e0-13a1-4fcf-a26e-f80fb5581b81",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "c4421102-15fc-4b94-a686-22ac90afe211"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1781.8854639990604
+      }
+    ],
+    "S11": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "b00a0cf3-fef8-4937-9fe0-54d4b879fc40",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "4824ab13-0934-41cc-a89a-f4c08cbb7e25",
+          "695267ca-9033-487d-aa03-98f7d087b299"
+        ],
+        "answer_last": "조건에 맞는 매물 4건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1798.425124005007
+      }
+    ],
+    "S12": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "16e817a9-eef1-4acb-b01f-7926974da5c7",
+          "393a6425-5028-41c6-828f-a010a62e52d5",
+          "864e3492-6acf-482a-b3b3-f71b5d84fb10",
+          "4b896b78-e2f2-4e9d-b9c2-c86c99e4aed6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1990.157338004792
+      }
+    ],
+    "S13": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "7d7e583e-19df-422b-842e-7a963e0214ec",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "1a9bb740-8279-4693-b8fc-3439bd871c38",
+          "23926190-f412-4b2b-addc-eae487665633"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1792.7366080039064
+      }
+    ],
+    "S14": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "8843f358-4c27-4b13-8270-f150baaa5e6a"
+        ],
+        "answer_last": "조건에 맞는 매물 3건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1796.9625220066519
+      }
+    ],
+    "H1": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "5dc22a48-3411-4e92-9968-9c91a100cd99",
+          "39621ae9-2df7-4192-bb7e-9bf8ee094889",
+          "a481c2da-f647-4910-8fa7-cb28419ae95a",
+          "607a8803-77f8-4db6-b7d3-250a6f7a7963",
+          "a3ec4141-d2bd-4c57-8492-284bf9f511ce"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2368.9108609978575
+      }
+    ],
+    "H2": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+          "98cfcb34-810c-4832-b6b5-49ef52e35a2e",
+          "9d626bf3-ac81-43fc-8d89-c81b38b16883",
+          "2f5c86f9-9658-47e1-9700-63342721378d",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2467.5292239990085
+      }
+    ],
+    "H3": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "d8284195-8cb4-40e4-85d4-61b4d4b74f66",
+          "2d3b4775-225b-498c-8588-10d2cb4883f3",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "f278c9a6-6075-4276-9a4e-d63a6b44d296",
+          "e18ef5c7-58b6-443b-8c37-43654d5759ba"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2175.2390830006334
+      }
+    ],
+    "H4": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "2d3b4775-225b-498c-8588-10d2cb4883f3",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "4b896b78-e2f2-4e9d-b9c2-c86c99e4aed6"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2371.547071998066
+      }
+    ],
+    "H5": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "332ed598-8623-4fcf-9ff0-3a83a495a827",
+          "4f3d5b2c-7f55-48fe-b911-a2716164b85f",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2380.32920799742
+      }
+    ],
+    "H6": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1772.5250920047984
+      }
+    ],
+    "H7": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "f85a0db0-fa22-40cf-a4a7-42ee987b2afa",
+          "ff73b989-03db-4b23-b2df-a22658428aa6",
+          "acb88fea-2d25-42d6-8391-29f6b48b6848",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2351.3137429981725
+      }
+    ],
+    "H8": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+          "6f8b6af5-1832-4306-a47d-404465d1129f",
+          "64d9f6d2-8180-431d-8f81-accc10c134a4",
+          "4f3d5b2c-7f55-48fe-b911-a2716164b85f",
+          "5dc22a48-3411-4e92-9968-9c91a100cd99"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2337.057114003983
+      }
+    ],
+    "H9": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+          "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "9d626bf3-ac81-43fc-8d89-c81b38b16883",
+          "98cfcb34-810c-4832-b6b5-49ef52e35a2e"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2335.138631002337
+      }
+    ],
+    "H10": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "e18ef5c7-58b6-443b-8c37-43654d5759ba",
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "d8284195-8cb4-40e4-85d4-61b4d4b74f66",
+          "46ac926b-45e7-4047-8c99-8bf0e342e94f",
+          "f278c9a6-6075-4276-9a4e-d63a6b44d296"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2244.520686996111
+      }
+    ],
+    "H11": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "332ed598-8623-4fcf-9ff0-3a83a495a827",
+          "7d7e583e-19df-422b-842e-7a963e0214ec",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 적정 주행거리와 연식 판단 기준)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2136.812076998467
+      }
+    ],
+    "H12": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "50295f8b-a23e-4f04-b735-be87ca019716",
+          "83042a40-7242-4e0e-a140-72d45f3d6300",
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "4824ab13-0934-41cc-a89a-f4c08cbb7e25"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 전기차 충전·보조금·주행거리 이해)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2245.2219020051416
+      }
+    ],
+    "H13": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "39621ae9-2df7-4192-bb7e-9bf8ee094889",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "80730d06-bd53-42f2-9292-94c05655da4c",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "26572bf4-3e3f-4a8c-aab1-59c0f590d931"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2330.285919000744
+      }
+    ],
+    "H14": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "9684a636-8aeb-4825-b991-ba77762d3c21",
+          "c4421102-15fc-4b94-a686-22ac90afe211",
+          "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2342.758132996096
+      }
+    ],
+    "H15": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "50295f8b-a23e-4f04-b735-be87ca019716",
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587",
+          "08a59827-bd66-40e6-a198-90938070f9f8",
+          "4824ab13-0934-41cc-a89a-f4c08cbb7e25",
+          "11ddd91f-2c9b-4deb-bbf7-18bda7ae002d"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 전기차 충전·보조금·주행거리 이해)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2238.3696010001586
+      }
+    ],
+    "H16": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "2ab63668-6e4a-4d1f-9eee-8c6b6fd95bfa",
+          "80730d06-bd53-42f2-9292-94c05655da4c"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 옵션의 가치 판단)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2457.4803139985306
+      }
+    ],
+    "H17": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "ec8d468e-598f-4ec9-92e2-5a457e4a0f26",
+          "2d3b4775-225b-498c-8588-10d2cb4883f3",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "9bc76cc2-4af4-4b97-9b11-c4359f352758",
+          "29f3e14e-14e1-44c8-84c9-385e1a911d94"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 중고차 신뢰성과 구매 체크포인트)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 3207.5692439975683
+      }
+    ],
+    "H18": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1846.0746819982887
+      }
+    ],
+    "H19": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "8be87cfa-d798-426c-b743-3c72b0f00867",
+          "49364201-3752-462c-9d9d-260ff683b57f",
+          "f278c9a6-6075-4276-9a4e-d63a6b44d296"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2355.695216007007
+      }
+    ],
+    "H20": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "085b749f-37cf-46b4-80a2-555c95bcd037",
+          "b37d43c1-8565-4445-9fe7-90871be8aadb",
+          "d1b41bf1-55e2-4996-96ec-36f82a29718c",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 중고차 신뢰성과 구매 체크포인트)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2231.8660269957036
+      }
+    ],
+    "H21": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5",
+          "347a87bb-a096-4c30-82e0-71d67e267fc6",
+          "f85a0db0-fa22-40cf-a4a7-42ee987b2afa"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 패밀리카로 무난한 차종 고르기)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2251.192825002363
+      }
+    ],
+    "H22": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "5027725c-6d6e-4916-8911-3cbb7f9e1e2c",
+          "f278c9a6-6075-4276-9a4e-d63a6b44d296",
+          "0380d584-7fcd-4feb-a879-a108cc4c9d70",
+          "b00a0cf3-fef8-4937-9fe0-54d4b879fc40",
+          "3345a3cc-731e-4385-97bf-5fa4df1398c5"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2344.925339995825
+      }
+    ],
+    "H23": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "7d7e583e-19df-422b-842e-7a963e0214ec",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "5f3f60a7-937c-41fc-a285-c68bee2a3b3a",
+          "d1b41bf1-55e2-4996-96ec-36f82a29718c"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 중고차 신뢰성과 구매 체크포인트)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2233.088430002681
+      }
+    ],
+    "H24": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+          "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+          "3108f2b3-2b67-44c9-91ef-00138b644690",
+          "9d626bf3-ac81-43fc-8d89-c81b38b16883",
+          "98cfcb34-810c-4832-b6b5-49ef52e35a2e"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 3137.2928359996877
+      }
+    ],
+    "H25": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "6218befb-fb23-4f22-be3c-fe762aa1518e",
+          "2c15f138-78ee-4edd-bd08-f0fa050453c5",
+          "f36a30e2-710f-4ccc-bd66-af1999fd9043"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2983.8446530047804
+      }
+    ],
+    "H26": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "8750f546-56f4-4227-8ed4-bf4e6b71f9d1",
+          "5dc22a48-3411-4e92-9968-9c91a100cd99",
+          "5d333ba3-d8b2-41ac-b551-c481d23724c6",
+          "6218befb-fb23-4f22-be3c-fe762aa1518e",
+          "38ec1bab-983e-455e-a8e3-c1be96660884"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2366.518285998609
+      }
+    ],
+    "H27": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+          "a8fda1b7-cecc-420c-bde9-e2ab3b12184c",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "acb88fea-2d25-42d6-8391-29f6b48b6848"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2012.1202990048914
+      }
+    ],
+    "CL1": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 960.7675399965956
+      }
+    ],
+    "CL2": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 990.0447069958318
+      }
+    ],
+    "CL3": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1056.8528859948856
+      }
+    ],
+    "CL4": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 884.6772510005394
+      }
+    ],
+    "CL5": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1264.96867199603
+      }
+    ],
+    "CL6": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 967.370114994992
+      }
+    ],
+    "CL7": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 966.6288680018624
+      }
+    ],
+    "R1": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 874.5290690058027
+      }
+    ],
+    "R2": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 873.2497609962593
+      }
+    ],
+    "R3": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 875.858684994455
+      }
+    ],
+    "R4": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 875.5197310019867
+      }
+    ],
+    "R5": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1067.2506429982604
+      }
+    ],
+    "R6": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 971.0941890007234
+      }
+    ],
+    "R7": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 995.9770400018897
+      }
+    ],
+    "R8": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1036.1228069959907
+      }
+    ],
+    "M1": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "SQL",
+            "ids": [
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+              "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "d517c985-a333-48e1-bd92-7a442b0d20aa"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "SQL",
+            "ids": [
+              "b00a0cf3-fef8-4937-9fe0-54d4b879fc40",
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+              "39621ae9-2df7-4192-bb7e-9bf8ee094889",
+              "80730d06-bd53-42f2-9292-94c05655da4c"
+            ],
+            "answer": "조건에 맞는 매물 4건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "SQL",
+            "ids": [
+              "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요.",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 6935.468149007647
+      }
+    ],
+    "M2": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+        ],
+        "answer_last": "조건에 맞는 매물 1건을 찾았어요.",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "SQL",
+            "ids": [
+              "83042a40-7242-4e0e-a140-72d45f3d6300",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "faaa369f-e373-4510-ba0f-a8d45ca26da7",
+              "08a59827-bd66-40e6-a198-90938070f9f8"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "SQL",
+            "ids": [
+              "83042a40-7242-4e0e-a140-72d45f3d6300",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "faaa369f-e373-4510-ba0f-a8d45ca26da7",
+              "08a59827-bd66-40e6-a198-90938070f9f8"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "SQL",
+            "ids": [
+              "1d355749-2a8d-45f1-bbc1-e7c9ac502587"
+            ],
+            "answer": "조건에 맞는 매물 1건을 찾았어요.",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 7029.59708700655
+      }
+    ],
+    "M3": [
+      {
+        "route_last": "CLARIFY",
+        "ids_last": [],
+        "answer_last": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+        "clarify_last": {
+          "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+          "chips": [
+            "3천만원 이하",
+            "SUV",
+            "전기차"
+          ]
+        },
+        "turns": [
+          {
+            "route": "SQL",
+            "ids": [
+              "a4a2ef96-34ce-4553-9e17-7341cdd87000",
+              "a9f3f9fa-8783-402e-a0a5-91d8b205f7ea",
+              "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+              "d52c4b26-a86d-4e24-b28b-3de09fcfed86",
+              "d5d7aa3e-4d26-49d0-b340-c066f7c3177a"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "CLARIFY",
+            "ids": [],
+            "answer": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+            "clarify": {
+              "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+              "chips": [
+                "3천만원 이하",
+                "SUV",
+                "전기차"
+              ]
+            }
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2904.261037998367
+      }
+    ],
+    "M4": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+          "9d626bf3-ac81-43fc-8d89-c81b38b16883",
+          "98cfcb34-810c-4832-b6b5-49ef52e35a2e",
+          "2f5c86f9-9658-47e1-9700-63342721378d",
+          "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "CLARIFY",
+            "ids": [],
+            "answer": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+            "clarify": {
+              "question": "조건을 조금만 좁혀볼게요 — 칩을 눌러도 되고, 직접 입력해도 돼요.",
+              "chips": [
+                "3천만원 이하",
+                "SUV",
+                "전기차"
+              ]
+            }
+          },
+          {
+            "route": "HYBRID",
+            "ids": [
+              "b7a7e026-dac4-48dd-8215-048dff52ecd5",
+              "9d626bf3-ac81-43fc-8d89-c81b38b16883",
+              "98cfcb34-810c-4832-b6b5-49ef52e35a2e",
+              "2f5c86f9-9658-47e1-9700-63342721378d",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 3918.2477400026983
+      }
+    ],
+    "M5": [
+      {
+        "route_last": "HYBRID",
+        "ids_last": [
+          "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+          "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+          "4f3d5b2c-7f55-48fe-b911-a2716164b85f",
+          "567267e7-209d-45da-9e27-7513c68d4b9d",
+          "332ed598-8623-4fcf-9ff0-3a83a495a827"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요. (참고: 중고차 신뢰성과 구매 체크포인트)",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "HYBRID",
+            "ids": [
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "4f3d5b2c-7f55-48fe-b911-a2716164b85f",
+              "6218befb-fb23-4f22-be3c-fe762aa1518e",
+              "567267e7-209d-45da-9e27-7513c68d4b9d"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요. (참고: 연료별 유지비와 연비 특성)",
+            "clarify": null
+          },
+          {
+            "route": "HYBRID",
+            "ids": [
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+              "f9bb693d-68d1-4e29-8df0-e701fb2ed62f",
+              "4f3d5b2c-7f55-48fe-b911-a2716164b85f",
+              "567267e7-209d-45da-9e27-7513c68d4b9d",
+              "332ed598-8623-4fcf-9ff0-3a83a495a827"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요. (참고: 중고차 신뢰성과 구매 체크포인트)",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 5261.669073996018
+      }
+    ],
+    "M6": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "a279f7b6-0220-47c5-be63-0764aded0bd8",
+          "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+          "a8fda1b7-cecc-420c-bde9-e2ab3b12184c"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "SQL",
+            "ids": [
+              "83042a40-7242-4e0e-a140-72d45f3d6300",
+              "a2a398f7-0baa-4f41-b889-ae44745f5925",
+              "a4c8ae4e-7b4c-4fd9-8e27-01ac582e6e4d",
+              "faaa369f-e373-4510-ba0f-a8d45ca26da7",
+              "7d7e583e-19df-422b-842e-7a963e0214ec"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "SQL",
+            "ids": [
+              "9c12f9ba-6897-4aed-84ca-20f1d5cea0e8",
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "a279f7b6-0220-47c5-be63-0764aded0bd8",
+              "a334c010-3f67-40e4-9140-f2ef3dc86a6e",
+              "a8fda1b7-cecc-420c-bde9-e2ab3b12184c"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 3804.4760690027033
+      }
+    ],
+    "M7": [
+      {
+        "route_last": "SQL",
+        "ids_last": [
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+          "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "d517c985-a333-48e1-bd92-7a442b0d20aa"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "SQL",
+            "ids": [
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+              "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "d517c985-a333-48e1-bd92-7a442b0d20aa"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "SQL",
+            "ids": [
+              "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+              "ab7e3382-a7ea-4e54-81e9-12181c7ca4fa",
+              "ad639d42-6dc0-4ab2-9a6c-ff3ffc22db87",
+              "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+              "d517c985-a333-48e1-bd92-7a442b0d20aa"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 4407.013042000472
+      }
+    ],
+    "M8": [
+      {
+        "route_last": "REJECT",
+        "ids_last": [],
+        "answer_last": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+        "clarify_last": null,
+        "turns": [
+          {
+            "route": "SQL",
+            "ids": [
+              "7faa5ad5-766c-4e17-ace7-f470dacd5b50",
+              "ac5d633e-14f0-46d9-94b4-ac9f81919c48",
+              "c4421102-15fc-4b94-a686-22ac90afe211",
+              "0ec2ddd2-9a45-4fd5-9ae0-acb5bc2b1e2e",
+              "3108f2b3-2b67-44c9-91ef-00138b644690"
+            ],
+            "answer": "조건에 맞는 매물 5건을 찾았어요.",
+            "clarify": null
+          },
+          {
+            "route": "REJECT",
+            "ids": [],
+            "answer": "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요.",
+            "clarify": null
+          }
+        ],
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2808.6783079925226
+      }
+    ]
+  }
+}
