@@ -1,36 +1,80 @@
 'use client';
 
-// 관리자 매물 행의 액션 버튼 (FR23) — 삭제만 제공.
+// 관리자 매물 행의 액션 버튼 (FR23) — 삭제 + sold 매물 한정 "판매완료 되돌리기"(DW-391, Story 15.4).
 //
 // 설계(본보기: (admin)/admin/members/MemberActions.tsx · (user)/sell/ListingActions.tsx):
 //   · 삭제: window.confirm 후 listings 행 DELETE(RLS listings_delete_admin, 0005).
 //       - createClient()(browser, anon-key) 사용 — service_role 키는 클라이언트에 두지 않는다.
 //       - .select('id')로 삭제된 행을 받아 행 수를 본다 — RLS로 막히면 에러가 아니라 0행 → 한국어 거부.
 //       - 성공 시 router.refresh()로 목록에서 즉시 제거 반영.
-//   · 정지/수정 같은 부가 액션은 없다(FR23은 "부적절 매물 삭제"가 관리 동작 — 범위 컷).
+//   · 되돌리기(sold 매물에만 렌더): admin_restore_sold_listing RPC 호출(0030) — status만
+//       sold→on_sale로 되돌리는 좁은 SECURITY DEFINER RPC. MemberActions.tsx의 정지/해제와 동일한
+//       모양: 실행 → RPC 호출 → .select 없이도 RPC 자체가 returning id라 데이터로 행 수를 본다 →
+//       0행이면 한국어 오류 → 성공 시 router.refresh(). 확인 다이얼로그는 없다(삭제와 달리 되돌릴 수
+//       있는 작업이고, MemberActions의 정지/해제 토글도 확인 없이 즉시 실행되는 것과 동일한 결).
+//   · 삭제·되돌리기는 같은 행의 서로 다른 비동기 액션이라, 하나가 진행 중일 때 다른 하나를 누르면
+//       레이스가 난다(코드리뷰 patch) — 그래서 두 버튼의 disabled는 자기 자신의 loading뿐 아니라
+//       `busy`(deleting || restoring)도 함께 본다. loading prop은 그대로 각자 값을 써서 "처리 중…"
+//       라벨은 실제로 실행 중인 버튼에만 뜬다.
+//   · 정지 같은 부가 액션은 없다(FR23은 "부적절 매물 삭제"가 관리 동작 — 범위 컷).
 //   · 매물의 seller_id는 profiles(id) on delete cascade이나 방향이 반대 → 매물을 지워도 판매자/계정은 그대로(매물만 제거).
 //   · 원본 에러·코드는 콘솔에만, 사용자에겐 한국어 일반 안내.
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { listListingPhotoPaths, deletePhotoObjectsByPaths } from '@/app/(user)/sell/photo-sync';
+import { LISTING_STATUS, type ListingStatus } from '@/lib/constants';
 import Button from '@/components/ui/Button';
 
 type Props = {
   listingId: string;
   label: string; // 확인 메시지에 보여줄 매물 요약(예: "[현대] 아반떼 CN7")
+  status: ListingStatus; // sold일 때만 "판매완료 되돌리기" 버튼을 렌더한다.
   // 삭제 성공 후 이동할 경로(선택). 상세 페이지에서 삭제하면 그 매물이 사라져 머무를 곳이 없으므로
   //   목록('/admin/listings')으로 보낸다. 목록 화면에선 생략 → 기존대로 router.refresh()로 행만 제거.
   redirectTo?: string;
 };
 
-export default function ListingAdminActions({ listingId, label, redirectTo }: Props) {
+export default function ListingAdminActions({ listingId, label, status, redirectTo }: Props) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function handleRestore() {
+    if (deleting || restoring) return; // 중복 클릭 + 삭제와의 레이스 차단
+    setError(null);
+    setRestoring(true);
+    try {
+      const supabase = createClient();
+      // RPC 자체가 `returning id`라 .select() 없이도 data가 곧 바뀐 행 목록이다 — RLS/GRANT로
+      // 막히거나(비관리자) 이미 on_sale이면 에러가 아니라 0행으로 온다(0030 설계).
+      const { data, error: rpcError } = await supabase.rpc('admin_restore_sold_listing', {
+        p_listing_id: listingId,
+      });
+
+      if (rpcError) {
+        console.error('[admin/listings] admin_restore_sold_listing 실패:', rpcError);
+        setError('되돌리기 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        return;
+      }
+      if (!data || data.length === 0) {
+        // 0행: 이 버튼은 sold 매물에만 렌더되므로(관리자 화면), 실제 도달 경로는 대개 레이스다
+        // (다른 관리자가 먼저 처리) — 그래서 그 경우를 먼저 안내하고, 드문 권한 상실은 괄호로 덧붙인다.
+        setError('되돌릴 수 없습니다. 다른 관리자가 먼저 처리했을 수 있습니다. (또는 권한이 없거나 매물을 찾을 수 없습니다.)');
+        return;
+      }
+      router.refresh();
+    } catch (err) {
+      console.error('[admin/listings] admin_restore_sold_listing 예외:', err);
+      setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   async function handleDelete() {
-    if (deleting) return; // 중복 클릭 차단
+    if (deleting || restoring) return; // 중복 클릭 + 되돌리기와의 레이스 차단
     // 확인 단계 — 취소하면 아무 일도 일어나지 않는다(삭제 실수 방지).
     const ok = window.confirm(
       `'${label}' 매물을 삭제할까요? 삭제하면 되돌릴 수 없습니다.`,
@@ -99,18 +143,38 @@ export default function ListingAdminActions({ listingId, label, redirectTo }: Pr
     }
   }
 
+  const isSold = status === LISTING_STATUS.SOLD;
+  const busy = deleting || restoring; // 한쪽이 진행 중이면 다른 쪽도 잠근다(같은 행에 동시 요청 방지).
+
   return (
     <div className="flex flex-col items-end gap-1">
-      <Button
-        type="button"
-        variant="danger"
-        size="sm"
-        onClick={handleDelete}
-        loading={deleting}
-        loadingText="삭제 중…"
-      >
-        삭제
-      </Button>
+      <div className="flex items-center gap-2">
+        {/* sold 매물에만 렌더 — on_sale 매물은 되돌릴 게 없다(0030의 WHERE status='sold'와 동일 전제). */}
+        {isSold && (
+          <Button
+            type="button"
+            variant="info"
+            size="sm"
+            onClick={handleRestore}
+            disabled={busy}
+            loading={restoring}
+            loadingText="처리 중…"
+          >
+            판매완료 되돌리기
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="danger"
+          size="sm"
+          onClick={handleDelete}
+          disabled={busy}
+          loading={deleting}
+          loadingText="삭제 중…"
+        >
+          삭제
+        </Button>
+      </div>
       {error && (
         <p role="alert" className="text-caption text-danger">
           {error}

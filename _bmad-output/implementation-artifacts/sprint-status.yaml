@@ -244,7 +244,7 @@ development_status:
   15-2-관리자-반응형: done
   15-3-회원관리-역할통합-반영: done
   # DW-391(오조작 sold 복구 불가, high) 해소. 이 에픽의 UI-only 범위를 한 칸 넘는다(마이그레이션 1개).
-  15-4-관리자-판매완료-되돌리기: backlog
+  15-4-관리자-판매완료-되돌리기: done
   epic-15-retrospective: optional
 
   # --- Epic 16: Flutter 앱 증분 반영 ---

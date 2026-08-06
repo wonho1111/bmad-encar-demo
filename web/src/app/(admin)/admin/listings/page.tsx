@@ -6,11 +6,14 @@
 //      · ⚠️ FR11(구매자에게 판매완료 비노출)의 예외다. 일반 SELECT 정책은 "on_sale ∪ 본인 ∪ 관리자" OR 결합인데,
 //        관리자 세션에선 is_admin()=true라 모든 행이 열린다 → seller_id·status 필터 없이 select 하면 전부(sold 포함) 온다.
 //        (SellPage는 "내 매물"만 보려고 seller_id 필터를 넣었지만, 여기선 정반대로 전부 보는 게 목적이라 필터를 뺀다.)
-//   2) 행마다 삭제 액션(ListingAdminActions, 클라이언트 컴포넌트) — 부적절 매물 제거(FR23).
-//      정지/수정 같은 부가 액션은 관리 요구에 없어 넣지 않는다(범위 컷). 판매완료 처리(2-4)는 판매자 동선이지 관리자 동선이 아니다.
+//   2) 행마다 관리 액션(ListingAdminActions, 클라이언트 컴포넌트) — 부적절 매물 삭제(FR23) +
+//      sold 매물 한정 "판매완료 되돌리기"(DW-391, Story 15.4 — 그래서 아래에서 status를 prop으로 넘긴다).
+//      · 판매완료로 **만드는** 것(2-4)은 여전히 판매자 동선이다. 관리자 동선은 그 오조작을 **되돌리는** 것뿐이며,
+//        전면 UPDATE 정책이 아니라 status만 되돌리는 좁은 RPC(admin_restore_sold_listing, 0030)를 거친다.
+//      · 정지/수정 같은 부가 액션은 관리 요구에 없어 넣지 않는다(범위 컷).
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import { UNITS, LISTING_STATUS, type ListingStatus } from '@/lib/constants';
 import Badge from '@/components/ui/Badge';
 import ListingAdminActions from './ListingAdminActions';
 
@@ -21,7 +24,7 @@ type AdminListing = {
   model: string;
   year: number;
   price: number;
-  status: string;
+  status: ListingStatus;
   created_at: string;
 };
 
@@ -87,6 +90,7 @@ export default async function AdminListingsPage() {
                     <ListingAdminActions
                       listingId={l.id}
                       label={`[${l.manufacturer}] ${l.model}`}
+                      status={l.status}
                     />
                   </div>
                 </li>

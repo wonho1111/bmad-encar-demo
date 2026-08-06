@@ -1,8 +1,8 @@
 // 쓰기 흐름 왕복 — 정식 스위트 승격판(2026-07-28, 대장 #182). 원래 일회성 감사
 // 스펙(e-write-flows.spec.ts)을 그대로 옮긴다. 다른 신규 스펙 3개(landing-and-view-count·
 // nav-and-hero·core-flows)와 달리 이 스펙만 실제로 DB에 쓴다: 등록(E1)→검색노출(E2)→수정(E3)→
-// 문의채팅(E4)→구매완료(E5)가 한 매물을 이어서 쓰는 왕복 시나리오다. test.describe.serial로
-// 순서를 보장하고 매물 id를 describe 스코프 변수로 공유한다.
+// 문의채팅(E4)→구매완료(E5)→관리자 되돌리기(E6)가 한 매물을 이어서 쓰는 왕복 시나리오다.
+// test.describe.serial로 순서를 보장하고 매물 id를 describe 스코프 변수로 공유한다.
 //
 // 절대 규칙: 시드 데이터(기존 매물·기존 계정·기존 채팅방)는 읽기만 한다. 이 스펙이 직접 만든
 // 것(매물 1건 → cascade로 listing_images·chat_rooms·chat_messages·wishlists까지 함께)만
@@ -31,14 +31,20 @@ test.beforeEach(async ({}, testInfo) => {
 
 const SELLER = { email: 'seller@test.com', password: 'seller123' };
 const BUYER = { email: 'buyer@test.com', password: 'seller123' };
+const ADMIN = { email: 'admin@test.com', password: 'seller123' }; // supabase/.env.seed — 전 계정 공유 비밀번호
 const MODEL = 'E2E감사0728'; // 시드에 없는 식별 문자열 — 나중에 찾고 지우기 쉽게.
 const MSG = `${MODEL} 문의합니다`;
 const INITIAL_PRICE = 12_345_000;
 const UPDATED_PRICE = 13_999_000;
+const RESTORED_PRICE = 14_500_000; // E6 — 되돌린 뒤 재수정 시 쓰는 값(UPDATED_PRICE와 구분해 실제로 바뀌었는지 명확히 본다).
 
 // ── 병렬 간섭 분석(정식 config는 fullyParallel: true — 이 파일이 다른 스펙과 동시에 돈다) ──
-// E1~E5가 사는 동안(등록~구매완료 전까지) region='서울'·현대·준중형차 매물 1건이 on_sale로
-// 실제 DB에 떠 있다. 그 창(window) 동안 다른 스펙이 카드 수·필터 결과를 보면 +1이 낄 수 있다는
+// region='서울'·현대·준중형차 매물 1건이 실제 DB에 떠 있고, 그 status는 **두 번** on_sale 구간을
+// 갖는다: (a) E1 등록 ~ E5 구매완료 전, (b) E6이 되돌린 뒤 ~ E6 마지막 재구매완료 전
+// (2026-08-07 코드리뷰 patch — E6 추가로 on_sale 창이 하나에서 둘로 늘었는데 이 문단은 여전히
+// "E1~E5" 한 구간만 말하고 있었다. 아래 판정들은 "on_sale이든 sold든 견딘다"는 논리라 결론은
+// 그대로지만, 전제 문장이 파일의 실제 수명주기와 어긋난 채로 남아 있었다).
+// 그 창(window) 동안 다른 스펙이 카드 수·필터 결과를 보면 +1이 낄 수 있다는
 // 뜻이다. 아래는 이 리포의 나머지 스펙이 그 +1을 실제로 견디는지 **코드를 읽어** 판정한 결과다
 // (추측이 아니라 각 파일의 실제 단언 방식 근거).
 //
@@ -72,7 +78,7 @@ const UPDATED_PRICE = 13_999_000;
 //     문제는 아니고, 이론적 여지만 남겨 적어둔다 — 실패가 나면 이 주석부터 의심할 것).
 //   · nav-and-hero.spec.ts — 매물 개수·목록에 의존하는 단언이 없어(내비 구성·히어로 게이트만
 //     본다) 애초에 간섭 대상이 아니다.
-test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의채팅→구매완료', () => {
+test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의채팅→구매완료→관리자되돌리기', () => {
   let listingId: string | undefined;
   let roomId: string | undefined;
 
@@ -233,5 +239,90 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     const detailResponse = await page.goto(`/listings/${listingId}`);
     expect(detailResponse?.status(), '구매완료 매물 상세 직접 접근 HTTP 상태').toBe(200);
     await expect(page.getByRole('status').getByText('매물을 찾을 수 없어요.')).toBeVisible();
+  });
+
+  test('E6 [desktop] 관리자가 판매완료를 되돌리면 판매자가 다시 정상 수정·구매완료할 수 있다', async ({
+    page,
+    browser,
+  }) => {
+    test.skip(!listingId, 'E1~E5 중 하나가 실패해 listingId가 없음');
+
+    // 관리자가 매물 관리 목록에서 sold 매물의 "판매완료 되돌리기"를 누른다(DW-391, Story 15.4,
+    // ListingAdminActions.tsx → admin_restore_sold_listing RPC, 0030).
+    await login(page, ADMIN.email, ADMIN.password);
+
+    // 코드리뷰 patch — 런북 §10은 "목록·상세 **양쪽**에서 이 버튼이 보인다"고 약속하는데, 상세
+    //   화면(`[id]/page.tsx`)이 status prop을 넘기는 배선은 어느 테스트도 렌더한 적이 없었다
+    //   (다른 관리자 상세 E2E는 전부 on_sale 매물을 골라 열어서 이 버튼이 애초에 안 뜬다).
+    //   여기서 sold 상태의 상세를 한 번 열어 버튼 존재만 확인한다 — 클릭은 목록에서 한다
+    //   (되돌리기의 실제 왕복 시나리오는 목록 동선이 정본이므로 그쪽을 바꾸지 않는다).
+    await page.goto(`/admin/listings/${listingId}`);
+    await expect(page.getByRole('button', { name: '판매완료 되돌리기' })).toBeVisible();
+
+    await page.goto('/admin/listings');
+    // ⚠️ 행을 MODEL이 아니라 **listingId로 좁힌다**(3차 코드리뷰). /sell은 판매자 본인 매물만
+    //   보여주지만 이 화면은 정반대로 전 판매자·전 상태를 필터 없이 보여준다 — 중단된 이전
+    //   실행이 남긴 같은 MODEL 매물이 하나라도 있으면 locator가 2건이 되어 strict mode로 죽는다.
+    const adminRow = page.locator('li').filter({
+      has: page.locator(`a[href$="/admin/listings/${listingId}"]`),
+    });
+    await adminRow.getByRole('button', { name: '판매완료 되돌리기' }).click();
+    await expect(adminRow.getByText('판매중')).toBeVisible({ timeout: 10_000 });
+    // 코드리뷰 patch — 배지 문구뿐 아니라 되돌리기 버튼 자체도 사라져야 한다(isSold 게이트가
+    //   되돌린 뒤에도 계속 올바르게 판정된다는 증거, on_sale 매물엔 이 버튼이 없어야 함).
+    await expect(adminRow.getByRole('button', { name: '판매완료 되돌리기' })).toHaveCount(0);
+    // 3차 코드리뷰 patch — 0행 거부 경로가 조용히 지나가지 않게 오류 알림 부재를 명시 확인한다.
+    //   위 배지는 서버 재렌더 결과라 "RPC가 거부됐는데 다른 이유로 화면이 바뀐" 경우를 못 가른다.
+    await expect(adminRow.getByRole('alert')).toHaveCount(0);
+
+    const restoredStatus = runPsql(`select status from listings where id='${listingId}';`);
+    expect(restoredStatus, `되돌리기 후 매물(${listingId}) status`).toBe('on_sale');
+
+    // 3차 코드리뷰 patch — AC1은 "status가 on_sale로 바뀌고 **목록에 재노출**된다"인데, 위
+    //   단언들은 전부 관리자 화면(sold도 보이는 화면)과 DB 컬럼이라 "재노출"을 관측하지 못했다.
+    //   FR11이 실제로 사는 표면은 구매자 경로다 — 로그인 안 한 익명 컨텍스트로 검색해 다시
+    //   보이는지 본다(E4가 sold일 때 안 보이는 것을 확인하는 것과 짝을 이룬다).
+    const anonContext = await browser.newContext();
+    try {
+      const anonPage = await anonContext.newPage();
+      await anonPage.goto(`/search?q=${encodeURIComponent(MODEL)}`);
+      await expect(
+        anonPage.locator(`a[href$="/listings/${listingId}"]`).first(),
+        '되돌린 매물이 비로그인 검색 결과에 다시 노출되지 않는다(AC1 "목록에 재노출")',
+      ).toBeVisible({ timeout: 15_000 });
+    } finally {
+      await anonContext.close();
+    }
+
+    // 되돌리기 전엔 0015(RLS)가 sold 행의 UPDATE를 판매자에게도 0행으로 막는다 — 되돌린 뒤
+    // 판매자가 다시 정상적으로 수정할 수 있는지가 왕복 검증의 핵심(회귀 없음, 스펙 I/O 매트릭스 5행).
+    await login(page, SELLER.email, SELLER.password);
+    await page.goto('/sell');
+    const sellerRow = page.locator('li').filter({ hasText: MODEL });
+    await sellerRow.getByRole('link', { name: '수정' }).click();
+    await page.waitForURL(new RegExp(`/sell/${listingId}/edit$`));
+
+    await page.getByLabel('가격 (원)').fill(String(RESTORED_PRICE));
+    await page.getByRole('button', { name: '수정 저장' }).click();
+    await page.waitForURL('**/sell');
+
+    // 코드리뷰 patch — E3와 동일하게 DB뿐 아니라 렌더된 상세 페이지도 확인한다(되돌리기→재수정
+    //   경로 전용 캐시/렌더 결함은 E3의 일반 수정 경로로는 못 잡는다).
+    await page.goto(`/listings/${listingId}`);
+    await expect(page.locator('aside').getByText(`${RESTORED_PRICE.toLocaleString('ko-KR')}원`)).toBeVisible();
+
+    const restoredPrice = runPsql(`select price from listings where id='${listingId}';`);
+    expect(restoredPrice, `되돌리기 후 재수정된 DB price 값(매물 ${listingId})`).toBe(String(RESTORED_PRICE));
+
+    await page.goto('/sell');
+
+    // 재구매완료 처리까지 정상 동작해야 왕복이 완성된다.
+    const rowAfterEdit = page.locator('li').filter({ hasText: MODEL });
+    page.once('dialog', (dialog) => dialog.accept()); // window.confirm 실수방지 다이얼로그 수락
+    await rowAfterEdit.getByRole('button', { name: '구매 완료' }).click();
+    await expect(rowAfterEdit.getByText('판매완료')).toBeVisible({ timeout: 10_000 });
+
+    const finalStatus = runPsql(`select status from listings where id='${listingId}';`);
+    expect(finalStatus, `재구매완료 처리 후 매물(${listingId}) status`).toBe('sold');
   });
 });

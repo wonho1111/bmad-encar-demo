@@ -564,7 +564,7 @@ location: `supabase/migrations/0015_listings_update_not_sold.sql:28` × `0005_ad
 severity: high
 reason: 데모 단계이고 구매완료는 판매자가 의도적으로 누르는 동작이라 오늘은 무해하지만, 이미 한 번 실제로 되돌릴 방법이 없어 SQL로 직접 복구한 사례가 있다.
 trigger: 실사용자가 구매완료를 오조작하는 시점 · 재오픈 UI 도입 시.
-status: open
+status: resolved (2026-08-07, Story 15.4) — `admin_restore_sold_listing` RPC(`supabase/migrations/0030_listings_restore_sold_rpc.sql`) + 관리자 화면 "판매완료 되돌리기" 버튼으로 위 해소 선택지 ②(복구 전용 좁은 RPC)를 구현. 런북 §10을 이 절차로 대체하고 옛 SQL은 §10-a 비상용 백업으로 격하. 스펙: `_bmad-output/implementation-artifacts/spec-15-4-관리자-판매완료-되돌리기.md`.
 
 - **위치:** `supabase/migrations/0015_listings_update_not_sold.sql:28` × `0005_admin_policies.sql:48`
 - **내용:** `0015`가 `using`으로 sold 행을 UPDATE 대상에서 빼면서 **판매자도 관리자도 복구 경로가 없다.** 0005는 `listings`에 관리자 **DELETE** 정책만 만들고 UPDATE는 만들지 않았다(*"UPDATE는 현재 관리 요구사항에 없어 추가하지 않는다"*). 마지막 수단인 `service_role`은 프로젝트 규칙상 금지(`conventions.md` §5).
@@ -5220,4 +5220,107 @@ summary: DW-669는 "Epic 15 Story 15-3을 착수할 때 정지가 실제로 무�
 evidence: `grep -n "Story 15.4" epics-increment-2026-07-12.md` → 1311행 "⚠️ 이 에픽의 'UI-only' 범위를 한 칸 넘는 스토리다 — 마이그레이션 1개(복구 전용 RPC)가 필요하다"가 15.4에만 붙어 있고 15.3 블록(1296-1307행)엔 그런 경고가 없음을 직접 대조 확인. dev-auto 세션이 이미 `supabase/migrations/0030_listings_suspend_gate.sql`(정지 회원 listings INSERT/UPDATE/DELETE 차단)을 짜서 vitest 336/336·playwright 73/73·red/green 자체검증까지 전부 통과시켰으나, 위 충돌을 뒤늦게 발견하고 코드를 되돌렸다(같은 세션이 직접 `git checkout`으로 원복 + 마이그레이션 파일 삭제 + 로컬 DB `supabase db reset`으로 재동기화 확인).
 why_it_matters: 되돌리지 않았다면 Epic 15의 스코프 정본(계획 문서)과 실제 배포 코드가 조용히 어긋난 채 넘어갈 뻔했다 — 다음 사람이 "Epic 15는 DB를 안 건드린다"고 믿고 그 가정 위에서 판단하면 틀린다. 또한 이번 코드리뷰(adversarial 렌즈)가 그 RLS 구현 자체의 실측 결함 2건도 찾았다: **관리자용 `listings_delete_admin`은 안 막힘**(정지된 관리자가 여전히 남의 매물 삭제 가능, 로컬 DB 실측 DELETE 성공) · **`listing_images`/`storage.objects` 쓰기 정책도 안 막힘**(정지된 판매자가 여전히 사진 추가·삭제 가능, 로컬 DB 실측 INSERT/DELETE 성공). 재구현할 스토리는 이 두 갭도 함께 닫아야 DW-669의 원래 문제("정지가 실제로 무엇을 막는지")가 온전히 해소된다.
 trigger: ✅ **결정됨 (2026-08-07, 사용자) = (b)안 — Epic 15 밖 독립 스토리로 분리.** 신설 `epic-17: 접근 제어 마무리`의 `17-1-정지-회원-쓰기-차단-rls`가 이 항목을 소유한다(`sprint-status.yaml`). (a)안(에픽 15에 예외를 하나 더 추가)을 택하지 않은 이유: Epic 15의 "UI-only"는 예외가 15.4 하나뿐일 때만 제약으로 기능한다 — 두 번째 예외를 뚫는 순간 다음 사람이 "이 에픽은 DB를 안 건드린다"는 가정을 못 쓰게 된다. 재구현 시 아래 두 갭을 범위에 포함할지 그 자리에서 판단할 것. 어느 쪽이든 저장된 패치 파일(`bmad-dev-auto-intent-gap-patch-15-3-회원관리-역할통합-반영.diff`)을 출발점으로 재사용하고, 위 두 갭(admin delete·사진 경로)을 범위에 포함할지 그 자리에서 판단한다.
+status: open
+
+### DW-718: 관리자 쓰기 액션(삭제·정지·되돌리기)에 감사 로그(누가·언제)가 전혀 없다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 dev-auto 실행 중 코드리뷰(adversarial 렌즈, 3회 독립 실행 중 2회가 동일 지적) — 2026-08-07.
+location: `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx`(삭제·되돌리기) · `web/src/app/(admin)/admin/members/MemberActions.tsx`(정지/해제·삭제) — 관리자 쓰기 액션 전부.
+severity: low
+summary: `admin_restore_sold_listing` RPC(0030)는 `status`만 바꿀 뿐 누가·언제 되돌렸는지 남기는 로그/컬럼이 없다. 다만 이건 이 스토리가 새로 만든 결함이 아니라 기존 관리자 쓰기 액션(삭제·정지/해제) 전부가 처음부터 공유해 온 패턴이다.
+evidence: `MemberActions.tsx`(정지/해제·회원삭제)·`ListingAdminActions.tsx`(매물삭제)를 직접 읽어 확인 — 세 액션 모두 `updated_at` 트리거 갱신 외엔 행위자·시각을 남기는 곳이 없다. 스펙의 "추적 가능" AC(원 epics 문서 Story 15.4)는 런북 문서 대체만 요구했고 실제로 그렇게 구현·검증됨(spec AC7) — 감사 로그는 그 AC의 범위가 아니었다.
+why_it_matters: 관리자가 이미 완료된 거래를 되돌리는 것처럼 파급력 있는 조작인데, 사후에 "누가 왜 그랬는지" DB만으로 재구성할 방법이 없다. 데모 단계라 지금은 무해하지만, 실사용자 운영 단계에서는 분쟁·오조작 조사에 필요해진다.
+trigger: 관리자 기능이 데모를 벗어나 실사용자 운영에 투입되는 시점 · 또는 관리자 액션 관련 분쟁·오조작이 실제로 발생하는 시점. 그때 이 3개 액션(삭제·정지/해제·되돌리기)을 한 스토리로 묶어 최소 감사 로그(actor_id·action·target·occurred_at)를 설계할 것.
+status: open
+
+### DW-719: 관리자 되돌리기 RPC의 "동시(concurrent) 다중 세션" 레이스가 테스트로 검증되지 않음
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 dev-auto 실행 중 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `api/tests/integration/test_restore_sold_listing_rpc_real_db.py::test_idempotent_on_already_on_sale_row`
+severity: low
+summary: 멱등성 테스트는 같은 커서로 **순차** 두 번 호출해 확인할 뿐, 두 관리자 세션이 **동시에** 같은 sold 매물을 되돌리는 실제 레이스는 어떤 테스트로도 실행되지 않는다. `0030` 함수 주석은 "레이스 조건에서만 발생"이라고 단언하지만 그 주장 자체가 실측되지 않았다.
+evidence: 파일 전체를 읽어 `_call_rpc`가 단일 커서·단일 트랜잭션으로만 호출되는 것을 확인 — 두 개의 별도 DB 커넥션으로 동시 실행하는 테스트가 없다.
+why_it_matters: WHERE 절(`status='sold' and public.is_admin()`)이 Postgres MVCC 하에서 실제로 두 동시 UPDATE 중 하나만 행을 잡고 다른 하나는 0행으로 떨어지는지는 이론상 타당하지만(단일 행 UPDATE는 원자적) 이 프로젝트의 다른 실DB 테스트(0020·0025 포함)도 전부 이 축을 검증하지 않는 동일한 패턴이라, 이 스토리만의 결함이 아니라 테스트 스위트 전반의 체계적 공백이다.
+trigger: 실DB 통합테스트에 동시성(진짜 병렬 커넥션) 검증 패턴이 처음 도입되는 스토리 — 그때 이 파일도 함께 보강.
+status: open
+
+### DW-720: 실DB 통합테스트의 `auth.users` 최소 컬럼 직접 INSERT 패턴이 여러 파일에 중복돼 있다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 dev-auto 실행 중 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `api/tests/integration/test_view_count_rpc_real_db.py::_create_seller` · `test_restore_sold_listing_rpc_real_db.py::_create_user` (그 외 0025 계열 파일도 동일 패턴 추정, 전수 확인은 안 함).
+severity: low
+summary: 여러 실DB 테스트 파일이 각자 `insert into auth.users (id, email, raw_user_meta_data) values (...)`로 Supabase Auth 테이블에 최소 컬럼만 직접 꽂는 동일한 패턴을 복붙해 갖고 있다. Supabase/Postgres 이미지가 `auth.users`에 새 NOT NULL 제약을 추가하면 이 패턴을 쓰는 모든 파일이 동시에, 각자 다른 위치에서 불투명한 insert 에러로 깨진다.
+evidence: 두 파일을 직접 비교 — 두 `_create_*` 헬퍼가 사실상 동일한 코드(컬럼 3개, 동일 형태의 raw_user_meta_data)를 각자 유지한다.
+why_it_matters: 근본 원인이 한 곳(Supabase 이미지 스키마)인데 증상은 파일마다 따로 나타나 디버깅 시간이 커진다 — 공유 헬퍼로 추출하면 한 곳만 고치면 된다.
+trigger: 이런 실DB 테스트 파일이 하나 더 생기는 시점(3번째 복붙이 생기기 전) — 그때 `api/tests/integration/conftest.py` 등 공유 위치로 추출.
+status: open
+
+### DW-721: `is_admin()`이 `profiles.status`를 안 봐서 **정지된 관리자**도 되돌리기 RPC를 쓸 수 있다 — Epic 17의 RLS 범위로는 이 경로가 안 덮인다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 후속 코드리뷰(adversarial·edge-case-hunter 두 렌즈가 독립적으로 지적) — 2026-08-07.
+location: `supabase/migrations/0001_profiles.sql:57-68`(`is_admin()`) × `supabase/migrations/0030_listings_restore_sold_rpc.sql:29` × 신설 스토리 `17-1-정지-회원-쓰기-차단-rls`.
+severity: low
+summary: `is_admin()`은 `profiles.role='admin'`만 보고 `profiles.status`(`active`/`suspended`)는 보지 않는다. 그래서 관리자 회원 관리에서 **정지된 계정도** `admin_restore_sold_listing`을 호출해 완료된 거래를 되돌릴 수 있다. 게다가 이 RPC는 `SECURITY DEFINER`라 RLS를 우회하므로, DW-669를 이어받은 Epic 17 스토리 `17-1-정지-회원-쓰기-차단-rls`가 **RLS 범위로 설계돼 있으면 이 새 경로는 닫히지 않는다.**
+evidence: 실측(2026-08-07, 로컬 Supabase 55322) — `profiles.status='suspended'`인 관리자를 만들고 `set local role authenticated` + JWT sub 임퍼소네이션으로 sold 매물에 RPC를 호출한 결과 `rows=1`, `status`가 `on_sale`로 실제로 바뀌었다(트랜잭션 롤백). `is_admin()` 정의를 직접 읽어 `status` 술어가 없음을 확인.
+why_it_matters: 17-1이 "정지 = 쓰기 차단"을 RLS로만 구현하고 끝나면, 팀 전체가 정지 게이트가 완성됐다고 믿는 상태에서 이 경로만 조용히 열려 있게 된다 — DW-669가 원래 잡으려던 문제("정지가 실제로 무엇을 막는가")가 반만 해소된다. 또한 이 축은 15.4의 인수조건 밖이었다(스펙 Never 절이 정지 게이트를 명시적으로 범위 밖으로 뒀다) — 그래서 15.4의 결함이 아니라 17-1이 반드시 흡수해야 할 범위다.
+trigger: `17-1-정지-회원-쓰기-차단-rls` 착수 시 — 그 스토리의 인수조건에 **"SECURITY DEFINER RPC 경로(`admin_restore_sold_listing` 포함)도 정지 계정에서 차단된다"**를 반드시 포함할 것(CLAUDE.md B5 — 회고 약속은 다음 스토리의 체크박스로 심는다). 구현 후보: `is_admin()`에 `and status = 'active'` 추가(전역 파급 — 관리자 SELECT 정책까지 함께 좁아지므로 그 영향을 먼저 실측할 것) 또는 RPC 쪽에만 `status='active'` 조건 추가.
+status: open
+
+### DW-722: `supabase db reset`로 만든 로컬 스택엔 플랫폼 기본 테이블 GRANT가 없어 로그인 사용자용 앱이 통째로 안 뜬다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 후속 코드리뷰의 검증 단계에서 실측으로 드러남(스펙이 지시한 `supabase db reset` 실행 직후) — 2026-08-07.
+location: `scripts/migration-check-prelude.sql:63`(CI만 갖는 재현) × `supabase/migrations/**`(어떤 마이그도 `authenticated`에 테이블 GRANT를 주지 않음) × `supabase/config.toml`.
+severity: low
+summary: 리포의 마이그레이션은 `anon`·`authenticated`의 테이블 권한을 **Supabase 플랫폼 기본 GRANT**(`alter default privileges in schema public grant all on tables to anon, authenticated`)에 위임한다(0012·0020 주석이 명시). CI는 그걸 `migration-check-prelude.sql`로 재현하고, 원격은 플랫폼이 준다. 그런데 **로컬 `supabase db reset`(CLI 2.111.0)은 재현하지 않는다** — 리셋 직후 `authenticated`에 `listings` SELECT 권한이 아예 없어, 로그인한 사용자가 어떤 화면도 못 연다.
+evidence: 실측(2026-08-07). ① 리셋 직후 `has_table_privilege('authenticated','public.listings','SELECT')` = **f**. ② `set local role authenticated`로 조회 시 `permission denied for table listings` + `HINT: GRANT SELECT ON public.listings TO authenticated`. ③ `pg_default_acl`의 `(postgres, public, tables)` 항목이 anon·authenticated에 `Dxtm`(TRUNCATE/REFERENCES/TRIGGER/MAINTAIN)만 주고 `arwd`를 안 준다. ④ 그 상태에서 E2E `write-flows.spec.ts`는 E1의 `login()` 단계에서 즉시 실패한다. ⑤ 기존 실DB 테스트 `test_view_count_rpc_real_db.py`의 `test_authenticated_can_still_update_other_columns`·`test_ordinary_update_bumps_updated_at` 2건도 같은 이유로 로컬에서만 실패한다(CI 동일 컨테이너에서는 116건 전부 통과 — 즉 코드 결함이 아니라 환경 축이다).
+why_it_matters: `docs/conventions.md` §9.1이 세운 불변식은 "레포 파일만으로 (Supabase 위에서) DB가 선다"인데, 지금은 **CI에서만 참이고 로컬에서는 거짓**이다. 다음 사람이 리셋 후 앱이 안 뜨는 것을 보면 원인이 GRANT라는 것을 알 길이 없고(권한 오류는 화면에 "매물을 불러오지 못했습니다"로만 보인다), 이번 실행에서도 실제로 시간을 잃었다. 임시 복구법: `alter default privileges in schema public grant all on tables to anon, authenticated, service_role;` + `grant all on all tables in schema public to ...` 실행 후 `0011`·`0012`·`0020`의 좁히는 GRANT 블록을 다시 적용(그래야 anon 컬럼 스코프·view_count 차단이 되살아난다).
+trigger: 다음에 로컬 `supabase db reset`을 쓰는 작업 — 그때 `scripts/seed-local.sh`가 시드 전에 이 기준선 GRANT를 함께 세우도록 넣거나(가장 싼 자리), `supabase/config.toml`의 리셋 훅으로 프렐류드 일부를 걸 것. **주의: `migration-check-prelude.sql`을 로컬 Supabase 스택에 통째로 실행하면 안 된다** — 그 파일은 맨 pgvector용이라 `auth.uid()` 스텁 등을 만들어 실제 auth를 덮어쓴다.
+status: open
+
+### DW-723: 관리자 회원 액션(`MemberActions.tsx`)에 삭제·정지 공유 busy 가드가 없다 — 15.4가 매물 쪽에서 고친 그 결함이 본보기 파일에 그대로 남았다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 3차 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `web/src/app/(admin)/admin/members/MemberActions.tsx`(정지/해제 버튼 · 삭제 버튼) ↔ 이미 고쳐진 대조군 `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx:147,159,171`.
+severity: low
+summary: `MemberActions.tsx`는 정지/해제와 삭제가 각자 자기 `loading` 상태만 보고 서로를 잠그지 않는다 — 한쪽이 진행 중일 때 다른 쪽을 눌러 같은 회원에 두 요청을 동시에 보낼 수 있다. Story 15.4 1차 코드리뷰가 `ListingAdminActions.tsx`에서 정확히 같은 결함을 찾아 `busy = deleting || restoring` 공유 가드로 고쳤는데, 그 패턴의 **본보기였던 파일**은 안 고쳐졌다.
+evidence: 두 파일을 직접 대조 — `ListingAdminActions.tsx`는 두 버튼 모두 `disabled={busy}`를 갖고 두 핸들러가 `if (deleting || restoring) return`으로 시작한다. `MemberActions.tsx`는 각 핸들러가 자기 상태만 보고(`if (toggling) return` / `if (deleting) return`), 버튼에 `disabled`를 넘기지 않아 `Button`의 `disabled={disabled || loading}`가 자기 `loading`만 반영한다.
+why_it_matters: 15.4의 결함이 아니라 15.4가 **드러낸** 기존 결함이다(범위 밖이라 이 스토리에서 고치지 않는다). 다만 CLAUDE.md B8이 말하는 "미루는 판단은 틀린 게 아니고 안 적는 게 틀린 것"에 해당한다 — 팀이 이 결함을 이미 진단했다는 사실이 어디에도 기록돼 있지 않으면, 다음 사람이 매물 쪽 `busy` 가드를 보고 "회원 쪽엔 왜 없지?"를 처음부터 다시 조사하게 된다. 실사용 영향은 낮다(관리자 1인 조작, 결과는 중복 요청 1건).
+trigger: 관리자 회원 관리 화면을 다음에 손대는 스토리 — Epic 17의 정지 게이트 작업(`17-1-정지-회원-쓰기-차단-rls`)이 이 파일을 열 가능성이 높다. 그때 `busy = toggling || deleting` 공유 가드를 두 버튼과 두 핸들러 양쪽에 넣을 것.
+status: open
+
+### DW-724: `is_admin()`이 `set search_path = public`이라, 이 함수를 유일한 인가 관문으로 쓰는 SECURITY DEFINER RPC들의 하드닝이 한 칸 무르다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 3차 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `supabase/migrations/0001_profiles.sql`(`public.is_admin()` — `security definer set search_path = public`) ↔ 이를 호출하는 `0030_listings_restore_sold_rpc.sql`·`0005_admin_policies.sql` 등.
+severity: low
+summary: 리포의 최신 SECURITY DEFINER 함수들은 `set search_path = ''`(빈 문자열 + 전 참조 스키마 수식)로 하드닝하는데(0019·0020·0030), 그 함수들이 인가 판정을 통째로 위임하는 `is_admin()`은 `set search_path = public`이다. 즉 새 함수만 하드닝하고 **자물쇠 자체는 옛 기준**에 남아 있다.
+evidence: `0030`은 `set search_path = ''`를 선언하고 본문에서 `public.listings`·`public.is_admin()`으로 전부 수식한다. `0001`의 `is_admin()` 정의를 직접 읽어 `set search_path = public`임을 확인. 신설된 `test_restore_sold_listing_rpc_real_db.py`는 `0030`의 시그니처·GRANT는 구조적으로 단언하지만 `is_admin()`의 `prosecdef`·`proconfig`는 아무것도 보지 않는다.
+why_it_matters: 지금 당장 뚫리는 경로를 실측으로 재현하지는 못했다(`public` 고정 자체가 빈 search_path보다 무를 뿐, 임의 스키마 주입은 아니다) — 그래서 이 항목은 "확인된 취약점"이 아니라 **기준 불일치**로 등재한다. 문제는 새 RPC를 추가할 때마다 하드닝 검사를 그 RPC에만 걸고 위임 대상은 아무도 안 보는 습관이 굳는다는 점이다. DW-721(같은 함수의 `status` 미확인)이 그 습관의 비용을 이미 한 번 보여줬다.
+trigger: `is_admin()`을 다음에 수정할 때 — 현재 가장 유력한 자리는 DW-721이 지정한 `17-1-정지-회원-쓰기-차단-rls`(거기서 `status='active'` 술어를 넣게 된다). 같은 편집에서 `search_path`를 `''`로 좁히고 본문 참조를 수식할 것. ⚠️ `is_admin()`은 다수 RLS 정책이 부르므로 변경 후 관리자 SELECT/DELETE 경로를 실DB로 회귀 확인해야 한다.
+status: open
+
+### DW-725: 관리자 매물 행의 sold 상태(버튼 2개 나란히)가 반응형 자동 검사에 없다 — D5 근거가 1회성 스크린샷뿐이다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 3차 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `web/e2e/viewport-audit.spec.ts`(관리자 라우트 순회) × `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx:151`(`flex items-center gap-2`, `flex-wrap` 없음).
+severity: low
+summary: Story 15.4가 관리자 매물 행에 두 번째 버튼("판매완료 되돌리기")을 넣어 그 행이 처음으로 **버튼 2개 가로 배치**가 됐다. D5(반응형 무결성) 확인은 2차 패스가 390px·1280px × 라이트/다크로 **육안 캡처**해 통과시켰지만, 그 상태를 다시 재현하는 자동 검사는 없다 — `viewport-audit.spec.ts`는 관리자 라우트를 열되 `status='sold'` 행이 화면에 있는지를 보장하지 않기 때문이다.
+evidence: `viewport-audit.spec.ts`를 읽어 sold 매물을 고정하는 단계가 없음을 확인. `ListingAdminActions.tsx:151`의 컨테이너에 `flex-wrap`이 없어, 폭이 모자라면 접히는 게 아니라 가로 오버플로가 난다(D5는 접힘도 오버플로도 둘 다 금기).
+why_it_matters: project-context 규칙13(D5)은 "관리자 화면도 예외 없음 · 레이아웃 어긋남 = 절대 금기"를 governing으로 선언한다. 지금 그 보증은 특정 매물 요약 문자열 하나로 찍은, 아무도 다시 돌릴 수 없는 캡처에 걸려 있다 — 제조사·모델명이 더 긴 매물이 들어오면 잡을 장치가 없다. (E2E 자체가 CI에 배선돼 있지 않다는 더 큰 축은 `docs/tech-debt.md` #168이 이미 갖고 있다.)
+trigger: `viewport-audit.spec.ts`를 다음에 손대는 작업, 또는 E2E를 CI에 배선하는 작업(#168) — 그때 sold 매물을 하나 고정해 관리자 목록을 열고 두 버튼의 y좌표 동일 + 행 우측 끝 ≤ 뷰포트 폭을 단언하는 케이스를 추가할 것(2차 패스가 육안으로 잰 바로 그 두 값).
+status: open
+
+### DW-726: Follow-up review still recommended for 15-4-관리자-판매완료-되돌리기 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-013500-4548; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

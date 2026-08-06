@@ -9,7 +9,7 @@
 // 화면 본문(15필드·옵션·설명)은 구매자 상세와 동일하므로 공유 컴포넌트 ListingDetailFields로 그린다.
 //   제목·상태 배지(판매중/판매완료)·삭제·목록 링크처럼 관리자 맥락 요소만 이 페이지가 직접 그린다.
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import { UNITS, LISTING_STATUS, type ListingStatus } from '@/lib/constants';
 import ListingDetailFields, {
   type ListingDetailFieldsData,
 } from '@/components/listings/ListingDetailFields';
@@ -23,7 +23,7 @@ export const dynamic = 'force-dynamic';
 // 공유 표시 필드(ListingDetailFieldsData) + 관리자 화면용 식별/상태 필드.
 type AdminListingDetail = ListingDetailFieldsData & {
   id: string;
-  status: string;
+  status: ListingStatus;
 };
 
 export default async function AdminListingDetailPage({
@@ -102,11 +102,13 @@ export default async function AdminListingDetailPage({
         <p className="text-body text-ink-muted">
           {listing.year}년 · {priceText}
         </p>
-        {/* 관리자는 여기서도 바로 삭제 가능(목록과 동일 액션). 삭제 후엔 매물 관리 목록으로 이동. */}
+        {/* 관리자는 여기서도 목록과 동일한 액션을 쓴다 — 삭제 + sold 매물 한정 "판매완료 되돌리기"(0030).
+            삭제 후엔 매물 관리 목록으로 이동(redirectTo). 되돌리기는 이 매물이 그대로 남으므로 router.refresh()만 한다. */}
         <div className="mt-1">
           <ListingAdminActions
             listingId={listing.id}
             label={`[${listing.manufacturer}] ${listing.model}`}
+            status={listing.status}
             redirectTo="/admin/listings"
           />
         </div>

@@ -164,7 +164,10 @@ class ListingsRepository {
 
   /// 구매 완료(FR8) — status 를 sold 로 전환. payload 는 status 만(seller_id·다른 필드 위조/부수변경 차단).
   /// 전제조건 .eq('status','on_sale') — 이미 sold 거나 화면이 낡아 그새 바뀐 매물 재전환을 0행으로 막는다(서버측 빗장).
-  ///   전이 규칙: on_sale → sold 단방향만(되돌리기 없음, web 과 동일). 0이면 타인·없음·이미 sold.
+  ///   전이 규칙: on_sale → sold 단방향만(이 판매자 경로엔 되돌리기 없음, web 과 동일). 0이면
+  ///   타인·없음·이미 sold. ⚠️ 관리자 전용 예외 있음(2026-08-07, Story 15.4) — web
+  ///   `admin_restore_sold_listing` RPC(`0030`)로 관리자만 sold→on_sale을 되돌릴 수 있다.
+  ///   이 앱엔 관리자 화면이 없어(admin_blocked_screen.dart) 이 경로가 노출되지 않는다.
   Future<int> markSold(String id) async {
     final rows = await _client
         .from('listings')

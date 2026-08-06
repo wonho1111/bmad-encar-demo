@@ -150,7 +150,10 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
     - ⚠️ **§6.1이 면제하는 것은 "사진 파일 URL"이지 `listing_images` 테이블 조회가 아니다.** 둘을 섞지 말 것.
   - **SECURITY DEFINER 함수 축** — 정의자 함수 안에서는 RLS가 적용되지 않는다(정의자=소유자 권한으로 평가되고, 소유자에겐 RLS가 애초에 안 걸린다). 그래서 위 두 축과 달리 RLS가 대신 걸러주지 않고, **함수 본문의 인라인 조건이 유일한 강제 지점**이다.
     - 소비처 목록: `get_seller_public_summary`(`0019_seller_public_summary.sql`, 상세 판매자정보 — Story 10.6) — anon·authenticated에 `grant execute`. 함수 안 `status = 'on_sale'` 조건이 유일한 강제 지점이며, 지우면 RLS가 대신 막아주지 않으므로 그대로 뚫린다. 강제 장치: `api/tests/integration/test_seller_summary_real_db.py`(`set local role anon`으로 RPC를 실제 호출 — sold 매물을 추가해도 집계가 안 늘어남을 확인, `status='on_sale'`을 지우면 red. `api-db` CI 잡이 실행).
-- **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). anon 열람은 §8이 상술한다.
+    - `admin_restore_sold_listing`(`0030_listings_restore_sold_rpc.sql`, 관리자 판매완료 되돌리기 — Story 15.4, DW-391) — **`authenticated`에만** `grant execute`(anon은 EXECUTE 자체가 없다). 여기서 정의자 함수가 여는 것은 "조회"가 아니라 **`status` 쓰기**다: `0015`가 authenticated UPDATE에서 sold 행을 통째로 빼 놓았는데, 이 함수는 그 RLS를 우회해 `sold`→`on_sale`을 되돌린다. 함수 본문의 `where ... status='sold' and public.is_admin()`이 유일한 강제 지점이며, 지우면 아무 로그인 사용자나 남의 매물 상태를 바꿀 수 있다. 강제 장치: `api/tests/integration/test_restore_sold_listing_rpc_real_db.py`(`set local role`로 anon·비관리자·판매자 본인을 각각 실제 호출 — 전부 거부되고 관리자만 1행. `api-db` CI 잡이 실행).
+      - ⚠️ **위 매물 축의 "authenticated UPDATE = `0015`"를 유일한 UPDATE 관문으로 읽으면 틀린다.** `0030` 이후 sold 행을 되돌리는 문이 하나 더 있고, 그 문은 RLS 밖에 있다.
+      - ⚠️ **`is_admin()`은 `role`만 보고 `profiles.status`를 보지 않는다** — 정지된 관리자도 이 함수를 통과한다(DW-721, 실측). 정지 게이트를 RLS로만 구현하면 이 경로는 안 닫힌다.
+- **새 조회 경로를 열면 이 목록에 강제 지점을 추가**한다(규칙7). **정의자 함수는 조회뿐 아니라 쓰기 경로도 이 목록에 올린다** — RLS 밖이라는 성질이 같기 때문이다. anon 열람은 §8이 상술한다.
 
 ### 6.1 사진 파일 URL은 FR11 대상이 아니다 (명시 수용, 사용자 결정 2026-07-19)
 
