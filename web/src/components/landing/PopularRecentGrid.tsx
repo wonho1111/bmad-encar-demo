@@ -29,7 +29,7 @@ function ListingGridSection({
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
         <h2 className="text-section font-bold text-ink-primary">{title}</h2>
-        <Link href="/search" className="text-sm text-zinc-500 hover:underline">
+        <Link href="/search" className="text-sm text-ink-muted hover:underline">
           전체 보기 →
         </Link>
       </div>
@@ -45,7 +45,7 @@ function ListingGridSection({
           </Link>
         </p>
       ) : section.listings.length === 0 ? (
-        <p className="text-sm text-zinc-500">아직 등록된 매물이 없습니다.</p>
+        <p className="text-sm text-ink-muted">아직 등록된 매물이 없습니다.</p>
       ) : (
         // D5: 가로폭은 열 수로만 흡수한다(≥1100px 4열 · 640~1099px 2열 · <640px 1열).
         <ResponsiveGrid>

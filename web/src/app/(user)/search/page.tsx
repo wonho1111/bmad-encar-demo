@@ -263,8 +263,20 @@ export default async function SearchPage({
     console.error('[search] 매물 목록 조회 실패:', error);
   }
 
+  // hover:border-brand-petrol(DW-699와 동일 근거, 코드리뷰 patch) — DW-696 토큰 치환 과정에서 옛
+  // 원시색 호버(라이트/다크 각각의 회색 배경)를 `hover:bg-surface-raised` 하나로 바꿨는데, 이 페이저는
+  // 카드가 아니라 body 배경(--surface-base #FAFAF8) 위에 바로 놓인 칩이라 호버가 #FFFFFF로 가도
+  // 대비 1.045:1 — 같은 커밋이 DW-699로 "죽은 호버"라 판정해 걷어낸 바로 그 조합이었다. 게다가
+  // 다크 모드 호버는 치환 과정에서 대응 클래스가 사라져 신호가 0이 됐다. 테두리 축으로 바꾼 뒤
+  // 실측: 라이트 1.045:1 → 4.69:1, 다크 1.147:1 → 3.88:1(WCAG relative luminance).
+  //
+  // 활성/비활성을 **다른 상수로 나눈다**(코드리뷰 patch). 원래 하나를 양쪽이 같이 썼는데, 호버를
+  // 눈에 띄게(1.045:1 → 4.69:1) 고친 순간 첫/끝 페이지의 **비활성** "← 이전"·"다음 →"까지 같이
+  // 반짝이게 됐다 — 눌러도 아무 일이 없는 자리에 "누를 수 있다"는 신호를 준 셈이다. 호버가 사실상
+  // 안 보이던 때는 드러나지 않던 문제라, 대비를 고친 그 patch가 만들어낸 결과다.
+  const pagerBaseClass = 'rounded border border-border-hairline px-3 py-1.5 text-sm';
   const pagerLinkClass =
-    'rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800';
+    'rounded border border-border-hairline px-3 py-1.5 text-sm hover:border-brand-petrol';
 
   return (
     <>
@@ -277,7 +289,7 @@ export default async function SearchPage({
               Anti-patterns가 **"매물 탐색"·"탐색"을 개발용어 라벨로 명시 금지**하는데(소비자
               자연어로 치환), 내비만 고치고 도착 화면 제목이 옛 라벨로 남아 있었다. */}
           <h1 className="text-2xl font-semibold">내 차 사기</h1>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-ink-muted">
             원하는 조건으로 판매 중인 매물을 검색하세요.
           </p>
         </section>
@@ -287,7 +299,7 @@ export default async function SearchPage({
         <section className="flex flex-col gap-3">
           {rangeOutOfBounds ? (
             // 범위 밖 page — 에러가 아니라 "돌아갈 길"을 준다(위 rangeOutOfBounds 주석 참조).
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-ink-muted">
               이 페이지에는 매물이 없습니다.{' '}
               <Link href={pageHref(1)} className="underline">
                 첫 페이지로
@@ -298,14 +310,14 @@ export default async function SearchPage({
               매물 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
             </p>
           ) : !listings || listings.length === 0 ? (
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-ink-muted">
               조건에 맞는 매물이 없습니다. 필터를 완화해 보세요.
             </p>
           ) : (
             <>
               {/* 총 건수는 **전체**를 말한다(이 페이지에 그린 수가 아니라) — 페이지네이션 후에도
                   "조건에 몇 건이 걸렸나"는 전체 기준이어야 필터를 조절할 근거가 된다. */}
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-ink-muted">
                 {totalCount}건의 매물
                 {totalPages > 1 && ` · ${page}/${totalPages} 페이지`}
               </p>
@@ -328,11 +340,11 @@ export default async function SearchPage({
                   ) : (
                     // 첫/끝 페이지에서 버튼을 지우지 않고 비활성으로 남긴다 — 자리가 사라지면
                     // 옆 버튼이 움직여 연속 클릭이 어긋난다(터치에서 특히).
-                    <span aria-disabled className={`${pagerLinkClass} opacity-40`}>
+                    <span aria-disabled className={`${pagerBaseClass} opacity-40`}>
                       ← 이전
                     </span>
                   )}
-                  <span aria-current="page" className="text-sm text-zinc-500">
+                  <span aria-current="page" className="text-sm text-ink-muted">
                     {page} / {totalPages}
                   </span>
                   {page < totalPages ? (
@@ -340,7 +352,7 @@ export default async function SearchPage({
                       다음 →
                     </Link>
                   ) : (
-                    <span aria-disabled className={`${pagerLinkClass} opacity-40`}>
+                    <span aria-disabled className={`${pagerBaseClass} opacity-40`}>
                       다음 →
                     </span>
                   )}

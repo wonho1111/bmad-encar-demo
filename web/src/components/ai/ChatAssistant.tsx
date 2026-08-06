@@ -192,7 +192,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
       {/* 대화 기록 영역 */}
       <section className="flex flex-col gap-3" aria-label="AI 대화 기록">
         {messages.length === 0 && !loading ? (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-ink-muted">
             예: &ldquo;3천만원 이하 흰색 SUV&rdquo;, &ldquo;패밀리카로 무난한 거 추천해줘&rdquo;
           </p>
         ) : (
@@ -200,13 +200,13 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
             <div key={i} className="flex flex-col gap-2">
               {m.role === 'user' ? (
                 // 사용자 말풍선 — 오른쪽 정렬.
-                <div className="self-end rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">
+                <div className="self-end rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base">
                   {m.content}
                 </div>
               ) : (
                 // 어시스턴트 말풍선 — 답변 텍스트 + (있으면) 매물카드 목록.
                 <div className="flex flex-col gap-2">
-                  <div className="self-start whitespace-pre-wrap rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800">
+                  <div className="self-start whitespace-pre-wrap rounded-lg border border-border-hairline px-3 py-2 text-sm">
                     {m.content}
                   </div>
                   {m.listings && m.listings.length > 0 && (
@@ -238,7 +238,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
         {loading && (
           <div
             role="status"
-            className="self-start rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-800"
+            className="self-start rounded-lg border border-border-hairline px-3 py-2 text-sm text-ink-muted"
           >
             {slowNotice ? 'AI 서버를 깨우는 중이에요. 첫 검색은 몇 초 걸릴 수 있어요…' : '검색 중…'}
           </div>
@@ -272,7 +272,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           // 사라진다(실측: main 402px→390px). flex-1이 이미 실제 렌더 폭을 결정하므로 size는
           // 화면에 보이는 입력창 크기에 영향이 없다(글자 수 제한도 아님 — maxLength와 무관).
           size={1}
-          className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
+          className="min-w-0 flex-1 rounded border border-border-hairline bg-transparent px-3 py-2 text-sm disabled:opacity-50"
         />
         <Button type="submit" variant="primary" loading={loading} loadingText="검색 중…">
           전송

@@ -41,7 +41,7 @@ export default async function AiSearchPage() {
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold">AI 검색</h1>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-ink-muted">
             원하는 차를 자연어로 물어보세요. 이어서 후속 질문(예: &ldquo;그 중 더 싼 거&rdquo;)도 가능합니다.
           </p>
         </section>

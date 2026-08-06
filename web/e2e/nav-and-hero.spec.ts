@@ -9,7 +9,14 @@
 // 있어도(실제 사람 계정) 실패가 불투명해지기 때문.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { assertLocalSupabase, login, SEED_USER, mockAiSearch, buildMockListings } from './helpers';
+import {
+  assertLocalSupabase,
+  buildMockListings,
+  fetchOnSaleListingIdWithPhoto,
+  login,
+  mockAiSearch,
+  SEED_USER,
+} from './helpers';
 import { PROJECT_NAMES } from './project-names';
 
 assertLocalSupabase();
@@ -274,5 +281,189 @@ test.describe('스토리 11-3 AI 히어로 랜딩', () => {
     const value = await input.inputValue();
     expect(value.length, '실제 input value 길이는 500이어야 함').toBe(500);
     await expect(page.getByText('500/500')).toBeVisible();
+  });
+});
+
+// spec-15-2 관리자 반응형 — AdminSidebar의 I/O 매트릭스 3행(데스크톱 active 표시·모바일
+// 슬라이드인 열기/Tab순환/Esc닫힘·리사이즈 자동닫힘). 나머지 1행(D5 가로스크롤 없음)은
+// viewport-audit.spec.ts가 맡는다. AdminSidebar.tsx는 SiteNav.tsx의 FocusTrap-dialog +
+// matchMedia 패턴을 그대로 이식했으므로, 위 B3(Esc+포커스 복귀)·B5(햄버거 노출) 테스트와
+// 같은 방식으로 검증한다.
+test.describe('spec-15-2 관리자 사이드바', () => {
+  test('D1 [desktop] 사이드바 active 표시', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.desktop, '데스크톱 전용 케이스');
+
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+    await page.goto('/admin/members');
+
+    const activeLink = page.getByRole('link', { name: '회원관리' });
+    await expect(activeLink).toHaveAttribute('aria-current', 'page');
+
+    const dashboardLink = page.getByRole('link', { name: '대시보드' });
+    await expect(dashboardLink).not.toHaveAttribute('aria-current', 'page');
+
+    // 코드리뷰 patch — 상세 라우트에서도 부모 항목이 active여야 한다. `isActiveHref`가 단순
+    // 일치가 아니라 `startsWith`인 **유일한 이유**가 이 경우인데(목록/상세가 같은 항목을 켜야
+    // 한다), 위 목록 경로 단언은 `pathname === href` 절만으로도 통과해서 그 분기를 한 번도
+    // 지나지 않는다 — 함수를 `pathname === href`로 되돌려도 D1이 초록이었다.
+    const listingId = await fetchOnSaleListingIdWithPhoto();
+    await page.goto(`/admin/listings/${listingId}`);
+    await expect(page.getByRole('link', { name: '매물 관리' })).toHaveAttribute('aria-current', 'page');
+    // 그리고 '/admin'만은 정확 일치여야 한다 — startsWith를 그대로 적용하면 모든 /admin/* 에서
+    // 대시보드가 항상 켜진 채로 보인다(AdminSidebar.tsx의 예외 분기).
+    await expect(page.getByRole('link', { name: '대시보드' })).not.toHaveAttribute('aria-current', 'page');
+  });
+
+  // 코드리뷰 patch — 스펙의 마지막 인수조건("대시보드 허브의 기존 4개 링크와 각 상세 화면의
+  // 뒤로가기 버튼이 사이드바 추가 후에도 그대로 존재한다")을 보는 검사가 하나도 없었다. 사이드바가
+  // 생겼으니 허브 버튼은 중복이라며 지우는 건 다음 사람에게 아주 자연스러운 판단인데, 지우면
+  // 기존 스위트가 전부 초록인 채로 통과한다.
+  test('D1b [desktop] 사이드바가 기존 페이지 내비를 대체하지 않는다', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.desktop, '데스크톱 전용 케이스');
+
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+    await page.goto('/admin');
+
+    // 대시보드 허브의 4개 링크 버튼 — 사이드바의 같은 목적지 링크와 구분하려고 <main> 안으로 스코프한다.
+    const hub = page.locator('main');
+    for (const href of ['/admin/members', '/admin/listings', '/admin/transactions', '/admin/chats']) {
+      await expect(hub.locator(`a[href="${href}"]`), `허브의 ${href} 링크가 사라졌음`).toHaveCount(1);
+    }
+
+    // 상세 화면의 뒤로가기 버튼도 그대로다.
+    const listingId = await fetchOnSaleListingIdWithPhoto();
+    await page.goto(`/admin/listings/${listingId}`);
+    await expect(page.getByRole('button', { name: '돌아가기' })).toBeVisible();
+  });
+
+  test('D2 [mobile 390] 슬라이드인 열기 — Tab 순환·Esc 닫힘', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.mobile, '모바일 전용 케이스');
+
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+    await page.goto('/admin/members');
+
+    const trigger = hamburgerTrigger(page);
+    await trigger.click();
+
+    const dashboardLink = page.getByRole('link', { name: '대시보드' });
+    const chatsLink = page.getByRole('link', { name: '채팅관리' });
+    await expect(dashboardLink).toBeVisible();
+
+    // 열릴 때 첫 포커서블(대시보드)로 이동(FocusTrap.tsx 계약).
+    let focused = await page.evaluate(() => document.activeElement?.textContent);
+    expect(focused, '패널이 열리면 첫 nav item(대시보드)으로 포커스가 이동해야 함').toBe('대시보드');
+
+    // 마지막 item(채팅관리)까지 Tab으로 이동한 뒤, 한 번 더 누르면 첫 item으로 순환해야 한다.
+    await chatsLink.focus();
+    await page.keyboard.press('Tab');
+    focused = await page.evaluate(() => document.activeElement?.textContent);
+    expect(focused, 'Tab이 패널 밖으로 안 나가고 첫 item으로 순환해야 함').toBe('대시보드');
+
+    const triggerHandle = await trigger.elementHandle();
+    await page.keyboard.press('Escape');
+    await expect(dashboardLink).toHaveCount(0);
+    const focusMatchesTrigger = await page.evaluate(
+      (el) => el === document.activeElement,
+      triggerHandle,
+    );
+    expect(focusMatchesTrigger, 'Esc 닫힘 후 포커스가 햄버거 트리거로 복귀해야 함').toBe(true);
+  });
+
+  test('D3 [mobile 390] 데스크톱 폭으로 리사이즈되면 패널이 자동으로 닫힌다', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.mobile, '모바일 전용 케이스 — 390px에서 시작해야 함');
+
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+    await page.goto('/admin/members');
+
+    await hamburgerTrigger(page).click();
+    const dashboardLink = page.getByRole('link', { name: '대시보드' });
+    await expect(dashboardLink).toBeVisible();
+
+    // 760px 붕괴 기준(spec-15-2 Always) 이상으로 리사이즈 — matchMedia 리스너가 패널을 강제로 닫아야 한다.
+    await page.setViewportSize({ width: 900, height: 844 });
+
+    await expect(hamburgerTrigger(page)).not.toBeVisible();
+    // 열려 있던 모바일 패널의 대시보드 링크는 사라지고, 데스크톱 고정 사이드바의 회원관리(active)만 남는다.
+    await expect(page.getByRole('link', { name: '회원관리' })).toHaveAttribute('aria-current', 'page');
+
+    // 코드리뷰 patch — 여기까지의 두 단언은 **CSS만으로 충족된다**. 모바일 트리거와 패널을 감싼
+    // 컨테이너가 `min-[760px]:hidden`이라 900px에서는 display:none이 되고, 그러면 matchMedia
+    // 자동닫힘을 통째로 지워 menuOpen이 true로 남아도 (a)햄버거는 안 보이고 (b)회원관리는 데스크톱
+    // 사이드바 것 하나만 잡힌다 — 즉 기능을 삭제해도 초록이었다(실측: 이 단언들만으로는 red가 안 남).
+    // 그래서 다시 모바일 폭으로 되돌려 **상태가 실제로 닫혔는지**를 본다. 자동닫힘이 없으면
+    // 여기서 이전 화면의 패널이 되살아나 잡힌다.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(hamburgerTrigger(page)).toBeVisible();
+    await expect(
+      hamburgerTrigger(page),
+      '리사이즈 자동닫힘이 동작했다면 좁아진 뒤 패널은 닫힌 상태여야 함',
+    ).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('link', { name: '대시보드' })).toHaveCount(0);
+  });
+
+  // 코드리뷰 patch(spec-15-2) — AdminSidebar.tsx는 SiteNav.tsx의 outside-pointerdown-close를
+  // 그대로 이식했는데(menuContainerRef 밖 pointerdown이면 닫힘), 그 SiteNav 쪽은
+  // nav-interactions.spec.ts가 이미 별도로 덮고 있던 반면 이 새 컴포넌트는 D1~D3 어디도 그
+  // 축(바깥 클릭 닫힘)을 보지 않았다 — D2(Tab 순환·Esc)·D3(리사이즈 자동닫힘)와 나란히 세 번째
+  // 닫힘 경로를 실측한다.
+  test('D4 [mobile 390] 패널 바깥을 클릭하면 닫힌다', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.mobile, '모바일 전용 케이스');
+
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+    await page.goto('/admin/members');
+
+    await hamburgerTrigger(page).click();
+    const dashboardLink = page.getByRole('link', { name: '대시보드' });
+    await expect(dashboardLink).toBeVisible();
+
+    // 코드리뷰 patch — 예전엔 `page.mouse.click(200, 700)`으로 "패널이 안 닿는 하단 좌표"를 쳤다.
+    // 그 좌표가 무엇 위에 떨어지는지는 아무것도 보장하지 않는데, 이 화면의 회원 행에는 `MemberActions`의
+    // **정지 버튼이 확인창 없이 즉시 profiles를 UPDATE**한다 — 시드 회원이 몇 명이냐/행 높이가
+    // 얼마냐에 따라 좌표가 그 위로 미끄러지면, "DB에 쓰지 않는다(읽기 전용)"고 파일 머리에 선언한
+    // 스펙이 조용히 시드 계정을 정지시키고 그 뒤 모든 로그인 테스트가 엉뚱한 이유로 깨진다.
+    // 대신 확실히 비활성인 요소(상단바의 이메일 텍스트)를 친다 — 패널보다 위에 있어 겹치지 않고,
+    // menuContainerRef 바깥이며, 클릭해도 아무 일도 일어나지 않는다.
+    await page.getByText(ADMIN_USER.email, { exact: true }).click();
+
+    await expect(dashboardLink).toHaveCount(0);
+    // 그리고 "닫혔다"와 "다른 데로 이동해 버려서 사라졌다"를 구분한다 — toHaveCount(0)만으로는
+    // 바깥클릭 핸들러를 지워도 (클릭이 이동을 유발했다면) 초록이 될 수 있다.
+    await expect(page).toHaveURL(/\/admin\/members$/);
+    await expect(hamburgerTrigger(page)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  // 코드리뷰 patch(spec-15-2 3차) — AdminSidebar.tsx는 "경로가 바뀌면 패널을 닫는다"를 렌더 중
+  // 상태 조정으로 갖고 있는데(prevPathname), 그 줄을 지나는 검사가 하나도 없었다. 이건 원본
+  // SiteNav.tsx엔 **없는** 동작이라(거기는 usePathname을 안 쓴다) 이식 대칭성으로도 안 덮인다.
+  // 패널 안 링크는 각자 onClick으로 닫으므로 D2·D4는 이 줄을 지워도 전부 초록이고,
+  // AdminSidebar.test.ts는 라우터 밖 1회 렌더라 구조적으로 볼 수 없다.
+  test('D5 [mobile 390] 패널을 연 채 뒤로가기로 경로가 바뀌면 패널이 닫힌다', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.mobile, '모바일 전용 케이스');
+
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+    await page.goto('/admin');
+
+    // ⚠️ 여기서 `page.goto('/admin/members')`를 쓰면 이 테스트는 **실패할 수 없다**(실측):
+    //    goto는 문서를 통째로 새로 로드하므로 뒤로가기도 문서 로드가 되고, 그러면 AdminSidebar가
+    //    새로 마운트되면서 menuOpen이 useState(false) 초기값으로 돌아간다 — 즉 경로변경 자동닫힘을
+    //    통째로 지워도 초록이었다. 앱 안의 링크를 눌러 **클라이언트 내비게이션**으로 이동해야
+    //    컴포넌트가 살아남고, 뒤로가기가 "마운트는 그대로 + pathname만 바뀜"이 되어 그 줄을 지난다.
+    await page.locator('main').locator('a[href="/admin/members"]').first().click();
+    await expect(page).toHaveURL(/\/admin\/members$/);
+
+    await hamburgerTrigger(page).click();
+    await expect(page.getByRole('dialog', { name: '관리자 메뉴' })).toBeVisible();
+
+    // 링크 클릭이 아니라 브라우저 뒤로가기 — 화면은 /admin으로 바뀌는데 패널 상태만 남으면
+    // 새 화면 위에 이전 화면에서 연 메뉴가 그대로 덮인다.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/admin$/);
+    await expect(
+      hamburgerTrigger(page),
+      '경로가 바뀌었으면 패널은 닫힌 상태여야 함',
+    ).toHaveAttribute('aria-expanded', 'false');
+    // 패널이 닫혔으므로 열려 있을 때만 그려지는 dialog가 없어야 한다(사이드바 링크 자체는
+    // 데스크톱 nav에도 있으므로 링크 개수가 아니라 dialog로 판정한다).
+    await expect(page.getByRole('dialog', { name: '관리자 메뉴' })).toHaveCount(0);
   });
 });

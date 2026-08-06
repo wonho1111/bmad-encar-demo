@@ -141,9 +141,12 @@ export default async function ChatListPage() {
                 const unread = unreadByRoom.get(room.id) ?? 0;
                 return (
                   <li key={room.id}>
+                    {/* hover:border-brand-petrol(DW-699, spec-15-2) — 예전엔 hover:bg-surface-raised였는데
+                        라이트 모드에서 surface-base(#FAFAF8)→surface-raised(#FFFFFF)는 대비 1.045:1로
+                        육안상 거의 변화가 없었다(실측). 새 토큰 추가 없이 다른 축(테두리 색)으로 신호를 준다. */}
                     <Link
                       href={`/chat/${room.id}`}
-                      className="flex items-center justify-between gap-3 rounded-card border border-border-hairline px-4 py-3 text-body hover:bg-surface-raised"
+                      className="flex items-center justify-between gap-3 rounded-card border border-border-hairline px-4 py-3 text-body hover:border-brand-petrol"
                     >
                       <span className="flex flex-col gap-0.5">
                         <span className={l ? 'font-medium' : 'font-medium text-ink-muted'}>

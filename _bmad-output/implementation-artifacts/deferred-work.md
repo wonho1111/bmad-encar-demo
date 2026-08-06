@@ -5006,7 +5006,8 @@ evidence: `grep -rn "zinc-" web/src/` 전수 실행(2026-08-06) 결과 6개 파�
 why_it_matters: 리스킨의 목적은 "사용자 화면과 시각적으로 어긋나지 않게" 하는 것인데, 파일 기준으로 닫으면 목적 기준으로는 안 닫힌다. 지금 검색 화면을 열면 토큰 필터 위에 zinc 페이지가 얹혀 있다 — 15.1 이전보다 오히려 대비가 눈에 띈다.
 fix_sketch: 4개 파일을 같은 토큰 집합으로 치환한다(신규 토큰 추가 없음, 15.1과 동일한 방식). 함께 판단할 것: 이 규칙을 `web/src/app/fonts.budget.test.ts` 형태의 vitest 소스 스캔(허용목록 방식)으로 박을지 — 지금은 손으로 치는 grep이라 다음에 누가 `bg-zinc-100`을 다시 넣어도 초록이다(CLAUDE.md B9 "규칙은 어길 수 없는 자리에 박는다").
 trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 뷰포트 감사로 이 화면들을 어차피 다시 연다. 15.2의 인수조건 체크박스로 심는다.
-status: open
+status: done 2026-08-06
+resolution: closed by spec-15-2(관리자 반응형) — 대상 4개 파일(`search/page.tsx`·`ChatAssistant.tsx`·`PopularRecentGrid.tsx`·`ai/page.tsx`) 14건 `zinc-*`를 15.1과 동일한 토큰으로 치환. `grep -rn "zinc-" <4파일>` 0건 확인.
 
 ### DW-697: 관리자 **상세 라우트 2곳을 어떤 자동 검사도 열지 않는다** — 15.1이 그 안에 새 표시 로직을 넣었는데 지키는 검사가 없다
 origin: 2026-08-06 Story 15.1 후속 리뷰 패스에서 verification-gap·edge-case 렌즈가 각각 독립적으로 지적, 실측으로 확인.
@@ -5017,7 +5018,8 @@ evidence: ①`grep -rn "'/admin" web/e2e/*.spec.ts` → 목록 라우트와 `/ad
 why_it_matters: 검사가 없는 게 아니라 **검사가 있는데 새 자리를 안 본다**는 점이 비싸다. 다음 사람은 "말풍선 규칙은 테스트가 지킨다"고 믿고 관리자 화면을 고치는데, 그 믿음이 그 파일에서만 거짓이다.
 fix_sketch: ①`messageBubbleWrap.test.ts`가 두 말풍선 소스를 모두 훑게 하고 `toHaveLength(3)` 리터럴을 파일별 단언으로 바꾼다. ②`viewport-audit.spec.ts`에 관리자 6경로를 추가한다(D5는 "관리자 화면도 예외 없음"이라고 명시한다). ③C6을 상세 라우트까지 한 단계 넓혀 `isSeller` 좌우 배치를 발신자 라벨 기준으로 단언한다.
 trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 관리자 화면의 뷰포트 감사를 소유하므로 ②가 그 스토리의 본체와 같은 자리다. ①③도 함께 15.2의 인수조건 체크박스로 심는다.
-status: open
+status: done 2026-08-06
+resolution: closed by spec-15-2 — ① `messageBubbleWrap.test.ts`가 관리자 말풍선(`admin/chats/[roomId]/page.tsx`)까지 스캔하도록 확장(파일별 개수를 각각 단언, DW-701과 같은 자리에서 처리). ② `viewport-audit.spec.ts`에 관리자 6경로(목록 4 + 상세 2)를 추가해 가로스크롤 없음을 3뷰포트에서 확인. ③ `core-flows.spec.ts` C6에 `/admin/listings/[id]`·`/admin/chats/[roomId]`를 추가하고 `isSeller` 기준 좌/우 배치를 단언(코드리뷰 patch로 양쪽 배치가 실제로 각각 1건 이상 나오는지도 함께 확인해, 시드 데이터 편향으로 허수아비 통과가 되지 않게 함).
 
 ### DW-698: `bg-brand-petrol` 위 리터럴 `text-white`가 **한 자리 남아** 다크에서 2.98:1로 AA에 미달한다
 origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial·edge-case·verification-gap 세 렌즈가 각각 독립적으로 지적, 리포 전수 grep + WCAG 재계산으로 실측 확인.
@@ -5039,7 +5041,8 @@ evidence: `globals.css`의 토큰 hex로 계산: 라이트 대비 **1.045:1**, �
 why_it_matters: 표면 토큰 두 개만으로는 라이트 모드 호버를 표현할 수 없다는 사실이 아직 어디에도 안 적혀 있다. 다음 사람이 또 같은 조합으로 "호버를 넣었다"고 믿게 된다.
 fix_sketch: ①호버 전용 토큰(`--surface-hover`)을 `globals.css`에 추가하거나, ②표면 대신 다른 축의 신호를 겹친다(`hover:border-brand-petrol` 또는 `hover:underline`). ②가 새 토큰 없이 되므로 싸다. 어느 쪽이든 **바꾼 뒤 실제 델타를 숫자로 적는다**(눈으로 닫지 않는다).
 trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 위 3개 화면 중 관리자 목록을 어차피 다시 연다. 15.2의 인수조건 체크박스로 심는다.
-status: open
+status: done 2026-08-06
+resolution: closed by spec-15-2 — 3개 파일(`chat/page.tsx`·`chat/[roomId]/page.tsx`·`admin/chats/page.tsx`)의 죽은 호버를 `hover:border-brand-petrol`로 교체(fix_sketch 옵션② 채택, 새 토큰 추가 없음). 회귀 가드로 `hoverContrast.test.ts`를 추가하고, 한 파일을 실제로 옛 클래스로 되돌려 red 확인 → 복구해 green 확인(CLAUDE.md B4).
 
 ### DW-700: `(auth)/layout.tsx`의 주석이 **거짓이 됐다** — "로그인·회원가입 본문은 아직 원시색"이라고 적혀 있으나 15.1이 리스킨을 마쳤다
 origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial 렌즈가 지적, 해당 줄과 리스킨 결과를 대조해 확인.
@@ -5061,11 +5064,149 @@ evidence: 정규식은 `/'[^'\n]*max-w-\[80%\][^'\n]*'|"[^"\n]*max-w-\[80%\][^"\
 why_it_matters: DW-697의 위험 서술("검사가 있는데 새 자리를 안 본다")이 그 처방을 따랐을 때 **한 겹 더** 재생산된다. 게다가 실패가 red가 아니라 green으로 나타나므로 아무도 눈치채지 못한다.
 fix_sketch: `BUBBLE_CLASS`에 백틱 분기를 더한다(``/`[^`]*max-w-\[80%\][^`]*`/`` — 템플릿 리터럴은 여러 줄일 수 있으므로 `\n` 제외 규칙을 그대로 쓰면 안 된다). 그리고 CLAUDE.md B4대로 **일부러 깨서 red를 확인한 뒤** 되돌려 green을 확인한다 — 관리자 파일에서 `break-words`를 지웠을 때 실제로 실패하는지가 이 항목의 유일한 완료 기준이다.
 trigger: **[[DW-697]]의 `fix_sketch ①`을 실행하는 시점** — 즉 Story 15.2 착수 시. 같은 자리에서 함께 처리한다.
-status: open
+status: done 2026-08-06
+resolution: closed by spec-15-2 — `BUBBLE_CLASS`에 백틱 템플릿 리터럴 분기를 추가(`` `[^`]*max-w-\[80%\][^`]*` ``, `\n` 제외 규칙은 백틱 분기에 적용하지 않음 — 관리자 버블 클래스가 여러 줄에 걸쳐 있어서). CLAUDE.md B4대로 관리자 버블에서 `break-words`를 실제로 지워 red 확인 → 복구해 green 확인.
 
 ### DW-702: Follow-up review still recommended for 15-1-관리자-6화면-디자인-리스킨 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-15-1-관리자-6화면-디자인-리스킨.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-703: 관리자 채팅방 좌/우 배치 테스트가 "기타"(당사자 아닌) 발신자 분기를 한 번도 실측하지 않는다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적, 시드 데이터·`senderLabel` 분기를 대조해 확인.
+location: `web/src/app/(admin)/admin/chats/[roomId]/page.tsx` (senderLabel의 `기타 ${senderId.slice(0,8)}` 분기) · `web/e2e/core-flows.spec.ts` C6(새 좌/우 배치 루프)
+severity: low — 현재 시드 데이터로는 재현 불가하며 기능 결함이 아니다. 위험은 향후 실제 데이터에 있다.
+summary: C6의 새 루프는 시드 방에 실제로 있는 메시지만 순회한다. 그 방엔 구매자·판매자 메시지만 있고 "기타" 발신자가 없어, `senderLabel`의 세 번째 분기와 그에 대응하는 좌측 정렬이 이 테스트로 검증되지 않는다.
+fix_sketch: "기타" 발신자가 있는 시드 방(또는 케이스)을 추가하거나, 최소한 이 분기를 겨냥한 단위 테스트를 별도로 둔다.
+trigger: 관리자 채팅방 화면을 다음에 건드리는 스토리 착수 시, 또는 실제 운영 데이터에서 "기타" 발신자 메시지가 관측될 때.
+status: open
+
+### DW-704: 관리자 채팅방 좌/우 배치 테스트의 기대값이 독립적인 DB 근거가 아니라 같은 렌더의 라벨에서 파생된다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적.
+location: `web/e2e/core-flows.spec.ts` C6 · `web/src/app/(admin)/admin/chats/[roomId]/page.tsx`
+severity: low — buyer/seller 컬럼이 소스에서 뒤바뀌는 것과 같은 근본적 데이터 결함이 있어야 드러나는, 좁은 위험이다.
+summary: 테스트가 기대 클래스를 도출하는 근거가 독립적인 `room.buyer_id`/`seller_id`가 아니라 같은 렌더 안의 `senderLabel` 문자열이다. `senderLabel`과 `isSeller`가 둘 다 같은 두 컬럼에서 파생되므로, 그 컬럼 자체가 뒤바뀌는 소스단 버그가 나도 라벨과 정렬이 "같이 틀린 채" 서로 일치해 테스트를 통과한다.
+fix_sketch: 핵심 케이스 하나는 헬퍼가 DB에서 직접 가져온 buyer_id/seller_id와 비교해 독립적으로 검증한다(예: `fetchChatRoomIdForSeedUser`가 buyer_id도 함께 반환하게 하고, `SEED_USER.email`에 해당하는 메시지는 반드시 `items-start`여야 한다고 별도로 단언).
+trigger: `fetchChatRoomIdForSeedUser` 또는 관리자 채팅방 좌/우 배치 로직을 다음에 건드리는 스토리 착수 시.
+status: open
+
+### DW-705: `AdminSidebar`(및 원본 `SiteNav`)의 리사이즈 자동닫힘이 포커스를 잃을 수 있다 — 트리거가 이미 숨겨진 상태에서 포커스 복귀를 시도한다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적, `FocusTrap.tsx` cleanup과 CSS 클래스를 대조해 확인.
+location: `web/src/components/ui/FocusTrap.tsx`(cleanup의 `triggerRef.current?.focus()`) · `web/src/components/layout/AdminSidebar.tsx`(햄버거 `min-[760px]:hidden`) · `web/src/components/layout/SiteNav.tsx`(동일 패턴)
+severity: low — 접근성 회귀 가능성이나, 이 diff가 새로 만든 결함이 아니라 SiteNav에서 이식된 기존 패턴이다.
+summary: `matchMedia` 리스너가 760px 이상에서 패널을 강제로 닫으면 `FocusTrap`이 언마운트되며 트리거로 포커스를 되돌리려 시도하는데, 이 시점에 트리거 버튼은 `min-[760px]:hidden`으로 CSS `display:none` 상태라 실제로 포커스를 받을 수 없다 — 키보드 사용자의 포커스가 조용히 유실될 수 있다. `SiteNav.tsx`의 동일 메커니즘에도 같은 위험이 있다.
+fix_sketch: 리사이즈로 닫힐 때는 포커스를 안전한 곳(예: 데스크톱 사이드바의 active 링크)으로 명시적으로 옮기거나, `FocusTrap`이 대상이 숨겨져 있으면 포커스 복귀를 건너뛰게 한다.
+trigger: `FocusTrap.tsx` 또는 `SiteNav.tsx`/`AdminSidebar.tsx`의 리사이즈-자동닫힘 로직을 다음에 건드리는 스토리 착수 시, 또는 접근성 감사 시.
+status: open
+
+### DW-706: `AdminSidebar`(및 원본 `SiteNav`)의 바깥-클릭-닫힘이 클릭한 요소가 아니라 햄버거 버튼에 포커스를 남길 수 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(edge-case-hunter 렌즈)에서 지적, `pointerdown`/`focusin` 핸들러의 실행 순서를 대조해 확인.
+location: `web/src/components/layout/AdminSidebar.tsx`(outside-pointerdown-close) · `web/src/components/ui/FocusTrap.tsx`(`handleFocusIn`) · `web/src/components/layout/SiteNav.tsx`(동일 패턴)
+severity: low — 마우스 클릭 동작 자체는 정상 실행된다. 그 직후 키보드/스크린리더로 이어가는 사용자에게만 영향.
+summary: 메뉴가 열린 채 바깥의 클릭 가능한 요소를 누르면, pointerdown이 "메뉴를 닫아라"는 상태 변경을 예약하는 것과 거의 동시에 아직 화면에 남아있는 `FocusTrap`의 `focusin` 감지가 "포커스가 밖으로 나갔다"고 판단해 포커스를 도로 끌어온다. 그 다음에야 메뉴가 실제로 닫히며, 최종 포커스는 사용자가 클릭한 요소가 아니라 햄버거 버튼에 남는다. `SiteNav.tsx`에서 그대로 이식된 기존 패턴이다.
+fix_sketch: 메뉴를 닫을 때 상태 변경을 동기적으로 즉시 반영하거나(예: `flushSync`), `FocusTrap`이 "닫히는 중"에는 바깥 포커스 재포착을 건너뛰게 한다.
+trigger: `FocusTrap.tsx` 또는 `SiteNav.tsx`/`AdminSidebar.tsx`의 바깥-클릭-닫힘 로직을 다음에 건드리는 스토리 착수 시, 또는 접근성 감사 시.
+status: open
+
+### DW-707: `fetchChatRoomIdForSeedUser`가 "buyer·seller 메시지가 둘 다 있다"는 전제를 코드로 강제하지 않는다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적.
+location: `web/e2e/helpers.ts`(`fetchChatRoomIdForSeedUser`)
+severity: low — 다른 헬퍼들의 fail-loud 관례와 다르다는 지적일 뿐, 현재 시드 데이터로는 문제없이 동작한다.
+summary: "가장 오래된 방에 buyer·seller 메시지가 둘 다 있다"는 사실은 여러 테스트(C6 좌/우 배치, viewport-audit 관리자 상세 등)가 기대는 전제인데, 코드가 강제하지 않고 사람이 시드 데이터를 보고 주석으로 적어 둔 가정일 뿐이다. `order by created_at asc limit 1`이 어떤 방을 고를지는 시드 데이터가 바뀌면 달라질 수 있다.
+fix_sketch: 헬퍼가 "메시지가 2건 이상이고 buyer·seller 발신이 각 1건 이상"인 방을 직접 쿼리로 고르게 하거나, 최소한 그 조건을 헬퍼 안에서 assert하는 가드를 넣는다(다른 헬퍼들의 fail-loud 관례와 동일하게).
+trigger: `fetchChatRoomIdForSeedUser`를 다음에 건드리는 스토리 착수 시, 또는 시드 데이터를 갱신할 때.
+status: open
+
+### DW-708: `zinc-*` 금지 규칙에 **실행되는 가드가 없다** — 4파일을 손으로 grep해 닫았고, 그 판단 자체가 DW-696 안에 열린 질문으로 적혀 있었다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(verification-gap·adversarial 렌즈가 각각 독립 지적), DW-696 원문과 대조해 확인.
+location: `web/src/app/(user)/search/page.tsx` 등 리스킨 대상 전반 · 선례 기법은 `web/src/app/fonts.budget.test.ts`(허용목록 소스 스캔)
+severity: low — 지금 화면은 정상이다. 위험은 "규칙이 닫혔다고 기록됐는데 아무도 안 지키는" 상태에 있다.
+summary: DW-696의 `fix_sketch`는 처방과 함께 **"함께 판단할 것: 이 규칙을 `fonts.budget.test.ts` 형태의 vitest 소스 스캔으로 박을지 — 지금은 손으로 치는 grep이라 다음에 누가 `bg-zinc-100`을 다시 넣어도 초록이다(CLAUDE.md B9)"** 라는 열린 질문을 함께 적어 뒀는데, 그 질문은 답하지도 이월하지도 않은 채 항목이 `done`으로 닫혔다. 인수조건도 사람이 한 번 치는 grep 명령이라 회귀 시점에 아무도 없다. 실제로 이번 리뷰에서 같은 커밋이 규칙을 어긴 사례(`search/page.tsx` 페이저의 죽은 호버)가 나왔는데, 그건 `hoverContrast.test.ts`라는 **실행되는** 가드를 넓혀서 잡았다 — 대비 축은 가드가 있고 색 토큰 축은 없다는 비대칭이 남았다.
+fix_sketch: `fonts.budget.test.ts` 방식의 vitest 소스 스캔으로 `web/src` 전역 `zinc-` 0건을 고정하되, 아직 열려 있는 `AppHeader.tsx`([[DW-695]])와 `(auth)/layout.tsx`를 **이름을 적은 예외**로 둔다 — 그래야 그 두 건이 닫히기를 기다리지 않고 지금 가드를 세울 수 있고, 예외 목록이 곧 남은 부채의 목록이 된다.
+trigger: **[[DW-695]]를 처리하는 스토리 착수 시**(그때 예외 목록이 줄어드는 것이 자연스러운 자리다), 또는 그전에 새로 `zinc-*`가 발견될 때.
+status: open
+
+### DW-709: `BUBBLE_CLASS`의 백틱 분기가 **앵커가 없어** 인접한 두 템플릿 리터럴 사이를 가로질러 매치될 수 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(adversarial 렌즈)에서 지적, 정규식과 파일 주석의 근거를 대조해 확인.
+location: `web/src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts`(`BUBBLE_CLASS`의 세 번째 분기)
+severity: low — 현재 두 대상 파일의 내용에서는 재현되지 않는다. 개수 단언(`toHaveLength`)이 사고를 red로 드러내 주기도 한다.
+summary: 따옴표 분기는 `[^'\n]`으로 "한 줄 안에서 닫힌다"는 앵커를 갖고, 그 앵커가 없으면 앞선 따옴표에서 시작한 매치가 여러 줄을 삼켜 버블을 놓친다는 사실이 이 파일 주석에 실측으로 적혀 있다. 백틱 분기는 템플릿 리터럴이 여러 줄이라 그 앵커를 쓸 수 없어 `[^`]*`만 남았는데, 대체 앵커가 없다 — 매치가 **닫는 백틱**에서 시작해 다음 리터럴의 **여는 백틱**에서 끝날 수 있고, 그 사이 코드에 `max-w-[80%]`라는 글자가 있으면(주변 주석이 이미 이 클래스를 논한다) 유령 버블이 하나 잡힌다.
+fix_sketch: 백틱 분기를 `className={` 뒤에서만 시작하도록 앵커한다(예: `/className=\{`[^`]*max-w-\[80%\][^`]*`/`) — 캡처 문자열에 접두사가 붙지만 `break-words` 확인에는 영향이 없다. 바꾼 뒤엔 유령 매치를 실제로 만들어 red를 확인한다.
+trigger: `messageBubbleWrap.test.ts`를 다음에 건드리는 스토리 착수 시, 또는 채팅 버블이 세 번째 파일로 늘어날 때.
+status: open
+
+### DW-710: `AdminSidebar`의 **active 항목만 호버 반응이 없다** — 다섯 항목 중 사용자가 가장 많이 가리키는 하나가 죽은 컨트롤처럼 보인다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(edge-case-hunter 렌즈)에서 지적, 두 클래스 상수를 대조해 확인.
+location: `web/src/components/layout/AdminSidebar.tsx`(`ACTIVE_LINK_CLASS` vs `LINK_CLASS`)
+severity: low — 순전히 시각 피드백 문제이고 기능·접근성 이름에는 영향이 없다.
+summary: `LINK_CLASS`에는 `hover:bg-surface-base hover:text-ink-primary`가 있는데 `ACTIVE_LINK_CLASS`에는 hover/focus 변화가 하나도 없다. 현재 보고 있는 화면의 항목에 마우스를 올리면 나머지 네 개와 달리 아무 반응이 없어, 눌리지 않는 컨트롤로 읽힌다.
+fix_sketch: `ACTIVE_LINK_CLASS`에 같은 축의 호버(예: `hover:bg-brand-petrol/20`)를 더한다 — 새 토큰 없이 기존 틴트의 농도만 바꾸면 된다. 원본 `SiteNav.tsx`에는 active 개념이 없어 이식할 선례가 없으므로 이 컴포넌트에서 정한다.
+trigger: `AdminSidebar.tsx`의 스타일을 다음에 건드리는 스토리 착수 시, 또는 관리자 화면 접근성/시각 감사 시.
+status: open
+
+### DW-711: 사이드바 폭 위험 구간(640~1099px)이 **이산점 3개로만 표본화**된다 — 사이드바가 살아 있는 가장 좁은 760~800 경계가 미관측이다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(intent-alignment 렌즈)에서 지적, `playwright.config.ts`의 projects와 스펙 Block If를 대조해 확인.
+location: `web/playwright.config.ts`(desktop 1280 · tablet 800 · mobile 390) · `web/e2e/viewport-audit.spec.ts`(관리자 스위트)
+severity: low — 현재 관리자 화면은 800px에서 실측으로 통과하고, 760~800 구간은 그보다 40px 좁을 뿐이라 여유가 급격히 사라지는 구조가 아니다.
+summary: 스펙의 Block If는 "640~1099px **구간**에서 사이드바 240px 때문에 콘텐츠가 안 들어가는가"를 조건으로 걸었는데, 실제 관측은 Playwright 프로젝트가 주는 세 점(1280/800/390)뿐이다. 사이드바는 760px부터 살아나므로 압력이 가장 큰 곳은 760~800 바로 위 구간인데 그 자리를 아무도 안 본다. 구간 조건을 세 점으로 근사한 셈이다.
+fix_sketch: 관리자 스위트 안에서 `page.setViewportSize({width: 768, ...})`로 경계 한 점을 추가로 재거나(프로젝트를 늘리지 않고 그 테스트 안에서만), 관리자용 tablet 프로젝트 하나를 768px로 더한다. 어느 쪽이든 그 폭에서 `assertSingleLine`을 함께 건다 — 가로스크롤만으로는 이 구간의 실패 모드(줄바꿈)가 안 보인다.
+trigger: 관리자 화면에 요소가 더 붙는 스토리(예: FR61 필터 교체 = Story 15.3) 착수 시 — 행이 무거워지는 순간 이 구간이 먼저 깨진다.
+status: open
+
+### DW-712: `hoverContrast.test.ts`에 **백틱 분기가 없다** — 같은 커밋의 `messageBubbleWrap`이 배운 교훈(DW-701)이 나란히 만든 가드에는 안 왔다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(edge-case 렌즈)에서 지적, 정규식과 `messageBubbleWrap.test.ts`의 대응 분기를 나란히 읽어 확인.
+location: `web/src/app/(user)/chat/__tests__/hoverContrast.test.ts`의 `HOVER_ROW_CLASS`(큰따옴표·작은따옴표 분기만 있음)
+severity: low — 지금 스캔 대상 4파일은 전부 따옴표 리터럴이라 실제 누락은 0건이다(실측).
+summary: 이 가드는 `"..."`과 `'...'`만 본다. 대상 파일 중 하나가 클래스를 템플릿 리터럴(`` `...${...}` ``)로 바꾸면 스캔이 0건이 되고, 그때 빨개지는 것은 "호버가 죽었다"가 아니라 개수 단언이라 다음 사람이 규칙 대신 가드를 느슨하게 만들도록 유도한다 — DW-701이 `BUBBLE_CLASS`에서 정확히 이 이유로 백틱 분기를 더했는데, 같은 커밋에서 만든 이 형제 가드에는 그 분기가 안 왔다. 실제로 `admin/chats/[roomId]/page.tsx`(한 디렉터리 옆)는 이미 여러 줄 템플릿 리터럴 className을 쓴다.
+fix_sketch: `` |`(?=[^`]*\bborder-border-hairline\b)(?=[^`]*\bhover:)[^`]*` `` 분기를 더한다. 다만 DW-709가 지적한 앵커 문제를 같이 안고 가지 않도록, 백틱 분기는 `[^`]*`로 리터럴 경계를 못 넘게 유지하고 여러 줄을 허용할지(`\n` 제외 여부)를 그 시점의 실제 파일 형태를 보고 정한다 — 두 항목을 한 번에 손보는 게 싸다.
+trigger: DW-709(`BUBBLE_CLASS` 백틱 앵커)를 손보는 시점 — 같은 기법·같은 함정이라 한 자리에서 같이 정한다. 또는 위 4파일 중 하나가 className을 템플릿 리터럴로 바꿀 때.
+status: open
+
+### DW-713: `hoverContrast.test.ts`의 대상이 여전히 **손으로 적은 4파일 목록**이다 — "이 클래스 조합을 쓰는 곳 전부"라고 주석에 써 놓고 구현은 allowlist다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(verification-gap 렌즈)에서 지적. 그 렌즈가 이 파일의 정규식을 `web/src/**/*.tsx` 전체에 직접 돌려 대상 밖 2곳을 실측으로 찾아냈다.
+location: `web/src/app/(user)/chat/__tests__/hoverContrast.test.ts`의 `describe.each([...])` 4개 URL
+severity: low — 가드 밖 2곳(`components/landing/CategoryChips.tsx`, `components/listings/ListingCard.tsx`)은 지금 둘 다 살아 있는 호버 신호를 쓴다(실측). 현재 위반은 0건이다.
+summary: 이 가드는 2차 리뷰에서 3파일→4파일로 넓혔고 주석에 "대상 목록을 화면이 아니라 '이 클래스 조합을 쓰는 곳'으로 넓힌다"고 적었는데, 실제 구현은 URL 4개를 손으로 나열한 상태 그대로다. 다섯 번째 화면이 같은 조합을 쓰면 가드가 못 본다 — 그리고 그 일은 이미 한 번 일어났다(DW-696 토큰 치환이 `search/page.tsx`에 죽은 호버를 새로 심었고 3파일 가드가 못 봤다). 같은 실패 모드가 파일 수만 하나 늘어난 채 남아 있다.
+fix_sketch: `describe.each`를 손목록이 아니라 `web/src/**/*.tsx` 순회 + 정규식 매치로 만든다(같은 레포의 `src/lib/__tests__/roleLabelFallback.test.ts`가 이미 전역 소스 스캔을 하는 선례다). 정당하게 다른 곳은 이름 붙인 예외 목록에 두면, 그 목록이 곧 남은 부채 목록이 된다 — DW-708(`zinc-*` 실행 가드)과 정확히 같은 모양이라 한 번에 같은 기법으로 처리하는 게 싸다.
+trigger: DW-708(`zinc-*` 실행 가드 신설)을 착수하는 시점 — 같은 "손목록 → 전역 스캔 + 예외목록" 전환이라 한 자리에서 함께 만든다.
+status: open
+
+### DW-714: 모바일 관리자 패널이 **열린 채로 페이지가 스크롤된다** — 포커스는 갇혀 있는데 갇힌 패널이 화면 밖으로 나갈 수 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(edge-case 렌즈)에서 지적, `AdminSidebar.tsx`·`FocusTrap.tsx`·`AppHeader.tsx`의 position 조합을 읽어 확인.
+location: `web/src/components/layout/AdminSidebar.tsx`(모바일 패널 `absolute inset-x-0 top-full`) · `web/src/components/ui/FocusTrap.tsx`
+severity: low — 관리자는 모바일 사용 빈도가 낮고, 패널을 연 채 스크롤하는 것은 의도적 조작에 가깝다. 실사용 재현 보고는 없다.
+summary: 패널은 일반 문서 흐름 안의 컨테이너에 `absolute`로 붙어 있고 상단바(`AppHeader`)도 sticky/fixed가 아니다 — 즉 패널이 열려 있어도 페이지 스크롤을 막는 것이 아무것도 없다. 관리자 목록 화면은 길게 스크롤되는데, 스크롤로 패널이 화면 밖으로 나가면 `FocusTrap`의 `focusin` 재포착은 계속 포커스를 그 안으로 끌어당기고 `role="dialog" aria-modal="true"`는 보조기술에 "나머지 페이지는 없는 것"이라고 말한다 — 보이지 않는 곳에 갇힌다. 원본 `SiteNav.tsx`에서 그대로 이식된 구조라 DW-705·706과 같은 계열이지만 축이 다르다(포커스 복귀가 아니라 스크롤).
+fix_sketch: 패널이 열려 있는 동안 `document.body.style.overflow = 'hidden'`으로 스크롤을 잠그고 닫힐 때 되돌리거나, 패널을 `fixed`로 띄운다. 어느 쪽이든 `SiteNav.tsx`와 `AdminSidebar.tsx`가 같은 결정을 공유해야 하므로(둘은 같은 패턴) 한쪽만 고치지 않는다 — 이 시점이 DW-705·706과 함께 "이식된 FocusTrap 패널 패턴"을 한 번에 정리할 자리다.
+trigger: DW-705 또는 DW-706(같은 패널 패턴의 포커스 결함)을 착수하는 시점 — 세 건 다 같은 두 컴포넌트의 같은 패널을 건드린다.
+status: open
+
+### DW-715: I/O 매트릭스가 지목한 라우트(`/admin/listings/[id]` @390)의 **"두 줄 안 됨"을 아무도 재지 않는다** — 단일행 단언은 다른 화면(회원관리)에만 걸려 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(intent-alignment 렌즈)에서 지적. 스펙의 I/O 매트릭스 4행과 `viewport-audit.spec.ts` 관리자 스위트의 단언 배치를 대조해 확인.
+location: `web/e2e/viewport-audit.spec.ts`의 관리자 스위트(상세 2경로에는 `assertNoHorizontalOverflow`만 있음)
+severity: low — 관리자 상세 2화면은 현재 단일 열 정보 나열이라 접힐 가로 배치 자체가 거의 없다. 3차 리뷰에서 3뷰포트 실행 결과도 green이다.
+summary: 스펙의 I/O 매트릭스 4행은 `/admin/listings/[id]` @390에서 "가로스크롤 없음 **+ 라벨·뱃지 두 줄 안 됨"**을 기대한다고 적었는데, 실제로 추가된 단일행 단언(`assertSingleLine`)은 `/admin/members` 행에만 걸렸다. 즉 매트릭스가 지목한 라우트의 후반부 기대는 관측되지 않는다. 3차 리뷰가 회원관리 쪽 단언의 대상(라벨 span → 행 자체)과 표본(본인 행 → 액션 있는 행)을 바로잡았지만, 그 수정은 이 라우트까지 넓히지는 않았다 — 어떤 요소를 재야 의미가 있는지는 그 화면의 실제 구조를 보고 정해야 하기 때문이다.
+fix_sketch: `/admin/listings/[id]`에서 실제로 가로 배치인 줄(예: 매물 메타 줄·상태 배지 묶음)에 `data-testid`를 붙이고 그 요소에 `assertSingleLine`을 건다 — 소비자 상세(`/listings/[id]`)가 `[data-testid="inquiry-cta"]`로 이미 쓰는 것과 같은 방식이다. 붙일 만한 가로 배치가 정말 없으면 그 사실을 주석으로 남겨 "안 재는 이유"를 기록한다(측정 없이 넘기지 않는다).
+trigger: 관리자 상세 화면에 가로 배치 요소가 추가되는 스토리 착수 시(예: FR61 필터 교체 = Story 15.3, 또는 관리자 상세에 배지·액션이 붙는 변경) — 지금은 잴 대상이 사실상 없다는 것이 미측정의 이유이므로, 대상이 생기는 순간이 볼 시점이다.
+status: open
+
+### DW-716: Follow-up review still recommended for 15-2-관리자-반응형 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-15-2-관리자-반응형.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

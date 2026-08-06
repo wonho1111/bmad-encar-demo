@@ -159,9 +159,11 @@ export default async function ChatRoomPage({
             {/* 매물이 살아있는(on_sale) 방이면 그 매물 상세로 가는 링크. 관리자 채팅 목록의 '매물 상세'와 동일한 동선.
                 판매완료(l=null)면 FR11(구매자에게 sold 비노출)에 따라 링크를 숨긴다(상세도 어차피 못 봄). */}
             {l && (
+              // hover:border-brand-petrol(DW-699, spec-15-2) — hover:bg-surface-raised는 라이트 모드에서
+              // 대비 1.045:1(#FAFAF8→#FFFFFF)로 육안상 거의 변화가 없었다(실측, chat/page.tsx와 동일 근거).
               <Link
                 href={`/listings/${room.listing_id}`}
-                className="shrink-0 rounded-chip border border-border-hairline px-2 py-1 text-xs font-medium hover:bg-surface-raised"
+                className="shrink-0 rounded-chip border border-border-hairline px-2 py-1 text-xs font-medium hover:border-brand-petrol"
               >
                 매물 상세
               </Link>
