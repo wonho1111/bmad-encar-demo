@@ -4951,4 +4951,26 @@ open_questions_for_human:
   · 시드 스크립트(`supabase/seed-local/01_accounts.sql`·`seed.sql`)가 계정을 buyer/seller로 되돌려 놓으므로, 로컬을 다시 시드하면 원상복귀한다 — 시드도 함께 바꿀지.
   · 되돌릴 수 없다(B3). 누가 원래 판매자였는지는 `listings.seller_id`로 여전히 알 수 있으므로 실질 정보 손실은 없다는 점을 확인했다.
 trigger: **Epic 15의 `15-3-회원관리-역할통합-반영` 스토리** — 그 스토리가 이미 "관리자 회원관리 화면의 구매자/판매자 필터 정리(FR61)"를 소유한다. 화면에서 그 구분을 걷어내는 자리와 데이터에서 걷어내는 자리는 같이 판단해야 한다(따로 하면 화면은 정리됐는데 데이터만 남거나 그 반대가 된다). 마이그레이션 1개(일괄 UPDATE)를 그 스토리 범위에 추가할지 사용자가 결정한다.
+status: ✅ 해소 (2026-08-06, 사용자 지시 "바로시작"). **A안(앱 게이트를 먼저 풀고 양쪽 데이터를 정리)** 으로 실행했다.
+  실행 순서가 핵심이다 — 14.3 → 14.2에서 배운 것과 같다: **문을 먼저 열고 역할을 나중에 지운다.** 반대로 하면 앱에서 아무도 못 판다.
+  ① 앱 게이트 3곳(`sell_screen`·`my_listings_screen`·`edit_listing_screen`)이 각자 들고 있던 `role != UserRole.seller` 인라인 가드를 공용 `requireUser(ref, title)`로 교체했다(`lib/features/auth/require_user.dart` 신설 — 웹 `guard.ts`의 `requireUser()`와 같은 자리·같은 모양). 셋이 각자 들고 있으면 하나를 빠뜨려도 나머지가 초록이라 아무도 모른다(웹에서 실제로 난 사고 #180).
+  ② 앱 가입 화면의 역할 선택 UI + `signUp(role:)` + `data:{'role':...}` 전송을 제거했다. **이게 빠지면 앞의 정리가 전부 헛일이다** — 앱 가입이 계속 role을 실어 보내면 새 계정마다 buyer/seller가 다시 심긴다.
+  ③ `home_screen`의 판매 진입(`if (isSeller)`)을 로그인 사용자 전원에게(`if (canSell)`) 열었다 — 문을 열어도 문패가 안 보이면 도달할 수 없다. 프로필 역할 배지는 '회원' 고정(관리자는 모바일에서 애초에 차단, AR9).
+  ④ `chat_list_screen`의 역할별 빈 상태 문구를 역할 중립 문구로 바꿨다 — 한 계정이 양쪽을 다 하므로 어느 쪽으로 갈라도 절반은 틀린 안내가 된다.
+  ⑤ 마이그레이션 `0029_unify_existing_account_roles.sql` — admin 제외 전 계정의 `profiles.role`을 'user'로 통일하고 `auth.users.raw_user_meta_data`에서 `role` 키를 제거한다. 사후조건 블록이 두 축 모두 정리됐는지 스스로 확인한다.
+  ⑥ 시드 2종(`seed-local/01_accounts.sql`·`seed.sql`)에서 buyer/seller 지정·승격을 걷어냈다 — 안 바꾸면 재시드 때마다 부활해 마이그레이션 결과와 갈라진다.
+  검증(전부 실측): `flutter analyze` 0 issues · `flutter test` 87 passed(신규 위젯 테스트 8건 포함) · `check_migrations` 통과 · api 단위 490 · api 실DB 통합 105 passed(0029 경계 검사 2건 신규) · web lint 0 · web vitest 313 · **E2E 62 passed 0 failed**.
+  red/green 실측 4건: ⓐ 화면 3곳이 공용 게이트를 쓰는지 보는 검사를 **고치기 전에 먼저 만들어 red 확인**(3건 실패) 후 교체해 green. ⓑ `0029`에서 admin 제외 조건을 빼자 `test_0029_preserves_admin`이 red, 원복 green. ⓒ·ⓓ는 DW-689·690 항목 참조.
+  ⚠️ 남은 것: 앱의 **실기기 눈 확인**은 못 했다(이 환경에 안드로이드 기기·에뮬레이터 없음 — `flutter devices`가 리눅스 데스크톱만 잡는다). 위젯 테스트로 대신 고정했고 실물 확인 자리는 Epic 16-6이다. 또한 "앱 가입이 role을 안 보낸다"는 전역 supabase 클라이언트를 가로채야 해서 단위 테스트 층에서 못 본다 — 같은 자리(16-6)에서 본다.
+
+
+### DW-693: E2E 전수 실행이 **머신 포화 시 비결정적으로 실패**한다 — 기본 워커 수가 이 환경에 과하다
+origin: 2026-08-06 역할 통합 마감 검증 중 실측. 제품 결함이 아니라 실행 환경 문제다.
+location: `web/playwright.config.ts`(workers 미지정 = Playwright 기본값) · 실행 명령 `npm run test:e2e`
+severity: low
+summary: 같은 커밋·같은 명령으로 세 번 돌렸는데 **실패 건수와 실패 대상이 매번 달랐다**(6건 → 4건 → 3건). 전부 30~50초 타임아웃이고, `--workers=2`로 줄이면 **62 passed 0 failed**로 초록이다.
+evidence: 추측을 배제하려고 원인 후보를 하나씩 잘랐다. ①`git diff 1e9cb33 -- web/src/`가 **0줄** — 제품 코드는 직전 초록 실행과 바이트 동일하다. ②실패한 화면(채팅·`/ai`)이 `profiles.role`을 쓰는 곳은 상단바 라벨 하나뿐이고 폴백이 있다(기능 의존 없음). ③실패 대상이 실행마다 바뀐다(결정적 회귀라면 같은 것이 실패해야 한다). ④`--workers=1`·`--workers=2`에서 전부 통과. ⑤`uptime` **load average 15.8/21.3/16.2 (16코어)**, `free -g` **available 2GB / total 7GB** — 포화 상태. 상주 프로세스가 VS Code 서버·22시간 된 `next dev`(RSS 1.18GB)·`bmad-loop tui`로 이미 무겁다. ⑥첫 실행에서는 PostgREST가 `PGRST002`로 **7초간 503**을 냈다(마이그레이션 DDL이 유발한 스키마 캐시 재적재) — 그 창에 걸린 케이스들이 함께 죽었다.
+why_it_matters: 이 상태로는 **E2E 초록/빨강이 신호가 아니라 잡음**이 된다. 회귀를 찾으려 볼 때마다 "이게 진짜인가 포화인가"를 매번 다시 판정해야 하고, 그 판정 비용이 검사의 가치를 깎는다. 실제로 이번에 그 판정에만 실행 4회가 들었다.
+fix_sketch: `playwright.config.ts`에 `workers`를 명시한다(이 머신 실측 기준 2가 안전). 다만 CI 러너와 로컬의 여력이 다르므로 `process.env.CI ? N : 2` 형태가 맞는지, 아니면 환경변수로 받을지는 CI 배선(대장 #168)과 함께 판단한다. **워커를 줄이면 실행 시간이 늘어난다**(2.6분 vs 4.3분) — 그 대가를 받아들일지가 결정 포인트다.
+trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점) — DW-689·690과 같은 자리. 그때도 같은 증상이면 그 자리에서 워커 수를 고정한다.
 status: open

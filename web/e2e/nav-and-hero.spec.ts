@@ -135,7 +135,10 @@ test.describe('스토리 11-2 상단 내비', () => {
     await page.goto('/account');
 
     await expect(page.getByText(SEED_USER.email, { exact: true })).toBeVisible();
-    await expect(page.getByText('구매자', { exact: true })).toBeVisible();
+    // ✎ 2026-08-06 역할 통합(0029): 역할 라벨이 '구매자' → '회원'이 됐다. 구매/판매 구분이
+    //   사라졌으므로 이 계정에 남는 표시는 '회원' 하나다. 바로 아래 'buyer'는 역할이 아니라
+    //   **표시 이름**(profiles.name)이라 그대로다 — 둘을 헷갈리면 안 된다.
+    await expect(page.getByText('회원', { exact: true })).toBeVisible();
     await expect(page.getByText('buyer', { exact: true })).toBeVisible();
 
     await expect(page.locator('input')).toHaveCount(0);
@@ -166,10 +169,10 @@ test.describe('스토리 11-2 상단 내비', () => {
     // 매물 등록 화면이 실제로 렌더될 때까지 기다린 뒤 경로를 읽는다(리다이렉트가 있었다면 못 뜬다).
     await expect(
       page.getByRole('heading', { name: '매물 등록' }),
-      'role=buyer도 /sell의 매물 등록 화면에 도달해야 함(FR52)',
+      '판매자 역할이 아닌 계정도 /sell의 매물 등록 화면에 도달해야 함(FR52)',
     ).toBeVisible();
 
-    expect(new URL(page.url()).pathname, 'buyer의 /sell 접근은 더 이상 홈으로 튕기지 않음').toBe(
+    expect(new URL(page.url()).pathname, '일반 계정의 /sell 접근은 더 이상 홈으로 튕기지 않음').toBe(
       '/sell',
     );
   });

@@ -21,7 +21,6 @@ enum UserRole {
   final String label;
 
   /// 가입 화면에서 선택 가능한 역할(admin 제외).
-  static const List<UserRole> signupRoles = [UserRole.buyer, UserRole.seller];
 
   /// 문자열(메타데이터·profiles.role)을 enum 으로. 알 수 없으면 null.
   static UserRole? fromValue(String? raw) {

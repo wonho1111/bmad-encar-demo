@@ -24,16 +24,21 @@ end $$;
 do $$
 declare
   -- (id, email, role, name) — 운영 profiles 조회 결과와 일치(status는 전부 active, 트리거 기본값)
+  -- ✎ 2026-08-06 역할 통합(0029): admin 외 전 계정의 role을 'user'로 통일했다.
+  --   ⚠️ 여기를 안 바꾸면 로컬을 다시 시드할 때마다 buyer/seller가 **부활**해서,
+  --   마이그레이션으로 정리한 상태와 로컬이 갈라진다. 계정 이름(buyer@·seller@)은 그대로
+  --   두는데, 그건 사람이 구분하기 위한 라벨일 뿐 이제 권한과 무관하다.
+  --   E2E가 이 이름들에 의존한다(SEED_USER 등) — 이름을 바꾸면 그쪽이 깨진다.
   v_accounts jsonb := '[
     {"id":"e3601b76-0370-47a7-9ec3-389d5578a50a","email":"admin@test.com","role":"admin","name":"admin"},
-    {"id":"371eb469-dac2-412a-ac1e-71c35d69697b","email":"buyer@test.com","role":"buyer","name":"buyer"},
-    {"id":"ea8eddf6-8bc2-44cf-a896-d0c87a9bf1a2","email":"buyer2@test.com","role":"buyer","name":"buyer2"},
-    {"id":"2ea0a1fb-5cd5-4139-906f-4fd3622c5047","email":"buyer3@test.com","role":"buyer","name":"buyer3"},
-    {"id":"e2c9bae0-7f06-42f7-9fd8-3d449d05206d","email":"dev94-probe@test.com","role":"seller","name":"dev94-probe"},
-    {"id":"12dfba00-2544-45f4-8ffe-bdeb32229b97","email":"seller-seed@test.com","role":"seller","name":"seller-seed"},
-    {"id":"0f937a74-48ee-4e3a-9e78-4a3d85645727","email":"seller-seed2@test.com","role":"seller","name":"seller-seed2"},
-    {"id":"c19a85e7-6e23-432f-aa1c-efc57f1782af","email":"seller-seed3@test.com","role":"seller","name":"seller-seed3"},
-    {"id":"748caac4-5e45-403c-b8ee-1f5ccc16b813","email":"seller@test.com","role":"seller","name":"seller"}
+    {"id":"371eb469-dac2-412a-ac1e-71c35d69697b","email":"buyer@test.com","role":"user","name":"buyer"},
+    {"id":"ea8eddf6-8bc2-44cf-a896-d0c87a9bf1a2","email":"buyer2@test.com","role":"user","name":"buyer2"},
+    {"id":"2ea0a1fb-5cd5-4139-906f-4fd3622c5047","email":"buyer3@test.com","role":"user","name":"buyer3"},
+    {"id":"e2c9bae0-7f06-42f7-9fd8-3d449d05206d","email":"dev94-probe@test.com","role":"user","name":"dev94-probe"},
+    {"id":"12dfba00-2544-45f4-8ffe-bdeb32229b97","email":"seller-seed@test.com","role":"user","name":"seller-seed"},
+    {"id":"0f937a74-48ee-4e3a-9e78-4a3d85645727","email":"seller-seed2@test.com","role":"user","name":"seller-seed2"},
+    {"id":"c19a85e7-6e23-432f-aa1c-efc57f1782af","email":"seller-seed3@test.com","role":"user","name":"seller-seed3"},
+    {"id":"748caac4-5e45-403c-b8ee-1f5ccc16b813","email":"seller@test.com","role":"user","name":"seller"}
   ]'::jsonb;
   v_password text := current_setting('app.seed_password', true);
   v_acc      jsonb;

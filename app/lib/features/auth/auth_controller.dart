@@ -38,20 +38,22 @@ class AuthController extends Notifier<AsyncValue<void>> {
   @override
   AsyncValue<void> build() => const AsyncValue.data(null);
 
-  /// 회원가입(FR1). 역할을 메타데이터에 실어 web 과 동일한 DB 트리거(handle_new_user)가
-  /// profiles 를 role·status='active' 로 채우게 한다(앱이 직접 profiles INSERT 하지 않음).
+  /// 회원가입(FR1). web 과 동일한 DB 트리거(handle_new_user)가 profiles 를
+  /// status='active' + 트리거 기본 role 로 채운다(앱이 직접 profiles INSERT 하지 않음).
   /// 반환: 안내가 필요한 경우의 메시지(이메일 확인 활성 시) 또는 null(즉시 로그인됨).
+  ///
+  /// ⚠️ **role 을 metadata 에 싣지 않는다**(역할 통합, FR52 — 웹 14.2와 같은 계약).
+  /// 실으면 트리거가 그 값을 그대로 존중해 buyer/seller 가 다시 생긴다.
   Future<String?> signUp({
     required String email,
     required String password,
-    required UserRole role,
   }) async {
     state = const AsyncValue.loading();
     try {
       final res = await supabase.auth.signUp(
         email: email,
         password: password,
-        data: {'role': role.value}, // → auth.users.raw_user_meta_data.role (트리거가 읽음)
+        // data 에 role 을 넣지 않는다 — 트리거의 기본값에 맡긴다(FR52).
       );
 
       // 이메일 확인(Confirm email)이 켜져 있으면 중복 이메일이 에러 없이

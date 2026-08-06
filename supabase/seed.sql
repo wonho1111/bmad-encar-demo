@@ -129,7 +129,10 @@ end $$;
 -- 두 단계로 구성:
 --   1) 시드 전용 판매자 계정(seller-seed@test.com) — 매물 seller_id가 가리킬 유효한 판매자.
 --      가입 흐름 밖에서 만들므로 admin 시드(위)와 같은 auth.users+auth.identities 패턴을 쓴다.
---      단 admin과 달리 role은 'seller'로 승격(트리거가 만든 행을 UPDATE).
+--      ✎ 2026-08-06 역할 통합(0029): 이 계정을 더 이상 'seller'로 승격하지 않는다.
+--      매물의 주인은 `listings.seller_id`가 정하지 `profiles.role`이 정하지 않는다 —
+--      그래서 승격은 원래도 불필요했고, 이제는 통합 상태를 깨뜨리는 부작용만 남는다.
+--      트리거 기본값('user', 0028)을 그대로 둔다.
 --   2) 그 판매자 명의로 매물 39건 INSERT.
 --
 -- 멱등성(중요): 재실행 시 매물이 누적되지 않도록, "시드 전용 판매자 소유 매물만 삭제 후 재삽입"한다.
@@ -181,12 +184,11 @@ begin
 
   -- 판매자 id 확정(신규/기존 공통). 트리거가 만든 profiles를 seller로 승격(멱등).
   select id into v_seller_id from auth.users where email = v_email;
-  update public.profiles set role = 'seller'
-   where id = v_seller_id and role <> 'seller';
+  -- (역할 승격 없음 — 0029 역할 통합. 트리거 기본값 'user'를 그대로 둔다.)
 
   -- (안전장치) seller 프로필이 실제로 존재하는지 확인 — 없으면 조용한 실패 대신 즉시 멈춤.
   if not exists (
-    select 1 from public.profiles where id = v_seller_id and role = 'seller'
+    select 1 from public.profiles where id = v_seller_id
   ) then
     raise exception '[seed] 시드 판매자 준비 실패: % 의 seller 프로필이 없습니다 '
       '(트리거/마이그레이션 0001 확인).', v_email;
@@ -437,8 +439,7 @@ begin
       select id::text, id, jsonb_build_object('sub', id::text, 'email', v_email), 'email', now(), now(), now()
         from auth.users where email = v_email;
     end if;
-    update public.profiles set role='seller'
-     where id=(select id from auth.users where email=v_email) and role<>'seller';
+    -- (역할 승격 없음 — 0029 역할 통합.)
   end loop;
 
   select id into v_s2 from auth.users where email='seller-seed2@test.com';

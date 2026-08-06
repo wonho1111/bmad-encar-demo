@@ -9,8 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../auth/auth_controller.dart';
-import '../auth/user_role.dart';
+import '../auth/require_user.dart';
 import 'listing.dart' show ListingDetail;
 import 'listing_filters.dart' show ListingOptions;
 import 'listing_form.dart';
@@ -143,27 +142,15 @@ class _SellScreenState extends ConsumerState<SellScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final role = ref.watch(currentRoleProvider);
-
     final isEdit = widget.isEdit;
     final title = isEdit ? '매물 수정' : '매물 등록';
 
-    // ── 역할 가드(AC5): 판매자만 등록/수정 화면 사용 ─────────────────
-    if (role != UserRole.seller) {
-      return Scaffold(
-        appBar: AppBar(title: Text(title)),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              '판매자만 이용할 수 있습니다.',
-              key: Key('sell_role_blocked'),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    // ── 게이트: 로그인만 본다(역할 통합, FR52·FR53) ──────────────────
+    // 옛 가드는 `role != UserRole.seller`로 막았다 — 웹 14.3이 requireRole(SELLER) →
+    // requireUser()로 완화한 것을 앱에 미러링한다. 등록자 본인만 수정/삭제하는 것은
+    // 계정 역할이 아니라 소유권(RLS)이 강제한다.
+    final blocked = requireUser(ref, title);
+    if (blocked != null) return blocked;
 
     final sell = ref.watch(sellControllerProvider);
 

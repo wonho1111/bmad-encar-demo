@@ -7,8 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/format/number_format.dart';
 import '../../core/supabase/supabase_client.dart';
 import '../../core/theme/app_theme.dart';
-import '../auth/auth_controller.dart';
-import '../auth/user_role.dart';
 import 'chat_models.dart';
 import 'chat_providers.dart';
 import 'chat_room_screen.dart';
@@ -19,7 +17,6 @@ class ChatListScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final roomsAsync = ref.watch(chatRoomsProvider);
-    final role = ref.watch(currentRoleProvider);
     final myId = supabase.auth.currentUser?.id;
 
     return Scaffold(
@@ -35,10 +32,11 @@ class ChatListScreen extends ConsumerWidget {
         ),
         data: (rooms) {
           if (rooms.isEmpty) {
-            // 역할별 빈 상태(구매자: 먼저 문의 / 판매자: 받는 입장).
-            final msg = role == UserRole.seller
-                ? '아직 들어온 문의가 없습니다. 구매자가 매물에 문의하면 여기에 채팅방이 생깁니다.'
-                : '아직 문의한 채팅방이 없습니다. 매물 상세에서 ‘문의하기’를 눌러보세요.';
+            // 역할 통합(FR52·FR53) 이후 빈 상태 문구는 **역할 중립**이다.
+            // 옛 코드는 판매자/구매자로 문구를 갈랐는데, 이제 한 계정이 양쪽을 다 하므로
+            // 어느 쪽으로 갈라도 절반은 틀린 안내가 된다. 두 경로를 함께 적는다.
+            const msg = '아직 채팅방이 없습니다. 매물 상세에서 ‘문의하기’를 누르거나, '
+                '내 매물에 문의가 들어오면 여기에 생깁니다.';
             return _CenterMessage(
               key: const Key('chat_list_empty'),
               icon: Icons.chat_bubble_outline,
