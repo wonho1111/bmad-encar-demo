@@ -5324,3 +5324,14 @@ source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-013500-4548; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-727: E2E `R4`가 **깨끗한 시드에서는 실패하고, 앞선 실행이 DB를 더럽혀야 통과**한다 — 초록이 잘못된 이유로 나온다
+origin: 2026-08-07 Epic 15 마감 E2E에서 실패 → 원인 추적. 15-3 세션이 `supabase db reset`으로 로컬 DB를 새로 시드하면서 드러났다(그 전까지는 누적 상태에 가려 계속 초록이었다).
+location: `web/e2e/realtime-chat.spec.ts:322`(R4) 및 같은 파일의 cleanup 단언 · 시드 `supabase/seed.sql`·`seed-local/*`
+severity: medium
+summary: R4 계열의 정리 단언은 *"구매자·판매자 **모두 이미** 이 방의 `chat_room_reads` 행을 갖고 있어 방문해도 새 행이 안 생긴다"*를 전제한다. 그런데 **시드는 `chat_room_reads`를 하나도 만들지 않는다** — 그 행들은 **E2E 실행 자신이** 남긴 것이다. 그래서 갓 시드한 DB에서는 첫 방문이 행을 만들어 `reads` 1→2가 되고 단언이 깨진다.
+evidence: 실측 3단계로 확정했다. ①`grep -rn "chat_room_reads" supabase/seed*.sql supabase/seed-local/*.sql` → **0건**(시드가 안 만든다). ②실패 실행의 로그: `baseline={"reads":1} after={"reads":2}`, 그리고 DB 조회 결과 5개 방 중 read 행이 있는 방은 **1개뿐**(그 방만 reads=2). ③**예측 후 재실행으로 검증**: "앞 실행이 행을 남겼으니 이번엔 통과할 것"이라 예측하고 같은 스펙을 다시 돌리자 `baseline={"reads":2} after={"reads":2}`로 **4/4 통과**했다.
+why_it_matters: 이 검사는 **실행 순서에 의존**하며, 실패한 실행이 다음 실행을 통과시킨다. 즉 "초록"이 제품이 옳다는 뜻이 아니라 "앞에서 한 번 돌았다"는 뜻이다. CI처럼 매번 깨끗한 DB에서 도는 환경에서는 **항상 빨간불**이 된다(현재 E2E는 CI에 없어서 안 드러났다 — 대장 #182). 그리고 새로 합류한 사람이 `db reset` 후 처음 돌리면 영문 모를 실패를 본다.
+fix_sketch: 두 갈래 중 하나. (a) **시드가 참가자 양쪽의 `chat_room_reads` 행을 만들게 한다** — 테스트가 기대하는 "이미 읽은 방" 상태를 시드가 책임진다(권장: 다른 검사들도 같은 전제를 쓸 수 있다). (b) 테스트가 전제를 스스로 만든다 — 방문 전에 양쪽 read 행을 넣고 시작한다. 어느 쪽이든 **`supabase db reset` 직후 한 번에 통과하는지**로 검증할 것(그게 이 결함의 정의다).
+trigger: **다음 E2E 전수 실행 직전**(= Epic 16 마감 시점) — DW-689·690·693과 같은 자리에서 함께 본다. CI에 E2E를 올리는 판단(#182·#168)을 하게 되면 **그때는 필수 선행**이다(깨끗한 DB에서 항상 빨갛기 때문).
+status: open
