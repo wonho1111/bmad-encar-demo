@@ -11,6 +11,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import Badge from '@/components/ui/Badge';
 import ListingAdminActions from './ListingAdminActions';
 
 // 목록에 보여줄 최소 필드(요약 표시용).
@@ -44,19 +45,19 @@ export default async function AdminListingsPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
       <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">매물 관리</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-section font-bold text-ink-primary">매물 관리</h1>
+        <p className="text-body text-ink-muted">
           판매완료 포함 전체 매물을 조회하고 부적절한 매물을 삭제할 수 있습니다.
         </p>
       </section>
 
       <section className="flex flex-col gap-3">
         {listingsError ? (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-body text-danger">
             매물 목록을 불러오지 못했습니다. 잠시 후 새로고침 해주세요.
           </p>
         ) : !listings || listings.length === 0 ? (
-          <p className="text-sm text-zinc-500">매물이 없습니다.</p>
+          <p className="text-body text-ink-muted">매물이 없습니다.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {listings.map((l) => {
@@ -64,25 +65,25 @@ export default async function AdminListingsPage() {
               return (
                 <li
                   key={l.id}
-                  className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+                  className="flex items-center justify-between gap-3 rounded-card border border-border-hairline bg-surface-raised px-4 py-3 text-body shadow-card dark:shadow-none"
                 >
                   {/* 요약을 누르면 관리자 매물 상세(/admin/listings/[id])로 이동 — 판매완료 포함 모든 상태 조회. */}
-                  <Link href={`/admin/listings/${l.id}`} className="flex-1 hover:underline">
+                  {/* min-w-0 truncate: 상태 배지·액션이 shrink-0이라 좁은 폭에서 줄어들 쪽은 요약뿐이다(D5). */}
+                  <Link
+                    href={`/admin/listings/${l.id}`}
+                    className="min-w-0 flex-1 truncate hover:underline"
+                  >
                     [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
                     {l.price.toLocaleString('ko-KR')}
                     {UNITS.price}
                   </Link>
                   <div className="flex items-center gap-3">
-                    {/* 상태 배지: 판매중=초록 / 판매완료=회색 (SellPage 스타일). sold도 그대로 보이는 게 핵심(FR11 예외). */}
-                    <span
-                      className={
-                        isOnSale
-                          ? 'rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-300'
-                          : 'rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                      }
-                    >
-                      {isOnSale ? '판매중' : '판매완료'}
-                    </span>
+                    {/* 상태 배지: 판매중=active(petrol tint) / 판매완료=neutral(회색). sold도 그대로 보이는 게 핵심(FR11 예외). */}
+                    {isOnSale ? (
+                      <Badge tone="active">판매중</Badge>
+                    ) : (
+                      <Badge tone="neutral">판매완료</Badge>
+                    )}
                     <ListingAdminActions
                       listingId={l.id}
                       label={`[${l.manufacturer}] ${l.model}`}

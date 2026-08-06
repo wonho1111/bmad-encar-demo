@@ -94,7 +94,7 @@ export default async function Home() {
         <Link
           href="/ai"
           aria-label="AI 검색 열기"
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-3 text-sm font-medium text-white shadow-lg transition-colors hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-brand-petrol px-5 py-3 text-sm font-medium text-surface-base shadow-lg transition-colors hover:bg-brand-petrol-strong"
         >
           <span aria-hidden>✨</span> AI 검색
         </Link>

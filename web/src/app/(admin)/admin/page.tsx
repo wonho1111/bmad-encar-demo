@@ -10,8 +10,8 @@ export default function AdminHomePage() {
     //   기존엔 min-h-screen+justify-center로 세로 중앙이라 역할 간 톤이 어긋났다.
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 p-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">관리자 영역</h1>
-        <p className="text-sm text-zinc-500">운영 기능을 선택하세요.</p>
+        <h1 className="text-section font-bold text-ink-primary">관리자 영역</h1>
+        <p className="text-body text-ink-muted">운영 기능을 선택하세요.</p>
       </div>
 
       <nav className="flex flex-col gap-3">

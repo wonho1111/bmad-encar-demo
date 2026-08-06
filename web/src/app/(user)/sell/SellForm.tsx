@@ -442,7 +442,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   }
 
   const inputCls =
-    'rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900';
+    'rounded border border-border-hairline bg-surface-raised px-3 py-2';
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
@@ -654,12 +654,15 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       <PhotoUploader items={photos} onChange={setPhotos} disabled={loading} />
 
       {error && (
-        <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        // 바로 아래 성공 문구는 상자(bg-trust-green-bg)를 유지하는데 오류만 맨 텍스트면 더 급한 쪽이
+        // 더 조용해진다. 상자를 되돌린다(코드리뷰 patch, 15.1). 대비 실측: danger/10 틴트 위
+        // text-danger = 라이트 4.51 / 다크 5.72 (둘 다 AA 통과).
+        <p role="alert" className="rounded bg-danger/10 px-3 py-2 text-sm text-danger">
           {error}
         </p>
       )}
       {success && (
-        <p role="status" className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+        <p role="status" className="rounded bg-trust-green-bg px-3 py-2 text-sm text-trust-green-ink">
           {success}
         </p>
       )}
@@ -692,7 +695,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
             role="dialog"
             aria-modal="true"
             aria-labelledby="leave-guard-title"
-            className="w-full max-w-sm rounded bg-white p-5 shadow-lg dark:bg-zinc-900"
+            className="w-full max-w-sm rounded-card bg-surface-raised p-5 shadow-card dark:shadow-none"
           >
             <p id="leave-guard-title" className="text-sm">
               저장하지 않고 나가시겠어요? 작성한 내용이 사라져요.

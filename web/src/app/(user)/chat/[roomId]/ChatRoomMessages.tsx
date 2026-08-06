@@ -722,12 +722,12 @@ export default function ChatRoomMessages({
     <section aria-label="메시지" className="flex flex-col gap-4">
       {/* 메시지 목록 — 시간 오름차순. 내 메시지 오른쪽·상대 왼쪽으로 구분(AC#3). pending 큐는 맨 끝에
           순서대로 표시(Story 12.4 — 끊긴 동안 여러 건이 동시에 대기할 수 있다). */}
-      <ul className="flex min-h-40 flex-col gap-2 rounded border border-zinc-200 p-4 dark:border-zinc-800">
+      <ul className="flex min-h-40 flex-col gap-2 rounded-card border border-border-hairline p-4">
         {loading ? (
-          <li className="text-center text-sm text-zinc-500">메시지를 불러오는 중…</li>
+          <li className="text-center text-sm text-ink-muted">메시지를 불러오는 중…</li>
         ) : messages.length === 0 && pendingQueue.length === 0 ? (
           // 첫 대화 빈 상태(AC#3).
-          <li className="text-center text-sm text-zinc-500">
+          <li className="text-center text-sm text-ink-muted">
             아직 주고받은 메시지가 없습니다. 먼저 인사를 건네보세요.
           </li>
         ) : (
@@ -740,8 +740,8 @@ export default function ChatRoomMessages({
                   <span
                     className={
                       mine
-                        ? 'max-w-[80%] break-words whitespace-pre-wrap rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900'
-                        : 'max-w-[80%] break-words whitespace-pre-wrap rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800'
+                        ? 'max-w-[80%] break-words whitespace-pre-wrap rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base'
+                        : 'max-w-[80%] break-words whitespace-pre-wrap rounded-lg border border-border-hairline bg-surface-raised px-3 py-2 text-sm text-ink-primary'
                     }
                   >
                     {m.body}
@@ -753,7 +753,7 @@ export default function ChatRoomMessages({
                 에코, 또는 재연결 후 큐 flush 성공) 위 목록의 실제 행으로 교체되고 이 버블은 사라진다. */}
             {pendingQueue.map((p) => (
               <li key={p.clientMessageId} className="flex justify-end">
-                <span className="max-w-[80%] break-words whitespace-pre-wrap rounded-lg bg-zinc-900 px-3 py-2 text-sm text-white opacity-60 dark:bg-zinc-100 dark:text-zinc-900">
+                <span className="max-w-[80%] break-words whitespace-pre-wrap rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base opacity-60">
                   {p.body}
                 </span>
               </li>
@@ -766,18 +766,12 @@ export default function ChatRoomMessages({
           접근성 비색 신호를 중복시킨다(색만으로 상태를 전달하지 않음). 끊김은 남아 있고, 재연결은
           RECONNECT_BANNER_DISMISS_MS 후 자동 소멸한다. */}
       {reconnectBanner?.kind === 'disconnected' && (
-        <p
-          role="status"
-          className="rounded border border-zinc-300 bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-        >
+        <p role="status" className="rounded bg-warn-amber-bg px-3 py-2 text-sm text-warn-amber-ink">
           연결이 끊겼어요. 다시 연결 중… 메시지는 계속 작성할 수 있어요.
         </p>
       )}
       {reconnectBanner?.kind === 'reconnected' && (
-        <p
-          role="status"
-          className="rounded border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/40 dark:text-green-300"
-        >
+        <p role="status" className="rounded bg-trust-green-bg px-3 py-2 text-sm text-trust-green-ink">
           다시 연결됐어요
         </p>
       )}
@@ -787,12 +781,12 @@ export default function ChatRoomMessages({
           때까지(재조회 경로가 없다), 전송 에러만 다음 전송 때 지워진다. 한 칸을 같이 쓰면 전송 한
           번에 앞의 둘이 지워진다. */}
       {realtimeError && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {realtimeError}
         </p>
       )}
       {queueStuckNotice && (
-        <div className="flex items-center justify-between gap-3 text-sm text-red-600 dark:text-red-400">
+        <div className="flex items-center justify-between gap-3 text-sm text-danger">
           {/* role="alert"는 텍스트에만 건다(코드리뷰 patch) — alert 리전은 스크린리더가 "읽기 전용
               알림"으로 다루는 자리라, 그 안에 포커스 가능한 버튼을 넣으면 상태 변화마다 버튼까지
               재announce되는 접근성 안티패턴이 된다. 버튼은 alert 리전의 형제로 바깥에 둔다(시각적
@@ -833,12 +827,12 @@ export default function ChatRoomMessages({
         </div>
       )}
       {loadError && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {loadError}
         </p>
       )}
       {error && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
@@ -865,7 +859,7 @@ export default function ChatRoomMessages({
           // 자체를 줄이고 min-w-0으로 flex 하한을 해제한다(ChatAssistant.tsx:198-219의 기존 적용례와
           // 동일 패턴).
           size={1}
-          className="min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-2 text-sm disabled:opacity-50 dark:border-zinc-700"
+          className="min-w-0 flex-1 rounded border border-border-hairline bg-transparent px-3 py-2 text-sm disabled:opacity-50"
         />
         {/* 전송 버튼도 같은 이유로 끊김 중엔 잠그지 않는다(후속 리뷰 patch, R5) — Button은 loading
             이면 자동으로 disabled가 되므로, 입력창만 풀고 버튼을 잠가두면 제출 자체가 막힌다. */}

@@ -187,7 +187,7 @@ export default function ListingActions({
         </Button>
       </div>
       {error && (
-        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+        <p role="alert" className="text-caption text-danger">
           {error}
         </p>
       )}

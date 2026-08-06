@@ -4988,3 +4988,84 @@ resolution_options:
   · (C) 0029의 metadata 제거(②번 UPDATE)만 빼고 `profiles.role` 통일(①번)만 먼저 적용 — 웹 목적은 달성되고 앱은 안 깨진다. 단 "다 지운다"는 결정이 절반만 이행된 상태로 남으므로 나머지를 언제 할지 함께 정해야 한다.
 trigger: **`main` 병합 = 운영 반영을 준비하는 시점** — 그때 (A)(B)(C) 중 하나를 사용자가 고른다. DW-687(마이그 먼저·web 나중)과 **같은 자리에서 함께 판단**한다. 그 전까지는 `test/bmad-loop`·`develop`에만 있으므로 위험이 실현되지 않는다.
 status: open
+
+### DW-695: `AppHeader.tsx`(관리자·소비자 전 화면 공유 상단바)가 아직 원시 `zinc-*` 클래스를 쓴다 — DW-546 실측 목록 밖이라 새어 있었다
+origin: 2026-08-06 Story 15.1(관리자 6화면 디자인 리스킨) 계획 중 코드베이스 조사에서 발견. DW-546이 2026-07-29에 소비자 화면 10곳을 실측해 리스트업했을 때 `components/layout/AppHeader.tsx`는 그 목록에 없었다(당시 0건이었거나 애초에 안 봤을 가능성) — 지금 조사로는 존재를 확인했다(정확한 건수는 미측정, 이 조사는 파일 존재 여부만 확인함).
+location: `web/src/components/layout/AppHeader.tsx`
+severity: low — 시각적 불일치일 뿐 기능 결함 아님. 다만 관리자·소비자 16개 화면을 전부 토큰화해도 공유 상단바 하나가 안 바뀌면 리스킨이 "완료"로 안 보인다.
+summary: 15.1은 이 파일을 의도적으로 범위 밖에 뒀다(스펙 `spec-15-1-...`의 Never 절 참조) — DW-546이 측정·합의한 16개 파일 밖이라 블라스트 반경이 이 스토리보다 넓어진다(전 화면이 공유하는 셸이므로 건드리면 15.1 범위를 넘는 회귀 위험을 스스로 만든다). 그래서 여기 등재만 하고 손대지 않는다.
+trigger: **다음에 `AppHeader.tsx`를 실제로 건드리는 스토리 착수 시**(현재는 소비 스토리 없음) — 또는 Epic 15 마감 시점에 "관리자 6화면·소비자 10화면은 리스킨됐는데 상단바만 원시 색"이라는 잔여 불일치가 눈에 띄면 그 자리에서 판단. 그 전이라도 사용자가 지시하면 즉시.
+status: open
+
+### DW-696: 토큰 리스킨이 **화면 단위로는 반쪽**이다 — 대상 파일 밖 4개 파일 14건이 남아 같은 화면 안에서 원시색과 토큰이 섞인다
+origin: 2026-08-06 Story 15.1 후속 리뷰 패스에서 리포 전수 grep으로 실측. 15.1은 인텐트가 지정한 16개 **파일**을 기준으로 닫혔고 그 범위 grep은 실제로 0건이다 — 문제는 기준이 파일이었고 사용자가 보는 단위는 **화면**이라는 점이다.
+location: `web/src/app/(user)/search/page.tsx`(6건) · `web/src/components/ai/ChatAssistant.tsx`(5건) · `web/src/components/landing/PopularRecentGrid.tsx`(2건) · `web/src/app/(user)/ai/page.tsx`(1건)
+severity: low — 시각적 불일치일 뿐 기능 결함 아님.
+summary: 15.1이 `SearchFilters.tsx`를 토큰화했지만 그 필터를 감싸는 **부모 페이지** `search/page.tsx`는 원시 `zinc-*` 그대로다. 홈(`app/page.tsx`)도 토큰화됐지만 홈이 렌더하는 `PopularRecentGrid`는 아니다. 결과적으로 검색·홈·AI 세 화면이 한 화면 안에서 절반만 리스킨된 상태다. `AppHeader.tsx`(3건)는 [[DW-695]]가, `(auth)/layout.tsx`(1건)는 DW-547이 이미 소유하므로 여기서는 제외했다.
+evidence: `grep -rn "zinc-" web/src/` 전수 실행(2026-08-06) 결과 6개 파일 18건. 그중 15.1 인텐트가 명시적으로 제외한 2개 파일 4건을 뺀 나머지가 위 4개 파일 14건이다. 15.1의 AC grep은 인텐트가 정한 대상 파일 경로만 훑도록 범위가 한정돼 있어(인텐트 Always: "각 대상 파일에서") 이 14건은 초록 신호에 잡히지 않는다 — AC가 틀린 게 아니라 **AC가 답하는 질문이 "화면이 통일됐나"가 아니라 "대상 파일이 치환됐나"**였다.
+why_it_matters: 리스킨의 목적은 "사용자 화면과 시각적으로 어긋나지 않게" 하는 것인데, 파일 기준으로 닫으면 목적 기준으로는 안 닫힌다. 지금 검색 화면을 열면 토큰 필터 위에 zinc 페이지가 얹혀 있다 — 15.1 이전보다 오히려 대비가 눈에 띈다.
+fix_sketch: 4개 파일을 같은 토큰 집합으로 치환한다(신규 토큰 추가 없음, 15.1과 동일한 방식). 함께 판단할 것: 이 규칙을 `web/src/app/fonts.budget.test.ts` 형태의 vitest 소스 스캔(허용목록 방식)으로 박을지 — 지금은 손으로 치는 grep이라 다음에 누가 `bg-zinc-100`을 다시 넣어도 초록이다(CLAUDE.md B9 "규칙은 어길 수 없는 자리에 박는다").
+trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 뷰포트 감사로 이 화면들을 어차피 다시 연다. 15.2의 인수조건 체크박스로 심는다.
+status: open
+
+### DW-697: 관리자 **상세 라우트 2곳을 어떤 자동 검사도 열지 않는다** — 15.1이 그 안에 새 표시 로직을 넣었는데 지키는 검사가 없다
+origin: 2026-08-06 Story 15.1 후속 리뷰 패스에서 verification-gap·edge-case 렌즈가 각각 독립적으로 지적, 실측으로 확인.
+location: `web/e2e/core-flows.spec.ts` C6(관리자 목록 4개 라우트만 방문) · `web/e2e/viewport-audit.spec.ts`(admin 경로 0건) · `web/src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts`(대상 파일이 `ChatRoomMessages.tsx`로 하드코딩 + "버블 정확히 3개" 단언)
+severity: low — 현재 코드는 맞게 동작한다(수동 확인 완료). 위험은 **다음 변경**에 있다.
+summary: `/admin/chats/[roomId]`와 `/admin/listings/[id]`는 e2e가 한 번도 열지 않는다(C6은 목록 4개만 방문해 "에러 문구 없음 + li 개수>0"만 본다). 15.1이 관리자 채팅방에 `isSeller` 좌/우 분기와 네 번째 `max-w-[80%]` 말풍선을 새로 넣었는데, 말풍선 줄바꿈 규칙을 지키려고 만들어 둔 `messageBubbleWrap.test.ts`는 사용자 파일 경로가 하드코딩돼 있어 이 새 말풍선을 보지 않는다.
+evidence: ①`grep -rn "'/admin" web/e2e/*.spec.ts` → 목록 라우트와 `/admin`만 나오고 상세 라우트는 없다. ②`messageBubbleWrap.test.ts`가 `COMPONENT` 상수로 파일 하나를 고정하고 `toHaveLength(3)`을 단언한다 — 리포 전체 `max-w-[80%]` 사이트는 이제 4곳이다. ③이 결함은 이미 한 번 실현됐다: 15.1 1차 리뷰가 관리자 말풍선에 `break-words`가 빠진 것을 **사람 눈으로** 잡아 패치했고, 그동안 tsc·lint·vitest·e2e는 전부 초록이었다. ④`viewport-audit.spec.ts`의 `page.goto`는 `/`·`/search`·`/listings/{id}`·`/chat/{roomId}`·`/ai`뿐 — 규칙 D5(반응형 무결성)의 뷰포트 매트릭스가 관리자 화면에는 존재하지 않는다.
+why_it_matters: 검사가 없는 게 아니라 **검사가 있는데 새 자리를 안 본다**는 점이 비싸다. 다음 사람은 "말풍선 규칙은 테스트가 지킨다"고 믿고 관리자 화면을 고치는데, 그 믿음이 그 파일에서만 거짓이다.
+fix_sketch: ①`messageBubbleWrap.test.ts`가 두 말풍선 소스를 모두 훑게 하고 `toHaveLength(3)` 리터럴을 파일별 단언으로 바꾼다. ②`viewport-audit.spec.ts`에 관리자 6경로를 추가한다(D5는 "관리자 화면도 예외 없음"이라고 명시한다). ③C6을 상세 라우트까지 한 단계 넓혀 `isSeller` 좌우 배치를 발신자 라벨 기준으로 단언한다.
+trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 관리자 화면의 뷰포트 감사를 소유하므로 ②가 그 스토리의 본체와 같은 자리다. ①③도 함께 15.2의 인수조건 체크박스로 심는다.
+status: open
+
+### DW-698: `bg-brand-petrol` 위 리터럴 `text-white`가 **한 자리 남아** 다크에서 2.98:1로 AA에 미달한다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial·edge-case·verification-gap 세 렌즈가 각각 독립적으로 지적, 리포 전수 grep + WCAG 재계산으로 실측 확인.
+location: `web/src/app/(user)/sell/OptionPicker.tsx:93` (선택된 옵션 칩)
+severity: medium — 다크 모드에서 선택된 옵션 라벨이 AA 미달(2.98:1). 기능은 동작하나 읽기 어렵다.
+summary: 15.1 2차 리뷰가 "리터럴 `text-white`는 다크에서 스왑되지 않는데 `bg-brand-petrol`은 오히려 밝아진다"는 결함을 5곳(`Button.tsx` primary · 사용자 말풍선 2 · 관리자 말풍선 · 홈 AI FAB)에서 `text-surface-base`로 고쳤는데, 같은 조합이 `OptionPicker.tsx`에 한 곳 더 있었고 그 파일은 15.1의 대상 16개 파일 목록에 없어 손대지 않았다.
+evidence: `grep -rn "bg-brand-petrol" web/src/ | grep "text-white"` → 실제 클래스 문자열은 `OptionPicker.tsx:93` 한 건만 남는다(나머지 1건은 `Button.tsx`의 설명 주석). WCAG 상대휘도로 재계산: 다크 `--brand-petrol` #4FA39D 위 #FFFFFF = **2.98:1**(AA 4.5:1 미달) — 2차 패스가 다른 5곳에서 측정해 "명백한 회귀"라고 부른 것과 같은 숫자다. `git show 34cfaf4:…/OptionPicker.tsx`로 이 조합이 15.1 이전부터 있던 것임을 확인했다(이번 diff가 만든 게 아니다).
+why_it_matters: 규칙을 "고쳤다"고 기록했는데 같은 규칙이 한 파일 옆에서 여전히 깨져 있다. 더 나쁜 건 이걸 잡는 검사가 리포에 하나도 없다는 것 — `grep -rn "대비\|contrast\|WCAG"`가 vitest 34개 파일과 e2e 전체에서 0건이다. 다음에 누가 `bg-brand-petrol text-white`를 새로 써도 전부 초록이다.
+fix_sketch: ①`text-white` → `text-surface-base`로 교체(다른 5곳과 동일, 라이트 5.75 / 다크 5.54). ②함께 판단할 것: `fonts.budget.test.ts` 형태의 vitest 소스 스캔으로 "opacity 없는 `bg-brand-petrol`과 리터럴 `text-white`가 같은 클래스 문자열에 공존하면 red"를 박을지 — 항상 어두운 `bg-petrol-deepest/85`(PhotoUploader, 최악 7.62:1로 안전)는 허용목록으로 뺀다. [[DW-696]]의 fix_sketch가 제안한 zinc 스캔과 같은 자리에 함께 넣는 것이 싸다.
+trigger: **`web/src/app/(user)/sell/` 아래를 다음에 건드리는 스토리 착수 시**, 또는 Epic 15 마감 점검 시 — 둘 중 먼저 오는 쪽. 그 스토리의 인수조건 체크박스로 심는다.
+status: open
+
+### DW-699: 라이트 모드에서 **호버 피드백이 사실상 없다** — `surface-base`↔`surface-raised` 차이가 1.045:1이다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial·edge-case 렌즈가 지적, 토큰 hex로 재계산해 확인.
+location: `web/src/app/(user)/chat/page.tsx`(방 목록 행) · `web/src/app/(user)/chat/[roomId]/page.tsx`(매물 칩) · `web/src/app/(admin)/admin/chats/page.tsx`(관리자 방 목록 행)
+severity: low — 시각 피드백 부재. 클릭은 정상 동작하고 커서·밑줄 등 다른 신호가 있는 자리도 있다.
+summary: 15.1 2차 리뷰가 "죽은 호버"를 고치며 `hover:bg-surface-base` → `hover:bg-surface-raised`로 바꿨는데, 라이트 모드에서 두 토큰은 #FAFAF8 대 #FFFFFF로 rgb 차이가 (5,5,7)뿐이다. 다크(#201F1C↔#2B2A26)는 실제로 보이지만 라이트는 여전히 안 보인다.
+evidence: `globals.css`의 토큰 hex로 계산: 라이트 대비 **1.045:1**, 다크 **1.147:1**. 15.1 이전(`hover:bg-zinc-50` = #FAFAFA)도 라이트에선 똑같이 죽어 있었으므로 **회귀가 아니라 이월된 결함**이다 — 다만 2차 패스의 트리아지 로그는 이 항목을 "라이트·다크 양쪽"이 고쳐진 것처럼 적었다.
+why_it_matters: 표면 토큰 두 개만으로는 라이트 모드 호버를 표현할 수 없다는 사실이 아직 어디에도 안 적혀 있다. 다음 사람이 또 같은 조합으로 "호버를 넣었다"고 믿게 된다.
+fix_sketch: ①호버 전용 토큰(`--surface-hover`)을 `globals.css`에 추가하거나, ②표면 대신 다른 축의 신호를 겹친다(`hover:border-brand-petrol` 또는 `hover:underline`). ②가 새 토큰 없이 되므로 싸다. 어느 쪽이든 **바꾼 뒤 실제 델타를 숫자로 적는다**(눈으로 닫지 않는다).
+trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 위 3개 화면 중 관리자 목록을 어차피 다시 연다. 15.2의 인수조건 체크박스로 심는다.
+status: open
+
+### DW-700: `(auth)/layout.tsx`의 주석이 **거짓이 됐다** — "로그인·회원가입 본문은 아직 원시색"이라고 적혀 있으나 15.1이 리스킨을 마쳤다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial 렌즈가 지적, 해당 줄과 리스킨 결과를 대조해 확인.
+location: `web/src/app/(auth)/layout.tsx:19` (주석)
+severity: low — 주석만의 문제로 렌더 결과에는 영향이 없다.
+summary: 그 주석은 "로그인·회원가입 본문은 **아직** 옛 원시 색(`zinc-*`)을 쓰고 있고 그 통일은 Epic 15에서"라고 예고한다. 15.1이 바로 그 두 페이지 본문을 토큰으로 치환했으므로 이제 사실과 다르다. 15.1 인텐트가 "`(auth)/layout.tsx`를 건드리지 않는다"고 명시했기 때문에 이번 패스에서 고치지 않았다.
+evidence: `web/src/app/(auth)/login/page.tsx`·`signup/page.tsx`의 `zinc-*` 잔존은 0건(15.1 AC grep으로 재측정). 반면 `layout.tsx:19` 주석은 그대로다. 같은 파일에 남은 `zinc-*` 1건은 클래스가 아니라 이 주석 안의 문자열이다 — [[DW-696]]이 "14건" 산정에서 이 파일을 제외한 근거로 삼은 DW-547은 이미 `status: done 2026-07-29`이므로, 이 주석은 현재 아무도 소유하지 않는다.
+why_it_matters: 다음 사람이 auth 레이아웃을 열면 "본문 리스킨이 아직 남았다"는 안내를 받는다 — 이미 끝난 일을 다시 하거나 중복 항목을 대장에 올린다. DW-546이 막으려던 실패 그 자체다.
+fix_sketch: 그 문단을 "15.1에서 본문 리스킨 완료"로 갱신하거나 삭제한다. 파일을 건드리는 김에 `zinc-*` 문자열 자체를 없애면 리포 전수 grep의 잡음도 함께 줄어든다.
+trigger: **`(auth)/` 아래를 다음에 건드리는 스토리 착수 시**, 또는 Epic 15 마감 점검 시 — 둘 중 먼저 오는 쪽.
+status: open
+
+### DW-701: [[DW-697]]의 `fix_sketch ①`을 **그대로 실행하면 아무것도 검사하지 않는다** — 정규식이 백틱 템플릿 리터럴을 못 잡는다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial 렌즈가 지적, 정규식과 대상 소스를 직접 대조해 확인.
+location: `web/src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts:32` (`BUBBLE_CLASS`) · 대상 소스 `web/src/app/(admin)/admin/chats/[roomId]/page.tsx:165`
+severity: medium — 가드를 "설치했다"고 기록하면서 실제로는 0개를 검사하게 되는 종류의 실패다.
+summary: DW-697은 "`messageBubbleWrap.test.ts`가 두 말풍선 소스를 모두 훑게 한다"를 처방한다. 그런데 그 파일의 `BUBBLE_CLASS`는 홑따옴표·쌍따옴표로 감싼 문자열만 잡도록 쓰여 있고, 15.1이 만든 관리자 말풍선은 **백틱 템플릿 리터럴**(`` className={`w-fit max-w-[80%] break-words …`} ``)이다. 대상 파일만 늘리면 관리자 파일에서 매치가 0건이 되고, "모든 버블이 break-words를 갖는다" 루프는 빈 배열 위를 돌아 **공허하게 통과**한다.
+evidence: 정규식은 `/'[^'\n]*max-w-\[80%\][^'\n]*'|"[^"\n]*max-w-\[80%\][^"\n]*"/g` — 백틱 분기가 없다. 관리자 말풍선의 className은 `` `…${isSeller ? … : …}` `` 형태의 템플릿 리터럴이다. 참고로 `toHaveLength(3)` 리터럴도 파일 하나에 묶여 있어 대상이 늘면 반드시 red가 되지만, 그건 DW-697이 이미 적었다.
+why_it_matters: DW-697의 위험 서술("검사가 있는데 새 자리를 안 본다")이 그 처방을 따랐을 때 **한 겹 더** 재생산된다. 게다가 실패가 red가 아니라 green으로 나타나므로 아무도 눈치채지 못한다.
+fix_sketch: `BUBBLE_CLASS`에 백틱 분기를 더한다(``/`[^`]*max-w-\[80%\][^`]*`/`` — 템플릿 리터럴은 여러 줄일 수 있으므로 `\n` 제외 규칙을 그대로 쓰면 안 된다). 그리고 CLAUDE.md B4대로 **일부러 깨서 red를 확인한 뒤** 되돌려 green을 확인한다 — 관리자 파일에서 `break-words`를 지웠을 때 실제로 실패하는지가 이 항목의 유일한 완료 기준이다.
+trigger: **[[DW-697]]의 `fix_sketch ①`을 실행하는 시점** — 즉 Story 15.2 착수 시. 같은 자리에서 함께 처리한다.
+status: open
+
+### DW-702: Follow-up review still recommended for 15-1-관리자-6화면-디자인-리스킨 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-15-1-관리자-6화면-디자인-리스킨.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

@@ -86,4 +86,29 @@ describe('안읽음·정렬 배선 계약 (FR57)', () => {
     expect(guardAt).toBeLessThan(callAt);
     expect(participantAt).toBeLessThan(callAt);
   });
+
+  // Story 15.1 코드리뷰 patch — 방별 배지의 **낭독 값**을 고정한다.
+  //
+  // 왜: 15.1이 이 배지를 공용 Badge로 옮기면서 접근성 이름 방식이 바뀌었다. 예전엔
+  //   `aria-label="안읽음 메시지 N건"`이었는데 Badge에 aria-label prop이 없어 sr-only 텍스트로
+  //   옮겼고, 그 과정에서 sr-only가 화면표시용 절삭값("99+")을 그대로 낭독하는 버그가 한 번 났다
+  //   (같은 스토리의 1차 코드리뷰가 잡음). 화면 숫자를 99에서 누르는 건 작은 원이 깨지지 않게
+  //   하려는 **레이아웃 사정**이지 낭독 사정이 아니다 — 스크린리더는 137건이면 137건을 들어야 한다.
+  //   이 규칙은 지금까지 주석에만 있었고, 되돌려도 lint·tsc·vitest·e2e가 전부 초록이다
+  //   (SiteNav의 총합 배지는 SiteNav.test.ts가 같은 규칙을 이미 고정하고 있다 — 방별 배지만 비어 있었다).
+  //
+  // 이 검사가 **안 보는 것**: 스크린리더가 실제로 그렇게 읽는지. 여기서는 "sr-only에 절삭 안 된 값이
+  //   들어가고, 절삭값은 aria-hidden 쪽에 있다"는 소스 계약만 본다.
+  it('방별 안읽음 배지는 sr-only로 절삭되지 않은 실제 건수를 낭독하고, 99+ 표시는 aria-hidden이다', () => {
+    const code = stripComments(read(LIST_PAGE));
+
+    const srOnly = code.match(/<span className="sr-only">([^<]*)<\/span>/);
+    expect(srOnly, 'sr-only 낭독 텍스트를 찾지 못했습니다').not.toBeNull();
+    // 낭독 문구에는 원본 unread가 그대로 들어가야 한다. `99`가 끼어 있으면 절삭값을 읽고 있는 것이다.
+    expect(srOnly![1]).toMatch(/\{unread\}/);
+    expect(srOnly![1]).not.toMatch(/99/);
+
+    // 화면표시용 절삭(99+)은 aria-hidden 요소 안에 있어야 한다.
+    expect(code).toMatch(/aria-hidden="true">\{unread > 99 \? '99\+' : unread\}</);
+  });
 });

@@ -16,6 +16,7 @@ import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import { markChatRoomRead } from '@/lib/chat';
 import AppHeader from '@/components/layout/AppHeader';
 import ChatRoomMessages from './ChatRoomMessages';
+import { buttonClasses } from '@/components/ui/Button';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,7 +80,7 @@ export default async function ChatRoomPage({
   const backLink = (
     <Link
       href="/chat"
-      className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
+      className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}
     >
       채팅방 목록으로
     </Link>
@@ -91,11 +92,8 @@ export default async function ChatRoomPage({
       <>
         {header}
         <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">문의 채팅</h1>
-          <p
-            role="alert"
-            className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
-          >
+          <h1 className="text-section font-bold text-ink-primary">문의 채팅</h1>
+          <p role="alert" className="text-body text-danger">
             채팅방을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
           </p>
           {backLink}
@@ -110,11 +108,8 @@ export default async function ChatRoomPage({
       <>
         {header}
         <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">문의 채팅</h1>
-          <p
-            role="alert"
-            className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-          >
+          <h1 className="text-section font-bold text-ink-primary">문의 채팅</h1>
+          <p role="alert" className="text-body text-ink-secondary">
             채팅방을 찾을 수 없습니다. 접근 권한이 없거나 삭제된 방일 수 있습니다.
           </p>
           {backLink}
@@ -158,7 +153,7 @@ export default async function ChatRoomPage({
         {/* 방 헤더 — 어떤 매물·누구와의 대화인지 (매물이 안 보이면 플레이스홀더 — FR11 준수) */}
         <section className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-2">
-            <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-zinc-400'}>
+            <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-ink-muted'}>
               {summary}
             </h1>
             {/* 매물이 살아있는(on_sale) 방이면 그 매물 상세로 가는 링크. 관리자 채팅 목록의 '매물 상세'와 동일한 동선.
@@ -166,13 +161,13 @@ export default async function ChatRoomPage({
             {l && (
               <Link
                 href={`/listings/${room.listing_id}`}
-                className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                className="shrink-0 rounded-chip border border-border-hairline px-2 py-1 text-xs font-medium hover:bg-surface-raised"
               >
                 매물 상세
               </Link>
             )}
           </div>
-          <p className="text-sm text-zinc-500">
+          <p className="text-body text-ink-muted">
             {counterpartName ? `${counterpart} ${counterpartName}` : counterpart}와의 문의 채팅
           </p>
         </section>
@@ -182,10 +177,7 @@ export default async function ChatRoomPage({
         {user?.id ? (
           <ChatRoomMessages roomId={room.id} myUserId={user.id} />
         ) : (
-          <p
-            role="alert"
-            className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-          >
+          <p role="alert" className="text-body text-ink-secondary">
             로그인이 필요합니다. 다시 로그인해주세요.
           </p>
         )}
