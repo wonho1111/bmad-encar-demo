@@ -219,20 +219,28 @@ test('C7 buyer가 /admin에 접근하면 차단된다', async ({ page }) => {
   expect(new URL(page.url()).pathname, 'buyer의 /admin 접근은 requireRole(ADMIN)이 홈으로 보내야 함').toBe('/');
 });
 
-// ── C8 [desktop] role='buyer' 계정으로 /sell 접근 (spec-14-3, FR52) ───────
+// ── C8 [desktop] 판매자 역할이 아닌 기존 계정으로 /sell 접근 (spec-14-3, FR52) ──
 // 소유권 기반 게이트 회귀 검사 — sell/layout.tsx가 requireRole(SELLER)에서 requireUser()로
-// 바뀐 뒤에도 role='buyer' 계정이 홈으로 튕기지 않고 매물 등록 화면에 도달하는지 확인한다.
+// 바뀐 뒤에도 판매자 역할이 아닌 계정이 홈으로 튕기지 않고 매물 등록 화면에 도달하는지 확인한다.
 // 읽기 전용(폼 제출 없음) — 이 스펙 파일의 절대 규칙을 지킨다.
-test('C8 role=buyer 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
+test('C8 판매자 역할이 아닌 기존 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
   // 전제를 주석이 아니라 DB로 고정한다(C4가 sold id를 psql로 실측하는 것과 같은 관례).
   // 이게 없으면 시드·가입 트리거가 바뀌었을 때 이 테스트는 "로그인 사용자가 /sell에 간다"로
   // 조용히 약해지면서도 계속 초록이라, 정작 검사해야 할 FR52를 안 보게 된다.
   // 계정은 SEED_USER 상수에서 읽는다 — 리터럴로 적으면 상수를 다른 계정으로 바꿨을 때
   // "role을 검사한 계정"과 "실제로 로그인한 계정"이 갈라진 채로 초록이 된다.
-  const buyerRole = runPsql(
+  // ✎ 2026-08-06 역할 통합(0029)으로 시드 계정의 role이 'buyer' → 'user'가 됐다.
+  //   그래서 "role이 정확히 'buyer'인가"로는 더 이상 고정할 수 없다. 하지만 이 검사가
+  //   지켜야 하는 것은 원래 그 값이 아니라 **"판매자 역할이 아닌 계정도 /sell에 간다"**이다.
+  //   그 뜻 그대로 단언하면 통합 전(buyer)에도 후(user)에도 옳다.
+  const seedRole = runPsql(
     `select p.role from profiles p join auth.users u on u.id = p.id where u.email='${SEED_USER.email}'`,
   ).trim();
-  expect(buyerRole, "C8은 role='buyer' 계정일 때만 FR52를 검사한다").toBe('buyer');
+  expect(seedRole, '시드 계정의 role을 읽지 못했다').not.toBe('');
+  expect(
+    ['seller', 'admin'].includes(seedRole),
+    `C8은 판매자·관리자가 아닌 계정으로 FR52를 검사한다 — 받은 role='${seedRole}'`,
+  ).toBe(false);
 
   await login(page); // SEED_USER = buyer@test.com
 
@@ -246,7 +254,7 @@ test('C8 role=buyer 계정이 /sell에 접근하면 매물 등록 화면이 렌�
   // 홈으로 튕기지 않아야 한다(구 동작이었다면 requireRole(SELLER)이 '/'로 리다이렉트했을 것).
   expect(
     new URL(page.url()).pathname,
-    'role=buyer도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
+    '판매자 역할이 아닌 계정도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
   ).toBe('/sell');
 });
 

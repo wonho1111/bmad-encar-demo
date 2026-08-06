@@ -306,8 +306,23 @@ def test_forward_only_migrations_are_findable():
     )
 
 
+# 이 규칙의 **명시적 예외**. 비워두는 것이 정상이고, 항목을 넣는 것은 "기존 행을 일부러 바꾼다"는
+# 결정을 했다는 뜻이다 — 그런 결정은 되돌릴 수 없으므로(CLAUDE.md B3) 여기에 근거를 남긴다.
+# ⚠️ 예외로 등재해도 검사에서 사라지는 게 아니다. 아래 test_0029_* 두 건이 "그 변경이 **의도한
+#    범위 안에서만** 일어나는가"를 대신 본다. 예외 등재 = 검사 면제가 아니라 **검사 이관**이다.
+_DATA_MUTATION_ALLOWED = {
+    # 2026-08-06 사용자 결정: 역할 통합을 마무리하며 기존 계정의 buyer/seller를 없앤다.
+    # 0027이 CHECK를 풀고 0028이 신규 기본값을 바꿨지만 **이미 있던 계정은 그대로**여서 계정
+    # 모집단이 갈라져 있었다(옛 가입자 buyer/seller vs 신규 user). 그 구분은 역할 통합 이후
+    # 아무 기능도 하지 않는데(권한은 소유권+RLS로 판정) 화면 라벨만 뜻 없이 남아 있었다.
+    "0029_unify_existing_account_roles.sql",
+}
+
+
 def test_migration_contains_no_data_mutation():
     """⑧ 0027 이후 어느 마이그레이션도 profiles의 **기존 행**을 바꾸지 않는다(Never 절을 문장 층에서).
+
+    단 `_DATA_MUTATION_ALLOWED`에 등재된 파일은 뺀다 — 그 목록에 넣는 것 자체가 기록이다.
 
     ⑥은 "이 마이그를 지금 돌리면 행이 안 바뀐다"를 보고, 이건 "애초에 바꾸는 문장이 없다"를 본다.
     둘 다 필요한 이유: 조건부 UPDATE(예: `where role = 'buyer'`)는 테스트가 만든 행에 안 걸리면
@@ -321,10 +336,27 @@ def test_migration_contains_no_data_mutation():
     """
     offenders = []
     for path in _forward_only_migrations():
+        if path.name in _DATA_MUTATION_ALLOWED:
+            continue
         match = _PROFILES_WRITE.search(_executable_sql(path.read_text(encoding="utf-8")))
         if match:
             offenders.append(f"{path.name}: {match.group(0)!r}")
-    assert offenders == [], f"profiles의 데이터를 바꾸는 문장이 있다: {offenders}"
+    assert offenders == [], (
+        f"profiles의 데이터를 바꾸는 문장이 있다: {offenders} — "
+        "의도한 것이면 _DATA_MUTATION_ALLOWED에 근거와 함께 등재하고, "
+        "그 변경의 범위를 보는 검사를 함께 추가할 것"
+    )
+
+
+def test_allowlist_entries_actually_exist():
+    """예외 목록이 **실재하는 파일**을 가리키는지 본다.
+
+    파일 이름이 바뀌거나 지워지면 예외가 조용히 무의미해지고, 그러면 ⑧이 그 파일을 다시
+    잡아야 하는데 목록에 남은 옛 이름 때문에 "왜 통과하지?"를 뒤늦게 추적하게 된다.
+    """
+    names = {p.name for p in _forward_only_migrations()}
+    missing = sorted(_DATA_MUTATION_ALLOWED - names)
+    assert missing == [], f"예외 목록이 없는 파일을 가리킨다: {missing}"
 
 
 # --- 아래는 Story 14.2(0028_handle_new_user_default_role.sql)가 추가했다 ---
@@ -466,3 +498,65 @@ def test_admin_signup_metadata_does_not_grant_is_admin():
                 "양성 대조 실패 — request.jwt.claim.sub가 안 먹혀 위 false가 무의미하다"
             )
         conn.rollback()
+
+
+# --- 아래는 0029(기존 계정 역할 통합)가 추가했다 ---
+# `_DATA_MUTATION_ALLOWED`에 0029를 등재하면서 ⑧의 감시가 그 파일에서 걷혔다. 그 자리를
+# 비워두면 "예외 등재 = 검사 면제"가 되므로, 아래 두 건이 **그 변경의 경계**를 대신 본다.
+# 즉 ⑧이 "바꾸지 마라"를 봤다면, 여기서는 "바꾸되 여기까지만"을 본다.
+
+_MIGRATION_0029 = _MIGRATIONS_DIR / "0029_unify_existing_account_roles.sql"
+
+
+def _apply_0029(cur):
+    cur.execute(_MIGRATION_0029.read_text(encoding="utf-8"))
+
+
+def test_0029_preserves_admin(db):
+    """관리자는 양쪽(profiles.role · metadata) 모두 그대로 남는다.
+
+    왜 이게 경계인가: `is_admin()`(0001)은 `profiles.role = 'admin'` 정확일치를 보고, 앱의
+    관리자 차단(main.dart, AR9)은 metadata의 'admin'을 본다. **둘 중 하나만 날아가도**
+    관리자 기능이나 모바일 차단이 조용히 깨진다. 0029의 UPDATE 두 문장이 각각 admin을
+    제외하는지를 실제 행으로 확인한다.
+    """
+    admin_id = _create_user(db, f"role-0029-admin-{uuid.uuid4()}@example.test", role="seller")
+    # 트리거로는 admin을 만들 수 없으므로(0028) 양쪽 축을 직접 admin으로 맞춘다.
+    _set_role(db, admin_id, "admin")
+    db.execute(
+        "update auth.users set raw_user_meta_data = "
+        "jsonb_set(coalesce(raw_user_meta_data, '{}'::jsonb), '{role}', '\"admin\"') where id = %s",
+        (admin_id,),
+    )
+
+    _apply_0029(db)
+
+    db.execute("select role from public.profiles where id = %s", (admin_id,))
+    assert db.fetchone()[0] == "admin", "0029가 admin의 profiles.role을 지웠다 — is_admin()이 깨진다"
+    db.execute("select raw_user_meta_data ->> 'role' from auth.users where id = %s", (admin_id,))
+    assert db.fetchone()[0] == "admin", "0029가 admin의 metadata role을 지웠다 — 앱 관리자 차단이 깨진다"
+
+
+def test_0029_unifies_non_admin_and_is_idempotent(db):
+    """비관리자는 양쪽 축이 정리되고, **재적용해도 같은 결과**다.
+
+    멱등을 보는 이유: 이 마이그는 일회성 데이터 정리라 사고 복구·환경 재구성 과정에서 두 번
+    돌 수 있다. 두 번째 실행이 실패하거나 값을 또 바꾸면 그때 원인을 찾기 어렵다.
+    """
+    user_id = _create_user(db, f"role-0029-user-{uuid.uuid4()}@example.test", role="seller")
+    db.execute("select role from public.profiles where id = %s", (user_id,))
+    assert db.fetchone()[0] == "seller", "전제 실패 — 이 검사는 옛 역할을 가진 행으로 시작해야 한다"
+
+    _apply_0029(db)
+    db.execute(
+        "select p.role, u.raw_user_meta_data ? 'role' "
+        "from public.profiles p join auth.users u on u.id = p.id where p.id = %s",
+        (user_id,),
+    )
+    role_after, meta_has_role = db.fetchone()
+    assert role_after == "user", f"비관리자 role이 통일되지 않았다: {role_after!r}"
+    assert meta_has_role is False, "비관리자 metadata에 role이 남았다 — 앱 쪽 사본이 안 지워졌다"
+
+    _apply_0029(db)  # 두 번째 적용 — 사후조건 블록까지 다시 돈다
+    db.execute("select role from public.profiles where id = %s", (user_id,))
+    assert db.fetchone()[0] == "user", "재적용이 값을 또 바꿨다 — 멱등하지 않다"

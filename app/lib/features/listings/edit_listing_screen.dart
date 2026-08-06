@@ -9,8 +9,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../auth/auth_controller.dart';
-import '../auth/user_role.dart';
+import '../auth/require_user.dart';
 import 'listings_providers.dart';
 import 'listings_repository.dart' show statusOnSale;
 import 'sell_screen.dart';
@@ -22,24 +21,10 @@ class EditListingScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final role = ref.watch(currentRoleProvider);
-
-    // 역할 가드(AC5): 판매자만 수정 진입.
-    if (role != UserRole.seller) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('매물 수정')),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              '판매자만 이용할 수 있습니다.',
-              key: Key('edit_role_blocked'),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    // 게이트: 로그인만 본다(역할 통합, FR52·FR53). 타인 매물 차단은 아래 단건 조회의
+    // seller_id 필터 + RLS가 이미 한다(이중 방어는 그대로 유지).
+    final blocked = requireUser(ref, '매물 수정');
+    if (blocked != null) return blocked;
 
     final detailAsync = ref.watch(editListingProvider(listingId));
 

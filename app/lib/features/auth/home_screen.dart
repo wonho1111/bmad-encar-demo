@@ -17,7 +17,6 @@ import '../listings/my_listings_screen.dart';
 import '../listings/search_screen.dart';
 import '../listings/sell_screen.dart';
 import 'auth_controller.dart';
-import 'user_role.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -25,9 +24,12 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(currentUserProvider);
-    final role = ref.watch(currentRoleProvider);
     final loading = ref.watch(authControllerProvider).isLoading;
-    final isSeller = role == UserRole.seller;
+    // 역할 통합(FR52·FR53): 판매 진입을 **로그인 사용자 전원**에게 보인다.
+    // 옛 코드는 `role == UserRole.seller`일 때만 보여줬는데, 그러면 게이트를 풀어도
+    // 화면이 안 보여 도달할 수가 없다 — 문을 열었으면 문패도 보여야 한다.
+    // 웹도 같다: 상단바의 '내 차 팔기'는 역할과 무관하게 항상 있다.
+    final canSell = user != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -69,9 +71,11 @@ class HomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 프로필 카드 — 역할 배지 + 이메일.
+                  // 프로필 카드 — 이메일. 역할 배지는 '회원' 고정이다(역할 통합):
+                  // 구매자/판매자 구분이 사라져 표시할 역할이 없고, 관리자는 모바일에서
+                  // 애초에 차단되므로(main.dart, AR9) 이 화면에 도달하지 않는다.
                   _ProfileCard(
-                    roleLabel: role?.label ?? '회원',
+                    roleLabel: '회원',
                     email: user?.email ?? '-',
                   ),
                   const SizedBox(height: 14),
@@ -93,7 +97,7 @@ class HomeScreen extends ConsumerWidget {
                       MaterialPageRoute(builder: (_) => const ChatListScreen()),
                     ),
                   ),
-                  if (isSeller) ...[
+                  if (canSell) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
