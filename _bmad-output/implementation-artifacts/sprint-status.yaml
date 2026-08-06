@@ -269,6 +269,20 @@ development_status:
   16-6-sm-d-통합-시연-검증-앱: backlog
   epic-16-retrospective: optional
 
+  # --- Epic 17: 접근 제어 마무리 (backend-only) ---
+  # 2026-08-07 신설(사용자 결정). Epic 15의 "UI-only" 제약을 지키려고 만든 자리다 —
+  # DW-669(정지 회원이 계속 매물을 등록·수정·삭제할 수 있다)를 Epic 15 안에서 하려면
+  # 그 에픽에 DB 예외를 하나 더 뚫어야 하는데(현재 예외는 15.4 하나뿐), 그러면 "UI-only"라는
+  # 깨끗한 제약이 무너진다. 그래서 에픽 밖으로 뺀다. 경위는 DW-717에 전문 기록.
+  # ⚠️ 착수 시 반드시 함께 볼 것 — 15-3 세션이 이미 구현했다가 되돌린 패치가 보존돼 있고
+  #   (`bmad-dev-auto-intent-gap-patch-15-3-*.diff`), 그 코드리뷰가 **그 구현 자체의 결함 2건**을
+  #   실측으로 찾아뒀다: ①정지된 관리자는 `listings_delete_admin`으로 여전히 남의 매물 삭제 가능
+  #   ②`listing_images`·`storage.objects` 쓰기 정책이 없어 정지된 판매자가 사진 추가·삭제 가능.
+  #   패치를 그대로 재사용하면 이 두 구멍을 그대로 안고 간다.
+  epic-17: backlog
+  17-1-정지-회원-쓰기-차단-rls: backlog
+  epic-17-retrospective: optional
+
 # 회고에서 나온 액션 아이템. "무엇/상태"의 정본은 여전히 docs/tech-debt.md(대장)이고,
 # 여기는 "어느 에픽 회고가 무엇을 약속했나"의 색인이다 — 대장 번호로 이어붙인다(B8).
 # ⚠️ 이 절은 Epic 11 회고(2026-07-28)에서 처음 만들었다. Epic 10 이전 회고의 액션은
