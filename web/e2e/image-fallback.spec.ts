@@ -8,7 +8,7 @@
 //
 // 이 스펙 하나로 #86("재실행 가능한 형태")도 함께 닫는다 — 이 파일 자체가 그 재실행 가능한 산출물이다.
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, Route } from '@playwright/test';
 import {
   assertNoBrokenImages,
   assertPlaceholderFallbackFired,
@@ -41,10 +41,21 @@ test.beforeEach(async ({ page }, testInfo) => {
   abortCounts.set(page, counter);
   // 이미지 스토리지 요청만 abort — 매물 데이터 조회(REST)는 그대로 통과시킨다(#73의 정확한 조건:
   // "매물은 뜨는데 사진만 전면 실패").
-  await page.route('**/storage/v1/object/public/**', (route) => {
+  //
+  // ⚠️ **두 패턴이 필요하다**(2026-08-06 실측, DW-690). 소비처마다 브라우저가 부르는 URL이 다르다:
+  //   · 매물 카드(`ListingCardImage`)는 `next/image`를 쓴다 → 브라우저는 `/_next/image?url=…`만
+  //     부르고 **스토리지는 서버가 대신** 가져간다. 스토리지 패턴만 걸면 이 경로는 한 번도 안 걸린다.
+  //   · 상세 갤러리(`ListingGallery`)는 의도적으로 평범한 `<img>`를 쓴다 → 브라우저가 스토리지를
+  //     직접 부른다.
+  // 카드가 `b39a2b2`(2026-07-29, 장당 194KB→8KB)로 next/image에 올라탄 뒤 `/search`·`/ai`의
+  // abort가 0회가 되어 **8일간 red**였고, 같은 실행에서 상세만 통과해 경계가 드러났다.
+  // 한쪽만 남기면 나머지가 다시 0-of-0이 되므로 **둘 다** 건다.
+  const abortImage = (route: Route) => {
     counter.count += 1;
     return route.abort();
-  });
+  };
+  await page.route('**/storage/v1/object/public/**', abortImage);
+  await page.route('**/_next/image**', abortImage);
 });
 
 test('/search — 이미지 전면 장애에도 깨진 아이콘 0개, 플레이스홀더 전량 발동', async ({ page }) => {
