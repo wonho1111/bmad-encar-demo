@@ -63,11 +63,11 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
   function renderSelect(key: keyof SearchFilterValues, label: string, options: readonly string[]) {
     return (
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
+        <span className="text-ink-secondary">{label}</span>
         <select
           value={values[key]}
           onChange={(e) => update(key, e.target.value)}
-          className="rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+          className="rounded border border-border-hairline bg-transparent px-2 py-1.5"
         >
           <option value="">전체</option>
           {options.map((opt) => (
@@ -83,17 +83,17 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
   return (
     <form
       onSubmit={applyFilters}
-      className="flex flex-col gap-4 rounded border border-zinc-200 p-4 dark:border-zinc-800"
+      className="flex flex-col gap-4 rounded-card border border-border-hairline p-4"
     >
       {/* 키워드(모델명) */}
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">키워드(모델명)</span>
+        <span className="text-ink-secondary">키워드(모델명)</span>
         <input
           type="text"
           value={values.q}
           onChange={(e) => update('q', e.target.value)}
           placeholder="예: 아반떼, 쏘렌토"
-          className="rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+          className="rounded border border-border-hairline bg-transparent px-2 py-1.5"
         />
       </label>
 
@@ -108,7 +108,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
 
       {/* 가격 범위(원) */}
       <fieldset className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">가격({UNITS.price})</span>
+        <span className="text-ink-secondary">가격({UNITS.price})</span>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -116,23 +116,23 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.price_min}
             onChange={(e) => update('price_min', e.target.value)}
             placeholder="최소"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
           />
-          <span className="text-zinc-400">~</span>
+          <span className="text-ink-muted">~</span>
           <input
             type="number"
             min={0}
             value={values.price_max}
             onChange={(e) => update('price_max', e.target.value)}
             placeholder="최대"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
           />
         </div>
       </fieldset>
 
       {/* 연식 범위(년) */}
       <fieldset className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">연식(년)</span>
+        <span className="text-ink-secondary">연식(년)</span>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -141,9 +141,9 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.year_min}
             onChange={(e) => update('year_min', e.target.value)}
             placeholder="최소"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
           />
-          <span className="text-zinc-400">~</span>
+          <span className="text-ink-muted">~</span>
           <input
             type="number"
             min={LISTING_RANGES.year.min}
@@ -151,7 +151,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.year_max}
             onChange={(e) => update('year_max', e.target.value)}
             placeholder="최대"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
           />
         </div>
       </fieldset>

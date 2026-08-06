@@ -112,7 +112,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">사진</span>
-        <span className="text-sm tabular-nums text-zinc-500 dark:text-zinc-400">
+        <span className="text-sm tabular-nums text-ink-muted">
           {count}/{MAX_PHOTOS}
         </span>
       </div>
@@ -138,18 +138,18 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
         className={[
           'flex w-full cursor-pointer flex-col items-center gap-1 rounded border-2 border-dashed px-4 py-6 text-center',
           'disabled:cursor-not-allowed disabled:opacity-50',
-          dragOver ? 'border-zinc-900 bg-zinc-50 dark:border-zinc-100 dark:bg-zinc-900' : 'border-zinc-300 dark:border-zinc-700',
+          dragOver ? 'border-brand-petrol bg-brand-petrol/10' : 'border-border-hairline',
         ].join(' ')}
       >
         <span className="text-sm font-medium">
           {full ? `사진 ${MAX_PHOTOS}장을 모두 채웠어요` : '사진을 끌어다 놓거나 클릭해서 선택하세요'}
         </span>
         {/* 문구 정본: docs/conventions.md §10 (목업의 "20MB" 표기는 낡았다 — 베끼지 말 것). */}
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">JPG · PNG · WebP, 장당 최대 5MB</span>
+        <span className="text-xs text-ink-muted">JPG · PNG · WebP, 장당 최대 5MB</span>
         {/* #58 — 재인코딩(resize.ts)이 되돌릴 수 없이 바꾸는 두 가지를 **올리기 전에** 알린다.
             움직이는 WebP는 단일 프레임으로 디코딩되고, 투명 영역은 JPEG 폴백을 타면 알파가 사라진다.
             저장 후엔 원본을 복구할 수 없어서, 사후 오류가 아니라 사전 고지가 맞는 자리다. */}
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="text-xs text-ink-muted">
           움직이는 사진은 첫 장면만, 투명한 배경은 채워져 저장될 수 있어요
         </span>
       </button>
@@ -168,7 +168,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
       />
 
       {pickError && (
-        <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+        <p role="alert" className="text-sm text-danger">
           {pickError}
         </p>
       )}
@@ -202,7 +202,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
               }}
               className="flex flex-col gap-1"
             >
-              <div className="relative aspect-square overflow-hidden rounded border border-zinc-200 dark:border-zinc-800">
+              <div className="relative aspect-square overflow-hidden rounded border border-border-hairline">
                 {p.previewUrl && !failedPreviewKeys.has(p.key) ? (
                   // eslint-disable-next-line @next/next/no-img-element -- objectURL은 next/image의 최적화 대상이 아니고, 업로더 미리보기는 최적화할 이유도 없다.
                   <img
@@ -214,7 +214,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
                     }
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-zinc-100 text-xs text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                  <div className="flex h-full w-full items-center justify-center bg-placeholder-bg text-xs text-ink-muted">
                     미리보기 없음
                   </div>
                 )}
@@ -222,9 +222,11 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
                 {/* 대표 배지는 **저장될 첫 칸에만**(firstSavableIndex). 검증 실패 항목이 0번 자리를
                     차지해도 그 항목은 저장되지 않으므로, 배지는 실제로 저장될 첫 항목을 따라간다
                     (코드리뷰 2026-07-19 — 전엔 i===0만 봐서 0번이 거부 항목이면 배지가 어디에도
-                    없는데 DB 대표는 다른 행에 붙는 불일치가 있었다). */}
+                    없는데 DB 대표는 다른 행에 붙는 불일치가 있었다).
+                    ⚠️ bg-petrol-deepest(항상 짙은 톤, dark: 오버라이드 없음) — 사진 위 흰 글씨는
+                    테마와 무관하게 항상 어두운 배경이 받쳐줘야 대비가 유지된다(Story 15.1 매핑 브리프). */}
                 {i === firstSavableIndex && (
-                  <span className="absolute left-1 top-1 rounded bg-zinc-900/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                  <span className="absolute left-1 top-1 rounded bg-petrol-deepest/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
                     대표
                   </span>
                 )}
@@ -234,7 +236,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
                   onClick={() => handleRemove(i)}
                   disabled={disabled}
                   aria-label={`${i + 1}번째 사진 삭제`}
-                  className="absolute right-1 top-1 rounded bg-zinc-900/85 px-1.5 py-0.5 text-xs text-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  className="absolute right-1 top-1 rounded bg-petrol-deepest/85 px-1.5 py-0.5 text-xs text-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   ✕
                 </button>
@@ -250,7 +252,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
 
               {p.status === 'error' && (
                 <div className="flex flex-col gap-1">
-                  <p role="alert" className="text-[11px] leading-tight text-red-700 dark:text-red-300">
+                  <p role="alert" className="text-[11px] leading-tight text-danger">
                     {p.error}
                   </p>
                   {p.retryable && (
@@ -266,7 +268,7 @@ export default function PhotoUploader({ items, onChange, disabled = false }: Pho
       )}
 
       {/* 문구 정본: 스토리 AC2. 사진 0장도 정상 완료라는 것을 사용자가 알게 한다. */}
-      <p id={`${inputId}-hint`} className="text-xs text-zinc-500 dark:text-zinc-400">
+      <p id={`${inputId}-hint`} className="text-xs text-ink-muted">
         사진은 선택이에요. 없어도 등록되지만, 있으면 문의가 훨씬 잘 와요.
       </p>
     </section>

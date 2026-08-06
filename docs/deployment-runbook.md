@@ -170,14 +170,65 @@
 
 ---
 
-## 10. sold 매물을 실수로 만들었을 때 — 되돌리는 유일한 방법
+## 10. sold 매물을 실수로 만들었을 때 — 되돌리는 방법
 
-`0015` 적용 이후 **`status='sold'`가 된 매물은 판매자도 관리자도 되돌릴 수 없다.** RLS가 sold 행을
-UPDATE 대상에서 아예 빼기 때문에 어느 화면에서 눌러도 **"0행 변경"**으로 끝난다(에러가 아니라 무반응처럼 보인다).
-관리자에게는 `listings` UPDATE 정책이 없고(`0005`), `service_role` 키는 프로젝트 금지다(`conventions.md` §5).
+**정본 절차: 관리자 화면에서 "판매완료 되돌리기" 버튼을 누른다**(DW-391, Story 15.4).
+관리자 매물 관리(`/admin/listings`) 목록·상세 양쪽에서 `status='sold'`인 매물에만 이 버튼이
+보인다. 내부적으로는 `public.admin_restore_sold_listing(p_listing_id uuid)` RPC(`0030`)를
+호출한다 — `status`만 `sold`→`on_sale`로 되돌리는 좁은 `SECURITY DEFINER` 함수로, WHERE 절에
+`status='sold' and public.is_admin()`을 함께 걸어 관리자·sold 매물 조합에서만 실제로 바뀐다
+(그 외에는 에러가 아니라 0행 반환 → 화면에 한국어 오류로 안내).
 
-**이건 가정이 아니라 이미 한 번 밟았다** — Story 9.7이 `0015` 원격 검증 중 테스트 매물 하나를 sold로 바꿨다가
-되돌리지 못해 아래 방법으로 복구했다. 그때 대장·런북에 안 남겨서 코드리뷰가 다시 잡았다(`docs/tech-debt.md` #91).
+관리자 UPDATE 정책(`listings_update_admin`)을 통째로 여는 방식은 쓰지 않는다 — `0015`가 막은
+"sold 매물 임의 수정"을 반쯤 되여는 것이기 때문이다. RPC는 `status` 외 다른 컬럼을 파라미터로
+받지 않는다.
+
+⚠️ **되돌리기 전에 알아둘 것 — 거래 기록이 남지 않는다.** 관리자 거래내역 화면(`/admin/transactions`)은
+`status='sold'`인 매물만 모아 보여주므로, 되돌리는 순간 그 매물은 **거래내역에서 사라진다.** 그리고
+누가·언제 되돌렸는지를 남기는 감사 로그나 컬럼이 없다(DW-718) — `listings.updated_at`이 갱신되는 것이
+유일한 시각 흔적이고, 그마저 "무엇이 있었는지"는 말해주지 않는다. 판매 사실 자체가 나중에 필요할 것
+같으면 **되돌리기 전에** 위 §10-a의 조회 SQL로 매물 정보를 따로 기록해 둔다.
+
+**배경(왜 이게 필요했나)** — `0015` 적용 이후 `status='sold'`가 된 매물은 판매자도 관리자도
+일반 UPDATE로는 되돌릴 수 없다. RLS가 sold 행을 UPDATE 대상에서 아예 빼기 때문에 어느 화면에서
+눌러도 **"0행 변경"**으로 끝난다(에러가 아니라 무반응처럼 보인다). Story 9.7이 `0015` 원격 검증
+중 테스트 매물 하나를 sold로 바꿨다가 되돌리지 못해 아래 §10-a의 SQL로 복구한 사례가 있었다
+(`docs/tech-debt.md` #91). 이 절 전체(위 RPC/화면 절차)가 그 수동 개입을 대체한다.
+
+### 10-a. 비상용 백업 — DB에 직접 붙어 되돌리기
+
+위 화면 절차가 배포되지 않았거나(예: `0030` 미적용 환경) 관리자 화면 자체에 장애가 있을 때만
+쓰는 최후 수단이다. **평상시엔 §10의 화면 절차를 쓴다.**
+
+- **`0030` 적용 여부 확인**(코드리뷰 patch — "배포됐는지 어떻게 아나"에 답이 없었다):
+  ```sql
+  select 1 from pg_proc where proname = 'admin_restore_sold_listing'
+    and pronamespace = 'public'::regnamespace;
+  ```
+  0행이면 `0030` 미적용 — 이 경우엔 아래 SQL로 진행한다.
+- **버튼을 눌렀는데 "되돌릴 수 없습니다"만 뜨는 경우**(0행 반환) — 위 SQL이 1행을 반환하면 RPC는
+  배포된 것이므로, 남는 원인은 둘뿐이다.
+  1. **그 매물이 이미 sold가 아니다.** 다른 관리자가 먼저 눌렀거나, 화면이 낡아 이미 복구된 행을
+     다시 누른 경우다. **가장 흔한 경우이며 새로고침이면 끝난다.** 확인:
+     ```sql
+     select id, status, updated_at from public.listings where id = '<uuid>'::uuid;
+     ```
+  2. **로그인 계정의 `profiles.role`이 `admin`이 아니다.** 다만 이건 **드물다** — `/admin/**`은
+     `(admin)/layout.tsx`의 `requireRole(USER_ROLE.ADMIN)`이 이미 막고 있어 비관리자는 버튼이 있는
+     화면 자체에 못 들어간다(홈으로 리다이렉트). 따라서 이 원인은 *화면을 연 뒤 역할이 회수된*
+     낡은 세션에서만 성립한다. 확인:
+     ```sql
+     -- ⚠️ auth.uid()를 쓰지 말 것. §10-a는 DB에 직접 붙는 경로라 JWT가 없어 auth.uid()가 항상
+     --   NULL이고, 그 조건으로 조회하면 관리자가 맞아도 늘 0행이 나와 원인을 오판한다(실측 확인).
+     --   이 절에서는 항상 이메일로 조회한다.
+     select p.role, p.status
+       from public.profiles p join auth.users u on u.id = p.id
+      where u.email = '<관리자 이메일>';
+     ```
+     ⚠️ **`status`가 `suspended`여도 그건 0행의 원인이 아니다.** `is_admin()`은 `role`만 보고
+     `profiles.status`는 보지 않으며, `0030`은 `SECURITY DEFINER`라 RLS도 안 거친다 — 정지된
+     관리자도 이 RPC는 그대로 통과한다(DW-721, 실측 재현). 위 쿼리에서 `status`를 함께 뽑는 것은
+     계정 상태를 참고로 보여줄 뿐이니, **`role`만 판단 근거로 쓴다.**
 
 **복구 방법: DB에 직접 붙어 실행한다**(Supabase SQL Editor 또는 MCP `execute_sql`). RLS는 이 경로에 안 걸린다.
 
@@ -195,8 +246,7 @@ update public.listings set status = 'on_sale'
 ```
 
 - ⚠️ **`where` 절을 반드시 id로 좁힌다.** 이 경로는 RLS가 안 막으므로 실수하면 전량이 바뀐다.
-- 📌 이건 **운영자 수동 개입**이지 기능이 아니다. 사용자가 스스로 되돌려야 하는 요구가 생기면
-  `#91`의 선택지(관리자 UPDATE 정책 / 복구 전용 좁은 정책)를 그때 판단한다.
+- 📌 이건 **운영자 수동 개입**이지 기능이 아니다.
 
 ---
 

@@ -101,7 +101,7 @@ export default function SignupPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">회원가입</h1>
+      <h1 className="text-section font-bold text-ink-primary">회원가입</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
         <label className="flex flex-col gap-1">
@@ -112,7 +112,7 @@ export default function SignupPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-border-hairline px-3 py-2 bg-surface-raised"
           />
         </label>
 
@@ -125,23 +125,26 @@ export default function SignupPage() {
             required
             minLength={6}
             autoComplete="new-password"
-            className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-border-hairline px-3 py-2 bg-surface-raised"
           />
         </label>
 
-        <p className="text-xs text-zinc-500">차를 사고파는 건 가입 후 언제든 할 수 있어요.</p>
+        <p className="text-xs text-ink-muted">차를 사고파는 건 가입 후 언제든 할 수 있어요.</p>
 
         {error && (
-          <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          // 같은 폼 안에서 성공 문구는 상자(bg-trust-green-bg)를 유지하는데 오류만 맨 텍스트로 두면
+          // 더 급한 쪽이 더 조용해진다. 상자를 되돌린다(코드리뷰 patch, 15.1). 대비 실측:
+          // danger/10 틴트 위 text-danger = 라이트 4.51 / 다크 5.72 (둘 다 AA 통과).
+          <p role="alert" className="rounded bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
           </p>
         )}
         {success && (
           <div className="flex flex-col gap-2">
-            <p role="status" className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+            <p role="status" className="rounded bg-trust-green-bg px-3 py-2 text-sm text-trust-green-ink">
               {success}
             </p>
-            <Link href="/login" className="text-sm font-medium text-zinc-900 underline dark:text-zinc-100">
+            <Link href="/login" className="text-sm font-medium text-ink-primary underline">
               로그인하러 가기
             </Link>
           </div>

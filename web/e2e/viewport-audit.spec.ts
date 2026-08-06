@@ -172,6 +172,91 @@ test.describe('채팅방(/chat/[roomId]) — 가로 오버플로 없음 (대장 
   //   (`src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts`)으로 고정했다.
 });
 
+// 관리자 계정(supabase/.env.seed — 전 계정 공유 비밀번호) — core-flows.spec.ts의 ADMIN_USER와 동일.
+const ADMIN_USER = { email: 'admin@test.com', password: 'seller123' };
+
+test.describe('관리자 6화면 — 가로스크롤 없음 (spec-15-2, DW-697 ②)', () => {
+  // 관리자 화면엔 카드 그리드가 없다(단일 열 리스트/상세) — 그래서 이 스위트의 다른 describe들과
+  // 달리 그리드 열수(assertGridColumnsOrEmptyState) 단언은 하지 않는다(spec-15-2 Always, 파일 헤더
+  // 주석의 "그리드를 쓰는 화면에만 열수 단언" 원칙과 같은 논리로 스코프). 대신 사이드바(spec-15-2
+  // AdminSidebar)가 콘텐츠 폭을 줄여도 6화면(목록 4 + 상세 2) 전부 가로스크롤이 없는지만 본다.
+  //
+  // 코드리뷰 patch 2건이 여기 들어 있다:
+  //   ① **가로스크롤만 보면 이 스토리가 겨냥한 위험을 못 본다.** 스펙의 인수조건은 "가로스크롤이
+  //      없고 **배지·라벨이 두 줄로 밀리지 않는다**"이고 Block If는 "회원관리 행의 배지+액션
+  //      조합이 줄바꿈됨"인데, 줄바꿈은 오히려 가로스크롤을 **없애는** 방향이다 — 즉 고르던 단언이
+  //      정확히 반대로 움직인다. 관리자 행들은 지금 `min-w-0 + truncate`로 압력을 흡수하므로,
+  //      그 truncate가 사라지거나 flex-wrap이 붙으면 사이드바가 폭을 240px 먹는 800px 구간에서
+  //      두 줄이 된다. 이 파일의 다른 describe들이 전부 그러듯 단일행 단언을 함께 건다.
+  //   ② **관리자 화면이 실제로 그려졌는지 아무도 안 봤다.** 세션 만료·권한 회귀로 전부 /login으로
+  //      튕겨도 로그인 화면엔 가로스크롤이 없어 7개 단언이 모두 통과한다(C6은 이걸 에러 문구 +
+  //      행 수로 막고 있는데 여기엔 없었다).
+  test('목록 4 + 상세 2 — 가로스크롤 없음', async ({ page }) => {
+    await login(page, ADMIN_USER.email, ADMIN_USER.password);
+
+    for (const path of ['/admin', '/admin/members', '/admin/listings', '/admin/transactions', '/admin/chats']) {
+      await page.goto(path);
+      await page.waitForLoadState('networkidle');
+      // ② 로그인 화면으로 튕기지 않고 요청한 관리자 경로에 그대로 있는지 먼저 확인한다.
+      expect(new URL(page.url()).pathname, `${path}: 관리자 경로에 머물러야 함(로그인 리다이렉트 등 아님)`).toBe(path);
+      await assertNoHorizontalOverflow(page);
+    }
+
+    // ① 회원관리 행 — 관리자 화면 중 한 행에 가장 많은 요소(역할 라벨 + 라벨 + 배지 + 액션 2개)가
+    //    들어가 사이드바 압력을 가장 먼저 받는 자리다.
+    //
+    //    코드리뷰 patch 2건이 이 몇 줄에 겹쳐 있다 — 이 단언은 원래 **잴 수 없는 것을 재고 있었다**:
+    //      (가) 재는 **대상**이 틀렸다. `li` 안의 첫 `span`은 라벨 묶음
+    //           (`flex min-w-0 items-center gap-2`)인데, 그 안은 `truncate`(whitespace-nowrap)라
+    //           애초에 두 줄이 될 수 없다. 정작 Block If가 말하는 것은 "배지+액션 조합이 줄바꿈됨"
+    //           = **행(li) 자체**가 두 줄이 되는 것이다. 실측: li에 `flex-wrap`, 액션 div에
+    //           `basis-full`을 넣어 액션을 아랫줄로 내려도 라벨 span 높이는 그대로라 green이었고,
+    //           줄바꿈은 가로스크롤을 오히려 **없애므로** 옆의 assertNoHorizontalOverflow도 green이었다.
+    //           → `li`를 직접 잰다.
+    //      (나) 재는 **행**이 틀렸다. 회원 목록은 가입일 오름차순이고 본인 행에는
+    //           `MemberActions`를 렌더하지 않는데(members/page.tsx의 isSelf), 먼저 가입한 관리자가
+    //           맨 위라 `.first()`는 **액션 버튼이 없는 가장 헐거운 행**을 고를 수 있다. 주석은
+    //           "가장 많은 요소가 들어간 행"이라 말하면서 실제로는 반대쪽 끝을 재던 셈이다.
+    //           → 액션 버튼을 실제로 가진 행으로 고른다.
+    await page.goto('/admin/members');
+    await page.waitForLoadState('networkidle');
+    const loadedMemberRow = page
+      .locator('main ul li')
+      .filter({ has: page.getByRole('button', { name: /^(정지|정지 해제)$/ }) })
+      .first();
+    await expect(loadedMemberRow, '액션 버튼을 가진 회원 행이 1개 이상 있어야 줄바꿈을 판정할 수 있음').toBeVisible();
+    await assertSingleLine(loadedMemberRow);
+
+    // 상세 2개(목록 4에 이어 대표 1개씩) — 관리자 RLS는 sold 포함 전 매물·전 채팅방을 보므로
+    // buyer 시드 계정 기준으로 뽑은 id를 그대로 재사용해도 관리자 세션에서 항상 열람 가능하다.
+    //
+    // 코드리뷰 patch — ②의 "경로에 머물렀나" 가드가 위 목록 루프 **안에만** 걸려 있어, 정작 이
+    // 스토리가 새로 추가한 상세 2경로는 여전히 무방비였다. 게다가 상세 화면엔 목록에 없는 실패
+    // 모드가 하나 더 있다: 조회 실패·없는 id면 짧은 안내문 하나만 그려지는데, 그 화면도
+    // 가로스크롤이 없어 단언이 통과한다. 그래서 경로 + 에러문구 부재를 함께 본다.
+    //   (`getByRole('alert')`는 쓰지 않는다 — Next dev의 route announcer가 빈 role="alert"를
+    //    항상 하나 심어 둬서 어떤 화면에서도 0이 되지 않는다. 실측으로 확인했다. C6과 같이
+    //    실제 에러 **문구**를 본다.)
+    const listingId = await fetchOnSaleListingIdWithPhoto();
+    await page.goto(`/admin/listings/${listingId}`);
+    await page.waitForLoadState('networkidle');
+    expect(new URL(page.url()).pathname, '매물 상세: 관리자 경로에 머물러야 함').toBe(
+      `/admin/listings/${listingId}`,
+    );
+    await expect(page.getByText(/불러오지 못했습니다|찾을 수 없습니다/)).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
+
+    const roomId = fetchChatRoomIdForSeedUser();
+    await page.goto(`/admin/chats/${roomId}`);
+    await page.waitForLoadState('networkidle');
+    expect(new URL(page.url()).pathname, '채팅방 상세: 관리자 경로에 머물러야 함').toBe(
+      `/admin/chats/${roomId}`,
+    );
+    await expect(page.getByText(/불러오지 못했습니다|찾을 수 없습니다/)).toHaveCount(0);
+    await assertNoHorizontalOverflow(page);
+  });
+});
+
 test.describe('/ai — 가로 오버플로 없음 (#84) + 입력 폼·카드 무결성', () => {
   test('로그인 사용자, 카드 0개(빈 대화)', async ({ page }) => {
     await login(page);

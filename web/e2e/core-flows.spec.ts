@@ -10,6 +10,7 @@
 import { expect, test } from '@playwright/test';
 import {
   assertLocalSupabase,
+  fetchChatRoomIdForSeedUser,
   fetchOnSaleListingIdWithPhoto,
   login,
   runPsql,
@@ -207,6 +208,48 @@ test('C6 관리자 화면 렌더 — 회원/매물/거래/채팅 관리', async 
     const rowCount = await page.locator('main ul li').count();
     expect(rowCount, `${path}: 데이터 행(li)이 1개 이상 렌더돼야 함`).toBeGreaterThan(0);
   }
+
+  // 상세 라우트 2개(spec-15-2, DW-697 ③) — 목록 4개에 이어 대표 상세를 각각 확인한다.
+  const listingId = await fetchOnSaleListingIdWithPhoto();
+  await page.goto(`/admin/listings/${listingId}`);
+  await expect(
+    page.getByText(/불러오지 못했습니다|찾을 수 없습니다/),
+    `/admin/listings/${listingId}: 에러 문구가 없어야 함`,
+  ).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+  // 관리자 채팅방 열람 — isSeller 기준 좌/우 배치(DW-697 ③, admin/chats/[roomId]/page.tsx의
+  // `isSeller ? 'items-end' : 'items-start'` 분기). 시드 방(fetchChatRoomIdForSeedUser)은 buyer·
+  // seller 발신 메시지가 둘 다 있어 두 배치를 모두 실측할 수 있다(supabase/seed-local/data 확인).
+  const roomId = fetchChatRoomIdForSeedUser();
+  await page.goto(`/admin/chats/${roomId}`);
+  await expect(
+    page.getByText(/불러오지 못했습니다|찾을 수 없습니다/),
+    `/admin/chats/${roomId}: 에러 문구가 없어야 함`,
+  ).toHaveCount(0);
+  const messageItems = page.locator('main ul li');
+  const messageCount = await messageItems.count();
+  expect(messageCount, `/admin/chats/${roomId}: 대화 내용(li)이 1개 이상 렌더돼야 좌/우 배치를 단언할 수 있음`).toBeGreaterThan(0);
+  // 개별 일치 확인만으로는 이 단언이 허수아비가 될 수 있다(코드리뷰 patch) — 시드 방의 발신자가
+  // 전부 한쪽(예: 전부 구매자)으로 쏠리면, 아래 루프는 매 메시지가 "자기 자신의 라벨과 일치"하는
+  // 것만 확인할 뿐 items-end/items-start 두 배치가 실제로 **둘 다** 렌더됐는지는 확인하지 못한다
+  // — 즉 좌/우 구분 자체가 깨져도(예: isSeller 분기가 통째로 사라져 전부 items-start가 돼도) 시드
+  // 데이터가 우연히 한쪽뿐이면 초록으로 통과한다. 그래서 두 배치가 각각 최소 1건씩 나왔는지도 함께 센다.
+  let sellerCount = 0;
+  let otherCount = 0;
+  for (let i = 0; i < messageCount; i++) {
+    const li = messageItems.nth(i);
+    // 각 메시지의 첫 줄(senderLabel, "판매자"/"구매자"/"기타 …")로 isSeller 여부를 판별해,
+    // 그 판정과 실제 렌더된 정렬 클래스(items-end=우측/items-start=좌측)가 일치하는지 확인한다.
+    const label = await li.locator('span').first().innerText();
+    const isSeller = label.startsWith('판매자');
+    const expectedClass = isSeller ? /items-end/ : /items-start/;
+    await expect(li, `"${label}" 메시지의 좌/우 배치가 isSeller 판정과 어긋남`).toHaveClass(expectedClass);
+    if (isSeller) sellerCount++;
+    else otherCount++;
+  }
+  expect(sellerCount, '판매자 메시지가 최소 1건 있어야 좌우 배치 대비가 성립함').toBeGreaterThan(0);
+  expect(otherCount, '구매자/기타 메시지가 최소 1건 있어야 좌우 배치 대비가 성립함').toBeGreaterThan(0);
 });
 
 // ── C7 [desktop] buyer 계정으로 관리자 화면 접근 차단 ─────────────────────
@@ -255,6 +298,26 @@ test('C8 판매자 역할이 아닌 기존 계정이 /sell에 접근하면 매�
   expect(
     new URL(page.url()).pathname,
     '판매자 역할이 아닌 계정도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
+  ).toBe('/sell');
+});
+
+// ── C8b [desktop] 관리자 계정으로 /sell 접근 (DW-675, spec-15-3) ──
+// C8과 짝을 이루는 회귀 가드 — /sell 게이트는 requireUser()라 role을 안 보므로 admin도
+// 통과한다(spec-14-3 Design Notes가 "의도된 귀결"로 명시 선언). 그런데 그 선언을 지키는
+// 자동 검사가 없어(DW-675) admin 제외 분기가 무검사로 들어올 수 있었다. 여기서는 "화면
+// 렌더"만 읽기 전용으로 고정한다(RLS·쓰기 경로는 검사하지 않음).
+// 읽기 전용(폼 제출 없음) — 이 스펙 파일의 절대 규칙(쓰기 없음)을 지킨다.
+test('C8b 관리자 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
+  await login(page, ADMIN_USER.email, ADMIN_USER.password);
+
+  await page.goto('/sell');
+  await expect(
+    page.getByRole('heading', { name: '매물 등록' }),
+    '/sell이 관리자 계정에도 매물 등록 폼을 렌더해야 함(회귀 없음)',
+  ).toBeVisible();
+  expect(
+    new URL(page.url()).pathname,
+    '관리자 계정도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
   ).toBe('/sell');
 });
 

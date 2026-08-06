@@ -564,7 +564,7 @@ location: `supabase/migrations/0015_listings_update_not_sold.sql:28` × `0005_ad
 severity: high
 reason: 데모 단계이고 구매완료는 판매자가 의도적으로 누르는 동작이라 오늘은 무해하지만, 이미 한 번 실제로 되돌릴 방법이 없어 SQL로 직접 복구한 사례가 있다.
 trigger: 실사용자가 구매완료를 오조작하는 시점 · 재오픈 UI 도입 시.
-status: open
+status: resolved (2026-08-07, Story 15.4) — `admin_restore_sold_listing` RPC(`supabase/migrations/0030_listings_restore_sold_rpc.sql`) + 관리자 화면 "판매완료 되돌리기" 버튼으로 위 해소 선택지 ②(복구 전용 좁은 RPC)를 구현. 런북 §10을 이 절차로 대체하고 옛 SQL은 §10-a 비상용 백업으로 격하. 스펙: `_bmad-output/implementation-artifacts/spec-15-4-관리자-판매완료-되돌리기.md`.
 
 - **위치:** `supabase/migrations/0015_listings_update_not_sold.sql:28` × `0005_admin_policies.sql:48`
 - **내용:** `0015`가 `using`으로 sold 행을 UPDATE 대상에서 빼면서 **판매자도 관리자도 복구 경로가 없다.** 0005는 `listings`에 관리자 **DELETE** 정책만 만들고 UPDATE는 만들지 않았다(*"UPDATE는 현재 관리 요구사항에 없어 추가하지 않는다"*). 마지막 수단인 `service_role`은 프로젝트 규칙상 금지(`conventions.md` §5).
@@ -4763,7 +4763,7 @@ severity: low
 summary: `requireUser()`는 role을 안 보므로 `{buyer, seller, admin}` 셋 다 통과한다. buyer는 C8·B8이, seller는 `write-flows`가 간접적으로 덮지만 **admin 경로는 아무 케이스도 없다**. 스펙 Design Notes가 admin 진입을 "의도된 귀결"로 명시 선언했고 2차 리뷰가 "admin을 막자"는 제안을 계약 위반이라며 기각까지 했는데, 그 결정은 문서에만 있고 실행되는 검사가 아니다(CLAUDE.md B9 — 주석·문서는 계약이 아니다).
 evidence: `grep "'/sell'" web/e2e/*.spec.ts` 전수 → admin 계정으로 `/sell`을 여는 케이스 0건. `admin@test.com`은 `core-flows.spec.ts:16`·`nav-and-hero.spec.ts:18`에 상수로 이미 있지만 `/admin` 케이스(C6·C7·B4)에만 쓰인다. ⚠️ 지금 동작은 정상이다(`requireUser()`가 role을 안 읽으므로 통과). 문제는 누군가 "관리자가 매물 파는 건 이상하다"며 admin 제외 분기를 넣어도 전량 E2E가 초록이라는 것 — 즉 스펙이 계약 위반이라 판정한 바로 그 변경이 무검사로 들어올 수 있다.
 trigger: **관리자 화면·권한을 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 admin 권한 경계를 다루므로 그 자리에서 한 줄 추가한다(`core-flows.spec.ts`의 C8 옆에 ADMIN_USER로 `/sell` 도달을 단언, 읽기 전용이라 그 파일의 절대 규칙에 맞는다). 함께 판단할 것: 그때도 admin 진입을 유지할지 여부 자체를 재확인한다 — 유지가 결론이면 검사로 못박고, 뒤집는다면 스펙 Always부터 고쳐야 한다.
-status: open
+status: done 2026-08-07 — `web/e2e/core-flows.spec.ts`에 `C8b 관리자 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다` 추가(spec-15-3). admin 진입 유지가 결론으로 재확인됐고(스펙 Always 변경 없음), 읽기 전용으로 그 계약을 검사에 못박았다.
 
 ### DW-676: `/account`가 "역할: 구매자"를 실제 화면에 표시한다 — 그 값이 더 이상 무엇을 할 수 있는지 말해주지 않는데도
 
@@ -4973,4 +4973,365 @@ evidence: 추측을 배제하려고 원인 후보를 하나씩 잘랐다. ①`gi
 why_it_matters: 이 상태로는 **E2E 초록/빨강이 신호가 아니라 잡음**이 된다. 회귀를 찾으려 볼 때마다 "이게 진짜인가 포화인가"를 매번 다시 판정해야 하고, 그 판정 비용이 검사의 가치를 깎는다. 실제로 이번에 그 판정에만 실행 4회가 들었다.
 fix_sketch: `playwright.config.ts`에 `workers`를 명시한다(이 머신 실측 기준 2가 안전). 다만 CI 러너와 로컬의 여력이 다르므로 `process.env.CI ? N : 2` 형태가 맞는지, 아니면 환경변수로 받을지는 CI 배선(대장 #168)과 함께 판단한다. **워커를 줄이면 실행 시간이 늘어난다**(2.6분 vs 4.3분) — 그 대가를 받아들일지가 결정 포인트다.
 trigger: **다음 E2E 전수 실행 직전**(= Epic 15 마감 시점) — DW-689·690과 같은 자리. 그때도 같은 증상이면 그 자리에서 워커 수를 고정한다.
+status: open
+
+### DW-694: `0029`를 운영에 적용하면 **이미 배포된 v1.0.0 APK 사용자가 판매를 못 하게 된다** — 앱 재배포가 선행되어야 한다
+origin: 2026-08-06 "모바일 테스트를 Epic 15 뒤로 미뤄도 되나" 판단 중 발견. 미룰 수 있느냐를 따지다 **진짜 마감이 Epic 15가 아니라 운영 반영 시점**임이 드러났다.
+location: GitHub Release `v1.0.0`(2026-07-05, 운영 Supabase·운영 API를 봄) · `supabase/migrations/0029_unify_existing_account_roles.sql` · 앱 옛 게이트(그 빌드 안의 `role != UserRole.seller`)
+severity: **high** — 되돌릴 수 없고, 사용자에게 직접 보이는 기능 상실이다.
+summary: 0029는 운영 계정의 `auth.users.raw_user_meta_data`에서 `role` 키를 지운다. 그런데 **배포된 v1.0.0 APK는 그 값을 읽어 판매 화면을 막는 옛 코드**를 담고 있다. 즉 0029가 운영에 적용되는 순간, 그 APK를 쓰는 사람은 `currentRoleProvider`가 null이 되어 매물 등록·내 매물 관리·수정 세 화면에서 "판매자만 이용할 수 있습니다."를 보게 된다.
+evidence: ①`gh release list`로 v1.0.0이 실재하고 릴리스 본문에 "백엔드: AI 검색 API는 운영(prod) 서버 연결"이 명시돼 있다. ②그 빌드는 2026-07-05로 16-0(2026-08-06)보다 앞서므로 공용 `requireUser` 게이트가 들어 있지 않다. ③앱이 읽는 역할의 출처가 `profiles.role`이 아니라 세션 metadata임은 `auth_controller.dart:31`에서 확인했고, 0029가 지우는 것이 바로 그 키다.
+why_it_matters: 웹 쪽 순서 문제(DW-687)는 "그 사이 가입한 계정만 옛 기본값으로 굳는다"라 영향이 국소적이었다. 이건 다르다 — **이미 남의 손에 있는 빌드**가 서버 데이터 변경만으로 기능을 잃는다. 앱은 서버처럼 한 번에 갱신할 수 없으므로 "고치고 다시 배포"가 즉시 반영되지도 않는다.
+resolution_options:
+  · (A) **권장** — 앱 실기기 확인 → 새 APK 배포 → **그 다음에** 0029를 운영에 적용. 순서를 지키면 창이 아예 안 열린다.
+  · (B) 데모용이라 실사용자가 없다면 감수하고 먼저 적용 — 단 **그 판단을 여기 적고** 릴리스 노트에 "업데이트 필요"를 남길 것.
+  · (C) 0029의 metadata 제거(②번 UPDATE)만 빼고 `profiles.role` 통일(①번)만 먼저 적용 — 웹 목적은 달성되고 앱은 안 깨진다. 단 "다 지운다"는 결정이 절반만 이행된 상태로 남으므로 나머지를 언제 할지 함께 정해야 한다.
+trigger: **`main` 병합 = 운영 반영을 준비하는 시점** — 그때 (A)(B)(C) 중 하나를 사용자가 고른다. DW-687(마이그 먼저·web 나중)과 **같은 자리에서 함께 판단**한다. 그 전까지는 `test/bmad-loop`·`develop`에만 있으므로 위험이 실현되지 않는다.
+status: open
+
+### DW-695: `AppHeader.tsx`(관리자·소비자 전 화면 공유 상단바)가 아직 원시 `zinc-*` 클래스를 쓴다 — DW-546 실측 목록 밖이라 새어 있었다
+origin: 2026-08-06 Story 15.1(관리자 6화면 디자인 리스킨) 계획 중 코드베이스 조사에서 발견. DW-546이 2026-07-29에 소비자 화면 10곳을 실측해 리스트업했을 때 `components/layout/AppHeader.tsx`는 그 목록에 없었다(당시 0건이었거나 애초에 안 봤을 가능성) — 지금 조사로는 존재를 확인했다(정확한 건수는 미측정, 이 조사는 파일 존재 여부만 확인함).
+location: `web/src/components/layout/AppHeader.tsx`
+severity: low — 시각적 불일치일 뿐 기능 결함 아님. 다만 관리자·소비자 16개 화면을 전부 토큰화해도 공유 상단바 하나가 안 바뀌면 리스킨이 "완료"로 안 보인다.
+summary: 15.1은 이 파일을 의도적으로 범위 밖에 뒀다(스펙 `spec-15-1-...`의 Never 절 참조) — DW-546이 측정·합의한 16개 파일 밖이라 블라스트 반경이 이 스토리보다 넓어진다(전 화면이 공유하는 셸이므로 건드리면 15.1 범위를 넘는 회귀 위험을 스스로 만든다). 그래서 여기 등재만 하고 손대지 않는다.
+trigger: **다음에 `AppHeader.tsx`를 실제로 건드리는 스토리 착수 시**(현재는 소비 스토리 없음) — 또는 Epic 15 마감 시점에 "관리자 6화면·소비자 10화면은 리스킨됐는데 상단바만 원시 색"이라는 잔여 불일치가 눈에 띄면 그 자리에서 판단. 그 전이라도 사용자가 지시하면 즉시.
+status: open
+
+### DW-696: 토큰 리스킨이 **화면 단위로는 반쪽**이다 — 대상 파일 밖 4개 파일 14건이 남아 같은 화면 안에서 원시색과 토큰이 섞인다
+origin: 2026-08-06 Story 15.1 후속 리뷰 패스에서 리포 전수 grep으로 실측. 15.1은 인텐트가 지정한 16개 **파일**을 기준으로 닫혔고 그 범위 grep은 실제로 0건이다 — 문제는 기준이 파일이었고 사용자가 보는 단위는 **화면**이라는 점이다.
+location: `web/src/app/(user)/search/page.tsx`(6건) · `web/src/components/ai/ChatAssistant.tsx`(5건) · `web/src/components/landing/PopularRecentGrid.tsx`(2건) · `web/src/app/(user)/ai/page.tsx`(1건)
+severity: low — 시각적 불일치일 뿐 기능 결함 아님.
+summary: 15.1이 `SearchFilters.tsx`를 토큰화했지만 그 필터를 감싸는 **부모 페이지** `search/page.tsx`는 원시 `zinc-*` 그대로다. 홈(`app/page.tsx`)도 토큰화됐지만 홈이 렌더하는 `PopularRecentGrid`는 아니다. 결과적으로 검색·홈·AI 세 화면이 한 화면 안에서 절반만 리스킨된 상태다. `AppHeader.tsx`(3건)는 [[DW-695]]가, `(auth)/layout.tsx`(1건)는 DW-547이 이미 소유하므로 여기서는 제외했다.
+evidence: `grep -rn "zinc-" web/src/` 전수 실행(2026-08-06) 결과 6개 파일 18건. 그중 15.1 인텐트가 명시적으로 제외한 2개 파일 4건을 뺀 나머지가 위 4개 파일 14건이다. 15.1의 AC grep은 인텐트가 정한 대상 파일 경로만 훑도록 범위가 한정돼 있어(인텐트 Always: "각 대상 파일에서") 이 14건은 초록 신호에 잡히지 않는다 — AC가 틀린 게 아니라 **AC가 답하는 질문이 "화면이 통일됐나"가 아니라 "대상 파일이 치환됐나"**였다.
+why_it_matters: 리스킨의 목적은 "사용자 화면과 시각적으로 어긋나지 않게" 하는 것인데, 파일 기준으로 닫으면 목적 기준으로는 안 닫힌다. 지금 검색 화면을 열면 토큰 필터 위에 zinc 페이지가 얹혀 있다 — 15.1 이전보다 오히려 대비가 눈에 띈다.
+fix_sketch: 4개 파일을 같은 토큰 집합으로 치환한다(신규 토큰 추가 없음, 15.1과 동일한 방식). 함께 판단할 것: 이 규칙을 `web/src/app/fonts.budget.test.ts` 형태의 vitest 소스 스캔(허용목록 방식)으로 박을지 — 지금은 손으로 치는 grep이라 다음에 누가 `bg-zinc-100`을 다시 넣어도 초록이다(CLAUDE.md B9 "규칙은 어길 수 없는 자리에 박는다").
+trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 뷰포트 감사로 이 화면들을 어차피 다시 연다. 15.2의 인수조건 체크박스로 심는다.
+status: done 2026-08-06
+resolution: closed by spec-15-2(관리자 반응형) — 대상 4개 파일(`search/page.tsx`·`ChatAssistant.tsx`·`PopularRecentGrid.tsx`·`ai/page.tsx`) 14건 `zinc-*`를 15.1과 동일한 토큰으로 치환. `grep -rn "zinc-" <4파일>` 0건 확인.
+
+### DW-697: 관리자 **상세 라우트 2곳을 어떤 자동 검사도 열지 않는다** — 15.1이 그 안에 새 표시 로직을 넣었는데 지키는 검사가 없다
+origin: 2026-08-06 Story 15.1 후속 리뷰 패스에서 verification-gap·edge-case 렌즈가 각각 독립적으로 지적, 실측으로 확인.
+location: `web/e2e/core-flows.spec.ts` C6(관리자 목록 4개 라우트만 방문) · `web/e2e/viewport-audit.spec.ts`(admin 경로 0건) · `web/src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts`(대상 파일이 `ChatRoomMessages.tsx`로 하드코딩 + "버블 정확히 3개" 단언)
+severity: low — 현재 코드는 맞게 동작한다(수동 확인 완료). 위험은 **다음 변경**에 있다.
+summary: `/admin/chats/[roomId]`와 `/admin/listings/[id]`는 e2e가 한 번도 열지 않는다(C6은 목록 4개만 방문해 "에러 문구 없음 + li 개수>0"만 본다). 15.1이 관리자 채팅방에 `isSeller` 좌/우 분기와 네 번째 `max-w-[80%]` 말풍선을 새로 넣었는데, 말풍선 줄바꿈 규칙을 지키려고 만들어 둔 `messageBubbleWrap.test.ts`는 사용자 파일 경로가 하드코딩돼 있어 이 새 말풍선을 보지 않는다.
+evidence: ①`grep -rn "'/admin" web/e2e/*.spec.ts` → 목록 라우트와 `/admin`만 나오고 상세 라우트는 없다. ②`messageBubbleWrap.test.ts`가 `COMPONENT` 상수로 파일 하나를 고정하고 `toHaveLength(3)`을 단언한다 — 리포 전체 `max-w-[80%]` 사이트는 이제 4곳이다. ③이 결함은 이미 한 번 실현됐다: 15.1 1차 리뷰가 관리자 말풍선에 `break-words`가 빠진 것을 **사람 눈으로** 잡아 패치했고, 그동안 tsc·lint·vitest·e2e는 전부 초록이었다. ④`viewport-audit.spec.ts`의 `page.goto`는 `/`·`/search`·`/listings/{id}`·`/chat/{roomId}`·`/ai`뿐 — 규칙 D5(반응형 무결성)의 뷰포트 매트릭스가 관리자 화면에는 존재하지 않는다.
+why_it_matters: 검사가 없는 게 아니라 **검사가 있는데 새 자리를 안 본다**는 점이 비싸다. 다음 사람은 "말풍선 규칙은 테스트가 지킨다"고 믿고 관리자 화면을 고치는데, 그 믿음이 그 파일에서만 거짓이다.
+fix_sketch: ①`messageBubbleWrap.test.ts`가 두 말풍선 소스를 모두 훑게 하고 `toHaveLength(3)` 리터럴을 파일별 단언으로 바꾼다. ②`viewport-audit.spec.ts`에 관리자 6경로를 추가한다(D5는 "관리자 화면도 예외 없음"이라고 명시한다). ③C6을 상세 라우트까지 한 단계 넓혀 `isSeller` 좌우 배치를 발신자 라벨 기준으로 단언한다.
+trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 관리자 화면의 뷰포트 감사를 소유하므로 ②가 그 스토리의 본체와 같은 자리다. ①③도 함께 15.2의 인수조건 체크박스로 심는다.
+status: done 2026-08-06
+resolution: closed by spec-15-2 — ① `messageBubbleWrap.test.ts`가 관리자 말풍선(`admin/chats/[roomId]/page.tsx`)까지 스캔하도록 확장(파일별 개수를 각각 단언, DW-701과 같은 자리에서 처리). ② `viewport-audit.spec.ts`에 관리자 6경로(목록 4 + 상세 2)를 추가해 가로스크롤 없음을 3뷰포트에서 확인. ③ `core-flows.spec.ts` C6에 `/admin/listings/[id]`·`/admin/chats/[roomId]`를 추가하고 `isSeller` 기준 좌/우 배치를 단언(코드리뷰 patch로 양쪽 배치가 실제로 각각 1건 이상 나오는지도 함께 확인해, 시드 데이터 편향으로 허수아비 통과가 되지 않게 함).
+
+### DW-698: `bg-brand-petrol` 위 리터럴 `text-white`가 **한 자리 남아** 다크에서 2.98:1로 AA에 미달한다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial·edge-case·verification-gap 세 렌즈가 각각 독립적으로 지적, 리포 전수 grep + WCAG 재계산으로 실측 확인.
+location: `web/src/app/(user)/sell/OptionPicker.tsx:93` (선택된 옵션 칩)
+severity: medium — 다크 모드에서 선택된 옵션 라벨이 AA 미달(2.98:1). 기능은 동작하나 읽기 어렵다.
+summary: 15.1 2차 리뷰가 "리터럴 `text-white`는 다크에서 스왑되지 않는데 `bg-brand-petrol`은 오히려 밝아진다"는 결함을 5곳(`Button.tsx` primary · 사용자 말풍선 2 · 관리자 말풍선 · 홈 AI FAB)에서 `text-surface-base`로 고쳤는데, 같은 조합이 `OptionPicker.tsx`에 한 곳 더 있었고 그 파일은 15.1의 대상 16개 파일 목록에 없어 손대지 않았다.
+evidence: `grep -rn "bg-brand-petrol" web/src/ | grep "text-white"` → 실제 클래스 문자열은 `OptionPicker.tsx:93` 한 건만 남는다(나머지 1건은 `Button.tsx`의 설명 주석). WCAG 상대휘도로 재계산: 다크 `--brand-petrol` #4FA39D 위 #FFFFFF = **2.98:1**(AA 4.5:1 미달) — 2차 패스가 다른 5곳에서 측정해 "명백한 회귀"라고 부른 것과 같은 숫자다. `git show 34cfaf4:…/OptionPicker.tsx`로 이 조합이 15.1 이전부터 있던 것임을 확인했다(이번 diff가 만든 게 아니다).
+why_it_matters: 규칙을 "고쳤다"고 기록했는데 같은 규칙이 한 파일 옆에서 여전히 깨져 있다. 더 나쁜 건 이걸 잡는 검사가 리포에 하나도 없다는 것 — `grep -rn "대비\|contrast\|WCAG"`가 vitest 34개 파일과 e2e 전체에서 0건이다. 다음에 누가 `bg-brand-petrol text-white`를 새로 써도 전부 초록이다.
+fix_sketch: ①`text-white` → `text-surface-base`로 교체(다른 5곳과 동일, 라이트 5.75 / 다크 5.54). ②함께 판단할 것: `fonts.budget.test.ts` 형태의 vitest 소스 스캔으로 "opacity 없는 `bg-brand-petrol`과 리터럴 `text-white`가 같은 클래스 문자열에 공존하면 red"를 박을지 — 항상 어두운 `bg-petrol-deepest/85`(PhotoUploader, 최악 7.62:1로 안전)는 허용목록으로 뺀다. [[DW-696]]의 fix_sketch가 제안한 zinc 스캔과 같은 자리에 함께 넣는 것이 싸다.
+trigger: **`web/src/app/(user)/sell/` 아래를 다음에 건드리는 스토리 착수 시**, 또는 Epic 15 마감 점검 시 — 둘 중 먼저 오는 쪽. 그 스토리의 인수조건 체크박스로 심는다.
+status: open
+
+### DW-699: 라이트 모드에서 **호버 피드백이 사실상 없다** — `surface-base`↔`surface-raised` 차이가 1.045:1이다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial·edge-case 렌즈가 지적, 토큰 hex로 재계산해 확인.
+location: `web/src/app/(user)/chat/page.tsx`(방 목록 행) · `web/src/app/(user)/chat/[roomId]/page.tsx`(매물 칩) · `web/src/app/(admin)/admin/chats/page.tsx`(관리자 방 목록 행)
+severity: low — 시각 피드백 부재. 클릭은 정상 동작하고 커서·밑줄 등 다른 신호가 있는 자리도 있다.
+summary: 15.1 2차 리뷰가 "죽은 호버"를 고치며 `hover:bg-surface-base` → `hover:bg-surface-raised`로 바꿨는데, 라이트 모드에서 두 토큰은 #FAFAF8 대 #FFFFFF로 rgb 차이가 (5,5,7)뿐이다. 다크(#201F1C↔#2B2A26)는 실제로 보이지만 라이트는 여전히 안 보인다.
+evidence: `globals.css`의 토큰 hex로 계산: 라이트 대비 **1.045:1**, 다크 **1.147:1**. 15.1 이전(`hover:bg-zinc-50` = #FAFAFA)도 라이트에선 똑같이 죽어 있었으므로 **회귀가 아니라 이월된 결함**이다 — 다만 2차 패스의 트리아지 로그는 이 항목을 "라이트·다크 양쪽"이 고쳐진 것처럼 적었다.
+why_it_matters: 표면 토큰 두 개만으로는 라이트 모드 호버를 표현할 수 없다는 사실이 아직 어디에도 안 적혀 있다. 다음 사람이 또 같은 조합으로 "호버를 넣었다"고 믿게 된다.
+fix_sketch: ①호버 전용 토큰(`--surface-hover`)을 `globals.css`에 추가하거나, ②표면 대신 다른 축의 신호를 겹친다(`hover:border-brand-petrol` 또는 `hover:underline`). ②가 새 토큰 없이 되므로 싸다. 어느 쪽이든 **바꾼 뒤 실제 델타를 숫자로 적는다**(눈으로 닫지 않는다).
+trigger: **Story 15.2(관리자 반응형) 착수 시** — 15.2가 위 3개 화면 중 관리자 목록을 어차피 다시 연다. 15.2의 인수조건 체크박스로 심는다.
+status: done 2026-08-06
+resolution: closed by spec-15-2 — 3개 파일(`chat/page.tsx`·`chat/[roomId]/page.tsx`·`admin/chats/page.tsx`)의 죽은 호버를 `hover:border-brand-petrol`로 교체(fix_sketch 옵션② 채택, 새 토큰 추가 없음). 회귀 가드로 `hoverContrast.test.ts`를 추가하고, 한 파일을 실제로 옛 클래스로 되돌려 red 확인 → 복구해 green 확인(CLAUDE.md B4).
+
+### DW-700: `(auth)/layout.tsx`의 주석이 **거짓이 됐다** — "로그인·회원가입 본문은 아직 원시색"이라고 적혀 있으나 15.1이 리스킨을 마쳤다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial 렌즈가 지적, 해당 줄과 리스킨 결과를 대조해 확인.
+location: `web/src/app/(auth)/layout.tsx:19` (주석)
+severity: low — 주석만의 문제로 렌더 결과에는 영향이 없다.
+summary: 그 주석은 "로그인·회원가입 본문은 **아직** 옛 원시 색(`zinc-*`)을 쓰고 있고 그 통일은 Epic 15에서"라고 예고한다. 15.1이 바로 그 두 페이지 본문을 토큰으로 치환했으므로 이제 사실과 다르다. 15.1 인텐트가 "`(auth)/layout.tsx`를 건드리지 않는다"고 명시했기 때문에 이번 패스에서 고치지 않았다.
+evidence: `web/src/app/(auth)/login/page.tsx`·`signup/page.tsx`의 `zinc-*` 잔존은 0건(15.1 AC grep으로 재측정). 반면 `layout.tsx:19` 주석은 그대로다. 같은 파일에 남은 `zinc-*` 1건은 클래스가 아니라 이 주석 안의 문자열이다 — [[DW-696]]이 "14건" 산정에서 이 파일을 제외한 근거로 삼은 DW-547은 이미 `status: done 2026-07-29`이므로, 이 주석은 현재 아무도 소유하지 않는다.
+why_it_matters: 다음 사람이 auth 레이아웃을 열면 "본문 리스킨이 아직 남았다"는 안내를 받는다 — 이미 끝난 일을 다시 하거나 중복 항목을 대장에 올린다. DW-546이 막으려던 실패 그 자체다.
+fix_sketch: 그 문단을 "15.1에서 본문 리스킨 완료"로 갱신하거나 삭제한다. 파일을 건드리는 김에 `zinc-*` 문자열 자체를 없애면 리포 전수 grep의 잡음도 함께 줄어든다.
+trigger: **`(auth)/` 아래를 다음에 건드리는 스토리 착수 시**, 또는 Epic 15 마감 점검 시 — 둘 중 먼저 오는 쪽.
+status: open
+
+### DW-701: [[DW-697]]의 `fix_sketch ①`을 **그대로 실행하면 아무것도 검사하지 않는다** — 정규식이 백틱 템플릿 리터럴을 못 잡는다
+origin: 2026-08-06 Story 15.1 3차 리뷰 패스에서 adversarial 렌즈가 지적, 정규식과 대상 소스를 직접 대조해 확인.
+location: `web/src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts:32` (`BUBBLE_CLASS`) · 대상 소스 `web/src/app/(admin)/admin/chats/[roomId]/page.tsx:165`
+severity: medium — 가드를 "설치했다"고 기록하면서 실제로는 0개를 검사하게 되는 종류의 실패다.
+summary: DW-697은 "`messageBubbleWrap.test.ts`가 두 말풍선 소스를 모두 훑게 한다"를 처방한다. 그런데 그 파일의 `BUBBLE_CLASS`는 홑따옴표·쌍따옴표로 감싼 문자열만 잡도록 쓰여 있고, 15.1이 만든 관리자 말풍선은 **백틱 템플릿 리터럴**(`` className={`w-fit max-w-[80%] break-words …`} ``)이다. 대상 파일만 늘리면 관리자 파일에서 매치가 0건이 되고, "모든 버블이 break-words를 갖는다" 루프는 빈 배열 위를 돌아 **공허하게 통과**한다.
+evidence: 정규식은 `/'[^'\n]*max-w-\[80%\][^'\n]*'|"[^"\n]*max-w-\[80%\][^"\n]*"/g` — 백틱 분기가 없다. 관리자 말풍선의 className은 `` `…${isSeller ? … : …}` `` 형태의 템플릿 리터럴이다. 참고로 `toHaveLength(3)` 리터럴도 파일 하나에 묶여 있어 대상이 늘면 반드시 red가 되지만, 그건 DW-697이 이미 적었다.
+why_it_matters: DW-697의 위험 서술("검사가 있는데 새 자리를 안 본다")이 그 처방을 따랐을 때 **한 겹 더** 재생산된다. 게다가 실패가 red가 아니라 green으로 나타나므로 아무도 눈치채지 못한다.
+fix_sketch: `BUBBLE_CLASS`에 백틱 분기를 더한다(``/`[^`]*max-w-\[80%\][^`]*`/`` — 템플릿 리터럴은 여러 줄일 수 있으므로 `\n` 제외 규칙을 그대로 쓰면 안 된다). 그리고 CLAUDE.md B4대로 **일부러 깨서 red를 확인한 뒤** 되돌려 green을 확인한다 — 관리자 파일에서 `break-words`를 지웠을 때 실제로 실패하는지가 이 항목의 유일한 완료 기준이다.
+trigger: **[[DW-697]]의 `fix_sketch ①`을 실행하는 시점** — 즉 Story 15.2 착수 시. 같은 자리에서 함께 처리한다.
+status: done 2026-08-06
+resolution: closed by spec-15-2 — `BUBBLE_CLASS`에 백틱 템플릿 리터럴 분기를 추가(`` `[^`]*max-w-\[80%\][^`]*` ``, `\n` 제외 규칙은 백틱 분기에 적용하지 않음 — 관리자 버블 클래스가 여러 줄에 걸쳐 있어서). CLAUDE.md B4대로 관리자 버블에서 `break-words`를 실제로 지워 red 확인 → 복구해 green 확인.
+
+### DW-702: Follow-up review still recommended for 15-1-관리자-6화면-디자인-리스킨 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-15-1-관리자-6화면-디자인-리스킨.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-703: 관리자 채팅방 좌/우 배치 테스트가 "기타"(당사자 아닌) 발신자 분기를 한 번도 실측하지 않는다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적, 시드 데이터·`senderLabel` 분기를 대조해 확인.
+location: `web/src/app/(admin)/admin/chats/[roomId]/page.tsx` (senderLabel의 `기타 ${senderId.slice(0,8)}` 분기) · `web/e2e/core-flows.spec.ts` C6(새 좌/우 배치 루프)
+severity: low — 현재 시드 데이터로는 재현 불가하며 기능 결함이 아니다. 위험은 향후 실제 데이터에 있다.
+summary: C6의 새 루프는 시드 방에 실제로 있는 메시지만 순회한다. 그 방엔 구매자·판매자 메시지만 있고 "기타" 발신자가 없어, `senderLabel`의 세 번째 분기와 그에 대응하는 좌측 정렬이 이 테스트로 검증되지 않는다.
+fix_sketch: "기타" 발신자가 있는 시드 방(또는 케이스)을 추가하거나, 최소한 이 분기를 겨냥한 단위 테스트를 별도로 둔다.
+trigger: 관리자 채팅방 화면을 다음에 건드리는 스토리 착수 시, 또는 실제 운영 데이터에서 "기타" 발신자 메시지가 관측될 때.
+status: open
+
+### DW-704: 관리자 채팅방 좌/우 배치 테스트의 기대값이 독립적인 DB 근거가 아니라 같은 렌더의 라벨에서 파생된다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적.
+location: `web/e2e/core-flows.spec.ts` C6 · `web/src/app/(admin)/admin/chats/[roomId]/page.tsx`
+severity: low — buyer/seller 컬럼이 소스에서 뒤바뀌는 것과 같은 근본적 데이터 결함이 있어야 드러나는, 좁은 위험이다.
+summary: 테스트가 기대 클래스를 도출하는 근거가 독립적인 `room.buyer_id`/`seller_id`가 아니라 같은 렌더 안의 `senderLabel` 문자열이다. `senderLabel`과 `isSeller`가 둘 다 같은 두 컬럼에서 파생되므로, 그 컬럼 자체가 뒤바뀌는 소스단 버그가 나도 라벨과 정렬이 "같이 틀린 채" 서로 일치해 테스트를 통과한다.
+fix_sketch: 핵심 케이스 하나는 헬퍼가 DB에서 직접 가져온 buyer_id/seller_id와 비교해 독립적으로 검증한다(예: `fetchChatRoomIdForSeedUser`가 buyer_id도 함께 반환하게 하고, `SEED_USER.email`에 해당하는 메시지는 반드시 `items-start`여야 한다고 별도로 단언).
+trigger: `fetchChatRoomIdForSeedUser` 또는 관리자 채팅방 좌/우 배치 로직을 다음에 건드리는 스토리 착수 시.
+status: open
+
+### DW-705: `AdminSidebar`(및 원본 `SiteNav`)의 리사이즈 자동닫힘이 포커스를 잃을 수 있다 — 트리거가 이미 숨겨진 상태에서 포커스 복귀를 시도한다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적, `FocusTrap.tsx` cleanup과 CSS 클래스를 대조해 확인.
+location: `web/src/components/ui/FocusTrap.tsx`(cleanup의 `triggerRef.current?.focus()`) · `web/src/components/layout/AdminSidebar.tsx`(햄버거 `min-[760px]:hidden`) · `web/src/components/layout/SiteNav.tsx`(동일 패턴)
+severity: low — 접근성 회귀 가능성이나, 이 diff가 새로 만든 결함이 아니라 SiteNav에서 이식된 기존 패턴이다.
+summary: `matchMedia` 리스너가 760px 이상에서 패널을 강제로 닫으면 `FocusTrap`이 언마운트되며 트리거로 포커스를 되돌리려 시도하는데, 이 시점에 트리거 버튼은 `min-[760px]:hidden`으로 CSS `display:none` 상태라 실제로 포커스를 받을 수 없다 — 키보드 사용자의 포커스가 조용히 유실될 수 있다. `SiteNav.tsx`의 동일 메커니즘에도 같은 위험이 있다.
+fix_sketch: 리사이즈로 닫힐 때는 포커스를 안전한 곳(예: 데스크톱 사이드바의 active 링크)으로 명시적으로 옮기거나, `FocusTrap`이 대상이 숨겨져 있으면 포커스 복귀를 건너뛰게 한다.
+trigger: `FocusTrap.tsx` 또는 `SiteNav.tsx`/`AdminSidebar.tsx`의 리사이즈-자동닫힘 로직을 다음에 건드리는 스토리 착수 시, 또는 접근성 감사 시.
+status: open
+
+### DW-706: `AdminSidebar`(및 원본 `SiteNav`)의 바깥-클릭-닫힘이 클릭한 요소가 아니라 햄버거 버튼에 포커스를 남길 수 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(edge-case-hunter 렌즈)에서 지적, `pointerdown`/`focusin` 핸들러의 실행 순서를 대조해 확인.
+location: `web/src/components/layout/AdminSidebar.tsx`(outside-pointerdown-close) · `web/src/components/ui/FocusTrap.tsx`(`handleFocusIn`) · `web/src/components/layout/SiteNav.tsx`(동일 패턴)
+severity: low — 마우스 클릭 동작 자체는 정상 실행된다. 그 직후 키보드/스크린리더로 이어가는 사용자에게만 영향.
+summary: 메뉴가 열린 채 바깥의 클릭 가능한 요소를 누르면, pointerdown이 "메뉴를 닫아라"는 상태 변경을 예약하는 것과 거의 동시에 아직 화면에 남아있는 `FocusTrap`의 `focusin` 감지가 "포커스가 밖으로 나갔다"고 판단해 포커스를 도로 끌어온다. 그 다음에야 메뉴가 실제로 닫히며, 최종 포커스는 사용자가 클릭한 요소가 아니라 햄버거 버튼에 남는다. `SiteNav.tsx`에서 그대로 이식된 기존 패턴이다.
+fix_sketch: 메뉴를 닫을 때 상태 변경을 동기적으로 즉시 반영하거나(예: `flushSync`), `FocusTrap`이 "닫히는 중"에는 바깥 포커스 재포착을 건너뛰게 한다.
+trigger: `FocusTrap.tsx` 또는 `SiteNav.tsx`/`AdminSidebar.tsx`의 바깥-클릭-닫힘 로직을 다음에 건드리는 스토리 착수 시, 또는 접근성 감사 시.
+status: open
+
+### DW-707: `fetchChatRoomIdForSeedUser`가 "buyer·seller 메시지가 둘 다 있다"는 전제를 코드로 강제하지 않는다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 코드리뷰(adversarial 렌즈)에서 지적.
+location: `web/e2e/helpers.ts`(`fetchChatRoomIdForSeedUser`)
+severity: low — 다른 헬퍼들의 fail-loud 관례와 다르다는 지적일 뿐, 현재 시드 데이터로는 문제없이 동작한다.
+summary: "가장 오래된 방에 buyer·seller 메시지가 둘 다 있다"는 사실은 여러 테스트(C6 좌/우 배치, viewport-audit 관리자 상세 등)가 기대는 전제인데, 코드가 강제하지 않고 사람이 시드 데이터를 보고 주석으로 적어 둔 가정일 뿐이다. `order by created_at asc limit 1`이 어떤 방을 고를지는 시드 데이터가 바뀌면 달라질 수 있다.
+fix_sketch: 헬퍼가 "메시지가 2건 이상이고 buyer·seller 발신이 각 1건 이상"인 방을 직접 쿼리로 고르게 하거나, 최소한 그 조건을 헬퍼 안에서 assert하는 가드를 넣는다(다른 헬퍼들의 fail-loud 관례와 동일하게).
+trigger: `fetchChatRoomIdForSeedUser`를 다음에 건드리는 스토리 착수 시, 또는 시드 데이터를 갱신할 때.
+status: open
+
+### DW-708: `zinc-*` 금지 규칙에 **실행되는 가드가 없다** — 4파일을 손으로 grep해 닫았고, 그 판단 자체가 DW-696 안에 열린 질문으로 적혀 있었다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(verification-gap·adversarial 렌즈가 각각 독립 지적), DW-696 원문과 대조해 확인.
+location: `web/src/app/(user)/search/page.tsx` 등 리스킨 대상 전반 · 선례 기법은 `web/src/app/fonts.budget.test.ts`(허용목록 소스 스캔)
+severity: low — 지금 화면은 정상이다. 위험은 "규칙이 닫혔다고 기록됐는데 아무도 안 지키는" 상태에 있다.
+summary: DW-696의 `fix_sketch`는 처방과 함께 **"함께 판단할 것: 이 규칙을 `fonts.budget.test.ts` 형태의 vitest 소스 스캔으로 박을지 — 지금은 손으로 치는 grep이라 다음에 누가 `bg-zinc-100`을 다시 넣어도 초록이다(CLAUDE.md B9)"** 라는 열린 질문을 함께 적어 뒀는데, 그 질문은 답하지도 이월하지도 않은 채 항목이 `done`으로 닫혔다. 인수조건도 사람이 한 번 치는 grep 명령이라 회귀 시점에 아무도 없다. 실제로 이번 리뷰에서 같은 커밋이 규칙을 어긴 사례(`search/page.tsx` 페이저의 죽은 호버)가 나왔는데, 그건 `hoverContrast.test.ts`라는 **실행되는** 가드를 넓혀서 잡았다 — 대비 축은 가드가 있고 색 토큰 축은 없다는 비대칭이 남았다.
+fix_sketch: `fonts.budget.test.ts` 방식의 vitest 소스 스캔으로 `web/src` 전역 `zinc-` 0건을 고정하되, 아직 열려 있는 `AppHeader.tsx`([[DW-695]])와 `(auth)/layout.tsx`를 **이름을 적은 예외**로 둔다 — 그래야 그 두 건이 닫히기를 기다리지 않고 지금 가드를 세울 수 있고, 예외 목록이 곧 남은 부채의 목록이 된다.
+trigger: **[[DW-695]]를 처리하는 스토리 착수 시**(그때 예외 목록이 줄어드는 것이 자연스러운 자리다), 또는 그전에 새로 `zinc-*`가 발견될 때.
+status: open
+
+### DW-709: `BUBBLE_CLASS`의 백틱 분기가 **앵커가 없어** 인접한 두 템플릿 리터럴 사이를 가로질러 매치될 수 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(adversarial 렌즈)에서 지적, 정규식과 파일 주석의 근거를 대조해 확인.
+location: `web/src/app/(user)/chat/[roomId]/__tests__/messageBubbleWrap.test.ts`(`BUBBLE_CLASS`의 세 번째 분기)
+severity: low — 현재 두 대상 파일의 내용에서는 재현되지 않는다. 개수 단언(`toHaveLength`)이 사고를 red로 드러내 주기도 한다.
+summary: 따옴표 분기는 `[^'\n]`으로 "한 줄 안에서 닫힌다"는 앵커를 갖고, 그 앵커가 없으면 앞선 따옴표에서 시작한 매치가 여러 줄을 삼켜 버블을 놓친다는 사실이 이 파일 주석에 실측으로 적혀 있다. 백틱 분기는 템플릿 리터럴이 여러 줄이라 그 앵커를 쓸 수 없어 `[^`]*`만 남았는데, 대체 앵커가 없다 — 매치가 **닫는 백틱**에서 시작해 다음 리터럴의 **여는 백틱**에서 끝날 수 있고, 그 사이 코드에 `max-w-[80%]`라는 글자가 있으면(주변 주석이 이미 이 클래스를 논한다) 유령 버블이 하나 잡힌다.
+fix_sketch: 백틱 분기를 `className={` 뒤에서만 시작하도록 앵커한다(예: `/className=\{`[^`]*max-w-\[80%\][^`]*`/`) — 캡처 문자열에 접두사가 붙지만 `break-words` 확인에는 영향이 없다. 바꾼 뒤엔 유령 매치를 실제로 만들어 red를 확인한다.
+trigger: `messageBubbleWrap.test.ts`를 다음에 건드리는 스토리 착수 시, 또는 채팅 버블이 세 번째 파일로 늘어날 때.
+status: open
+
+### DW-710: `AdminSidebar`의 **active 항목만 호버 반응이 없다** — 다섯 항목 중 사용자가 가장 많이 가리키는 하나가 죽은 컨트롤처럼 보인다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(edge-case-hunter 렌즈)에서 지적, 두 클래스 상수를 대조해 확인.
+location: `web/src/components/layout/AdminSidebar.tsx`(`ACTIVE_LINK_CLASS` vs `LINK_CLASS`)
+severity: low — 순전히 시각 피드백 문제이고 기능·접근성 이름에는 영향이 없다.
+summary: `LINK_CLASS`에는 `hover:bg-surface-base hover:text-ink-primary`가 있는데 `ACTIVE_LINK_CLASS`에는 hover/focus 변화가 하나도 없다. 현재 보고 있는 화면의 항목에 마우스를 올리면 나머지 네 개와 달리 아무 반응이 없어, 눌리지 않는 컨트롤로 읽힌다.
+fix_sketch: `ACTIVE_LINK_CLASS`에 같은 축의 호버(예: `hover:bg-brand-petrol/20`)를 더한다 — 새 토큰 없이 기존 틴트의 농도만 바꾸면 된다. 원본 `SiteNav.tsx`에는 active 개념이 없어 이식할 선례가 없으므로 이 컴포넌트에서 정한다.
+trigger: `AdminSidebar.tsx`의 스타일을 다음에 건드리는 스토리 착수 시, 또는 관리자 화면 접근성/시각 감사 시.
+status: open
+
+### DW-711: 사이드바 폭 위험 구간(640~1099px)이 **이산점 3개로만 표본화**된다 — 사이드바가 살아 있는 가장 좁은 760~800 경계가 미관측이다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 후속 리뷰(intent-alignment 렌즈)에서 지적, `playwright.config.ts`의 projects와 스펙 Block If를 대조해 확인.
+location: `web/playwright.config.ts`(desktop 1280 · tablet 800 · mobile 390) · `web/e2e/viewport-audit.spec.ts`(관리자 스위트)
+severity: low — 현재 관리자 화면은 800px에서 실측으로 통과하고, 760~800 구간은 그보다 40px 좁을 뿐이라 여유가 급격히 사라지는 구조가 아니다.
+summary: 스펙의 Block If는 "640~1099px **구간**에서 사이드바 240px 때문에 콘텐츠가 안 들어가는가"를 조건으로 걸었는데, 실제 관측은 Playwright 프로젝트가 주는 세 점(1280/800/390)뿐이다. 사이드바는 760px부터 살아나므로 압력이 가장 큰 곳은 760~800 바로 위 구간인데 그 자리를 아무도 안 본다. 구간 조건을 세 점으로 근사한 셈이다.
+fix_sketch: 관리자 스위트 안에서 `page.setViewportSize({width: 768, ...})`로 경계 한 점을 추가로 재거나(프로젝트를 늘리지 않고 그 테스트 안에서만), 관리자용 tablet 프로젝트 하나를 768px로 더한다. 어느 쪽이든 그 폭에서 `assertSingleLine`을 함께 건다 — 가로스크롤만으로는 이 구간의 실패 모드(줄바꿈)가 안 보인다.
+trigger: 관리자 화면에 요소가 더 붙는 스토리(예: FR61 필터 교체 = Story 15.3) 착수 시 — 행이 무거워지는 순간 이 구간이 먼저 깨진다.
+status: open
+
+### DW-712: `hoverContrast.test.ts`에 **백틱 분기가 없다** — 같은 커밋의 `messageBubbleWrap`이 배운 교훈(DW-701)이 나란히 만든 가드에는 안 왔다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(edge-case 렌즈)에서 지적, 정규식과 `messageBubbleWrap.test.ts`의 대응 분기를 나란히 읽어 확인.
+location: `web/src/app/(user)/chat/__tests__/hoverContrast.test.ts`의 `HOVER_ROW_CLASS`(큰따옴표·작은따옴표 분기만 있음)
+severity: low — 지금 스캔 대상 4파일은 전부 따옴표 리터럴이라 실제 누락은 0건이다(실측).
+summary: 이 가드는 `"..."`과 `'...'`만 본다. 대상 파일 중 하나가 클래스를 템플릿 리터럴(`` `...${...}` ``)로 바꾸면 스캔이 0건이 되고, 그때 빨개지는 것은 "호버가 죽었다"가 아니라 개수 단언이라 다음 사람이 규칙 대신 가드를 느슨하게 만들도록 유도한다 — DW-701이 `BUBBLE_CLASS`에서 정확히 이 이유로 백틱 분기를 더했는데, 같은 커밋에서 만든 이 형제 가드에는 그 분기가 안 왔다. 실제로 `admin/chats/[roomId]/page.tsx`(한 디렉터리 옆)는 이미 여러 줄 템플릿 리터럴 className을 쓴다.
+fix_sketch: `` |`(?=[^`]*\bborder-border-hairline\b)(?=[^`]*\bhover:)[^`]*` `` 분기를 더한다. 다만 DW-709가 지적한 앵커 문제를 같이 안고 가지 않도록, 백틱 분기는 `[^`]*`로 리터럴 경계를 못 넘게 유지하고 여러 줄을 허용할지(`\n` 제외 여부)를 그 시점의 실제 파일 형태를 보고 정한다 — 두 항목을 한 번에 손보는 게 싸다.
+trigger: DW-709(`BUBBLE_CLASS` 백틱 앵커)를 손보는 시점 — 같은 기법·같은 함정이라 한 자리에서 같이 정한다. 또는 위 4파일 중 하나가 className을 템플릿 리터럴로 바꿀 때.
+status: open
+
+### DW-713: `hoverContrast.test.ts`의 대상이 여전히 **손으로 적은 4파일 목록**이다 — "이 클래스 조합을 쓰는 곳 전부"라고 주석에 써 놓고 구현은 allowlist다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(verification-gap 렌즈)에서 지적. 그 렌즈가 이 파일의 정규식을 `web/src/**/*.tsx` 전체에 직접 돌려 대상 밖 2곳을 실측으로 찾아냈다.
+location: `web/src/app/(user)/chat/__tests__/hoverContrast.test.ts`의 `describe.each([...])` 4개 URL
+severity: low — 가드 밖 2곳(`components/landing/CategoryChips.tsx`, `components/listings/ListingCard.tsx`)은 지금 둘 다 살아 있는 호버 신호를 쓴다(실측). 현재 위반은 0건이다.
+summary: 이 가드는 2차 리뷰에서 3파일→4파일로 넓혔고 주석에 "대상 목록을 화면이 아니라 '이 클래스 조합을 쓰는 곳'으로 넓힌다"고 적었는데, 실제 구현은 URL 4개를 손으로 나열한 상태 그대로다. 다섯 번째 화면이 같은 조합을 쓰면 가드가 못 본다 — 그리고 그 일은 이미 한 번 일어났다(DW-696 토큰 치환이 `search/page.tsx`에 죽은 호버를 새로 심었고 3파일 가드가 못 봤다). 같은 실패 모드가 파일 수만 하나 늘어난 채 남아 있다.
+fix_sketch: `describe.each`를 손목록이 아니라 `web/src/**/*.tsx` 순회 + 정규식 매치로 만든다(같은 레포의 `src/lib/__tests__/roleLabelFallback.test.ts`가 이미 전역 소스 스캔을 하는 선례다). 정당하게 다른 곳은 이름 붙인 예외 목록에 두면, 그 목록이 곧 남은 부채 목록이 된다 — DW-708(`zinc-*` 실행 가드)과 정확히 같은 모양이라 한 번에 같은 기법으로 처리하는 게 싸다.
+trigger: DW-708(`zinc-*` 실행 가드 신설)을 착수하는 시점 — 같은 "손목록 → 전역 스캔 + 예외목록" 전환이라 한 자리에서 함께 만든다.
+status: open
+
+### DW-714: 모바일 관리자 패널이 **열린 채로 페이지가 스크롤된다** — 포커스는 갇혀 있는데 갇힌 패널이 화면 밖으로 나갈 수 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(edge-case 렌즈)에서 지적, `AdminSidebar.tsx`·`FocusTrap.tsx`·`AppHeader.tsx`의 position 조합을 읽어 확인.
+location: `web/src/components/layout/AdminSidebar.tsx`(모바일 패널 `absolute inset-x-0 top-full`) · `web/src/components/ui/FocusTrap.tsx`
+severity: low — 관리자는 모바일 사용 빈도가 낮고, 패널을 연 채 스크롤하는 것은 의도적 조작에 가깝다. 실사용 재현 보고는 없다.
+summary: 패널은 일반 문서 흐름 안의 컨테이너에 `absolute`로 붙어 있고 상단바(`AppHeader`)도 sticky/fixed가 아니다 — 즉 패널이 열려 있어도 페이지 스크롤을 막는 것이 아무것도 없다. 관리자 목록 화면은 길게 스크롤되는데, 스크롤로 패널이 화면 밖으로 나가면 `FocusTrap`의 `focusin` 재포착은 계속 포커스를 그 안으로 끌어당기고 `role="dialog" aria-modal="true"`는 보조기술에 "나머지 페이지는 없는 것"이라고 말한다 — 보이지 않는 곳에 갇힌다. 원본 `SiteNav.tsx`에서 그대로 이식된 구조라 DW-705·706과 같은 계열이지만 축이 다르다(포커스 복귀가 아니라 스크롤).
+fix_sketch: 패널이 열려 있는 동안 `document.body.style.overflow = 'hidden'`으로 스크롤을 잠그고 닫힐 때 되돌리거나, 패널을 `fixed`로 띄운다. 어느 쪽이든 `SiteNav.tsx`와 `AdminSidebar.tsx`가 같은 결정을 공유해야 하므로(둘은 같은 패턴) 한쪽만 고치지 않는다 — 이 시점이 DW-705·706과 함께 "이식된 FocusTrap 패널 패턴"을 한 번에 정리할 자리다.
+trigger: DW-705 또는 DW-706(같은 패널 패턴의 포커스 결함)을 착수하는 시점 — 세 건 다 같은 두 컴포넌트의 같은 패널을 건드린다.
+status: open
+
+### DW-715: I/O 매트릭스가 지목한 라우트(`/admin/listings/[id]` @390)의 **"두 줄 안 됨"을 아무도 재지 않는다** — 단일행 단언은 다른 화면(회원관리)에만 걸려 있다
+source_spec: `spec-15-2-관리자-반응형.md`
+origin: 2026-08-06 spec-15-2 3차 리뷰(intent-alignment 렌즈)에서 지적. 스펙의 I/O 매트릭스 4행과 `viewport-audit.spec.ts` 관리자 스위트의 단언 배치를 대조해 확인.
+location: `web/e2e/viewport-audit.spec.ts`의 관리자 스위트(상세 2경로에는 `assertNoHorizontalOverflow`만 있음)
+severity: low — 관리자 상세 2화면은 현재 단일 열 정보 나열이라 접힐 가로 배치 자체가 거의 없다. 3차 리뷰에서 3뷰포트 실행 결과도 green이다.
+summary: 스펙의 I/O 매트릭스 4행은 `/admin/listings/[id]` @390에서 "가로스크롤 없음 **+ 라벨·뱃지 두 줄 안 됨"**을 기대한다고 적었는데, 실제로 추가된 단일행 단언(`assertSingleLine`)은 `/admin/members` 행에만 걸렸다. 즉 매트릭스가 지목한 라우트의 후반부 기대는 관측되지 않는다. 3차 리뷰가 회원관리 쪽 단언의 대상(라벨 span → 행 자체)과 표본(본인 행 → 액션 있는 행)을 바로잡았지만, 그 수정은 이 라우트까지 넓히지는 않았다 — 어떤 요소를 재야 의미가 있는지는 그 화면의 실제 구조를 보고 정해야 하기 때문이다.
+fix_sketch: `/admin/listings/[id]`에서 실제로 가로 배치인 줄(예: 매물 메타 줄·상태 배지 묶음)에 `data-testid`를 붙이고 그 요소에 `assertSingleLine`을 건다 — 소비자 상세(`/listings/[id]`)가 `[data-testid="inquiry-cta"]`로 이미 쓰는 것과 같은 방식이다. 붙일 만한 가로 배치가 정말 없으면 그 사실을 주석으로 남겨 "안 재는 이유"를 기록한다(측정 없이 넘기지 않는다).
+trigger: 관리자 상세 화면에 가로 배치 요소가 추가되는 스토리 착수 시(예: FR61 필터 교체 = Story 15.3, 또는 관리자 상세에 배지·액션이 붙는 변경) — 지금은 잴 대상이 사실상 없다는 것이 미측정의 이유이므로, 대상이 생기는 순간이 볼 시점이다.
+status: open
+
+### DW-716: Follow-up review still recommended for 15-2-관리자-반응형 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-15-2-관리자-반응형.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-717: DW-669(정지 회원 매물 쓰기 차단)는 Epic 15의 명시적 UI-only 제약과 충돌한다 — RLS 구현은 되돌려졌고 별도 스토리가 필요하다
+source_spec: `spec-15-3-회원관리-역할통합-반영.md`
+origin: 2026-08-07 Story 15-3 dev-auto 실행 중 오케스트레이터가 리뷰 단계에서 직접 계획 문서 재대조로 발견(4개 리뷰 렌즈는 이 문맥이 없어 못 잡음).
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:1242-1312`(Epic 15 "UI-only" 선언 + Story 15.3/15.4 인수조건) · [[DW-669]](정지 게이트 원본 항목, `deferred-work.md`) · `_bmad-output/implementation-artifacts/bmad-dev-auto-intent-gap-patch-15-3-회원관리-역할통합-반영.diff`(되돌린 코드 전문 저장)
+severity: medium
+summary: DW-669는 "Epic 15 Story 15-3을 착수할 때 정지가 실제로 무엇을 막는지 그 자리에서 정한다"고 트리거를 지정했는데, epics-increment.md의 Epic 15 선언은 "UI-only, 신규 기능·운영 배관 없음"이고 **DB 변경 예외는 Story 15.4 하나뿐**이라고 명시한다(15.4에만 "이 에픽의 UI-only 범위를 한 칸 넘는 스토리다" 경고가 붙어 있다). Story 15.3의 인수조건 원문에도 DB/RLS 언급이 없다 — "정지/삭제(FR22)가 유지된다"는 기존 UI 액션이 안 깨진다는 뜻이지 새 강제력을 얻는다는 뜻이 아니다. DW-669는 이 선언을 모르거나 반영하지 않은 채 작성됐다(작성일 2026-08-06이 epics-increment.md보다 훨씬 나중인데도 교차 확인이 안 됨).
+evidence: `grep -n "Story 15.4" epics-increment-2026-07-12.md` → 1311행 "⚠️ 이 에픽의 'UI-only' 범위를 한 칸 넘는 스토리다 — 마이그레이션 1개(복구 전용 RPC)가 필요하다"가 15.4에만 붙어 있고 15.3 블록(1296-1307행)엔 그런 경고가 없음을 직접 대조 확인. dev-auto 세션이 이미 `supabase/migrations/0030_listings_suspend_gate.sql`(정지 회원 listings INSERT/UPDATE/DELETE 차단)을 짜서 vitest 336/336·playwright 73/73·red/green 자체검증까지 전부 통과시켰으나, 위 충돌을 뒤늦게 발견하고 코드를 되돌렸다(같은 세션이 직접 `git checkout`으로 원복 + 마이그레이션 파일 삭제 + 로컬 DB `supabase db reset`으로 재동기화 확인).
+why_it_matters: 되돌리지 않았다면 Epic 15의 스코프 정본(계획 문서)과 실제 배포 코드가 조용히 어긋난 채 넘어갈 뻔했다 — 다음 사람이 "Epic 15는 DB를 안 건드린다"고 믿고 그 가정 위에서 판단하면 틀린다. 또한 이번 코드리뷰(adversarial 렌즈)가 그 RLS 구현 자체의 실측 결함 2건도 찾았다: **관리자용 `listings_delete_admin`은 안 막힘**(정지된 관리자가 여전히 남의 매물 삭제 가능, 로컬 DB 실측 DELETE 성공) · **`listing_images`/`storage.objects` 쓰기 정책도 안 막힘**(정지된 판매자가 여전히 사진 추가·삭제 가능, 로컬 DB 실측 INSERT/DELETE 성공). 재구현할 스토리는 이 두 갭도 함께 닫아야 DW-669의 원래 문제("정지가 실제로 무엇을 막는지")가 온전히 해소된다.
+trigger: ✅ **결정됨 (2026-08-07, 사용자) = (b)안 — Epic 15 밖 독립 스토리로 분리.** 신설 `epic-17: 접근 제어 마무리`의 `17-1-정지-회원-쓰기-차단-rls`가 이 항목을 소유한다(`sprint-status.yaml`). (a)안(에픽 15에 예외를 하나 더 추가)을 택하지 않은 이유: Epic 15의 "UI-only"는 예외가 15.4 하나뿐일 때만 제약으로 기능한다 — 두 번째 예외를 뚫는 순간 다음 사람이 "이 에픽은 DB를 안 건드린다"는 가정을 못 쓰게 된다. 재구현 시 아래 두 갭을 범위에 포함할지 그 자리에서 판단할 것. 어느 쪽이든 저장된 패치 파일(`bmad-dev-auto-intent-gap-patch-15-3-회원관리-역할통합-반영.diff`)을 출발점으로 재사용하고, 위 두 갭(admin delete·사진 경로)을 범위에 포함할지 그 자리에서 판단한다.
+status: open
+
+### DW-718: 관리자 쓰기 액션(삭제·정지·되돌리기)에 감사 로그(누가·언제)가 전혀 없다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 dev-auto 실행 중 코드리뷰(adversarial 렌즈, 3회 독립 실행 중 2회가 동일 지적) — 2026-08-07.
+location: `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx`(삭제·되돌리기) · `web/src/app/(admin)/admin/members/MemberActions.tsx`(정지/해제·삭제) — 관리자 쓰기 액션 전부.
+severity: low
+summary: `admin_restore_sold_listing` RPC(0030)는 `status`만 바꿀 뿐 누가·언제 되돌렸는지 남기는 로그/컬럼이 없다. 다만 이건 이 스토리가 새로 만든 결함이 아니라 기존 관리자 쓰기 액션(삭제·정지/해제) 전부가 처음부터 공유해 온 패턴이다.
+evidence: `MemberActions.tsx`(정지/해제·회원삭제)·`ListingAdminActions.tsx`(매물삭제)를 직접 읽어 확인 — 세 액션 모두 `updated_at` 트리거 갱신 외엔 행위자·시각을 남기는 곳이 없다. 스펙의 "추적 가능" AC(원 epics 문서 Story 15.4)는 런북 문서 대체만 요구했고 실제로 그렇게 구현·검증됨(spec AC7) — 감사 로그는 그 AC의 범위가 아니었다.
+why_it_matters: 관리자가 이미 완료된 거래를 되돌리는 것처럼 파급력 있는 조작인데, 사후에 "누가 왜 그랬는지" DB만으로 재구성할 방법이 없다. 데모 단계라 지금은 무해하지만, 실사용자 운영 단계에서는 분쟁·오조작 조사에 필요해진다.
+trigger: 관리자 기능이 데모를 벗어나 실사용자 운영에 투입되는 시점 · 또는 관리자 액션 관련 분쟁·오조작이 실제로 발생하는 시점. 그때 이 3개 액션(삭제·정지/해제·되돌리기)을 한 스토리로 묶어 최소 감사 로그(actor_id·action·target·occurred_at)를 설계할 것.
+status: open
+
+### DW-719: 관리자 되돌리기 RPC의 "동시(concurrent) 다중 세션" 레이스가 테스트로 검증되지 않음
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 dev-auto 실행 중 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `api/tests/integration/test_restore_sold_listing_rpc_real_db.py::test_idempotent_on_already_on_sale_row`
+severity: low
+summary: 멱등성 테스트는 같은 커서로 **순차** 두 번 호출해 확인할 뿐, 두 관리자 세션이 **동시에** 같은 sold 매물을 되돌리는 실제 레이스는 어떤 테스트로도 실행되지 않는다. `0030` 함수 주석은 "레이스 조건에서만 발생"이라고 단언하지만 그 주장 자체가 실측되지 않았다.
+evidence: 파일 전체를 읽어 `_call_rpc`가 단일 커서·단일 트랜잭션으로만 호출되는 것을 확인 — 두 개의 별도 DB 커넥션으로 동시 실행하는 테스트가 없다.
+why_it_matters: WHERE 절(`status='sold' and public.is_admin()`)이 Postgres MVCC 하에서 실제로 두 동시 UPDATE 중 하나만 행을 잡고 다른 하나는 0행으로 떨어지는지는 이론상 타당하지만(단일 행 UPDATE는 원자적) 이 프로젝트의 다른 실DB 테스트(0020·0025 포함)도 전부 이 축을 검증하지 않는 동일한 패턴이라, 이 스토리만의 결함이 아니라 테스트 스위트 전반의 체계적 공백이다.
+trigger: 실DB 통합테스트에 동시성(진짜 병렬 커넥션) 검증 패턴이 처음 도입되는 스토리 — 그때 이 파일도 함께 보강.
+status: open
+
+### DW-720: 실DB 통합테스트의 `auth.users` 최소 컬럼 직접 INSERT 패턴이 여러 파일에 중복돼 있다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 dev-auto 실행 중 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `api/tests/integration/test_view_count_rpc_real_db.py::_create_seller` · `test_restore_sold_listing_rpc_real_db.py::_create_user` (그 외 0025 계열 파일도 동일 패턴 추정, 전수 확인은 안 함).
+severity: low
+summary: 여러 실DB 테스트 파일이 각자 `insert into auth.users (id, email, raw_user_meta_data) values (...)`로 Supabase Auth 테이블에 최소 컬럼만 직접 꽂는 동일한 패턴을 복붙해 갖고 있다. Supabase/Postgres 이미지가 `auth.users`에 새 NOT NULL 제약을 추가하면 이 패턴을 쓰는 모든 파일이 동시에, 각자 다른 위치에서 불투명한 insert 에러로 깨진다.
+evidence: 두 파일을 직접 비교 — 두 `_create_*` 헬퍼가 사실상 동일한 코드(컬럼 3개, 동일 형태의 raw_user_meta_data)를 각자 유지한다.
+why_it_matters: 근본 원인이 한 곳(Supabase 이미지 스키마)인데 증상은 파일마다 따로 나타나 디버깅 시간이 커진다 — 공유 헬퍼로 추출하면 한 곳만 고치면 된다.
+trigger: 이런 실DB 테스트 파일이 하나 더 생기는 시점(3번째 복붙이 생기기 전) — 그때 `api/tests/integration/conftest.py` 등 공유 위치로 추출.
+status: open
+
+### DW-721: `is_admin()`이 `profiles.status`를 안 봐서 **정지된 관리자**도 되돌리기 RPC를 쓸 수 있다 — Epic 17의 RLS 범위로는 이 경로가 안 덮인다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 후속 코드리뷰(adversarial·edge-case-hunter 두 렌즈가 독립적으로 지적) — 2026-08-07.
+location: `supabase/migrations/0001_profiles.sql:57-68`(`is_admin()`) × `supabase/migrations/0030_listings_restore_sold_rpc.sql:29` × 신설 스토리 `17-1-정지-회원-쓰기-차단-rls`.
+severity: low
+summary: `is_admin()`은 `profiles.role='admin'`만 보고 `profiles.status`(`active`/`suspended`)는 보지 않는다. 그래서 관리자 회원 관리에서 **정지된 계정도** `admin_restore_sold_listing`을 호출해 완료된 거래를 되돌릴 수 있다. 게다가 이 RPC는 `SECURITY DEFINER`라 RLS를 우회하므로, DW-669를 이어받은 Epic 17 스토리 `17-1-정지-회원-쓰기-차단-rls`가 **RLS 범위로 설계돼 있으면 이 새 경로는 닫히지 않는다.**
+evidence: 실측(2026-08-07, 로컬 Supabase 55322) — `profiles.status='suspended'`인 관리자를 만들고 `set local role authenticated` + JWT sub 임퍼소네이션으로 sold 매물에 RPC를 호출한 결과 `rows=1`, `status`가 `on_sale`로 실제로 바뀌었다(트랜잭션 롤백). `is_admin()` 정의를 직접 읽어 `status` 술어가 없음을 확인.
+why_it_matters: 17-1이 "정지 = 쓰기 차단"을 RLS로만 구현하고 끝나면, 팀 전체가 정지 게이트가 완성됐다고 믿는 상태에서 이 경로만 조용히 열려 있게 된다 — DW-669가 원래 잡으려던 문제("정지가 실제로 무엇을 막는가")가 반만 해소된다. 또한 이 축은 15.4의 인수조건 밖이었다(스펙 Never 절이 정지 게이트를 명시적으로 범위 밖으로 뒀다) — 그래서 15.4의 결함이 아니라 17-1이 반드시 흡수해야 할 범위다.
+trigger: `17-1-정지-회원-쓰기-차단-rls` 착수 시 — 그 스토리의 인수조건에 **"SECURITY DEFINER RPC 경로(`admin_restore_sold_listing` 포함)도 정지 계정에서 차단된다"**를 반드시 포함할 것(CLAUDE.md B5 — 회고 약속은 다음 스토리의 체크박스로 심는다). 구현 후보: `is_admin()`에 `and status = 'active'` 추가(전역 파급 — 관리자 SELECT 정책까지 함께 좁아지므로 그 영향을 먼저 실측할 것) 또는 RPC 쪽에만 `status='active'` 조건 추가.
+status: open
+
+### DW-722: `supabase db reset`로 만든 로컬 스택엔 플랫폼 기본 테이블 GRANT가 없어 로그인 사용자용 앱이 통째로 안 뜬다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 후속 코드리뷰의 검증 단계에서 실측으로 드러남(스펙이 지시한 `supabase db reset` 실행 직후) — 2026-08-07.
+location: `scripts/migration-check-prelude.sql:63`(CI만 갖는 재현) × `supabase/migrations/**`(어떤 마이그도 `authenticated`에 테이블 GRANT를 주지 않음) × `supabase/config.toml`.
+severity: low
+summary: 리포의 마이그레이션은 `anon`·`authenticated`의 테이블 권한을 **Supabase 플랫폼 기본 GRANT**(`alter default privileges in schema public grant all on tables to anon, authenticated`)에 위임한다(0012·0020 주석이 명시). CI는 그걸 `migration-check-prelude.sql`로 재현하고, 원격은 플랫폼이 준다. 그런데 **로컬 `supabase db reset`(CLI 2.111.0)은 재현하지 않는다** — 리셋 직후 `authenticated`에 `listings` SELECT 권한이 아예 없어, 로그인한 사용자가 어떤 화면도 못 연다.
+evidence: 실측(2026-08-07). ① 리셋 직후 `has_table_privilege('authenticated','public.listings','SELECT')` = **f**. ② `set local role authenticated`로 조회 시 `permission denied for table listings` + `HINT: GRANT SELECT ON public.listings TO authenticated`. ③ `pg_default_acl`의 `(postgres, public, tables)` 항목이 anon·authenticated에 `Dxtm`(TRUNCATE/REFERENCES/TRIGGER/MAINTAIN)만 주고 `arwd`를 안 준다. ④ 그 상태에서 E2E `write-flows.spec.ts`는 E1의 `login()` 단계에서 즉시 실패한다. ⑤ 기존 실DB 테스트 `test_view_count_rpc_real_db.py`의 `test_authenticated_can_still_update_other_columns`·`test_ordinary_update_bumps_updated_at` 2건도 같은 이유로 로컬에서만 실패한다(CI 동일 컨테이너에서는 116건 전부 통과 — 즉 코드 결함이 아니라 환경 축이다).
+why_it_matters: `docs/conventions.md` §9.1이 세운 불변식은 "레포 파일만으로 (Supabase 위에서) DB가 선다"인데, 지금은 **CI에서만 참이고 로컬에서는 거짓**이다. 다음 사람이 리셋 후 앱이 안 뜨는 것을 보면 원인이 GRANT라는 것을 알 길이 없고(권한 오류는 화면에 "매물을 불러오지 못했습니다"로만 보인다), 이번 실행에서도 실제로 시간을 잃었다. 임시 복구법: `alter default privileges in schema public grant all on tables to anon, authenticated, service_role;` + `grant all on all tables in schema public to ...` 실행 후 `0011`·`0012`·`0020`의 좁히는 GRANT 블록을 다시 적용(그래야 anon 컬럼 스코프·view_count 차단이 되살아난다).
+trigger: 다음에 로컬 `supabase db reset`을 쓰는 작업 — 그때 `scripts/seed-local.sh`가 시드 전에 이 기준선 GRANT를 함께 세우도록 넣거나(가장 싼 자리), `supabase/config.toml`의 리셋 훅으로 프렐류드 일부를 걸 것. **주의: `migration-check-prelude.sql`을 로컬 Supabase 스택에 통째로 실행하면 안 된다** — 그 파일은 맨 pgvector용이라 `auth.uid()` 스텁 등을 만들어 실제 auth를 덮어쓴다.
+status: open
+
+### DW-723: 관리자 회원 액션(`MemberActions.tsx`)에 삭제·정지 공유 busy 가드가 없다 — 15.4가 매물 쪽에서 고친 그 결함이 본보기 파일에 그대로 남았다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 3차 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `web/src/app/(admin)/admin/members/MemberActions.tsx`(정지/해제 버튼 · 삭제 버튼) ↔ 이미 고쳐진 대조군 `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx:147,159,171`.
+severity: low
+summary: `MemberActions.tsx`는 정지/해제와 삭제가 각자 자기 `loading` 상태만 보고 서로를 잠그지 않는다 — 한쪽이 진행 중일 때 다른 쪽을 눌러 같은 회원에 두 요청을 동시에 보낼 수 있다. Story 15.4 1차 코드리뷰가 `ListingAdminActions.tsx`에서 정확히 같은 결함을 찾아 `busy = deleting || restoring` 공유 가드로 고쳤는데, 그 패턴의 **본보기였던 파일**은 안 고쳐졌다.
+evidence: 두 파일을 직접 대조 — `ListingAdminActions.tsx`는 두 버튼 모두 `disabled={busy}`를 갖고 두 핸들러가 `if (deleting || restoring) return`으로 시작한다. `MemberActions.tsx`는 각 핸들러가 자기 상태만 보고(`if (toggling) return` / `if (deleting) return`), 버튼에 `disabled`를 넘기지 않아 `Button`의 `disabled={disabled || loading}`가 자기 `loading`만 반영한다.
+why_it_matters: 15.4의 결함이 아니라 15.4가 **드러낸** 기존 결함이다(범위 밖이라 이 스토리에서 고치지 않는다). 다만 CLAUDE.md B8이 말하는 "미루는 판단은 틀린 게 아니고 안 적는 게 틀린 것"에 해당한다 — 팀이 이 결함을 이미 진단했다는 사실이 어디에도 기록돼 있지 않으면, 다음 사람이 매물 쪽 `busy` 가드를 보고 "회원 쪽엔 왜 없지?"를 처음부터 다시 조사하게 된다. 실사용 영향은 낮다(관리자 1인 조작, 결과는 중복 요청 1건).
+trigger: 관리자 회원 관리 화면을 다음에 손대는 스토리 — Epic 17의 정지 게이트 작업(`17-1-정지-회원-쓰기-차단-rls`)이 이 파일을 열 가능성이 높다. 그때 `busy = toggling || deleting` 공유 가드를 두 버튼과 두 핸들러 양쪽에 넣을 것.
+status: open
+
+### DW-724: `is_admin()`이 `set search_path = public`이라, 이 함수를 유일한 인가 관문으로 쓰는 SECURITY DEFINER RPC들의 하드닝이 한 칸 무르다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 3차 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `supabase/migrations/0001_profiles.sql`(`public.is_admin()` — `security definer set search_path = public`) ↔ 이를 호출하는 `0030_listings_restore_sold_rpc.sql`·`0005_admin_policies.sql` 등.
+severity: low
+summary: 리포의 최신 SECURITY DEFINER 함수들은 `set search_path = ''`(빈 문자열 + 전 참조 스키마 수식)로 하드닝하는데(0019·0020·0030), 그 함수들이 인가 판정을 통째로 위임하는 `is_admin()`은 `set search_path = public`이다. 즉 새 함수만 하드닝하고 **자물쇠 자체는 옛 기준**에 남아 있다.
+evidence: `0030`은 `set search_path = ''`를 선언하고 본문에서 `public.listings`·`public.is_admin()`으로 전부 수식한다. `0001`의 `is_admin()` 정의를 직접 읽어 `set search_path = public`임을 확인. 신설된 `test_restore_sold_listing_rpc_real_db.py`는 `0030`의 시그니처·GRANT는 구조적으로 단언하지만 `is_admin()`의 `prosecdef`·`proconfig`는 아무것도 보지 않는다.
+why_it_matters: 지금 당장 뚫리는 경로를 실측으로 재현하지는 못했다(`public` 고정 자체가 빈 search_path보다 무를 뿐, 임의 스키마 주입은 아니다) — 그래서 이 항목은 "확인된 취약점"이 아니라 **기준 불일치**로 등재한다. 문제는 새 RPC를 추가할 때마다 하드닝 검사를 그 RPC에만 걸고 위임 대상은 아무도 안 보는 습관이 굳는다는 점이다. DW-721(같은 함수의 `status` 미확인)이 그 습관의 비용을 이미 한 번 보여줬다.
+trigger: `is_admin()`을 다음에 수정할 때 — 현재 가장 유력한 자리는 DW-721이 지정한 `17-1-정지-회원-쓰기-차단-rls`(거기서 `status='active'` 술어를 넣게 된다). 같은 편집에서 `search_path`를 `''`로 좁히고 본문 참조를 수식할 것. ⚠️ `is_admin()`은 다수 RLS 정책이 부르므로 변경 후 관리자 SELECT/DELETE 경로를 실DB로 회귀 확인해야 한다.
+status: open
+
+### DW-725: 관리자 매물 행의 sold 상태(버튼 2개 나란히)가 반응형 자동 검사에 없다 — D5 근거가 1회성 스크린샷뿐이다
+
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+origin: Story 15-4 3차 코드리뷰(adversarial 렌즈) — 2026-08-07.
+location: `web/e2e/viewport-audit.spec.ts`(관리자 라우트 순회) × `web/src/app/(admin)/admin/listings/ListingAdminActions.tsx:151`(`flex items-center gap-2`, `flex-wrap` 없음).
+severity: low
+summary: Story 15.4가 관리자 매물 행에 두 번째 버튼("판매완료 되돌리기")을 넣어 그 행이 처음으로 **버튼 2개 가로 배치**가 됐다. D5(반응형 무결성) 확인은 2차 패스가 390px·1280px × 라이트/다크로 **육안 캡처**해 통과시켰지만, 그 상태를 다시 재현하는 자동 검사는 없다 — `viewport-audit.spec.ts`는 관리자 라우트를 열되 `status='sold'` 행이 화면에 있는지를 보장하지 않기 때문이다.
+evidence: `viewport-audit.spec.ts`를 읽어 sold 매물을 고정하는 단계가 없음을 확인. `ListingAdminActions.tsx:151`의 컨테이너에 `flex-wrap`이 없어, 폭이 모자라면 접히는 게 아니라 가로 오버플로가 난다(D5는 접힘도 오버플로도 둘 다 금기).
+why_it_matters: project-context 규칙13(D5)은 "관리자 화면도 예외 없음 · 레이아웃 어긋남 = 절대 금기"를 governing으로 선언한다. 지금 그 보증은 특정 매물 요약 문자열 하나로 찍은, 아무도 다시 돌릴 수 없는 캡처에 걸려 있다 — 제조사·모델명이 더 긴 매물이 들어오면 잡을 장치가 없다. (E2E 자체가 CI에 배선돼 있지 않다는 더 큰 축은 `docs/tech-debt.md` #168이 이미 갖고 있다.)
+trigger: `viewport-audit.spec.ts`를 다음에 손대는 작업, 또는 E2E를 CI에 배선하는 작업(#168) — 그때 sold 매물을 하나 고정해 관리자 목록을 열고 두 버튼의 y좌표 동일 + 행 우측 끝 ≤ 뷰포트 폭을 단언하는 케이스를 추가할 것(2차 패스가 육안으로 잰 바로 그 두 값).
+status: open
+
+### DW-726: Follow-up review still recommended for 15-4-관리자-판매완료-되돌리기 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-013500-4548; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-727: E2E `R4`가 **깨끗한 시드에서는 실패하고, 앞선 실행이 DB를 더럽혀야 통과**한다 — 초록이 잘못된 이유로 나온다
+origin: 2026-08-07 Epic 15 마감 E2E에서 실패 → 원인 추적. 15-3 세션이 `supabase db reset`으로 로컬 DB를 새로 시드하면서 드러났다(그 전까지는 누적 상태에 가려 계속 초록이었다).
+location: `web/e2e/realtime-chat.spec.ts:322`(R4) 및 같은 파일의 cleanup 단언 · 시드 `supabase/seed.sql`·`seed-local/*`
+severity: medium
+summary: R4 계열의 정리 단언은 *"구매자·판매자 **모두 이미** 이 방의 `chat_room_reads` 행을 갖고 있어 방문해도 새 행이 안 생긴다"*를 전제한다. 그런데 **시드는 `chat_room_reads`를 하나도 만들지 않는다** — 그 행들은 **E2E 실행 자신이** 남긴 것이다. 그래서 갓 시드한 DB에서는 첫 방문이 행을 만들어 `reads` 1→2가 되고 단언이 깨진다.
+evidence: 실측 3단계로 확정했다. ①`grep -rn "chat_room_reads" supabase/seed*.sql supabase/seed-local/*.sql` → **0건**(시드가 안 만든다). ②실패 실행의 로그: `baseline={"reads":1} after={"reads":2}`, 그리고 DB 조회 결과 5개 방 중 read 행이 있는 방은 **1개뿐**(그 방만 reads=2). ③**예측 후 재실행으로 검증**: "앞 실행이 행을 남겼으니 이번엔 통과할 것"이라 예측하고 같은 스펙을 다시 돌리자 `baseline={"reads":2} after={"reads":2}`로 **4/4 통과**했다.
+why_it_matters: 이 검사는 **실행 순서에 의존**하며, 실패한 실행이 다음 실행을 통과시킨다. 즉 "초록"이 제품이 옳다는 뜻이 아니라 "앞에서 한 번 돌았다"는 뜻이다. CI처럼 매번 깨끗한 DB에서 도는 환경에서는 **항상 빨간불**이 된다(현재 E2E는 CI에 없어서 안 드러났다 — 대장 #182). 그리고 새로 합류한 사람이 `db reset` 후 처음 돌리면 영문 모를 실패를 본다.
+fix_sketch: 두 갈래 중 하나. (a) **시드가 참가자 양쪽의 `chat_room_reads` 행을 만들게 한다** — 테스트가 기대하는 "이미 읽은 방" 상태를 시드가 책임진다(권장: 다른 검사들도 같은 전제를 쓸 수 있다). (b) 테스트가 전제를 스스로 만든다 — 방문 전에 양쪽 read 행을 넣고 시작한다. 어느 쪽이든 **`supabase db reset` 직후 한 번에 통과하는지**로 검증할 것(그게 이 결함의 정의다).
+trigger: **다음 E2E 전수 실행 직전**(= Epic 16 마감 시점) — DW-689·690·693과 같은 자리에서 함께 본다. CI에 E2E를 올리는 판단(#182·#168)을 하게 되면 **그때는 필수 선행**이다(깨끗한 DB에서 항상 빨갛기 때문).
 status: open

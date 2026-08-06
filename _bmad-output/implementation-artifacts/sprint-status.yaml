@@ -239,12 +239,19 @@ development_status:
   epic-14-retrospective: optional
 
   # --- Epic 15: 관리자 웹 UI 통일 (UI-only) ---
-  epic-15: backlog
-  15-1-관리자-6화면-디자인-리스킨: backlog
-  15-2-관리자-반응형: backlog
-  15-3-회원관리-역할통합-반영: backlog
+  # 2026-08-07 backlog → done. 스토리 4건 전량 done이고 마감 검증을 전부 돌렸다.
+  # ⚠️ 엔진은 에픽 전이를 안 해준다 — epic-14도 같은 이유로 backlog에 남아 DW-666이 됐다.
+  # 손으로 닫는다(사람이 돌린 스토리든 엔진이 돌린 스토리든 에픽 줄은 아무도 안 닫는다, B8).
+  # 마감 실측: env ✅ · check_migrations ✅(0030 포함) · api 단위 490 · api 실DB 116 ·
+  #   web lint 0 · vitest 340 · flutter analyze 0 / test 87 · E2E 72 passed.
+  # ⚠️ 회고(`epic-15-retrospective`)는 `optional`이라 안 돌렸다. 에픽 13에서 겪었듯 optional 회고에
+  #   조건을 걸면 조용히 사라지므로, 이 에픽에서 나온 약속은 전부 대장(DW)에 직접 등재했다.
+  epic-15: done
+  15-1-관리자-6화면-디자인-리스킨: done
+  15-2-관리자-반응형: done
+  15-3-회원관리-역할통합-반영: done
   # DW-391(오조작 sold 복구 불가, high) 해소. 이 에픽의 UI-only 범위를 한 칸 넘는다(마이그레이션 1개).
-  15-4-관리자-판매완료-되돌리기: backlog
+  15-4-관리자-판매완료-되돌리기: done
   epic-15-retrospective: optional
 
   # --- Epic 16: Flutter 앱 증분 반영 ---
@@ -268,6 +275,20 @@ development_status:
   16-5-4분기-ai-응답-되묻기-칩-앱: backlog
   16-6-sm-d-통합-시연-검증-앱: backlog
   epic-16-retrospective: optional
+
+  # --- Epic 17: 접근 제어 마무리 (backend-only) ---
+  # 2026-08-07 신설(사용자 결정). Epic 15의 "UI-only" 제약을 지키려고 만든 자리다 —
+  # DW-669(정지 회원이 계속 매물을 등록·수정·삭제할 수 있다)를 Epic 15 안에서 하려면
+  # 그 에픽에 DB 예외를 하나 더 뚫어야 하는데(현재 예외는 15.4 하나뿐), 그러면 "UI-only"라는
+  # 깨끗한 제약이 무너진다. 그래서 에픽 밖으로 뺀다. 경위는 DW-717에 전문 기록.
+  # ⚠️ 착수 시 반드시 함께 볼 것 — 15-3 세션이 이미 구현했다가 되돌린 패치가 보존돼 있고
+  #   (`bmad-dev-auto-intent-gap-patch-15-3-*.diff`), 그 코드리뷰가 **그 구현 자체의 결함 2건**을
+  #   실측으로 찾아뒀다: ①정지된 관리자는 `listings_delete_admin`으로 여전히 남의 매물 삭제 가능
+  #   ②`listing_images`·`storage.objects` 쓰기 정책이 없어 정지된 판매자가 사진 추가·삭제 가능.
+  #   패치를 그대로 재사용하면 이 두 구멍을 그대로 안고 간다.
+  epic-17: backlog
+  17-1-정지-회원-쓰기-차단-rls: backlog
+  epic-17-retrospective: optional
 
 # 회고에서 나온 액션 아이템. "무엇/상태"의 정본은 여전히 docs/tech-debt.md(대장)이고,
 # 여기는 "어느 에픽 회고가 무엇을 약속했나"의 색인이다 — 대장 번호로 이어붙인다(B8).

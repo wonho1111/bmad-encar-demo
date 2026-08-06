@@ -9,6 +9,7 @@
 //      · 구매자용 전체 목록·필터·상세는 Epic 3, 수정·삭제는 2-3, 구매완료는 2-4 소관이라 여기 없음(범위 컷).
 import { createClient } from '@/lib/supabase/server';
 import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import Badge from '@/components/ui/Badge';
 import SellForm from './SellForm';
 import ListingActions from './ListingActions';
 
@@ -52,8 +53,8 @@ export default async function SellPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6">
       <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">매물 등록</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-section font-bold text-ink-primary">매물 등록</h1>
+        <p className="text-sm text-ink-muted">
           차량 정보를 입력해 매물을 등록하면 구매자에게 바로 노출됩니다(관리자 승인 없음).
         </p>
       </section>
@@ -63,17 +64,17 @@ export default async function SellPage() {
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">내가 등록한 매물</h2>
         {listingsError ? (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-danger">
             매물 목록을 불러오지 못했습니다. 잠시 후 새로고침 해주세요.
           </p>
         ) : !listings || listings.length === 0 ? (
-          <p className="text-sm text-zinc-500">아직 등록한 매물이 없습니다.</p>
+          <p className="text-sm text-ink-muted">아직 등록한 매물이 없습니다.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {listings.map((l) => (
               <li
                 key={l.id}
-                className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+                className="flex items-center justify-between gap-3 rounded-card border border-border-hairline px-4 py-3 text-sm"
               >
                 <span>
                   [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
@@ -81,15 +82,9 @@ export default async function SellPage() {
                   {UNITS.price}
                 </span>
                 <div className="flex items-center gap-3">
-                  <span
-                    className={
-                      l.status === LISTING_STATUS.ON_SALE
-                        ? 'rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-300'
-                        : 'rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-                    }
-                  >
+                  <Badge tone={l.status === LISTING_STATUS.ON_SALE ? 'active' : 'neutral'}>
                     {l.status === LISTING_STATUS.ON_SALE ? '판매중' : '판매완료'}
-                  </span>
+                  </Badge>
                   {/* 본인 매물 관리 진입점 — 구매완료(2-4, FR8)·수정·삭제(2-3, FR6).
                       판매중(on_sale)일 때만 "구매 완료"·"수정" 노출(거래 끝난 매물 변경 방지).
                       삭제는 정리 목적이라 status 무관 허용. */}

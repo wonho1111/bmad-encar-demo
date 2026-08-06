@@ -9,10 +9,11 @@
 // 화면 본문(15필드·옵션·설명)은 구매자 상세와 동일하므로 공유 컴포넌트 ListingDetailFields로 그린다.
 //   제목·상태 배지(판매중/판매완료)·삭제·목록 링크처럼 관리자 맥락 요소만 이 페이지가 직접 그린다.
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import { UNITS, LISTING_STATUS, type ListingStatus } from '@/lib/constants';
 import ListingDetailFields, {
   type ListingDetailFieldsData,
 } from '@/components/listings/ListingDetailFields';
+import Badge from '@/components/ui/Badge';
 import ListingAdminActions from '../ListingAdminActions';
 import BackButton from './BackButton';
 
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic';
 // 공유 표시 필드(ListingDetailFieldsData) + 관리자 화면용 식별/상태 필드.
 type AdminListingDetail = ListingDetailFieldsData & {
   id: string;
-  status: string;
+  status: ListingStatus;
 };
 
 export default async function AdminListingDetailPage({
@@ -56,8 +57,8 @@ export default async function AdminListingDetailPage({
   if (error) {
     return (
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold">매물 상세</h1>
-        <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        <h1 className="text-section font-bold text-ink-primary">매물 상세</h1>
+        <p role="alert" className="text-body text-danger">
           매물 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
         </p>
         {backLink}
@@ -69,8 +70,8 @@ export default async function AdminListingDetailPage({
   if (!listing) {
     return (
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold">매물 상세</h1>
-        <p role="alert" className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+        <h1 className="text-section font-bold text-ink-primary">매물 상세</h1>
+        <p role="alert" className="text-body text-ink-secondary">
           매물을 찾을 수 없습니다. 이미 삭제된 매물일 수 있습니다.
         </p>
         {backLink}
@@ -83,30 +84,31 @@ export default async function AdminListingDetailPage({
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
-      {/* 제목 = 제조사·모델 + 상태 배지(판매중=초록/판매완료=회색, 목록 화면과 동일 규칙) */}
+      {/* 제목 = 제조사·모델 + 상태 배지(판매중=active/판매완료=neutral, 목록 화면과 동일 규칙) */}
       <section className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold">
+          {/* min-w-0 truncate: 옆 Badge가 shrink-0이라 좁은 폭에서 줄어들 수 있는 쪽은 제목뿐이다.
+              min-width:auto 기본값이면 제목이 min-content 아래로 못 줄어 행이 가로로 삐져나간다(D5 금지).
+              참고 패턴 (user)/listings/[id]/page.tsx의 제목 행이 쓰는 조합 그대로(코드리뷰 patch, 15.1). */}
+          <h1 className="min-w-0 truncate text-section font-bold text-ink-primary">
             [{listing.manufacturer}] {listing.model}
           </h1>
-          <span
-            className={
-              isOnSale
-                ? 'rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-300'
-                : 'rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
-            }
-          >
-            {isOnSale ? '판매중' : '판매완료'}
-          </span>
+          {isOnSale ? (
+            <Badge tone="active">판매중</Badge>
+          ) : (
+            <Badge tone="neutral">판매완료</Badge>
+          )}
         </div>
-        <p className="text-sm text-zinc-500">
+        <p className="text-body text-ink-muted">
           {listing.year}년 · {priceText}
         </p>
-        {/* 관리자는 여기서도 바로 삭제 가능(목록과 동일 액션). 삭제 후엔 매물 관리 목록으로 이동. */}
+        {/* 관리자는 여기서도 목록과 동일한 액션을 쓴다 — 삭제 + sold 매물 한정 "판매완료 되돌리기"(0030).
+            삭제 후엔 매물 관리 목록으로 이동(redirectTo). 되돌리기는 이 매물이 그대로 남으므로 router.refresh()만 한다. */}
         <div className="mt-1">
           <ListingAdminActions
             listingId={listing.id}
             label={`[${listing.manufacturer}] ${listing.model}`}
+            status={listing.status}
             redirectTo="/admin/listings"
           />
         </div>

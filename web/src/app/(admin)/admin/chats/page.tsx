@@ -60,19 +60,19 @@ export default async function AdminChatsPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
       <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">채팅 관리</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-section font-bold text-ink-primary">채팅 관리</h1>
+        <p className="text-body text-ink-muted">
           전체 채팅방을 조회하고, 대화 내용을 열람하거나 문제 방을 삭제할 수 있습니다.
         </p>
       </section>
 
       <section className="flex flex-col gap-3">
         {error ? (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-body text-danger">
             채팅방 목록을 불러오지 못했습니다. 잠시 후 새로고침 해주세요.
           </p>
         ) : !rooms || rooms.length === 0 ? (
-          <p className="text-sm text-zinc-500">채팅방이 없습니다.</p>
+          <p className="text-body text-ink-muted">채팅방이 없습니다.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {rooms.map((room) => {
@@ -93,17 +93,17 @@ export default async function AdminChatsPage() {
               return (
                 <li
                   key={room.id}
-                  className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+                  className="flex items-center justify-between gap-3 rounded-card border border-border-hairline bg-surface-raised px-4 py-3 text-body shadow-card dark:shadow-none"
                 >
                   <Link
                     href={`/admin/chats/${room.id}`}
                     className="flex flex-1 flex-col gap-0.5 hover:underline"
                   >
-                    <span className={l ? 'font-medium' : 'font-medium text-zinc-400'}>
+                    <span className={l ? 'font-medium' : 'font-medium text-ink-muted'}>
                       {summary}
                     </span>
                     {/* 당사자 식별: 구매자/판매자 표시 이름(0008) + 생성일. 이름 없으면 UUID 앞자리 폴백. */}
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-meta text-ink-muted">
                       구매자 {buyerLabel} · 판매자 {sellerLabel} · {createdLabel}
                     </span>
                   </Link>
@@ -111,9 +111,12 @@ export default async function AdminChatsPage() {
                     {/* 매물이 살아있는 방이면 그 매물의 관리자 상세로 가는 링크 추가.
                         방 열람 링크와 중첩되면 안 되므로(중첩 anchor 금지) 별도 버튼으로 분리. */}
                     {l && (
+                      // hover:border-brand-petrol(DW-699, spec-15-2) — hover:bg-surface-base는 이 버튼을
+                      // 감싼 li가 이미 bg-surface-raised(#FFFFFF)라, 배경이 surface-base(#FAFAF8)로
+                      // 바뀌어도 대비 1.045:1로 육안상 거의 변화가 없었다(실측, chat/page.tsx와 동일 근거).
                       <Link
                         href={`/admin/listings/${room.listing_id}`}
-                        className="rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                        className="rounded border border-border-hairline px-2 py-1 text-xs font-medium hover:border-brand-petrol"
                       >
                         매물 상세
                       </Link>

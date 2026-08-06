@@ -11,6 +11,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { UNITS } from '@/lib/constants';
+import { buttonClasses } from '@/components/ui/Button';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export default async function AdminChatRoomPage({
   const backLink = (
     <Link
       href="/admin/chats"
-      className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
+      className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}
     >
       채팅 관리로
     </Link>
@@ -69,11 +70,8 @@ export default async function AdminChatRoomPage({
     console.error('[admin/chats/room] 채팅방 조회 실패:', roomError);
     return (
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold">채팅방 대화</h1>
-        <p
-          role="alert"
-          className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
-        >
+        <h1 className="text-section font-bold text-ink-primary">채팅방 대화</h1>
+        <p role="alert" className="text-body text-danger">
           채팅방을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
         </p>
         {backLink}
@@ -85,11 +83,8 @@ export default async function AdminChatRoomPage({
     // 없는 방·삭제된 방 — 한 안내로 묶는다.
     return (
       <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold">채팅방 대화</h1>
-        <p
-          role="alert"
-          className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-        >
+        <h1 className="text-section font-bold text-ink-primary">채팅방 대화</h1>
+        <p role="alert" className="text-body text-ink-secondary">
           채팅방을 찾을 수 없습니다. 삭제된 방일 수 있습니다.
         </p>
         {backLink}
@@ -131,10 +126,10 @@ export default async function AdminChatRoomPage({
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
       {/* 방 헤더 — 어떤 매물·누구 사이의 대화인지 */}
       <section className="flex flex-col gap-1">
-        <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-zinc-400'}>
+        <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-ink-muted'}>
           {summary}
         </h1>
-        <p className="text-sm text-zinc-500">
+        <p className="text-body text-ink-muted">
           구매자 {room.buyer_name ?? room.buyer_id.slice(0, 8)} ↔ 판매자{' '}
           {room.seller_name ?? room.seller_id.slice(0, 8)} 의 문의 채팅 (열람 전용)
         </p>
@@ -143,24 +138,41 @@ export default async function AdminChatRoomPage({
       {/* 메시지 영역 — 조회 전용(폴링·전송 없음). 서버에서 시간순 1회 로드한 전문. */}
       <section aria-label="대화 내용" className="flex flex-col gap-2">
         {msgError ? (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-body text-danger">
             대화 내용을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
           </p>
         ) : !messages || messages.length === 0 ? (
-          <p className="rounded border border-zinc-200 p-4 text-center text-sm text-zinc-500 dark:border-zinc-800">
+          <p className="rounded-card border border-border-hairline p-4 text-center text-body text-ink-muted">
             메시지가 없습니다.
           </p>
         ) : (
-          <ul className="flex flex-col gap-2 rounded border border-zinc-200 p-4 dark:border-zinc-800">
-            {messages.map((m) => (
-              <li key={m.id} className="flex flex-col gap-0.5">
-                <span className="text-xs text-zinc-500">
-                  {senderLabel(m.sender_id)} · {new Date(m.created_at).toLocaleString('ko-KR')}
-                </span>
-                {/* whitespace-pre-wrap: 줄바꿈 보존. 본문은 사용자 입력이라 React 기본 이스케이프로 XSS 안전. */}
-                <span className="whitespace-pre-wrap text-sm">{m.body}</span>
-              </li>
-            ))}
+          <ul className="flex flex-col gap-2 rounded-card border border-border-hairline p-4">
+            {messages.map((m) => {
+              // 말풍선 좌/우 구분 — mockup .bubble-line.seller/.buyer 역할을 판매자/그외 축으로 옮긴다.
+              // 관리자는 대화 당사자가 아니라 "내 메시지" 개념이 없어, seller=우측(petrol),
+              // buyer·기타=좌측(중립)으로 고정한다(표시만 다르고 조회 로직은 그대로).
+              const isSeller = m.sender_id === room.seller_id;
+              return (
+                <li
+                  key={m.id}
+                  className={`flex flex-col gap-0.5 ${isSeller ? 'items-end' : 'items-start'}`}
+                >
+                  <span className="text-meta text-ink-muted">
+                    {senderLabel(m.sender_id)} · {new Date(m.created_at).toLocaleString('ko-KR')}
+                  </span>
+                  {/* whitespace-pre-wrap: 줄바꿈 보존. 본문은 사용자 입력이라 React 기본 이스케이프로 XSS 안전. */}
+                  <span
+                    className={`w-fit max-w-[80%] break-words whitespace-pre-wrap rounded-badge px-3 py-2 text-body ${
+                      isSeller
+                        ? 'bg-brand-petrol text-surface-base'
+                        : 'border border-border-hairline bg-surface-raised text-ink-primary'
+                    }`}
+                  >
+                    {m.body}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
