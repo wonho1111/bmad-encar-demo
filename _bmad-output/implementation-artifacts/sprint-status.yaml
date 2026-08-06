@@ -223,7 +223,7 @@ development_status:
   #   ⚠️ 순서만 바뀌고 **에픽 문서의 스토리 번호·내용은 그대로다.** 번호로 실행 순서를 유추하면
   #   안 되는 자리이므로 여기 적어둔다.
   14-3-소유권-기반-판매-게이트: done
-  14-2-가입-역할선택-제거-트리거-기본-role: backlog
+  14-2-가입-역할선택-제거-트리거-기본-role: done
   epic-14-retrospective: optional
 
   # --- Epic 15: 관리자 웹 UI 통일 (UI-only) ---

@@ -29,6 +29,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { ROLE_LABEL, USER_ROLE } from '../constants';
 
 const SRC_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -95,5 +96,22 @@ describe('ROLE_LABEL 인덱싱은 폴백 없이는 못 쓴다', () => {
   it('검사 대상이 실제로 존재한다 (정규식이 아무것도 못 찾는 상태를 통과로 오인하지 않는다)', () => {
     // 이 파일이 조용히 무력화되는 가장 흔한 방식은 "매치가 0건인데 전부 통과"다.
     expect(collectSites().length).toBeGreaterThanOrEqual(9);
+  });
+
+  it('ROLE_LABEL은 USER_ROLE의 모든 값에 라벨을 갖는다 (전사상)', () => {
+    // 왜 타입만으로 부족한가(추측 아니라 실측 — Story 14.2 후속 리뷰):
+    //   `ROLE_LABEL: Record<UserRole, string>` 타입은 키 하나를 지워도 CI에서 안 걸린다.
+    //   web CI 잡(.github/workflows/tests.yml)은 `npm run lint` + `npm test`만 돌리고
+    //   `tsc --noEmit`도 `next build`도 돌리지 않으며, eslint-config-next/typescript는
+    //   타입 인지 규칙이 아니다. 실제로 `[USER_ROLE.USER]: '회원'`을 지우고 두 명령을
+    //   돌려보니 lint exit 0 · vitest 308건 전부 통과였고, `tsc --noEmit`만 TS2741로 잡았다.
+    //   그래서 "타입이 지켜준다"는 이 리포의 CI에서는 참이 아니다(CLAUDE.md B9 —
+    //   지켜야 하는 규칙이면 실행되는 검사로 바꾼다).
+    // ⚠️ 이 단언이 도는 web 잡도 `on.push.branches: [develop, main]`이라 작업 브랜치
+    //   push에서는 안 돈다(대장 DW-664, 열려 있음) — 게이트 시점은 develop 병합이다.
+    // 위쪽 폴백 검사가 이걸 대신하지 못하는 이유: 그건 `??`가 붙었는지만 보고, 라벨이
+    //   실제로 존재하는지는 안 본다. 라벨이 없으면 폴백이 원본 문자열('user')을 그대로
+    //   화면에 내보내므로 조용히 영문이 노출된다.
+    expect(Object.keys(ROLE_LABEL).sort()).toEqual(Object.values(USER_ROLE).sort());
   });
 });

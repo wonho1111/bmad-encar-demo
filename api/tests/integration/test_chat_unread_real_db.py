@@ -275,7 +275,8 @@ def test_unread_count_does_not_leak_all_messages_to_admin(seeded):
     0025가 chat_rooms 조인을 함수 안에 되돌린 뒤에는 0이어야 한다."""
     cur, room_id, _buyer_id, seller_id, _listing_id = seeded
 
-    # 가입 트리거는 admin 역할을 메타데이터로 받지 않는다(buyer로 떨어진다 — 실측). 관리자는
+    # 가입 트리거는 admin 역할을 메타데이터로 받지 않는다(0028 이후 'user'로 떨어진다 —
+    # 0028 이전엔 같은 자리에서 'buyer'였다, Story 14.2). 관리자는
     # 운영자가 승격시키는 역할이므로 profiles를 직접 올린다(is_admin()이 보는 것이 이 컬럼이다).
     admin_id = _create_user(cur, f"ci-admin-{uuid.uuid4()}@example.com")
     cur.execute("update public.profiles set role = 'admin' where id = %s", (admin_id,))

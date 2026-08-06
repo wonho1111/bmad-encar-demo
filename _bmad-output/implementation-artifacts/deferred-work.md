@@ -4634,7 +4634,8 @@ severity: medium
 summary: `_create_user()`는 유저를 만든 뒤 "가입 트리거가 `user_metadata`의 role을 그대로 `profiles.role`에 반영했는가"까지 단언한다. Story 14.2는 바로 그 트리거(`handle_new_user`)의 기본 role 로직을 바꾸는 스토리다 — 바뀌는 순간 이 단언이 **픽스처 setup 단계에서** AssertionError를 내고, 그 헬퍼를 쓰는 모든 실DB 테스트가 자기가 검증하려던 것과 무관한 이유로 죽는다.
 evidence: `conftest.py`의 해당 단언은 Story 12.1이 겪은 실제 결함(판매자 유저에 role="buyer"를 하드코딩)을 막으려고 **의도적으로** 넣은 것이라 그냥 지우면 그 방어가 사라진다. 즉 14.2는 "트리거를 바꾼다 + 이 단언을 트리거의 새 계약에 맞게 고친다"를 **한 커밋 안에서** 해야 한다. 지금 이 사실이 적힌 곳은 conftest 주석뿐이고, 14.2 스토리 문서에는 없다. Story 14.1이 새로 추가한 테스트 15건도 같은 헬퍼를 쓰므로 폭발 반경이 이번 스토리로 더 커졌다(그래서 여기 등재한다).
 trigger: **Story 14.2 착수 시(트리거 기본값을 바꾸는 그 작업 안에서)** — 14.2의 인수조건에 "`conftest._create_user`의 role 단언을 새 트리거 계약에 맞게 갱신하고, `pytest tests/integration` 전체가 초록임을 확인한다"를 심는다. 14.2가 시작될 때 이 항목을 열어 확인할 것.
-status: open
+status: done 2026-08-06
+resolution: Story 14.2(0028_handle_new_user_default_role.sql)가 `conftest.py`·`test_chat_idempotency_real_db.py`의 `_create_user()`를 새 트리거 계약(role=None→'user', buyer/seller 그대로, 그 외 전부→'user')에 맞게 갱신했다. `role=None`(메타데이터 자체를 안 보내는 경로) 인자를 새로 지원해 web 신규 가입 경로를 재현한다. `pytest tests/integration` 99건 전체 통과 확인(로컬 pgvector, 0001~0028 전체 적용 후) — 갱신 전 트리거로 되돌려 새로 추가한 4건이 실제로 red가 됨을 먼저 확인한 뒤(B4), 되돌리고 다시 green을 확인했다.
 
 ### DW-664: `tests.yml`(api-db·web 잡)도 `test/bmad-loop`에서 안 돈다 — Story 14.1이 새로 만든 검사 15건이 CI에서 한 번도 실행되지 않았다
 
@@ -4681,10 +4682,10 @@ status: open
 source_spec: `_bmad-output/implementation-artifacts/spec-14-3-소유권-기반-판매-게이트.md`
 origin: 2026-08-06 Story 14.3 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 지적, 리뷰 세션이 Dart 파일 4곳을 직접 grep해 확인.
 location: `app/lib/features/listings/sell_screen.dart:152` · `my_listings_screen.dart:26` · `edit_listing_screen.dart:28`(모두 `if (role != UserRole.seller)` 하드 게이트) · `app/lib/features/chat/chat_list_screen.dart:39`(빈 채팅목록 문구가 `role == UserRole.seller`로 2분기 — web에서는 이번 스토리가 역할 중립 문구로 통일한 바로 그 코드)
-severity: medium
+severity: high
 summary: Story 14.3이 web의 판매 게이트를 소유권 기반으로 풀었지만 Flutter 앱은 그대로 역할 게이트다. 그래서 `role='buyer'` 계정이 **web에서는 매물을 등록·수정할 수 있는데 앱에서는 차단 화면을 본다** — 같은 계정이 플랫폼에 따라 다른 권한을 갖는, 사용자가 직접 관측 가능한 불일치다. Story 14.2가 가입 트리거 기본값을 바꾸면 더 나빠진다: `app/lib/features/auth/user_role.dart`의 기존 주석이 이미 경고하듯 metadata에 role이 안 실리면 `fromValue(null) → null`이 되어 **신규 가입자는 앱의 판매자 화면 전체에 영영 못 들어간다**.
-evidence: 위 4개 파일의 조건문을 직접 확인함. `app/test/`에는 이 게이트를 단언하는 검사가 없다(`widget_test.dart`는 enum 값·파싱만 본다). Story 14.3의 스펙은 Never 절에서 "Flutter 변경은 에픽 범위 밖"이라고 명시하고 "DW 등재는 아직 안 됐다"고 스스로 인정했다 — 이 항목이 그 등재다. **코드를 지금 안 고치는 이유**는 에픽 14의 범위가 web 한정으로 사용자 확정돼 있기 때문이지, 문제가 아니어서가 아니다.
-trigger: **Epic 16(앱 정합성 에픽)의 첫 스토리를 만들 때 인수조건으로 심는다.** 그보다 먼저 Story 14.2가 가입 트리거 기본값을 바꾸는 시점이 오면, 그 스토리의 리뷰에서 "앱 신규 가입자가 role=null로 전 판매화면 차단"이 실제로 발생하는지 먼저 확인한다(그 경우 severity가 high로 올라간다).
+evidence: 위 4개 파일의 조건문을 직접 확인함. `app/test/`에는 이 게이트를 단언하는 검사가 없다(`widget_test.dart`는 enum 값·파싱만 본다). Story 14.3의 스펙은 Never 절에서 "Flutter 변경은 에픽 범위 밖"이라고 명시하고 "DW 등재는 아직 안 됐다"고 스스로 인정했다 — 이 항목이 그 등재다. **코드를 지금 안 고치는 이유**는 에픽 14의 범위가 web 한정으로 사용자 확정돼 있기 때문이지, 문제가 아니어서가 아니다. 2026-08-06 Story 14.2 리뷰에서 실측 확인됨 — DW-678 참고(같은 리뷰가 severity를 medium→high로 갱신).
+trigger: **Epic 16(앱 정합성 에픽)의 첫 스토리를 만들 때 인수조건으로 심는다.** 그보다 먼저 Story 14.2가 가입 트리거 기본값을 바꾸는 시점이 오면, 그 스토리의 리뷰에서 "앱 신규 가입자가 role=null로 전 판매화면 차단"이 실제로 발생하는지 먼저 확인한다(그 경우 severity가 high로 올라간다). (2026-08-06 확인 완료, DW-678로 상세 등재)
 status: open
 
 ### DW-669: 정지(`status='suspended'`)된 회원의 판매를 아무것도 막지 않는다 — 게이트에도 RLS에도 status 검사가 없다
@@ -4778,6 +4779,123 @@ status: open
 ### DW-677: Follow-up review still recommended for 14-3-소유권-기반-판매-게이트 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-14-3-소유권-기반-판매-게이트.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-678: web 신규 가입 계정은 metadata에 role이 없어, Flutter 앱의 역할 기반 화면 5곳이 그 계정에서 판매자 기능을 숨긴다
+
+source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 구현 — spec의 Always 절이 이 갭을 신규 DW로 등재하라고 명시했다(스펙 자신이 "이 변경이 여는 새 갭"이라고 인정한 자리, 구현 세션이 직접 확인).
+location: `app/lib/features/auth/auth_controller.dart:28`(`currentRoleProvider`, `user_metadata['role']` 파싱) · 그걸 읽는 5개 화면 — `app/lib/features/listings/sell_screen.dart:146` · `edit_listing_screen.dart:25` · `my_listings_screen.dart:23` · `app/lib/features/auth/home_screen.dart:28` · `app/lib/features/chat/chat_list_screen.dart:22` (모두 `ref.watch(currentRoleProvider)`, `grep -rn currentRoleProvider app/lib`로 확인).
+severity: medium
+summary: 이 스토리(14.2)가 web 가입 화면의 역할 선택 UI·전송을 없애고 트리거 기본값을 'user'로 바꿨다. 그 결과 web에서 새로 가입한 계정은 `auth.users.raw_user_meta_data`에 role 키가 아예 없다. Flutter의 `currentRoleProvider`는 `profiles.role`이 아니라 이 metadata를 읽으므로 `UserRole.fromValue(null) → null`이 되고, 위 5개 화면이 그 null을 "판매자 아님"으로 해석해 판매자 기능을 숨긴다 — web에서는 팔 수 있는 계정이 앱에서는 영구히 못 파는 상태가 된다.
+evidence: `app/lib/features/auth/user_role.dart`의 기존 주석(1~8행)이 정확히 이 결과를 예견하고 있었다("14.2는 이 파일과 그 provider를 함께 봐야 한다"). 실제로 web에서 role metadata 없이 가입한 뒤(이 세션이 브라우저로 직접 검증, `spec142-e2e-check@example.test`) `profiles.role='user'`·`raw_user_meta_data`에 role 키 없음을 DB에서 확인했다 — 그 계정으로 Flutter 앱을 실행하는 것까지는 이 스토리 범위 밖이라 하지 않았지만, `currentRoleProvider`의 파싱 로직(`fromValue(null) → null`)과 5개 화면의 분기 조건은 코드로 직접 확인했다. `main.dart:77`도 같은 provider를 읽지만 admin 여부만 판별하는 `AuthGate` 용도라 role=null이어도 buyer/seller와 동일하게 동작하므로 이 항목의 대상 화면 수(5개)에서 제외한다. DW-668(Story 14.3이 이미 등재)과 다른 항목이다 — DW-668은 "role='buyer'인데 web은 소유권 기반이라 열려 있고 앱은 역할 게이트라 막혀 있다"는 기존 계정 불일치를 다루고, 이 항목은 "web 신규 가입 계정은 앱이 파싱할 role 값 자체가 없다"는 이 스토리가 새로 연 갭이다 — 원인도 다르다(DW-668은 앱의 하드 역할 게이트, 이 항목은 metadata 누락). DW-668을 이 리뷰에서 severity high로 갱신함(이 항목이 그 확인 근거).
+trigger: **Flutter 쪽 역할 통합 미러링을 다루는 다음 스토리 착수 시**(spec-14-2 Always 절이 지정한 트리거 문구 그대로) — DW-668이 이미 지정한 Epic 16(앱 정합성 에픽) 첫 스토리와 같은 자리에서 함께 처리하는 것이 자연스럽다. 그 스토리는 `currentRoleProvider`가 무엇을 읽을지(예: `profiles.role`을 직접 조회하도록 바꾸거나, 앱도 소유권 기반으로 게이트를 바꾸는 쪽)부터 정해야 한다.
+status: open
+
+### DW-679: 신규 web 가입자가 `/sell`에 실제로 들어가는지(FR52) 확인하는 자동화 테스트가 없다
+
+source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 리뷰(adversarial 렌즈) — DB 트리거 레벨(pytest)은 신규 회귀 4건으로 잘 덮였지만, 이 스토리가 존재하는 이유(FR52) 자체를 지키는 화면 레벨 확인은 이번 세션이 브라우저로 수동 1회 확인한 것뿐이라는 지적.
+location: `web/e2e/core-flows.spec.ts:208-235`(C8 — 기존 시드 계정 `role='buyer'`가 `/sell`에 들어가는지만 확인. 그 자체 주석이 "트리거가 바뀌면 이 테스트가 조용히 무의미해진다"고 경고하고 있었는데, 이번에 실제로 트리거가 바뀌었다).
+severity: medium
+summary: Story 14.2가 신규 web 가입자의 기본 role을 'user'로 바꾸고, 그 계정이 `/sell`(소유권 기반 게이트, Story 14.3)에 들어갈 수 있어야 FR52("로그인만 하면 누구나 사고팔 수 있다")가 성립한다. 이 핵심 경로 — "메타데이터 없이 가입 → role='user' → /sell 접근 가능" — 를 지키는 자동화된 E2E 테스트가 없다. C8은 여전히 role='buyer'인 기존 시드 계정만 본다.
+evidence: `web/e2e/*.spec.ts` 전체를 검색(core-flows·write-flows·nav-and-hero·nav-interactions·realtime-chat·landing-and-view-count·viewport-audit)해 role=null 신규가입→/sell 경로를 확인하는 테스트가 없음을 확인. 이번 스토리의 구현 세션이 이 경로를 브라우저로 1회 수동 검증했지만(spec Verification 절의 "브라우저로 실제 가입→로그인→로그아웃" 항목), 그 결과가 코드로 남지 않아 이후 누군가 `guard.ts`를 `requireRole(SELLER)`로 되돌리거나 트리거 기본값을 실수로 바꿔도 CI에서 아무 것도 안 걸린다(첫 시도 run 0381이 CRITICAL로 멈췄던 바로 그 모순이 재발해도 자동으로 알 방법이 없다).
+trigger: **`web/e2e/*.spec.ts`를 다음으로 손대는 스토리 착수 시** — C8과 같은 패턴으로 "메타데이터 없이 가입 → role='user' → /sell 접근 가능"을 확인하는 E2E 테스트를 추가한다(DW-664가 열려 있는 한 CI에서는 안 돌지만, 로컬 `npm run test:e2e` 회귀 방어로는 유효하다).
+status: open
+
+### DW-680: DW-668의 severity를 high로 올린 근거가 "실측"이 아니다 — 앱을 실제로 돌린 적이 없고, 기존 항목을 제자리에서 고쳐 쓰기까지 했다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰(adversarial 렌즈 지적, 이 리뷰 세션이 장부 헤더·DW-668·DW-678 본문을 직접 읽어 확인).
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-668 `severity:`·`evidence:`·`trigger:` 줄(2026-08-06 커밋 `4defd61`이 제자리 수정) · 대조 대상은 같은 커밋의 DW-678 `evidence:`
+severity: medium
+summary: 두 가지가 겹쳐 있다. (1) DW-668의 `trigger:`는 "앱 신규 가입자가 role=null로 전 판매화면 차단이 **실제로 발생하는지** 먼저 확인한다(그 경우 severity가 high로 올라간다)"였는데, 실제로 한 것은 Dart 소스의 분기 조건을 읽은 것뿐이다. 같은 커밋의 DW-678이 "그 계정으로 Flutter 앱을 실행하는 것까지는 이 스토리 범위 밖이라 하지 않았다"고 스스로 밝히고 있다. 그런데 DW-668의 evidence에는 "실측 확인됨"이라고 적혔다. (2) 그 갱신이 **제자리 수정**이었다 — 이 파일 헤더가 "append-only, 기존 항목을 지우거나 고쳐 쓰지 않는다"로 못박은 규칙 위반이라 2026-08-06 이전의 원래 평가 문구가 복구 불가능하다.
+evidence: 장부 헤더 6행 "이 파일은 **append-only** — 기존 항목을 지우거나 고쳐 쓰지 않는다. 끝나면 지우지 말고 `status: done <날짜>` + `resolution:`으로 닫는다." — 유일하게 허용된 제자리 변경은 '닫기'뿐인데 DW-668은 닫힌 것도 항목이 덧붙은 것도 아니다(`git show 4defd61 -- _bmad-output/implementation-artifacts/deferred-work.md`로 `-severity: medium` / `+severity: high` 확인). "실측"에 대해서는 CLAUDE.md B4가 "**존재 확인은 작동 확인이 아니다**"·"정연한 논증도, 여러 에이전트의 합의도 검증이 아니다"로 이 프로젝트의 기준을 이미 정해 두었다. ⚠️ **결론 자체가 틀렸다는 뜻은 아니다** — 코드 분기(`fromValue(null) → null` → 5개 화면이 판매 기능 숨김)는 명확해서 high가 과한 평가로 보이지도 않는다. 틀린 것은 **근거의 등급 표시**이고, 그게 "코드 읽기 = 실측"이라는 선례로 남는 것이 위험하다. 이 항목을 DW-668 본문 수정이 아니라 **새 항목으로** 여는 이유: 이번 리뷰 세션은 오케스트레이터로부터 "기존 장부 항목을 수정·재개봉·재작성하지 말고 신규 항목만 추가하라"는 지시를 받았다.
+trigger: **Epic 16(앱 정합성 에픽) 첫 스토리를 만들 때** — 그 스토리는 어차피 실기기/에뮬레이터로 앱을 띄우므로, 그 자리에서 "web 신규가입 계정으로 앱 로그인 → 판매 화면 차단"을 **실제로 재현**하고 그 결과를 DW-668·DW-678의 `resolution:`에 적는다. 그때 이 항목도 함께 닫는다.
+status: open
+
+### DW-681: `docs/conventions.md`에 role 어휘 절이 아예 없다 — 새 기본값 `'user'`가 크로스-파트 값인데 정본이 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 — adversarial·verification-gap 두 렌즈가 독립적으로 지적, 리뷰 세션이 `grep -niE "role" docs/conventions.md`로 직접 확인.
+location: `docs/conventions.md`(없는 절) · 어휘 사본이 흩어져 사는 3곳 — `web/src/lib/constants.ts:24-32`(`USER_ROLE`에 `'user'` 있음) · `supabase/migrations/0028_handle_new_user_default_role.sql:33-38`(그 값을 쓰는 쪽) · `app/lib/features/auth/user_role.dart:1-8`(3값 enum, `'user'` 없음 + 헤더 주석이 이미 거짓)
+severity: medium
+summary: `profiles.role`의 어휘는 web·app·db 경계를 가로지르는 값인데, 그 값들의 정본이어야 할 `docs/conventions.md`에 role 절이 없다. 0027이 DB CHECK를 걷어내면서 "어휘가 무엇인가"를 말해주는 층이 DB에서도 사라져, 지금 `'user'`의 정의는 코드 주석 3개뿐이고 그중 하나(`user_role.dart`)는 이미 사실과 다르다.
+evidence: `_bmad-output/project-context.md` 규칙 1이 "web·app·api·db 경계를 가로지르는 값은 **전부 거기(conventions.md) 정의돼 있다**. 코드보다 그 문서를 먼저 고친다"로 못박았고, `constants.ts` 헤더도 "docs/conventions.md(단일 출처)와 값이 일치해야 한다"고 적혀 있다. 그런데 `grep -niE "role" docs/conventions.md`는 `service_role` 키(§5)·ARIA role(§접근성)·`information_schema.role_table_grants` 쿼리만 반환하고 `profiles.role` 어휘를 다루는 절은 0건이다. `app/lib/features/auth/user_role.dart:2`의 "(DB 트리거 handle_new_user 가 여전히 이 문자열만 배정한다)"는 0028 이후 **거짓**이며, 그 enum엔 `user` 멤버가 없어 `fromValue('user') → null`이다. project-context.md:26이 기록한 이 리포의 반복 실패 모드("요약이 원본보다 늙어 틀린 값이 에이전트에 주입됐다 — 3건 실측")가 재발하기 좋은 자리다.
+trigger: **Epic 16(앱 정합성 에픽) 첫 스토리를 만들 때, `currentRoleProvider`가 무엇을 읽을지 정하는 그 자리에서** — 어차피 그 결정이 role 어휘의 의미를 확정하므로, 확정과 동시에 `docs/conventions.md`에 한 절을 추가한다(트리거가 buyer/seller만 통과시키고 나머지는 전부 `'user'`로 강제 · 0027 이후 DB는 어휘를 강제하지 않음 · `is_admin()`은 `'admin'` 정확일치 · 락스텝 갱신 대상 3곳). DW-678·DW-682와 같은 스토리에서 함께 처리하는 것이 자연스럽다.
+status: open
+
+### DW-682: `0028`의 buyer/seller 통과 분기에 제거 트리거가 어디에도 없다 — Flutter가 role 전송을 멈추는 순간 영구 사문화된다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰(adversarial 렌즈) — 리뷰 세션이 `0028` 본문과 `app/lib/features/auth/signup_screen.dart`를 직접 확인.
+location: `supabase/migrations/0028_handle_new_user_default_role.sql:33-35`(`if v_meta_role in ('buyer','seller') then v_role := v_meta_role;`) · 그 분기가 존재하는 유일한 이유인 송신부 `app/lib/features/auth/signup_screen.dart`(가입 시 `data: {'role': role.value}` 전송)
+severity: low
+summary: 0028이 buyer/seller metadata를 그대로 반영하는 분기를 남긴 것은 오직 "Flutter 앱이 아직 role을 보내니까"라는 하위호환 목적인데(spec Design Notes), 그 전제가 사라질 때 이 분기를 걷어내라고 말하는 항목이 장부에 없다. 그 결과 지금 계정 모집단이 **클라이언트별로 갈린다** — 앱 가입자는 buyer/seller, web 가입자는 user.
+evidence: 0028의 주석이 그 분기의 근거를 "Flutter 앱은 이번 스토리에서 UI를 안 건드리므로 여전히 role metadata를 보낸다"로 명시한다 — 즉 조건부 코드인데 해제 조건이 코드에도 장부에도 안 적혀 있다. DW-678은 앱이 role을 **읽는** 쪽(`currentRoleProvider`)만 다루고 **보내는** 쪽은 범위에 없다. CLAUDE.md B8: "미룬 항목엔 '언제·어디서 고칠지'를 대장에 함께 적는다 — '이월'만 적으면 조용히 또 밀린다."
+trigger: **Epic 16에서 Flutter 가입 화면의 역할 선택을 제거할 때(DW-678과 같은 스토리)** — 그 커밋이 role 전송을 멈추는 순간 이 분기는 도달 불가가 되므로, 같은 스토리의 인수조건에 "0028의 buyer/seller 통과 분기를 제거하는 마이그레이션을 추가한다"를 심는다. 배포 순서 때문에 앱 갱신이 사용자에게 다 퍼진 뒤여야 안전하다는 점(구버전 앱이 여전히 role을 보냄)도 그때 함께 판단한다.
+status: open
+
+### DW-683: `test_fr11_cover_images_real_db.py`의 픽스처는 "판매자를 만들었다"고 믿지만 그 INSERT는 항상 no-op다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰(edge-case 렌즈) — 리뷰 세션이 해당 픽스처와 `0028` 트리거를 직접 읽어 확인.
+location: `api/tests/integration/test_fr11_cover_images_real_db.py:67-72`(`insert into auth.users (id, email)` → 메타 없음, 이어서 `insert into public.profiles (id, role) values (%s,'seller') on conflict (id) do nothing`)
+severity: low
+summary: `auth.users` INSERT의 AFTER 트리거(`handle_new_user`)가 같은 문장에서 이미 profiles 행을 만들어 두므로, 뒤따르는 `on conflict (id) do nothing` INSERT는 **한 번도 적용된 적이 없다**. 이 픽스처가 만든 계정의 role은 `'seller'`가 아니라 트리거 기본값이며, Story 14.2 이후 그 값은 `'buyer'`에서 `'user'`로 바뀌었다.
+evidence: 두 문장을 직접 읽어 확인했다 — 트리거가 먼저 행을 만들므로 명시 INSERT는 항상 conflict 경로다. 지금 아무것도 안 깨지는 이유는 `supabase/migrations` 어디에도 `role='seller'`로 분기하는 RLS 정책이나 GRANT가 없기 때문이다(`grep -rn "role = 'seller'" supabase/migrations` → 0건. `is_admin()`만 role을 보고, 그건 `'admin'` 정확일치다). **이 스토리가 만든 문제는 아니다**(그 전에도 'seller'가 아니라 'buyer'였다) — 다만 값이 한 칸 더 멀어졌고, 형제 파일들이 쓰는 `conftest._create_user`는 이제 role 계약을 단언하는데 이 파일만 그 방어 밖에 있다. 나머지 5개 통합 테스트 파일은 `'{"role":"seller"}'` 메타를 명시하거나 `_create_user`를 쓴다.
+trigger: **`test_fr11_cover_images_real_db.py`를 다음으로 손대는 스토리 착수 시**, 또는 그보다 먼저 **`profiles.role`을 읽는 RLS 정책·GRANT가 처음 생길 때**(그 순간 이 픽스처는 "판매자가 아닌 행"으로 정책을 시험하며 조용히 통과하게 된다). 고치는 법은 시드 파일들이 이미 쓰는 패턴 — `on conflict` INSERT를 `update public.profiles set role='seller' where id=%s`로 바꾸거나 `conftest._create_user(cur, email, role='seller')`를 쓰는 것.
+status: open
+
+### DW-684: 통합 테스트 계정 모집단이 운영과 갈라졌다 — `role='user'` 계정으로 도는 시나리오 테스트가 0건이다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(adversarial 렌즈) — 리뷰 세션이 `_create_user` 호출부를 전수 확인(`grep -rn "_create_user(" api/tests/`).
+location: `api/tests/integration/conftest.py:45`(`def _create_user(cur, email, role="buyer")` — 기본 인자) · 그 기본값을 그대로 쓰는 호출부 12곳(`test_chat_unread_real_db.py`·`test_chat_idempotency_real_db.py`·`test_chat_realtime_broadcast_real_db.py`·`test_role_check_relax_real_db.py`)
+severity: medium
+summary: Story 14.2가 신규 가입 기본 role을 `'user'`로 바꿨는데, 통합 테스트 헬퍼의 기본 인자는 여전히 `"buyer"`다. 그래서 채팅·안읽음·Realtime·조회 같은 **실제 시나리오** 테스트는 전부 `buyer`/`seller` 계정으로 돌고, `'user'` 계정이 등장하는 곳은 이번에 추가한 트리거 계약 테스트뿐이다. 즉 운영의 신규 가입자 유형(전부 `'user'`)에 대해 시나리오가 한 번도 검사되지 않는다.
+evidence: 호출부 전수 확인 결과 `role=` 인자를 명시하는 곳은 seller가 필요한 자리뿐이고, 나머지는 전부 기본값 `"buyer"`를 탄다. 지금 아무것도 안 깨지는 이유는 `supabase/migrations` 어디에도 `profiles.role`로 분기하는 RLS 정책·GRANT가 없기 때문이다(`is_admin()`만 role을 보고 그건 `'admin'` 정확일치). 그래서 **오늘의 버그가 아니라 함정**이다 — `profiles.role`을 읽는 정책이 처음 생기는 날, 그 정책은 실제 사용자 유형에 대해 한 번도 검사되지 않은 채 배포된다. DW-683(`test_fr11_cover_images_real_db.py`의 seller 픽스처가 실은 no-op)과 같은 축의 문제이며, 그 항목이 지목한 "정책이 처음 생길 때"가 이 항목의 발화 시점이기도 하다.
+trigger: **`profiles.role`을 읽는 RLS 정책·GRANT가 처음 생기는 스토리 착수 시**(그 스토리의 인수조건에 "정책 테스트를 `role='user'` 계정으로도 돈다"를 심는다), 또는 그보다 먼저 **Epic 16의 앱 role 정합성 스토리에서 `currentRoleProvider`가 무엇을 읽을지 정할 때**. 고치는 법은 `_create_user`의 기본 인자를 `None`(메타데이터 없음 = 운영 신규 가입과 동일)으로 뒤집고, buyer가 실제로 필요한 호출부만 명시하게 하는 것 — DW-683과 한 커밋에서 처리하는 것이 자연스럽다.
+status: open
+
+### DW-685: role 관련 DW 5건이 전부 "Epic 16 첫 스토리"를 트리거로 지목했는데, 그 스토리(16.1)에는 role 얘기가 한 줄도 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(adversarial 렌즈) — 리뷰 세션이 `epics-increment-2026-07-12.md`의 Epic 16 절 전문을 직접 읽어 확인.
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:1340-1400`(Epic 16: 16.1 디자인 토큰 미러 + 하단 4탭 내비 · 16.2 이미지·카드 · 16.3 신뢰속성·찜 · 16.4 실시간 채팅 — 어디에도 가입·인증·role 없음) · 그 자리를 지목한 장부 항목 DW-668·DW-678·DW-680·DW-681·DW-682의 `trigger:` 줄
+severity: medium
+summary: 위 5개 항목은 전부 "Epic 16(앱 정합성 에픽) 첫 스토리를 만들 때 인수조건으로 심는다"를 해제 조건으로 적었다. 그런데 Epic 16의 첫 스토리는 디자인 토큰·내비이고 16.2~16.4도 role과 무관하다. 그리고 epics 문서에도 `sprint-status.yaml`에도 아무것도 심어두지 않았다 — 지정만 하고 심지 않은 상태다.
+evidence: CLAUDE.md B8이 정확히 이 실패를 경고한다 — "미룬 항목엔 '언제·어디서 고칠지'를 대장에 함께 적는다. '이월'만 적으면 다음 작업은 대장이 아니라 상위 문서를 보고 만들어지므로 조용히 또 밀린다 — 그 자리를 지정하고, **지정한 곳에도 실제로 심는다**(B5)." 지금은 앞 절반만 됐다. Epic 16을 만드는 사람이 참조할 문서는 epics-increment이고, 거기엔 role 얘기가 없으므로 5건이 통째로 한 번 더 밀린다. 실피해는 DW-678이 이미 기술한 것 — web 신규 가입 계정이 Flutter 앱에서 판매자 기능을 영영 못 본다.
+trigger: **Epic 16의 스토리를 실제로 만드는 순간(=`bmad-create-story` 또는 스프린트 계획으로 16.1을 여는 시점)** — 그보다 먼저 손댈 수 있으면 더 좋다: `epics-increment-2026-07-12.md`의 Epic 16 절에 "앱 역할 통합 미러링" 스토리를 하나 추가하고(내용: `currentRoleProvider`가 `profiles.role`을 읽게 하거나 앱 게이트를 소유권 기반으로 전환 + `docs/conventions.md`에 role 어휘 절 추가 + 0028의 buyer/seller 통과 분기 제거 판단), 위 5개 항목의 `trigger:`가 가리키는 대상을 그 스토리로 특정한다. ⚠️ 이 항목을 닫을 때 DW-668·678·680·681·682의 본문을 고치지 말 것 — 장부는 append-only이므로, 새 스토리가 생겼다는 사실은 이 항목의 `resolution:`에 적는다.
+status: open
+
+### DW-686: Flutter 앱 테스트가 14.2가 깨뜨린 계약을 "정상"으로 단언하고 있다 — `flutter test`는 영원히 초록이다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(verification-gap 렌즈) — 리뷰 세션이 `app/test/widget_test.dart`와 `app/lib/features/auth/user_role.dart`를 직접 읽고, `grep -rln` 으로 앱 테스트가 대상 화면을 하나도 안 건드림을 확인.
+location: `app/test/widget_test.dart:24-27`(`expect(UserRole.fromValue(null), isNull)` · `expect(UserRole.fromValue('unknown'), isNull)`) · `app/lib/features/auth/user_role.dart:10-13`(enum에 `user` 멤버 없음 → `fromValue('user')`도 null)
+severity: medium
+summary: DW-678은 **행동**의 갭(web 신규 가입 계정이 앱 판매화면에서 차단됨)을 등재했다. 이 항목은 그 갭의 **검증층**이 비어 있다는 별개의 사실이다 — 앱 테스트는 "role metadata가 없으면 null이 맞다"를 정답으로 단언하므로, CI의 app 잡(`flutter test`)은 이 스토리가 만든 불일치가 지속되는 내내 초록이다. 즉 앱 쪽에서 이 문제를 red로 알려줄 검사가 하나도 없다.
+evidence: `widget_test.dart`가 단언하는 것은 옛 계약(role은 buyer/seller/admin 셋뿐)이고, 0028 이후 DB가 실제로 배정하는 `'user'`는 그 enum에 아예 없다. `grep -rln "sell_screen|my_listings|edit_listing|home_screen|chat_list_screen|currentRoleProvider" app/test/` → 0건(다섯 화면 어느 것도 앱 테스트가 건드리지 않는다). 그래서 "앱 CI가 초록"은 "앱이 정상"이 아니라 "앱이 무엇을 약속하는지 아무도 안 본다"를 뜻한다. **지금 당장 red가 되는 단언을 심는 것은 일부러 CI를 깨는 것**이라 이번 스토리에서 하지 않았다 — 앱이 새 계약을 채택하는 스토리와 같은 커밋에 들어가야 한다.
+trigger: **Epic 16의 앱 role 정합성 스토리(DW-685가 만들도록 지정한 그 스토리) 착수 시** — 그 스토리의 인수조건에 "`app/test/`에 `currentRoleProvider`가 role 없는 세션에서 무엇을 돌려주는지 단언하는 검사를 추가한다(채택 전에는 red, 채택과 함께 green)"를 심는다. DW-678(행동)·DW-680(근거 등급)과 한 스토리에서 함께 닫는다.
+status: open
+
+### DW-687: web 배포와 원격 `0028` 적용 사이의 창에서 가입한 계정은 영구히 `'buyer'`로 남는다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
+origin: 2026-08-06 Story 14.2 후속 리뷰 2차(edge-case 렌즈) — 두 변경의 적용 경로가 다르다는 점을 리뷰 세션이 확인(web=Git 연동 자동 배포, 마이그=수동 적용).
+location: `supabase/migrations/0028_handle_new_user_default_role.sql`(아직 원격 미적용) · `web/src/app/(auth)/signup/page.tsx:61`(role 미전송) · 절차 문서 `docs/deployment-runbook.md`
+severity: low
+summary: 이 스토리의 web 변경과 DB 변경은 한 커밋이지만 **배포 경로가 다르다**. web이 먼저 나가면 그 사이 가입한 계정은 0009의 옛 기본값 `'buyer'`를 받고, forward-only 원칙상 백필이 없으므로 그대로 굳는다. 결과적으로 계정 모집단이 3분된다 — Flutter 가입자(buyer/seller) · 이 창의 web 가입자(buyer) · 그 이후 web 가입자(user).
+evidence: CLAUDE.md B3이 이미 순서를 정해두었다 — "배포 순서는 만드는 쪽 → 읽는 쪽: 데이터 구조(DB) 먼저, 그걸 읽는 API·화면이 나중." 이 스토리는 그 순서를 지키면 창이 열리지 않는데, 지금 스펙의 잔여 위험 목록엔 "원격에 0028 미적용"만 적혀 있고 **순서 제약이 명시돼 있지 않다**. 실피해는 크지 않다(판매 게이트는 14.3이 소유권 기반으로 바꿔 role을 안 보고, 영향은 역할 라벨 표시와 Flutter 화면 분기 정도) — 하지만 되돌릴 수 없는 종류라 등재한다. 0027이 DB CHECK를 걷어냈으므로 잘못된 값이 자동으로 걸리지도 않는다.
+trigger: **`0028`을 원격(운영) Supabase에 적용할 때 = 이 브랜치를 `main`에 병합하기 직전** — 마이그레이션을 **먼저** 적용하고 그 다음에 web 배포가 나가도록 순서를 고정한다. 이미 창이 열린 뒤라면 그 사이 가입한 계정 목록(`select id, email, created_at from auth.users where created_at between …`)을 확인해 기록만 남긴다(일괄 UPDATE는 이 스펙의 Never 절이 금지한다 — 별도 판단 필요).
+status: open
+
+### DW-688: Follow-up review still recommended for 14-2-가입-역할선택-제거-트리거-기본-role after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

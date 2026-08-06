@@ -41,7 +41,7 @@ end $$;
 -- 두 가지 필수 포인트:
 --   1) auth.users + auth.identities 둘 다 있어야 이메일+비밀번호 로그인이 동작한다.
 --      identities가 없으면 계정은 보여도 로그인이 실패한다(GoTrue가 identities를 참조).
---   2) auth.users insert 시 트리거가 profiles 행을 buyer로 만든다 →
+--   2) auth.users insert 시 트리거가 profiles 행을 만든다(0028 이후 기본 role='user') →
 --      insert 후 profiles.role을 'admin'으로 승격(UPDATE)해야 한다.
 --
 -- ⚠️ 데모 전용 계정이다. 이메일: admin@test.com
@@ -94,7 +94,7 @@ begin
     );
   end if;
 
-  -- 트리거가 만든 profiles(기본 buyer)를 admin으로 승격한다.
+  -- 트리거가 만든 profiles(0028 이후 기본 role='user')를 admin으로 승격한다.
   --   계정이 이미 있던 경우(재실행)에도 admin 보장 → 멱등.
   update public.profiles
      set role = 'admin'
@@ -129,7 +129,7 @@ end $$;
 -- 두 단계로 구성:
 --   1) 시드 전용 판매자 계정(seller-seed@test.com) — 매물 seller_id가 가리킬 유효한 판매자.
 --      가입 흐름 밖에서 만들므로 admin 시드(위)와 같은 auth.users+auth.identities 패턴을 쓴다.
---      단 admin과 달리 role은 'seller'로 승격(트리거가 만든 buyer를 UPDATE).
+--      단 admin과 달리 role은 'seller'로 승격(트리거가 만든 행을 UPDATE).
 --   2) 그 판매자 명의로 매물 39건 INSERT.
 --
 -- 멱등성(중요): 재실행 시 매물이 누적되지 않도록, "시드 전용 판매자 소유 매물만 삭제 후 재삽입"한다.
@@ -164,7 +164,7 @@ begin
       extensions.crypt(v_password, extensions.gen_salt('bf')),  -- bcrypt 해시
       now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
-      '{"role":"seller"}'::jsonb,   -- 가입 메타: 트리거(handle_new_user)가 이 값으로 profiles를 seller로 생성 → 아래 UPDATE는 대개 no-op(안전망). admin 블록은 메타 없이 buyer로 생성된 뒤 UPDATE로 승격하는 점과 다름.
+      '{"role":"seller"}'::jsonb,   -- 가입 메타: 트리거(handle_new_user)가 이 값을 그대로 반영해 profiles를 seller로 생성 → 아래 UPDATE는 대개 no-op(안전망). admin 블록은 메타 없이 기본 role(0028 이후 'user')로 생성된 뒤 UPDATE로 승격하는 점과 다름.
       '', '', '', '',
       now(), now()
     );

@@ -37,9 +37,11 @@
   · ⑥의 재실행은 "0027을 이미 적용한 DB에 한 번 더 적용"이라 **운영 DB의 첫 적용과 완전히 같지는
     않다**(첫 적용 때만 3값 CHECK가 살아 있다). 그 1회성 사실의 실측은 spec의 Verification
     Evidence에 있고, 여기서는 재현 가능한 부분(기존 행 무변경)만 매번 못박는다.
-  · **신규 가입(INSERT) 경로**는 여전히 buyer/seller로 강제된다 — 0009의 handle_new_user가
-    `v_role not in ('buyer','seller') then v_role := 'buyer'`이기 때문이다. 완화의 효용이
-    실제로 드러나는 건 그 트리거를 바꾸는 Story 14.2부터이고, 그건 이 스토리 범위 밖이다.
+  · **신규 가입(INSERT) 경로**는 이 스토리(14.1) 시점엔 여전히 buyer/seller로 강제됐다 — 0009의
+    handle_new_user가 `v_role not in ('buyer','seller') then v_role := 'buyer'`였기 때문이다.
+    완화의 효용은 그 트리거를 바꾸는 Story 14.2(0028_handle_new_user_default_role.sql)부터
+    실제로 드러난다 — 이 파일 아래쪽의 `test_handle_new_user_default_role_matrix`가 그 계약을
+    검증한다(같은 트리거 대상 파일이라 14.2가 이 자리에 추가했다).
 
 실행: CI의 `api-db` 잡이 pgvector 컨테이너를 띄우고 TEST_DATABASE_URL을 준다.
   로컬: TEST_DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/postgres'
@@ -60,9 +62,57 @@ _NOT_NULL_VIOLATION = "23502"
 
 # 검사가 보는 마이그레이션 파일 자체. 본문을 여기 복사하지 않고 매번 디스크에서 읽는다 —
 # 사본을 두면 파일이 바뀌어도 검사는 옛 본문을 계속 통과시킨다(이 리포가 반복해서 겪은 실패).
-_MIGRATION_PATH = (
-    Path(__file__).resolve().parents[3] / "supabase" / "migrations" / "0027_role_check_relax.sql"
+_MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
+_MIGRATION_PATH = _MIGRATIONS_DIR / "0027_role_check_relax.sql"
+
+# ⑧(아래 test_migration_contains_no_data_mutation)이 훑는 범위. **파일 목록을 손으로 적지 않는다** —
+# 0027 이상 번호를 디스크에서 매번 긁는다. 이유(Story 14.2 후속 리뷰 2차 지적): 직전 버전은
+# ["0027…", "0028…"] 리터럴이었는데, 그건 이 검사가 고치려던 결함("검사가 0027 하나만 봤다")을
+# 0029에서 그대로 재발시킨다 — 목록에 추가하는 걸 잊어도 아무것도 red가 안 된다.
+# 형제 검사 api/tests/test_migration_no_backfill.py가 이미 같은 문제를 glob + 자기검사로 풀었고,
+# 여기서 그 패턴을 그대로 따른다.
+#
+# 왜 0027부터인가: 0027이 profiles.role의 3값 CHECK를 걷어내면서 "기존 행은 안 건드린다"가
+# **주석에만 사는 약속**이 됐다. 그 이전 번호는 이 축의 약속을 하지 않는다.
+#
+# CI의 api-db 잡은 **빈 DB**에 마이그를 적용하므로, 나중에 누가 백필 UPDATE를 넣어도 0건이
+# 바뀌어 전부 초록으로 통과한다 — 문장 층에서 막는 이 검사가 유일한 방어다.
+_FIRST_FORWARD_ONLY_NUMBER = 27
+
+# `public.profiles`를 **대상으로 하는** 쓰기 문장만 본다. 직전 버전은 파일 어디든 `update`라는
+# 단어가 있으면 걸었는데, 그 형태로는 범위를 0029+로 넓히는 순간 profiles와 무관한 정상
+# 마이그(다른 테이블 백필 등)가 전부 거짓 red가 된다 — 거짓 양성은 거짓 음성만큼 빨리 검사를
+# 무력화시킨다. 대신 대상이 profiles일 때는 INSERT/MERGE/COPY도 함께 본다(직전 버전이 놓친 구멍:
+# `merge into public.profiles`·`insert into public.profiles … select`로 백필하면 통과했다).
+_PROFILES_WRITE = re.compile(
+    r"(?:insert\s+into|update|delete\s+from|merge\s+into|truncate(?:\s+table)?|copy)\s+"
+    r"(?:only\s+)?(?:\"?public\"?\s*\.\s*)?\"?profiles\"?\b",
+    re.IGNORECASE,
 )
+
+# 함수 **정의**의 본문은 검사 대상에서 뺀다. 마이그 적용 시점에 실행되는 것이 아니라 나중에
+# 호출될 때 도는 코드이기 때문이다(0028의 `insert into public.profiles`가 바로 이 경우 — 그건
+# 가입 트리거 그 자체지 백필이 아니다). 익명 블록 `do $$ … $$`는 **안** 뺀다 — 그건 적용 시점에
+# 실제로 도는 문장이라 백필을 숨기기 가장 좋은 자리다. 꼬리표($fn$)를 붙인 달러 인용도 역참조로 짝짓는다.
+_FUNCTION_BODY = re.compile(
+    r"create\s+(?:or\s+replace\s+)?function\b.*?\$(\w*)\$.*?\$\1\$",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _forward_only_migrations():
+    files = []
+    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
+        match = re.match(r"(\d+)_", path.name)
+        if match and int(match.group(1)) >= _FIRST_FORWARD_ONLY_NUMBER:
+            files.append(path)
+    return files
+
+
+def _executable_sql(sql: str) -> str:
+    """주석과 함수 정의 본문을 걷어내고 **적용 시점에 실제로 도는 문장만** 남긴다."""
+    without_comments = re.sub(r"--[^\n]*|/\*.*?\*/", "", sql, flags=re.DOTALL)
+    return _FUNCTION_BODY.sub(" ", without_comments)
 
 
 def _migration_sql():
@@ -79,7 +129,8 @@ def db():
     """행을 만들지 않고 커서만 주고 **끝나면 롤백**한다(DB 원상복구).
 
     카탈로그만 보거나 마이그레이션을 재실행하는 검사용이다. `profile` 픽스처를 쓰면 가입 트리거의
-    동작(=Story 14.2가 바꿀 예정인 것)에 불필요하게 묶여, CHECK와 무관한 이유로 red가 될 수 있다.
+    동작(=Story 14.2의 0028이 이미 한 번 바꾼 것)에 불필요하게 묶여, CHECK와 무관한 이유로
+    red가 될 수 있다.
     """
     with psycopg.connect(_DSN) as conn:
         with conn.cursor() as c:
@@ -91,9 +142,10 @@ def db():
 def profile():
     """트랜잭션 안에서 `(cursor, profile_id)`를 돌려주고 **끝나면 롤백**한다(DB 원상복구).
 
-    가입 트리거(handle_new_user)는 buyer/seller만 배정하므로(0009: `if v_role not in
-    ('buyer','seller') then v_role := 'buyer'`), 임의 값·admin은 트리거로 만들 수 없다.
-    그래서 트리거로 buyer 프로필을 만든 뒤 UPDATE로 role을 바꾼다 — CHECK 평가는
+    가입 트리거(handle_new_user)는 metadata의 buyer/seller만 그대로 반영하고 나머지는 전부
+    한 값으로 강제하므로(0028: buyer/seller가 아니면 `'user'` — 0028 이전인 0009는 같은
+    자리에서 `'buyer'`였다), 임의 값·admin은 트리거로 만들 수 없다. 그래서 트리거로 프로필을
+    만든 뒤 UPDATE로 role을 바꾼다 — CHECK 평가는
     INSERT든 UPDATE든 동일하게 걸리므로 이 경로로 제약을 시험할 수 있다.
     (profiles.id는 auth.users FK라 임의 uuid로 직접 INSERT하는 경로는 애초에 막혀 있다.)
     """
@@ -108,7 +160,7 @@ def _set_role(cur, profile_id, value):
     cur.execute("update public.profiles set role = %s where id = %s", (value, profile_id))
 
 
-@pytest.mark.parametrize("value", ["user", "member", "consolidated-role", "whatever-14-2-picks"])
+@pytest.mark.parametrize("value", ["user", "member", "consolidated-role", "whatever-else"])
 def test_non_enum_role_is_accepted(profile, value):
     """① 3값 밖의 임의 값이 저장된다 — 이 스토리가 한 일 그 자체.
 
@@ -177,8 +229,11 @@ def test_no_check_constraint_still_enforces_buyer_or_seller(profile):
 def test_relaxed_check_does_not_see_whitespace_or_case_variants(profile, value):
     """이 검사가 **안 보는 것**: 공백·대소문자 변형도 전부 통과하고, admin으로 인정되지 않는다.
 
-    0027이 어휘 검사를 걷어냈으므로 이건 회귀가 아니라 **의도된 상태**다(14.2가 기본값을
-    정할 때 다시 좁힐지 판단한다). 여기가 red가 되면 정책이 바뀐 것이므로 함께 갱신한다.
+    0027이 어휘 검사를 걷어냈으므로 이건 회귀가 아니라 **의도된 상태**다. 14.2는 기본값을
+    `'user'`로 정하면서 이 UPDATE 경로는 **좁히지 않기로** 했다 — 0028이 강제하는 것은
+    신규 가입(INSERT) 경로뿐이고, 이미 만들어진 행의 role을 임의 문자열로 바꾸는 것을
+    막는 장치는 여전히 없다(관리자 UI 외엔 그 UPDATE를 하는 코드가 없다는 사실에 기대는 상태).
+    여기가 red가 되면 정책이 바뀐 것이므로 함께 갱신한다.
     """
     cur, profile_id = profile
     _set_role(cur, profile_id, value)
@@ -238,15 +293,176 @@ def test_migration_aborts_when_drop_is_a_no_op(db):
     assert "3값 CHECK가 아직 남아 있다" in str(exc.value)
 
 
+def test_forward_only_migrations_are_findable():
+    """⑧의 검사 대상이 0개가 되면 "통과"가 아니라 실패다.
+
+    glob이 조용히 빈 목록을 돌려주는 상태(경로 계산이 깨졌거나 번호 규칙이 바뀜)에서
+    아래 ⑧은 아무것도 안 보면서 초록이 된다 — 검사가 무력화되는 가장 흔한 방식이다.
+    """
+    assert _MIGRATIONS_DIR.is_dir(), f"마이그레이션 디렉터리를 찾지 못했다: {_MIGRATIONS_DIR}"
+    assert _forward_only_migrations(), (
+        f"{_FIRST_FORWARD_ONLY_NUMBER:04d} 이상 번호의 마이그레이션이 하나도 없다 — "
+        f"경로/번호 규칙이 바뀌었는지 확인할 것: {_MIGRATIONS_DIR}"
+    )
+
+
 def test_migration_contains_no_data_mutation():
-    """⑧ 0027 본문에 profiles의 데이터를 바꾸는 문장이 없다(Never 절을 문장 층에서 못박는다).
+    """⑧ 0027 이후 어느 마이그레이션도 profiles의 **기존 행**을 바꾸지 않는다(Never 절을 문장 층에서).
 
     ⑥은 "이 마이그를 지금 돌리면 행이 안 바뀐다"를 보고, 이건 "애초에 바꾸는 문장이 없다"를 본다.
     둘 다 필요한 이유: 조건부 UPDATE(예: `where role = 'buyer'`)는 테스트가 만든 행에 안 걸리면
-    ⑥을 통과할 수 있다. 주석은 제외하고 실행되는 SQL만 본다.
+    ⑥을 통과할 수 있다.
+
+    이 검사가 **안 보는 것**(추측 아니라 실측):
+      · 함수 정의 본문 — 적용 시점에 도는 문장이 아니다(0028의 가입 트리거 INSERT가 그 경우).
+        누가 handle_new_user 본문에 백필을 넣어도 여기선 안 걸린다. 익명 `do $$ … $$`는 본다.
+      · profiles가 **아닌** 테이블의 백필 — 이 파일의 약속 범위 밖이다.
+      · 마이그레이션 파일 밖(scripts/ 일회용 SQL·원격에 손으로 친 문장)은 아예 시야 밖이다.
     """
-    body = "\n".join(
-        line for line in _migration_sql().splitlines() if not line.lstrip().startswith("--")
+    offenders = []
+    for path in _forward_only_migrations():
+        match = _PROFILES_WRITE.search(_executable_sql(path.read_text(encoding="utf-8")))
+        if match:
+            offenders.append(f"{path.name}: {match.group(0)!r}")
+    assert offenders == [], f"profiles의 데이터를 바꾸는 문장이 있다: {offenders}"
+
+
+# --- 아래는 Story 14.2(0028_handle_new_user_default_role.sql)가 추가했다 ---
+# 0027이 CHECK를 완화한 그 트리거의 기본값을 0028이 바꾸므로, 같은 트리거를 다루는 이 파일이
+# 자연스러운 자리다(spec-14-2 Code Map). spec의 I/O & Edge-Case Matrix를 그대로 재현한다.
+
+
+def _signup(cur, email, meta_role):
+    """가입 경로를 재현한다 — auth.users에 INSERT하고 트리거가 만든 profiles 행을 **관측만** 한다.
+
+    conftest._create_user()를 쓰지 않는 이유(Story 14.2 후속 리뷰 2차 지적): 그 헬퍼는 스스로
+    role 계약을 단언한다. 그래서 트리거가 깨지면 **픽스처 setup 단계에서** 먼저 터지고, 아래
+    매트릭스의 단언은 한 번도 도달하지 못한다 — "독립된 회귀 테스트"라는 주장이 사실이 아니게 되고,
+    나중에 헬퍼의 단언을 완화하면 매트릭스는 계속 초록이면서 아무것도 안 지키게 된다.
+    여기서는 관측만 하고 판단은 테스트가 한다(헬퍼와 다른 경로여야 '독립'이다).
+    """
+    user_id = uuid.uuid4()
+    if meta_role is None:
+        cur.execute(
+            "insert into auth.users (id, email, raw_user_meta_data) values (%s, %s, '{}'::jsonb)",
+            (user_id, email),
+        )
+    else:
+        cur.execute(
+            "insert into auth.users (id, email, raw_user_meta_data) "
+            "values (%s, %s, jsonb_build_object('role', %s::text))",
+            (user_id, email, meta_role),
+        )
+    cur.execute("select role, name from public.profiles where id = %s", (user_id,))
+    row = cur.fetchone()
+    assert row is not None, "가입 트리거가 profiles 행을 만들지 않았다"
+    return user_id, row
+
+
+@pytest.mark.parametrize(
+    "meta_role, expected_role",
+    [
+        (None, "user"),  # 역할 메타데이터 없음(신규 web 가입) → 기본값 'user'
+        ("buyer", "buyer"),  # 명시적 buyer 메타데이터(하위호환 — Flutter/테스트) → 그대로 반영
+        ("seller", "seller"),  # 명시적 seller 메타데이터(하위호환) → 그대로 반영
+        ("admin", "user"),  # admin 승격 시도 → 강제 차단, 'user'로 배정
+        ("whatever", "user"),  # buyer/seller가 아닌 임의 문자열도 'user'로 강제
+    ],
+)
+def test_handle_new_user_default_role_matrix(meta_role, expected_role):
+    """0028 이후 handle_new_user()가 채우는 profiles 행 — spec의 I/O & Edge-Case Matrix 전량.
+
+    (건수를 적지 않는다: 옛 문구의 "4행"은 실제 5행일 때 이미 틀려 있었다 — 수치 사본은 늙는다.)
+
+    role만이 아니라 name도 본다. 0028은 함수를 **통째로** replace하면서 0009가 넣은
+    `name = split_part(email,'@',1)` 기록을 손으로 다시 옮겨 적었는데, 그 줄을 빼도 통합 테스트
+    전량이 초록이었다(실측). name이 사라지면 /admin/members가 `m.name ?? shortId(m.id)` 폴백으로
+    조용히 UUID 앞자리를 보여준다 — 화면이 깨지지 않아 더 늦게 발견된다.
+
+    admin 케이스는 신규 가입 경로로 admin이 배정되는 회귀(spec Block If 2행)를 잡는다 —
+    여기가 red가 되면 즉시 HALT 대상이다.
+    """
+    email = f"role-matrix-{uuid.uuid4()}@example.test"
+    with psycopg.connect(_DSN) as conn:
+        with conn.cursor() as c:
+            _profile_id, (role, name) = _signup(c, email, meta_role)
+            assert role == expected_role
+            assert name == email.split("@")[0]
+        conn.rollback()
+
+
+def test_handle_new_user_keeps_security_definer_and_pinned_search_path(db):
+    """0028이 손으로 다시 적어 넣은 권한 속성이 실제로 붙어 있는가.
+
+    왜 필요한가(실측): 살아 있는 함수에서 `security definer`와 `set search_path`를 떼어내도
+    `pytest tests/integration` 100건이 **전부 통과**했고 `check_migrations.py`도 exit 0이었다.
+    통합 테스트는 superuser(postgres)로 붙으므로 정의자 권한이 구조적으로 관측되지 않는다 —
+    반면 실제 가입은 GoTrue의 supabase_auth_admin이 이 트리거를 돌리고, profiles엔 그 롤용
+    INSERT 정책이 없다. 즉 security definer가 빠지면 **가입 자체가 조용히 깨진다**.
+    search_path 고정이 빠지면 SECURITY DEFINER 함수는 search_path 탈취면이 된다.
+
+    이 함수는 이미 세 번 재작성됐다(0001 → 0009 → 0028). 형제 트리거 함수는 같은 이유로 이미
+    같은 검사를 갖고 있다(test_chat_realtime_broadcast_real_db.py의 broadcast 함수 검사).
+    """
+    db.execute(
+        "select p.prosecdef, p.proconfig from pg_proc p "
+        "join pg_namespace n on n.oid = p.pronamespace "
+        "where n.nspname = 'public' and p.proname = 'handle_new_user'"
     )
-    mutations = re.findall(r"\b(update|delete\s+from|truncate)\b", body, flags=re.IGNORECASE)
-    assert mutations == [], f"0027에 데이터 변경 문장이 있다: {mutations}"
+    rows = db.fetchall()
+    assert len(rows) == 1, f"public.handle_new_user가 정확히 하나가 아니다: {rows}"
+    prosecdef, proconfig = rows[0]
+    assert prosecdef is True, "handle_new_user가 security definer가 아니다 — 실제 가입이 깨진다"
+    assert proconfig and any(
+        setting.lower().replace(" ", "") == "search_path=public" for setting in proconfig
+    ), f"handle_new_user에 search_path 고정이 없다: {proconfig}"
+
+
+def test_signup_trigger_is_still_wired_to_auth_users(db):
+    """0028의 `create or replace function`이 0001의 트리거 배선을 그대로 유지했는가.
+
+    함수만 바꾸고 배선은 안 건드리는 것이 0028의 전제인데(주석에 그렇게 적혀 있다), 그 전제를
+    확인하는 것이 없었다. 배선이 끊기면 profiles 행 자체가 안 생기고, 그건 FK 때문에 매물·채팅
+    전부가 뒤늦게 깨지는 방식으로만 드러난다.
+    """
+    db.execute(
+        "select t.tgname from pg_trigger t "
+        "join pg_class c on c.oid = t.tgrelid "
+        "join pg_namespace n on n.oid = c.relnamespace "
+        "join pg_proc p on p.oid = t.tgfoid "
+        "where n.nspname = 'auth' and c.relname = 'users' "
+        "and p.proname = 'handle_new_user' and not t.tgisinternal"
+    )
+    assert db.fetchall(), "auth.users에 handle_new_user를 부르는 트리거가 없다"
+
+
+def test_admin_signup_metadata_does_not_grant_is_admin():
+    """admin metadata로 가입해도 is_admin()은 여전히 false다(Block If 2행의 실제 회귀 재현).
+
+    위 매트릭스 테스트는 profiles.role만 보므로, "role이 'user'로 강제됐다"와 "그래서 관리자
+    권한도 없다"는 별개로 확인해야 한다(is_admin()은 role='admin' 정확일치만 본다, 0001).
+
+    **양성 대조를 같은 커넥션에서 함께 돈다**(Story 14.2 후속 리뷰 2차 지적): `set local
+    request.jwt.claim.sub`가 안 먹히면 auth.uid()가 NULL → is_admin()이 무조건 false가 되어
+    이 검사는 아무것도 안 보면서 영원히 초록이다. 그래서 같은 커넥션·같은 세션 변수로 role만
+    'admin'으로 올렸을 때 true가 되는 것을 먼저 확인한다 — 그게 초록이어야 아래 false가 의미를 갖는다.
+    """
+    with psycopg.connect(_DSN) as conn:
+        with conn.cursor() as c:
+            profile_id, (role, _name) = _signup(
+                c, f"admin-signup-attempt-{uuid.uuid4()}@example.test", "admin"
+            )
+            assert role == "user", f"admin metadata가 차단되지 않았다: {role}"
+            # SET LOCAL은 파라미터 바인딩을 받지 않는다(실측: `$1`에서 SyntaxError).
+            # profile_id는 이 테스트가 만든 uuid라 문자열 합성이 안전하다.
+            c.execute(f"set local request.jwt.claim.sub = '{profile_id}'")
+            c.execute("select public.is_admin()")
+            assert c.fetchone()[0] is False
+
+            # 양성 대조 — 이 세션에서 is_admin()이 애초에 true가 될 수 있는가.
+            c.execute("update public.profiles set role = 'admin' where id = %s", (profile_id,))
+            c.execute("select public.is_admin()")
+            assert c.fetchone()[0] is True, (
+                "양성 대조 실패 — request.jwt.claim.sub가 안 먹혀 위 false가 무의미하다"
+            )
+        conn.rollback()
