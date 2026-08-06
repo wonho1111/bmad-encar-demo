@@ -296,6 +296,22 @@ test.describe('spec-15-2 관리자 사이드바', () => {
     await login(page, ADMIN_USER.email, ADMIN_USER.password);
     await page.goto('/admin/members');
 
+    // spec-15-3(FR61) — 회원관리 역할 표시가 구매자/판매자가 아니라 admin/일반 축인지, 이미 이
+    // 화면을 방문하는 지점에서 함께 확인한다(I/O 매트릭스 "회원관리 역할 표시" 행, 코드리뷰 지적
+    // — 이 텍스트를 단언하는 검사가 이전엔 없었다). 행(`li`) 단위로 앵커링한다 — 그냥 화면
+    // 어딘가에 "관리자"·"일반" 글자가 있는지만 보면 두 라벨을 서로 바꿔치기해도(관리자 행이
+    // "일반"으로, 일반 행이 "관리자"로 잘못 뜨는 회귀) 통과해버린다(코드리뷰 adversarial 지적,
+    // AdminSidebar.test.ts가 3차 리뷰에서 겪은 것과 같은 실패 모드). 본인 행은 "나" 배지로
+    // 식별한다(page.tsx의 isSelf 렌더 규칙). 시드 계정(seed-local/01_accounts.sql, 0029 역할
+    // 통합 후)은 admin@test.com만 role='admin'이고 나머지 8개는 전부 role='user'이므로,
+    // 로그인한 admin 본인 행은 "관리자", 다른 아무 행이나 "일반"이어야 한다.
+    const selfRow = page.locator('main li').filter({ hasText: '나' });
+    await expect(selfRow).toHaveCount(1);
+    await expect(selfRow.getByText('관리자', { exact: true })).toBeVisible();
+
+    const otherRow = page.locator('main li').filter({ hasNotText: '나' }).first();
+    await expect(otherRow.getByText('일반', { exact: true })).toBeVisible();
+
     const activeLink = page.getByRole('link', { name: '회원관리' });
     await expect(activeLink).toHaveAttribute('aria-current', 'page');
 

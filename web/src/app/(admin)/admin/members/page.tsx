@@ -8,16 +8,18 @@
 //   2) 행마다 정지/해제·삭제 액션(MemberActions, 클라이언트 컴포넌트). 단 본인 행은 액션을 숨긴다(자기 정지/삭제 방지).
 import { createClient } from '@/lib/supabase/server';
 import { requireUser } from '@/lib/auth/guard';
-import { ROLE_LABEL, PROFILE_STATUS, type UserRole, type ProfileStatus } from '@/lib/constants';
+import { USER_ROLE, PROFILE_STATUS, type ProfileStatus } from '@/lib/constants';
 import Badge from '@/components/ui/Badge';
 import MemberActions from './MemberActions';
 
 // 목록에 보여줄 최소 필드.
-// ⚠️ role은 `UserRole`이 아니라 `string`이다 — 그 타입을 참으로 만들어주던 profiles.role의
-// 3값 CHECK를 0027(Story 14.1)이 걷어냈다. DB가 더 이상 어휘를 강제하지 않으므로 표시할 때
-// 폴백이 필요하다(형제 화면들이 이미 쓰는 `ROLE_LABEL[... as UserRole] ?? role` 패턴).
-// 이 규칙은 주석이 아니라 검사가 지킨다 — `src/lib/__tests__/roleLabelFallback.test.ts`가
-// web/src의 모든 ROLE_LABEL 인덱싱에 폴백이 붙어 있는지 CI(web 잡)에서 매번 확인한다.
+// ⚠️ role은 `UserRole`이 아니라 `string`이다 — profiles.role의 3값 CHECK를 0027(Story 14.1)이
+// 걷어내 DB가 더 이상 어휘를 강제하지 않는다. 다른 화면들은 여전히 제네릭
+// `ROLE_LABEL[role as UserRole] ?? role` 폴백 패턴을 쓰지만, 이 화면(회원관리)만은 FR61이
+// admin/일반 두 값 표시 축을 명시로 요구한다(spec-15-3) — 그래서 `role === USER_ROLE.ADMIN`
+// 판별로 바꾼다. 이 판별은 어떤 문자열이 들어와도 항상 '관리자' 아니면 '일반'을 반환하므로
+// (undefined가 나올 수 없음), roleLabelFallback.test.ts가 지키는 "ROLE_LABEL 인덱싱은 폴백
+// 필수"와는 애초에 무관하다 — 이 파일은 더 이상 ROLE_LABEL을 인덱싱하지 않는다.
 type MemberRow = {
   id: string;
   role: string;
@@ -73,6 +75,8 @@ export default async function AdminMembersPage() {
               const isSuspended = m.status === PROFILE_STATUS.SUSPENDED;
               // 표시 이름(이메일 @앞부분, 0009). 없으면 UUID 앞자리로 폴백.
               const memberLabel = m.name ?? shortId(m.id);
+              // FR61 — 회원관리 화면은 구매자/판매자가 아니라 admin/일반 두 값 축으로 표시한다.
+              const roleLabel = m.role === USER_ROLE.ADMIN ? '관리자' : '일반';
               return (
                 <li
                   key={m.id}
@@ -82,7 +86,7 @@ export default async function AdminMembersPage() {
                       회원 라벨(이메일 앞부분)뿐이다. 공백 없는 긴 라벨이 min-content를 밀어 행이
                       가로로 넘치는 것을 …로 자른다(D5, 코드리뷰 patch 15.1). */}
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="font-medium">{ROLE_LABEL[m.role as UserRole] ?? m.role}</span>
+                    <span className="font-medium">{roleLabel}</span>
                     <span className="truncate text-ink-muted">{memberLabel}</span>
                     {isSelf && <Badge tone="highlight">나</Badge>}
                   </span>
@@ -97,7 +101,7 @@ export default async function AdminMembersPage() {
                       <MemberActions
                         memberId={m.id}
                         status={m.status}
-                        label={`${ROLE_LABEL[m.role as UserRole] ?? m.role} ${memberLabel}`}
+                        label={`${roleLabel} ${memberLabel}`}
                       />
                     )}
                   </div>

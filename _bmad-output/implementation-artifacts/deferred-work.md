@@ -4763,7 +4763,7 @@ severity: low
 summary: `requireUser()`는 role을 안 보므로 `{buyer, seller, admin}` 셋 다 통과한다. buyer는 C8·B8이, seller는 `write-flows`가 간접적으로 덮지만 **admin 경로는 아무 케이스도 없다**. 스펙 Design Notes가 admin 진입을 "의도된 귀결"로 명시 선언했고 2차 리뷰가 "admin을 막자"는 제안을 계약 위반이라며 기각까지 했는데, 그 결정은 문서에만 있고 실행되는 검사가 아니다(CLAUDE.md B9 — 주석·문서는 계약이 아니다).
 evidence: `grep "'/sell'" web/e2e/*.spec.ts` 전수 → admin 계정으로 `/sell`을 여는 케이스 0건. `admin@test.com`은 `core-flows.spec.ts:16`·`nav-and-hero.spec.ts:18`에 상수로 이미 있지만 `/admin` 케이스(C6·C7·B4)에만 쓰인다. ⚠️ 지금 동작은 정상이다(`requireUser()`가 role을 안 읽으므로 통과). 문제는 누군가 "관리자가 매물 파는 건 이상하다"며 admin 제외 분기를 넣어도 전량 E2E가 초록이라는 것 — 즉 스펙이 계약 위반이라 판정한 바로 그 변경이 무검사로 들어올 수 있다.
 trigger: **관리자 화면·권한을 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 admin 권한 경계를 다루므로 그 자리에서 한 줄 추가한다(`core-flows.spec.ts`의 C8 옆에 ADMIN_USER로 `/sell` 도달을 단언, 읽기 전용이라 그 파일의 절대 규칙에 맞는다). 함께 판단할 것: 그때도 admin 진입을 유지할지 여부 자체를 재확인한다 — 유지가 결론이면 검사로 못박고, 뒤집는다면 스펙 Always부터 고쳐야 한다.
-status: open
+status: done 2026-08-07 — `web/e2e/core-flows.spec.ts`에 `C8b 관리자 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다` 추가(spec-15-3). admin 진입 유지가 결론으로 재확인됐고(스펙 Always 변경 없음), 읽기 전용으로 그 계약을 검사에 못박았다.
 
 ### DW-676: `/account`가 "역할: 구매자"를 실제 화면에 표시한다 — 그 값이 더 이상 무엇을 할 수 있는지 말해주지 않는데도
 
@@ -5209,4 +5209,15 @@ origin: review-budget-followup
 source_spec: `spec-15-2-관리자-반응형.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-717: DW-669(정지 회원 매물 쓰기 차단)는 Epic 15의 명시적 UI-only 제약과 충돌한다 — RLS 구현은 되돌려졌고 별도 스토리가 필요하다
+source_spec: `spec-15-3-회원관리-역할통합-반영.md`
+origin: 2026-08-07 Story 15-3 dev-auto 실행 중 오케스트레이터가 리뷰 단계에서 직접 계획 문서 재대조로 발견(4개 리뷰 렌즈는 이 문맥이 없어 못 잡음).
+location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:1242-1312`(Epic 15 "UI-only" 선언 + Story 15.3/15.4 인수조건) · [[DW-669]](정지 게이트 원본 항목, `deferred-work.md`) · `_bmad-output/implementation-artifacts/bmad-dev-auto-intent-gap-patch-15-3-회원관리-역할통합-반영.diff`(되돌린 코드 전문 저장)
+severity: medium
+summary: DW-669는 "Epic 15 Story 15-3을 착수할 때 정지가 실제로 무엇을 막는지 그 자리에서 정한다"고 트리거를 지정했는데, epics-increment.md의 Epic 15 선언은 "UI-only, 신규 기능·운영 배관 없음"이고 **DB 변경 예외는 Story 15.4 하나뿐**이라고 명시한다(15.4에만 "이 에픽의 UI-only 범위를 한 칸 넘는 스토리다" 경고가 붙어 있다). Story 15.3의 인수조건 원문에도 DB/RLS 언급이 없다 — "정지/삭제(FR22)가 유지된다"는 기존 UI 액션이 안 깨진다는 뜻이지 새 강제력을 얻는다는 뜻이 아니다. DW-669는 이 선언을 모르거나 반영하지 않은 채 작성됐다(작성일 2026-08-06이 epics-increment.md보다 훨씬 나중인데도 교차 확인이 안 됨).
+evidence: `grep -n "Story 15.4" epics-increment-2026-07-12.md` → 1311행 "⚠️ 이 에픽의 'UI-only' 범위를 한 칸 넘는 스토리다 — 마이그레이션 1개(복구 전용 RPC)가 필요하다"가 15.4에만 붙어 있고 15.3 블록(1296-1307행)엔 그런 경고가 없음을 직접 대조 확인. dev-auto 세션이 이미 `supabase/migrations/0030_listings_suspend_gate.sql`(정지 회원 listings INSERT/UPDATE/DELETE 차단)을 짜서 vitest 336/336·playwright 73/73·red/green 자체검증까지 전부 통과시켰으나, 위 충돌을 뒤늦게 발견하고 코드를 되돌렸다(같은 세션이 직접 `git checkout`으로 원복 + 마이그레이션 파일 삭제 + 로컬 DB `supabase db reset`으로 재동기화 확인).
+why_it_matters: 되돌리지 않았다면 Epic 15의 스코프 정본(계획 문서)과 실제 배포 코드가 조용히 어긋난 채 넘어갈 뻔했다 — 다음 사람이 "Epic 15는 DB를 안 건드린다"고 믿고 그 가정 위에서 판단하면 틀린다. 또한 이번 코드리뷰(adversarial 렌즈)가 그 RLS 구현 자체의 실측 결함 2건도 찾았다: **관리자용 `listings_delete_admin`은 안 막힘**(정지된 관리자가 여전히 남의 매물 삭제 가능, 로컬 DB 실측 DELETE 성공) · **`listing_images`/`storage.objects` 쓰기 정책도 안 막힘**(정지된 판매자가 여전히 사진 추가·삭제 가능, 로컬 DB 실측 INSERT/DELETE 성공). 재구현할 스토리는 이 두 갭도 함께 닫아야 DW-669의 원래 문제("정지가 실제로 무엇을 막는지")가 온전히 해소된다.
+trigger: **사람이 다음 중 하나를 결정할 때**: (a) epics-increment.md에 15.4와 같은 방식으로 15.3(또는 신규 스토리)의 UI-only 예외를 명시적으로 추가한 뒤 재구현, 또는 (b) DW-669를 Epic 15 밖의 독립 스토리로 분리해 다음 증분에서 구현. 어느 쪽이든 저장된 패치 파일(`bmad-dev-auto-intent-gap-patch-15-3-회원관리-역할통합-반영.diff`)을 출발점으로 재사용하고, 위 두 갭(admin delete·사진 경로)을 범위에 포함할지 그 자리에서 판단한다.
 status: open

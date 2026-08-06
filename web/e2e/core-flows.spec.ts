@@ -301,6 +301,26 @@ test('C8 판매자 역할이 아닌 기존 계정이 /sell에 접근하면 매�
   ).toBe('/sell');
 });
 
+// ── C8b [desktop] 관리자 계정으로 /sell 접근 (DW-675, spec-15-3) ──
+// C8과 짝을 이루는 회귀 가드 — /sell 게이트는 requireUser()라 role을 안 보므로 admin도
+// 통과한다(spec-14-3 Design Notes가 "의도된 귀결"로 명시 선언). 그런데 그 선언을 지키는
+// 자동 검사가 없어(DW-675) admin 제외 분기가 무검사로 들어올 수 있었다. 여기서는 "화면
+// 렌더"만 읽기 전용으로 고정한다(RLS·쓰기 경로는 검사하지 않음).
+// 읽기 전용(폼 제출 없음) — 이 스펙 파일의 절대 규칙(쓰기 없음)을 지킨다.
+test('C8b 관리자 계정이 /sell에 접근하면 매물 등록 화면이 렌더된다', async ({ page }) => {
+  await login(page, ADMIN_USER.email, ADMIN_USER.password);
+
+  await page.goto('/sell');
+  await expect(
+    page.getByRole('heading', { name: '매물 등록' }),
+    '/sell이 관리자 계정에도 매물 등록 폼을 렌더해야 함(회귀 없음)',
+  ).toBeVisible();
+  expect(
+    new URL(page.url()).pathname,
+    '관리자 계정도 /sell에 그대로 머물러야 함(홈 리다이렉트 없음)',
+  ).toBe('/sell');
+});
+
 // ── C9 [desktop] **새로 가입한** 계정으로 /sell 접근 (spec-14-2 + 14-3, FR52) ──
 // 왜 C8과 따로 필요한가(DW-691): 에픽 14의 최종 인수 조건은 "기존 buyer · 기존 seller ·
 // **신규 가입** 세 계정이 전부 /sell에 간다"인데, 앞의 둘만 자동 검사가 있었다.
