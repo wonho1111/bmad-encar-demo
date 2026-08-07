@@ -5425,3 +5425,40 @@ source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+- source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+  summary: `wishedListingIdsProvider`(찜 오버레이 전체 집합, `app/lib/features/wishlist/wishlist_providers.dart` 신규)가 로그아웃/계정 전환 시 invalidate되지 않는다 — 같은 기기에서 계정을 바꾸면 이전 계정이 찜한 매물이 새 계정 화면에도 잠깐 채워진 하트로 보일 수 있다.
+  evidence: 코드리뷰(adversarial 렌즈)가 `app/lib/features/auth/auth_controller.dart`를 실제로 열어 확인 — `signOut()`을 포함해 어떤 auth 상태 변화 지점도 이 provider를 invalidate하지 않는다. 앱은 프로세스 전역 `ProviderScope` 하나뿐(`main.dart`)이라 재로그인해도 provider가 자동 재생성되지 않는다. 다만 `recentListingsProvider`·`chatRoomsProvider`도 동일 패턴(탭 재진입 `onActivate`에만 의존, 로그아웃 트리거 없음)이라 이 스토리가 새로 만든 결함이 아니라 기존 provider 아키텍처 전반이 공유하는 문제다.
+  trigger: 로그아웃/계정 전환 시 화면 provider를 정리하는 공용 메커니즘이 도입될 때(예: `authStateProvider` 리스너가 주요 화면 provider들을 일괄 invalidate) — 그 자리에서 `wishedListingIdsProvider`도 같이 등록한다. 그전에 데모 시연 중 계정 전환 후 하트 오표시가 실제로 관찰되면 그때 먼저 본다.
+
+- source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+  summary: 새로 연 `WishlistRepository.fetchCovers`(`app/lib/features/wishlist/wishlist_repository.dart`)가 `_fetchCovers`와 똑같이 무제한 `.inFilter()`로 `listing_images`를 조회한다 — 기존 장부 항목이 기록한 PostgREST `max_rows=1000` **무성 절단**을 그대로 물려받았는데, 그 항목의 `trigger:`는 `_fetchCovers`만 이름으로 지목하고 있다.
+  evidence: 코드리뷰(adversarial 렌즈)가 두 코드를 직접 대조 확인 — `wishlist_repository.dart`의 `.inFilter('listing_id', listingIds)`에는 청크가 없고(web은 같은 자리에 `COVER_IMAGES_CHUNK_SIZE=50`), 잘린 응답은 정상 200이라 감싼 try/catch가 발동하지 않는다. 이 스토리는 새 경로를 `docs/conventions.md` §6의 FR11 이미지축 소비처 목록에는 등록했지만, 절단 축(장부) 쪽에는 등록하지 못했다. **이번 세션은 기존 항목을 수정할 권한이 없어**(오케스트레이터 소유) 신규로만 적는다.
+  trigger: `_fetchCovers`에 `.inFilter()` 청크를 넣는 바로 그 작업에서 `WishlistRepository.fetchCovers`도 **같이** 고친다(한쪽만 고치면 장부 항목은 닫히는데 찜 목록 경로는 그대로 깨져 있다). 그전에라도 찜 매물이 100건을 넘으면 이 경로부터 본다.
+
+- source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+  summary: 판매완료(또는 RLS 차단)된 찜 매물은 **앱 안에서 해제할 방법이 전혀 없다** — 찜 목록의 회색 차단 타일에는 하트도 `onTap`도 없고, 그 매물은 검색·홈·AI 결과에서 제외되며 상세 진입도 막히기 때문이다. 미러 대상인 web `/wishlist`는 같은 타일에 `RemoveWishButton`을 달아 두었다.
+  evidence: 코드리뷰(edge-case-hunter·intent-alignment 렌즈가 독립 발견)가 `app/lib/features/wishlist/wishlist_screen.dart`의 `_BlockedWishTile`과 web `web/src/app/(user)/wishlist/page.tsx`를 대조 확인. web 쪽 버튼에는 도입 근거가 코드에 적혀 있다("sold 찜은 해제 수단이 없어 영구 클러터 — 코드리뷰 2026-07-22 P1"). 앱은 그 결론만 이식되지 않아 같은 클러터가 재발한다. 다만 이 스토리 스펙의 I/O 매트릭스가 차단 타일의 기대 동작을 "회색 비활성 타일 + 판매완료 배지, 탭해도 상세 진입 안 됨"으로 **완결적으로** 규정했고 Never 절이 web 10.5의 다른 기능들도 의도적으로 잘라냈으므로, 스펙 위반이 아니라 스펙이 좁게 잡은 범위의 결과다.
+  trigger: Epic 16-6(SM-D 통합 시연 검증)에서 찜 목록을 실제로 시연하기 전에 결정한다 — 데모 계정에 판매완료 찜이 쌓이면 화면에 그대로 보인다. 그때 web `RemoveWishButton`을 미러할지, 아니면 "차단 타일은 표시 전용"을 의도된 앱 동작으로 확정할지 사용자에게 확인한다.
+
+- source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+  summary: `ListingCard`는 폭 제약이 없는 부모(가로 스크롤 등)에 **아예 놓일 수 없다** — 찜 버튼 위치 계산의 `isFinite` 가드(코드리뷰가 추가시킨 것)가 실행되기도 전에, 카드 내부의 별개 `Column(crossAxisAlignment: stretch)`이 "BoxConstraints forces an infinite width"로 먼저 죽는다.
+  evidence: 이번 패스에서 그 가드의 회귀 테스트를 쓰려다 실측으로 발견했다 — 무한 폭 부모에 `ListingCard`를 렌더하면 가드 유무와 **무관하게** 같은 예외가 난다(가드는 `Positioned.top` 값에만 관여하는데, Stack의 비-Positioned 자식 레이아웃이 그보다 먼저 돈다). 그래서 가드 자체는 순수함수(`safeCardPhotoHeight`)로 분리해 단위테스트로 고정했고, "무한 폭 부모에서 카드가 산다"는 명제는 여전히 거짓이다. `stretch` 구조는 16.3이 만든 것이 아니라 그 이전부터 있던 카드 구조다.
+  trigger: 카드를 가로 스크롤 목록(예: 홈의 "최근 매물" 가로 캐러셀)에 넣는 스토리를 착수할 때 — 그 자리에서 `stretch`를 걷어내거나 카드에 명시적 폭을 주는 형태로 함께 고친다. 그전까지 카드는 세로 목록 전용이라는 전제가 유지된다.
+
+- source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+  summary: 에픽이 Story 16.3에 명시한 세 번째 인수조건 **"옵션 희소도 표시(카드 상위 3~4·상세 카테고리 전량)가 conventions.md 상수를 공유한다"**가 이 스토리의 스펙(`<intent-contract>`)에 아예 옮겨지지 않아 구현되지 않았다 — 그런데 찜 목록 select는 `options`를 이미 요청하고 있어, `docs/conventions.md` §4가 경고하는 "쿼리 비용은 내지만 표시는 안 되는" 상태가 그 자리에 생겼다.
+  evidence: 코드리뷰(intent-alignment 렌즈)가 지적한 뒤 오케스트레이터가 직접 원문 확인 — `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`의 Story 16.3 AC 세 번째 절이 정확히 그 문장이고, `spec-16-3-신뢰속성-찜-앱.md`의 Intent·Boundaries·I/O 매트릭스 어디에도 옵션 관련 문장이 없다. 앱 모델은 타입만 갖춰져 있다(`app/lib/features/listings/listing.dart:74`가 "타입 파리티만이다 — 칩 위젯 렌더·app `options.ts` 상수 미러는 Epic 16"이라고 스스로 적어 둠). 칩 위젯은 `app/lib/features/listings/listing_card.dart`·상세 화면 어디에도 없다(grep 0건). web은 `ListingCard.tsx`가 `topOptions(...)`로 상위 3개 + "+N" 칩을, 상세가 카테고리 전량을 이미 그린다. 즉 이 스토리가 만든 결함이 아니라 **스펙이 에픽 AC의 1/3을 떨어뜨린 것**이며, 카드 재설계를 한 16.2도 칩을 도입하지 않았다.
+  trigger: Epic 16 마감(회고) 전에 사용자에게 확인해 자리를 지정한다 — 16.3의 잔여로 별도 스토리를 세울지, Epic 16의 남은 스토리(16.4~16.6) 중 한 곳의 인수조건으로 심을지(CLAUDE.md B5·B8: 미룬 항목은 "어디서 고칠지"를 지정하고 그 자리에 실제로 심는다). 그전에라도 찜 목록 select에서 `options`를 빼는 것만으로는 닫히지 않는다(에픽 AC 자체가 표시를 요구한다).
+
+- source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+  summary: 찜 목록의 판매완료·RLS차단 회색 타일이 `Opacity(0.6)`로 통째로 흐려져, 그 안의 본문 텍스트 대비가 **2.7:1**로 WCAG AA 기준(일반 텍스트 4.5:1)에 못 미친다 — 하필 "왜 이 매물에 못 들어가는지"를 설명하는 유일한 자리다.
+  evidence: 코드리뷰(adversarial 렌즈) 지적 후 오케스트레이터가 직접 계산 확인 — `AppColors.inkSecondary`(#565F5D)를 흰 배경(#FFFFFF)에 그대로 두면 6.58:1인데, `Opacity(0.6)`으로 합성되면 실효색 ≈#9A9F9E가 되어 2.69:1로 떨어진다(`app/lib/features/wishlist/wishlist_screen.dart`의 `_BlockedWishTile`). **다만 이건 앱만의 결함이 아니다**: 미러 원본인 web `web/src/app/(user)/wishlist/page.tsx:39`가 같은 타일에 `opacity-60`을 쓰고 있어, 앱만 고치면 두 화면의 톤이 갈라진다. 그래서 이번 패스는 고치지 않고 등재만 했다.
+  trigger: 접근성(대비) 점검을 web·app 동시에 하는 자리에서 함께 고친다 — 어느 쪽이든 먼저 손대게 되면 그때 두 코드를 같이 바꾼다(흐리기를 텍스트가 아니라 **배경 표면**에 주는 방식: 바탕을 `surface-base`/`AppColors.surfaceBase`로 낮추고 글자는 불투명도 100%로 유지). 늦어도 Epic 16-6(SM-D 통합 시연 검증)에서 찜 목록을 실기기로 볼 때 함께 판단한다.
+
+### DW-733: Follow-up review still recommended for 16-3-신뢰속성-찜-앱 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-3-신뢰속성-찜-앱.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

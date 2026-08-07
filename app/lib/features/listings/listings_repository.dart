@@ -21,6 +21,24 @@ const String statusSold = 'sold';
 /// 구매자에게 노출 가능한 매물 상태 = 판매중. 단일 상수(FR11 단일 출처).
 const String buyerVisibleStatus = statusOnSale;
 
+/// 상세 select 컬럼 — 구매자 상세(`fetchListing`)·본인 상세(`fetchOwnListing`) 둘이 공유한다
+/// (`wishlist_repository.dart`의 `wishlistListingColumns`와 같은 재사용 방식). `@visibleForTesting`:
+/// 신뢰속성 3컬럼(`accident_status`·`is_single_owner`·`is_non_smoker`)이 여기서 빠지면
+/// `ListingDetail.fromMap`이 그 값을 null로만 받아 상세 화면의 신뢰속성 섹션 전체(AC2)가
+/// 조용히 렌더되지 않는데, 이 두 select 문자열을 직접 보는 테스트가 없었다(코드리뷰 지적) —
+/// 이 상수를 테스트가 직접 단언한다.
+/// anon(비로그인)이 이 select를 그대로 쓰면 신뢰속성 3컬럼 때문에 `42501 permission denied`로
+/// select 전체가 실패한다(§4.1 anon 단서와 동일 근거, web `/search`·`/listings/[id]`는 `user ?
+/// trustColumns : ''`로 직접 분기한다) — 이 앱은 app_router.dart의 전역 redirect가 모든 화면을
+/// 로그인 필수로 강제해 이 경로에 anon이 닿지 않는다(코드리뷰 지적 P15, 강제 지점은
+/// app_router.dart의 redirect).
+@visibleForTesting
+const String listingDetailColumns =
+    'id, seller_id, manufacturer, model, body_type, year, price, mileage, '
+    'color, fuel, transmission, displacement, seats, region, accident_free, '
+    'accident_status, is_single_owner, is_non_smoker, '
+    'seller_name, options, description, status';
+
 /// 대표사진 계산 결과 하나 — 매물 1건의 (sort_order, id) 최솟값 행 경로 + 계약-검증 통과 행 수.
 class _CoverPick {
   _CoverPick(this.path, this.sortOrder, this.id, this.count);
@@ -53,8 +71,10 @@ int compareImageOrder(int sortOrderA, String idA, int sortOrderB, String idB) {
 /// `listing_images` 원행(raw rows) → 매물별 대표사진(`sort_order,id` 최솟값) 경로 +
 /// 계약-검증을 통과한 행 수. `_fetchCovers`의 순수 처리부만 뗀 것(쿼리는 호출부가 맡는다) —
 /// Supabase 없이 이 매핑만 직접 테스트할 수 있게 top-level 함수로 분리했다.
-/// `@visibleForTesting`: 테스트가 누적 승자 판정·행 스킵·카운트 규칙을 직접 단언할 수 있게 노출한다.
-@visibleForTesting
+/// 테스트 노출뿐 아니라 정식 재사용 대상이기도 하다(`@visibleForTesting` 아님) —
+/// `WishlistRepository.fetchCovers`(Story 16.3, `wishlist_repository.dart`)가 찜 목록 화면의
+/// 대표사진 승자 판정에 이 함수를 그대로 재사용한다. 같은 로직을 두 곳에 따로 두지 않기
+/// 위해서다(#47-2/#59 선례와 동일 원칙).
 Map<String, ({String path, int count})> pickCoverImages(
   List<Map<String, dynamic>> rows,
 ) {
@@ -245,11 +265,7 @@ class ListingsRepository {
   /// 단일 매물 상세 — 구매자 관점(판매중만) + id 일치. 0건이면 null(없음·sold·삭제).
   /// web listings/[id] 의 maybeSingle 패턴.
   Future<ListingDetail?> fetchListing(String id) async {
-    final row = await _buyerQuery(
-      'id, seller_id, manufacturer, model, body_type, year, price, mileage, '
-      'color, fuel, transmission, displacement, seats, region, accident_free, '
-      'seller_name, options, description, status',
-    ).eq('id', id).maybeSingle();
+    final row = await _buyerQuery(listingDetailColumns).eq('id', id).maybeSingle();
 
     if (row == null) return null;
     final detail = ListingDetail.fromMap(row);
@@ -333,11 +349,7 @@ class ListingsRepository {
   }) async {
     final row = await _client
         .from('listings')
-        .select(
-          'id, seller_id, manufacturer, model, body_type, year, price, mileage, '
-          'color, fuel, transmission, displacement, seats, region, accident_free, '
-          'seller_name, options, description, status',
-        )
+        .select(listingDetailColumns)
         .eq('id', id)
         .eq('seller_id', sellerId)
         .maybeSingle();

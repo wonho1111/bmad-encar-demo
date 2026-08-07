@@ -39,6 +39,7 @@ import '../listings/listings_providers.dart';
 import '../listings/my_listings_screen.dart';
 import '../listings/search_screen.dart';
 import '../listings/sell_screen.dart';
+import '../wishlist/wishlist_providers.dart';
 import 'auth_controller.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -325,6 +326,8 @@ class _RecentListings extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(recentListingsProvider);
+    // 찜 오버레이 — 카드 진입점 3곳(홈·검색·AI)이 공유하는 단일 provider(spec-16-3 Boundaries).
+    final wishedIds = ref.watch(wishedListingIdsProvider).value ?? const <String>{};
     return async.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -349,7 +352,12 @@ class _RecentListings extends ConsumerWidget {
           children: [
             for (final l in listings)
               ListingCard(
+                // 목록이 갱신될 때(당겨서 새로고침 등) Flutter가 같은 위치의 카드 State를 다른
+                // 매물에 재사용해 WishButton의 낙관적 하트 상태가 엉뚱한 매물에 붙는 걸 막는다
+                // (코드리뷰 지적 — wishlist_screen.dart가 이미 쓰는 것과 같은 key).
+                key: ValueKey(l.id),
                 listing: l,
+                wished: wishedIds.contains(l.id),
                 onTap: () => Navigator.of(context, rootNavigator: true).push(
                   MaterialPageRoute(
                       builder: (_) => ListingDetailScreen(listingId: l.id)),

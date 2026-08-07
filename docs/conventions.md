@@ -95,14 +95,25 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
 
 필드 자리(nullable 계약)뿐 아니라 **실제 값까지 채울 때**는 위 4곳에 더해 `api/app/graph/listing_cards.py`의 `SELECT_COLUMNS`·`api/app/db/sql_guard.py`의 `ALLOWED_COLUMNS`도 락스텝으로 갱신해야 한다(DB 컬럼이 실제로 생긴 시점).
 
-> **락스텝 지점 추가 — 목록 select 문자열 3곳** (✎ 2026-07-22 Story 10.1 코드리뷰 추가).
+> **락스텝 지점 추가 — 목록 select 문자열 4곳** (✎ 2026-07-22 Story 10.1 코드리뷰 추가, ✎
+> 2026-08-08 Story 16.3 코드리뷰가 4번째 지점 추가).
 > 위 4곳·`SELECT_COLUMNS`/`ALLOWED_COLUMNS`를 다 갱신해도, **화면이 실제로 그 컬럼을 요청하지
-> 않으면** 값은 여전히 화면에 닿지 않는다. 그래서 값을 채우는 시점엔 아래 select 문자열 3곳도
+> 않으면** 값은 여전히 화면에 닿지 않는다. 그래서 값을 채우는 시점엔 아래 select 문자열 4곳도
 > 함께 갱신한다: web `src/app/page.tsx`(홈 미리보기) · web `src/app/(user)/search/page.tsx`
-> (`/search`) · app `listings_repository.dart`의 `fetchListings`. 셋 중 하나라도 빠지면 컬럼·
-> 타입·프롬프트는 다 갖췄는데 그 화면만 "쿼리 비용은 내지만 표시는 안 되는" 상태가 된다 —
-> 대장 #67(카드 meta 연료 누락, Story 9.4가 필드는 계약에 넣고 select엔 안 물어 조용히 빠졌던
+> (`/search`) · app `listings_repository.dart`의 `fetchListings` · app `wishlist_repository.dart`의
+> `wishlistListingColumns`(찜 목록 화면, Story 16.3). 넷 중 하나라도 빠지면 컬럼·타입·
+> 프롬프트는 다 갖췄는데 그 화면만 "쿼리 비용은 내지만 표시는 안 되는" 상태가 된다 — 대장
+> #67(카드 meta 연료 누락, Story 9.4가 필드는 계약에 넣고 select엔 안 물어 조용히 빠졌던
 > 사례)이 이 자리에서 열렸었다.
+>
+> **락스텝 지점 추가 — 상세 select 문자열 2곳** (✎ 2026-08-08 Story 16.3 코드리뷰 추가). 위
+> "목록 select 문자열 4곳"은 목록/카드 화면만 등재한다 — **상세 화면**의 select는 별개
+> 자리이고, 이 스토리가 신뢰속성 3컬럼(`accident_status`·`is_single_owner`·`is_non_smoker`)을
+> 상세에 처음 물리면서 그 자리가 락스텝 목록에 아예 없던 게 드러났다(코드리뷰 지적). 값을
+> 채우는 시점엔 아래 상세 select 2곳도 함께 갱신한다: web `src/app/(user)/listings/[id]/page.tsx`
+> (매물 상세) · app `listings_repository.dart`의 `listingDetailColumns`(`fetchListing`·
+> `fetchOwnListing`이 공유, Story 16.3). 위 목록 select 4곳과 같은 실패 모드(컬럼·타입은
+> 갖췄는데 상세 화면만 표시가 안 됨)가 이 자리에도 그대로 적용된다.
 
 > ⚠️ **anon(비로그인) 열람 경로에 새 컬럼을 노출하려면 GRANT 마이그레이션 + 사용자 승인이
 > 별도로 필요하다** (✎ 2026-07-22 Story 10.1 코드리뷰 추가, 사례는 대장 #109). `listings`의
@@ -145,6 +156,7 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
   - **이미지 축** — `listing_images` RLS(`0012_listing_images`의 `listing_images_select_on_sale_anon` / `listing_images_select_on_sale` — 둘 다 `listings`에 조인해 `l.status = 'on_sale'`을 건다) + 소비처의 id 좁히기.
     - 소비처 목록(**새 조회 경로를 열면 여기에 추가한다**): `attachCoverImages`(목록 카드 — `buyerListingsQuery` 결과의 id만 조회) · `fetchListingGalleryUrls`(상세 갤러리, Story 9.5 — `buyerListingsQuery`로 매물을 먼저 찾은 뒤 **그 매물이 있을 때만** 호출한다. sold면 404 화면에서 끝나 이 함수까지 오지 않는다) · **`attach_cover_images`(api, AI 응답 카드 — Story 9.6)** · **`/wishlist` 찜 목록 페이지(Story 10.5)** — `attachCoverImages`를 다시 쓰되, `isWishedListingBlocked`로 걸러진 **on_sale 찜 매물 id만** 넘긴다(sold·RLS차단 항목은 회색 타일로 사진 없이 렌더 — 애초에 이 함수를 안 부른다). 강제 지점은 위와 동일하게 `listing_images`의 on_sale RLS.
       - **앱(Flutter, Story 16.2)이 연 두 경로**: `ListingsRepository._fetchCovers`(`app/lib/features/listings/listings_repository.dart`, 앱 목록 카드 대표사진 — `_buyerQuery`(`.eq('status','on_sale')`) 결과의 id만 `.inFilter()`로 조회) · `ListingsRepository.fetchListing`의 갤러리 조회(앱 상세 갤러리 — 매물을 `_buyerQuery`로 먼저 찾아 null이 아닐 때만 조회하므로 sold는 이 지점에 오지 않는다, web `fetchListingGalleryUrls`와 같은 좁히기). 둘 다 앱의 anon/authenticated Supabase 세션으로 붙으므로 `0012_listing_images`의 on_sale RLS가 DB에서도 걸러 준다 — 즉 api의 `attach_cover_images`와 달리 **이중 방어**다. ⚠️ 강제 장치(자동 테스트)는 아직 없고, 수동 실측(anon 키로 직접 조회)으로만 확인됐다.
+      - **앱이 연 세 번째 경로(Story 16.3)**: `WishlistRepository.fetchCovers`(`app/lib/features/wishlist/wishlist_repository.dart`, 앱 찜 목록 화면의 대표사진) — web `/wishlist`와 동일 패턴으로, `isWishlistBlocked`로 걸러진 **on_sale 찜 매물 id만** `.inFilter()`로 넘긴다(sold·RLS차단 항목은 이 함수를 애초에 안 부르고 회색 타일로 사진 없이 렌더). 대표사진 승자 판정은 `listings_repository.dart`의 top-level 공개 함수 `pickCoverImages`를 그대로 재사용해 로직을 두 곳에 따로 두지 않는다. 위 두 경로와 같은 authenticated Supabase 세션으로 붙으므로 `0012_listing_images`의 on_sale RLS가 DB에서도 이중 방어한다. ⚠️ 강제 장치는 `wishlist_providers_test.dart`의 `wishlistProvider` provider-레벨 테스트다(✎ 2026-08-08 Story 16.3 코드리뷰 정정 — 이전엔 `wishlist_repository_test.dart`의 `isWishlistBlocked` 단위테스트가 이 id 좁히기를 지킨다고 적혀 있었으나, 그 테스트는 판정 함수 자체를 격리해서만 보고 `fetchCovers`에 실제로 어떤 id가 넘어가는지는 보지 않는다 — `wishlistRepositoryProvider`를 가짜로 갈아 끼워 `wishlistProvider` 본문을 직접 돌려 on_sale id만 `fetchCovers`로 가는지 확인하는 쪽이 실제 강제 지점이다). 실제 DB 조회 자체는 여전히 수동 실측 대상이다.
       - ⚠️ **`attach_cover_images`만 성격이 다르다 — 여기서는 DB가 안 막는다.** 위 web 두 경로는 `authenticated`/`anon` 롤로 붙으므로 `listing_images`의 on_sale RLS가 **DB에서** 걸러 준다. 그런데 api는 `ai_readonly` 롤이고 그 롤의 정책은 `using(true)`라(`0012:153`, 의도된 설계 CR2) **sold 사진까지 전부 열려 있다.** 그래서 이 경로는 고정쿼리의 `l.status = 'on_sale'`이 **유일한 강제 지점**이다 — 까먹으면 그대로 뚫린다.
       - 강제 장치: `api/tests/test_listing_cards.py`(sold 사진이 응답에 실리지 않음 — 조건을 지우면 red) + `api/tests/test_sql_guard.py`(LLM 생성 SQL이 `listing_images`에 닿지 못함). 둘 다 `docs/tech-debt.md` #48을 닫은 근거다.
     - ✎ **2026-07-19 코드리뷰에 의해 등재.** 이 축은 0012부터 실재했는데 **이 목록에 한 번도 오른 적이 없었고**, 9.0이 `storage.objects` 항목을 지우면서 이미지 관련 강제 지점이 목록에서 완전히 사라졌다. 그 상태에서 9.4가 `listing_images` 조회 경로를 화면 2곳(`/search`·홈)에 새로 열었다. **차단은 실제로 동작한다**(실측) — 문제는 목록이 사실을 반영하지 않아, §6만 읽는 다음 사람은 이미지 축에 FR11 강제가 있다는 것 자체를 모른다는 점이다. 9.5(상세 갤러리)·9.6(AI 카드)이 같은 테이블을 열 때가 정확히 규칙7이 경고한 자리다.

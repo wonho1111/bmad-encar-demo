@@ -8,11 +8,26 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../listings/listing_card.dart';
 import '../listings/listing_detail_screen.dart';
+import '../wishlist/wishlist_providers.dart';
 import 'ai_search_api.dart';
 import 'chat_message.dart';
 
+/// `searchAi`(ai_search_api.dart)와 같은 시그니처 — 테스트 전용 주입 시접(seam)에 쓴다.
+typedef SearchAiFn = Future<SearchResult> Function({
+  required String query,
+  List<ConversationTurn>? context,
+  required String? accessToken,
+});
+
 class AiChatScreen extends ConsumerStatefulWidget {
-  const AiChatScreen({super.key});
+  const AiChatScreen({super.key, @visibleForTesting this.searchAiOverride});
+
+  // 테스트 전용 시접 — 기본은 실제 네트워크 호출(searchAi). `API_BASE_URL`은 컴파일타임
+  // 상수(String.fromEnvironment)라 테스트에서 값을 채울 수 없고, flutter_test는 실제 네트워크도
+  // 막는다 — 이 화면의 검색 파이프라인(wished 배선 포함)을 오버라이드 없이 테스트할 방법이
+  // 없다(ai_search_api.dart의 imageUrlBuilder seam과 같은 원칙, Story 16.3 코드리뷰 지적).
+  @visibleForTesting
+  final SearchAiFn? searchAiOverride;
 
   @override
   ConsumerState<AiChatScreen> createState() => _AiChatScreenState();
@@ -57,7 +72,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     try {
       // 매 전송 시 현재 세션 토큰(만료 자동 갱신).
       final token = Supabase.instance.client.auth.currentSession?.accessToken;
-      final result = await searchAi(
+      final search = widget.searchAiOverride ?? searchAi;
+      final result = await search(
         query: query,
         context: context.isNotEmpty ? context : null,
         accessToken: token,
@@ -110,6 +126,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 찜 오버레이 — 카드 진입점 3곳(홈·검색·AI)이 공유하는 단일 provider(spec-16-3 Boundaries).
+    final wishedIds = ref.watch(wishedListingIdsProvider).value ?? const <String>{};
     return Scaffold(
       appBar: AppBar(title: const Text('AI 검색')),
       body: Column(
@@ -147,6 +165,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                       return _MessageBubble(
                         message: _messages[i],
                         onTapListing: _openDetail,
+                        wishedIds: wishedIds,
                       );
                     },
                   ),
@@ -199,10 +218,15 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
 /// 대화 한 줄 말풍선. user=오른쪽, assistant=왼쪽 + (있으면) 매물카드.
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message, required this.onTapListing});
+  const _MessageBubble({
+    required this.message,
+    required this.onTapListing,
+    required this.wishedIds,
+  });
 
   final ChatMessage message;
   final ValueChanged<String> onTapListing;
+  final Set<String> wishedIds;
 
   @override
   Widget build(BuildContext context) {
@@ -239,7 +263,15 @@ class _MessageBubble extends StatelessWidget {
           child: Text(message.content),
         ),
         ...message.listings.map(
-          (l) => ListingCard(listing: l, onTap: () => onTapListing(l.id)),
+          (l) => ListingCard(
+            // 새 질의로 대화가 늘어날 때 Flutter가 같은 위치의 카드 State를 다른 매물에
+            // 재사용해 WishButton의 낙관적 하트 상태가 엉뚱한 매물에 붙는 걸 막는다(코드리뷰
+            // 지적 — wishlist_screen.dart가 이미 쓰는 것과 같은 key).
+            key: ValueKey(l.id),
+            listing: l,
+            wished: wishedIds.contains(l.id),
+            onTap: () => onTapListing(l.id),
+          ),
         ),
       ],
     );

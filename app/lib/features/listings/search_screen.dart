@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../wishlist/wishlist_providers.dart';
 import 'listing_card.dart';
 import 'listing_detail_screen.dart';
 import 'listing_filters.dart';
@@ -70,6 +71,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final results = ref.watch(searchControllerProvider).results;
+    // 찜 오버레이 — 카드 진입점 3곳(홈·검색·AI)이 공유하는 단일 provider(spec-16-3 Boundaries).
+    final wishedIds = ref.watch(wishedListingIdsProvider).value ?? const <String>{};
 
     return Scaffold(
       appBar: AppBar(title: const Text('매물 탐색')),
@@ -137,7 +140,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     }
                     final l = listings[i - 1];
                     return ListingCard(
+                      // 필터를 바꿔 목록이 교체되면 Flutter가 같은 위치의 카드 State를 다른
+                      // 매물에 재사용해 WishButton의 낙관적 하트 상태가 엉뚱한 매물에 붙는 걸
+                      // 막는다(코드리뷰 지적 — wishlist_screen.dart가 이미 쓰는 것과 같은 key).
+                      key: ValueKey(l.id),
                       listing: l,
+                      wished: wishedIds.contains(l.id),
                       onTap: () => _openDetail(l.id),
                     );
                   },

@@ -12,8 +12,11 @@ import '../../core/theme/app_theme.dart';
 import '../chat/chat_providers.dart';
 import '../chat/chat_repository.dart';
 import '../chat/chat_room_screen.dart';
+import '../wishlist/wish_button.dart';
+import '../wishlist/wishlist_providers.dart';
 import 'listing.dart';
 import 'listing_photo_widgets.dart';
+import 'listing_trust_widgets.dart';
 import 'listings_providers.dart';
 
 class ListingDetailScreen extends ConsumerWidget {
@@ -163,6 +166,16 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                 ),
               ),
             ),
+            const SizedBox(width: 8),
+            // 찜(♡, Story 16.3) — 제목 줄, 문서 흐름 안(inline 변형). 초기 상태는 카드 진입점과
+            // 같은 단일 provider(wishedListingIdsProvider)에서 읽어 화면 간 어긋남이 없다.
+            WishButton(
+              key: const Key('detail_wish_button'),
+              listingId: listing.id,
+              initialWished:
+                  ref.watch(wishedListingIdsProvider).value?.contains(listing.id) ?? false,
+              variant: WishButtonVariant.inline,
+            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -194,6 +207,14 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
         _row('사고여부', listing.accidentFree ? '무사고' : '사고이력 있음'),
         if (listing.sellerName != null && listing.sellerName!.isNotEmpty)
           _row('판매자', listing.sellerName!),
+
+        // 신뢰속성(Story 16.3) — 뱃지+면책이 한 위젯에서 함께 나온다(B9 결속). 값이 전부
+        // 없으면 이 위젯은 아무 것도(여백조차) 그리지 않는다(AC3).
+        TrustAttributesDetailSection(
+          accidentStatus: listing.accidentStatus,
+          isSingleOwner: listing.isSingleOwner,
+          isNonSmoker: listing.isNonSmoker,
+        ),
 
         // 옵션(있을 때만).
         if (listing.options != null && listing.options!.isNotEmpty) ...[

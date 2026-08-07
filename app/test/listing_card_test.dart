@@ -14,9 +14,17 @@ import 'package:app/features/listings/listing.dart';
 import 'package:app/features/listings/listing_card.dart';
 import 'package:app/features/listings/listing_photo_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-ListingCardData _card({String? imageUrl, int? imageCount}) => ListingCardData(
+ListingCardData _card({
+  String? imageUrl,
+  int? imageCount,
+  String? accidentStatus,
+  bool? isSingleOwner,
+  bool? isNonSmoker,
+}) =>
+    ListingCardData(
       id: 'l1',
       manufacturer: '현대',
       model: '아반떼',
@@ -26,12 +34,27 @@ ListingCardData _card({String? imageUrl, int? imageCount}) => ListingCardData(
       region: '서울',
       imageUrl: imageUrl,
       imageCount: imageCount,
+      accidentStatus: accidentStatus,
+      isSingleOwner: isSingleOwner,
+      isNonSmoker: isNonSmoker,
     );
 
-Future<void> _pump(WidgetTester tester, ListingCardData listing) async {
+Future<void> _pump(
+  WidgetTester tester,
+  ListingCardData listing, {
+  VoidCallback? onTap,
+  bool wished = false, // 이 파일의 테스트들은 하트 상태를 다루지 않는다 — 고정값으로 충분.
+}) async {
   await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(body: ListingCard(listing: listing)),
+    // ProviderScope: Story 16.3부터 ListingCard가 WishButton(ConsumerStatefulWidget)을
+    // 내장한다 — WishButton 자신은 build()에서 provider를 읽지 않으므로(탭 시점에만 읽음)
+    // Supabase 초기화는 필요 없지만, Riverpod 컨테이너를 찾을 조상은 있어야 한다.
+    ProviderScope(
+      child: MaterialApp(
+        home: Scaffold(
+          body: ListingCard(listing: listing, onTap: onTap, wished: wished),
+        ),
+      ),
     ),
   );
 }
@@ -129,5 +152,84 @@ void main() {
     final decoration = badgeContainer.decoration as BoxDecoration;
     // "불투명(반투명 아님)" AC — 배경색 알파가 완전 불투명(255)이어야 한다.
     expect(decoration.color!.a, 1.0);
+  });
+
+  // Story 16.3 코드리뷰 지적 — 카드의 신뢰속성 배선을 보는 테스트가 하나도 없어서
+  // `TrustAttributesCardOverlay(...)` 블록 전체를 `SizedBox.shrink()`로 지워도 스위트가
+  // green이었다(AC1 미고정). 아래 3개가 그 사각지대를 메운다.
+  group('신뢰속성 뱃지 배선(Story 16.3 코드리뷰 지적)', () {
+    testWidgets('신뢰속성 값이 있으면 카드에 뱃지가 렌더되고, 전부 없으면 아무것도 안 뜬다',
+        (tester) async {
+      await _pump(tester, _card(accidentStatus: '무사고', isNonSmoker: true));
+
+      expect(find.text('무사고'), findsOneWidget);
+      expect(find.text('비흡연'), findsOneWidget);
+
+      await _pump(tester, _card());
+
+      expect(find.text('무사고'), findsNothing);
+      expect(find.text('비흡연'), findsNothing);
+    });
+
+    testWidgets('뱃지 라벨을 탭해도 카드 탭(onTap)이 그대로 발화한다(P1: IgnorePointer 배선 고정)',
+        (tester) async {
+      var tapped = false;
+      await _pump(
+        tester,
+        _card(accidentStatus: '무사고'),
+        onTap: () => tapped = true,
+      );
+
+      await tester.tap(find.text('무사고'));
+      await tester.pump();
+
+      expect(tapped, isTrue,
+          reason: '뱃지 오버레이가 카드 탭을 가로채면(IgnorePointer 누락) 여기서 실패한다');
+    });
+
+    // ⚠️ 이 가드를 "ListingCard를 실제 무한 폭 부모(가로 스크롤 등)에 pump해 takeException()이
+    // null인지" 보는 위젯 테스트로는 격리해서 볼 수 없다(실측 확인, B4) — `_CardPhoto` 쪽의
+    // 별개 `Column`(`CrossAxisAlignment.stretch`)이 이 가드와 무관하게 "무한 폭+stretch는
+    // 안 된다"는 Flutter 자체 제약으로 먼저 죽는다(가드를 넣거나 빼거나 결과가 같다 — 즉 그
+    // 시나리오로는 가드 유무를 구분하는 테스트 자체가 성립하지 않는다). 그래서 가드 로직을
+    // `safeCardPhotoHeight`로 뽑아 직접 잰다(listing_card.dart 참조).
+    test('safeCardPhotoHeight — 무한/0 이하 폭은 안전한 폴백(300 기준)으로 대체한다(isFinite 가드)',
+        () {
+      expect(safeCardPhotoHeight(double.infinity), 300 / (5 / 3));
+      expect(safeCardPhotoHeight(0), 300 / (5 / 3));
+      expect(safeCardPhotoHeight(-10), 300 / (5 / 3));
+    });
+
+    test('safeCardPhotoHeight — 정상 폭이면 그대로 5:3 비율로 계산한다', () {
+      expect(safeCardPhotoHeight(360), 360 / (5 / 3));
+    });
+  });
+
+  // 코드리뷰 지적(P1/P2) — 찜 버튼을 사진 하단 경계에 절반 겹치게 놓았더니 "N장" 배지(같은
+  // 우하단)를 가렸다(실측: 배지 LTRB(751.5,453,792,476) vs 찜 LTRB(748,462,792,506)). web
+  // 원본(WishButton.tsx `top-full mt-1`)처럼 사진 "아래"에 완전히 걸어 겹침을 없앤다.
+  group('찜 버튼 위치(P1/P2 코드리뷰)', () {
+    testWidgets('찜 버튼이 사진 "N장" 배지를 가리지 않는다', (tester) async {
+      await _pump(tester, _card(imageUrl: 'https://example.com/photo.jpg', imageCount: 3));
+
+      final badgeRect = tester.getRect(find.byType(PhotoCountBadge));
+      final wishRect = tester.getRect(find.byKey(const Key('wish_button')));
+
+      expect(badgeRect.overlaps(wishRect), isFalse,
+          reason: '찜 버튼이 사진 우하단 "N장" 배지를 덮으면 안 된다(P1)');
+    });
+
+    testWidgets('찜 버튼은 카드 경계 안에 온전히 들어온다(P2 — 카드 clip 전제 실측 확인)',
+        (tester) async {
+      await _pump(tester, _card(imageUrl: 'https://example.com/photo.jpg', imageCount: 1));
+
+      final cardRect = tester.getRect(find.byType(ListingCard));
+      final wishRect = tester.getRect(find.byKey(const Key('wish_button')));
+
+      expect(wishRect.left, greaterThanOrEqualTo(cardRect.left));
+      expect(wishRect.right, lessThanOrEqualTo(cardRect.right));
+      expect(wishRect.top, greaterThanOrEqualTo(cardRect.top));
+      expect(wishRect.bottom, lessThanOrEqualTo(cardRect.bottom));
+    });
   });
 }

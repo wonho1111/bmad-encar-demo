@@ -171,6 +171,70 @@ void main() {
       expect(ListingDetail.fromMap({'id': 'x'}), isNull);
     });
 
+    // Story 16.3 — ListingCardData와 동일하게 신뢰속성 3필드를 파싱하는지 확인
+    // (ListingCardData.fromMap 쪽은 위 'fuel·신뢰속성 3필드 정상 파싱' 등에서 이미 다룬다 —
+    // 이 그룹은 그 커버리지를 ListingDetail.fromMap에도 미러한다, 코드리뷰 지적).
+    Map<String, Object?> baseDetail() => {
+          'id': 'x',
+          'seller_id': 's1',
+          'manufacturer': '현대',
+          'model': '그랜저',
+          'body_type': '대형차',
+          'year': 2022,
+          'price': 40000000,
+          'mileage': 15000,
+          'color': '검정',
+          'fuel': '가솔린',
+          'transmission': '자동',
+          'displacement': 3300,
+          'seats': 5,
+          'region': '서울',
+          'accident_free': true,
+          'status': 'on_sale',
+        };
+
+    test('신뢰속성 3필드 정상 파싱', () {
+      final d = ListingDetail.fromMap({
+        ...baseDetail(),
+        'accident_status': '단순교환',
+        'is_single_owner': true,
+        'is_non_smoker': false,
+      });
+      expect(d, isNotNull);
+      expect(d!.accidentStatus, '단순교환');
+      expect(d.isSingleOwner, isTrue);
+      expect(d.isNonSmoker, isFalse);
+    });
+
+    test('신뢰속성 3필드가 없으면 null(미상, bool 3상태 — false로 단정 안 함)', () {
+      final d = ListingDetail.fromMap(baseDetail());
+      expect(d, isNotNull);
+      expect(d!.accidentStatus, isNull);
+      expect(d.isSingleOwner, isNull);
+      expect(d.isSingleOwner, isNot(false));
+      expect(d.isNonSmoker, isNull);
+    });
+
+    test('accident_status가 비-String이면 null로 강등되고 상세 파싱은 계속 성공한다', () {
+      final d = ListingDetail.fromMap({...baseDetail(), 'accident_status': 123});
+      expect(d, isNotNull); // 신뢰속성은 필수 15필드가 아니므로 행 전체를 버리지 않는다.
+      expect(d!.accidentStatus, isNull);
+    });
+
+    test('withImages로 갤러리 URL을 부착해도 신뢰속성 3필드는 그대로 유지된다', () {
+      final d = ListingDetail.fromMap({
+        ...baseDetail(),
+        'accident_status': '무사고',
+        'is_single_owner': true,
+        'is_non_smoker': true,
+      });
+      final withImgs = d!.withImages(['https://example.com/a.jpg']);
+      expect(withImgs.accidentStatus, '무사고');
+      expect(withImgs.isSingleOwner, isTrue);
+      expect(withImgs.isNonSmoker, isTrue);
+      expect(withImgs.imageUrls, ['https://example.com/a.jpg']);
+    });
+
     test('accident_free 가 누락/비bool 이면 null (무사고로 단정 안 함)', () {
       // 15필드는 모두 채우되 accident_free 만 빠진(또는 깨진) 응답.
       // DB 는 NOT NULL bool 이라 정상 경로에선 안 생기지만, 깨진 응답을

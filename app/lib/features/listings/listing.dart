@@ -208,6 +208,9 @@ class ListingDetail {
     this.options,
     this.description,
     this.imageUrls = const [],
+    this.accidentStatus,
+    this.isSingleOwner,
+    this.isNonSmoker,
   });
 
   final String id;
@@ -232,6 +235,12 @@ class ListingDetail {
   // 상세 갤러리 전체 URL(공개 URL, sort_order·id 순). `listings` 단일 row엔 없는 데이터라
   // fromMap이 채우지 않는다 — `listing_images` 별도 조회 후 withImages로 부착한다(Story 16.2).
   final List<String> imageUrls;
+  // 신뢰속성 3필드(Story 16.3) — accident_free(기존, NOT NULL bool)와는 별개 컬럼이다(혼동
+  // 금지, spec-16-3 Design Notes). '무사고'|'단순교환'|'사고'|null. Dart는 별도 enum 없이
+  // nullable String으로 단순 통과(ListingCardData.accidentStatus와 동일 방침, A2).
+  final String? accidentStatus;
+  final bool? isSingleOwner; // null=미상(false로 단정 금지, bool 3상태).
+  final bool? isNonSmoker; // null=미상(bool 3상태).
 
   /// `listing_images` 조회 결과(공개 URL 리스트)를 부착한 새 인스턴스를 만든다.
   /// fromMap이 읽는 단일 `listings` row엔 없는 데이터라 부착 지점이 별도로 필요하다.
@@ -256,6 +265,9 @@ class ListingDetail {
         options: options,
         description: description,
         imageUrls: urls,
+        accidentStatus: accidentStatus,
+        isSingleOwner: isSingleOwner,
+        isNonSmoker: isNonSmoker,
       );
 
   /// Supabase row → 상세. 필수 필드가 빠지면 null(못 찾음으로 처리).
@@ -326,6 +338,9 @@ class ListingDetail {
       sellerName: sellerName is String ? sellerName : null,
       options: options,
       description: description is String ? description : null,
+      accidentStatus: raw['accident_status'] is String ? raw['accident_status'] as String : null,
+      isSingleOwner: raw['is_single_owner'] is bool ? raw['is_single_owner'] as bool : null,
+      isNonSmoker: raw['is_non_smoker'] is bool ? raw['is_non_smoker'] as bool : null,
     );
   }
 }

@@ -32,7 +32,8 @@ import '../../features/chat/chat_providers.dart';
 import '../../features/listings/listings_providers.dart';
 import '../../features/listings/sell_controller.dart';
 import '../../features/listings/sell_screen.dart';
-import '../../features/wishlist/wishlist_placeholder_screen.dart';
+import '../../features/wishlist/wishlist_providers.dart';
+import '../../features/wishlist/wishlist_screen.dart';
 import '../theme/app_theme.dart';
 
 /// GoRouter가 요구하는 최소 `Listenable` — 외부에서 `notify()`를 부르면 그대로
@@ -90,6 +91,12 @@ class _TabBranch {
   ///     한쪽의 success/error/editingId가 다른 쪽에 새던 문제(review, spec-16-1 P3) — 탭을
   ///     누를 때마다 무효화해 이전 화면이 남긴 잔여 상태를 지운다. 입력 중이던 텍스트는
   ///     화면의 TextEditingController가 따로 쥐고 있어 이걸로 지워지지 않는다.
+  ///   · wishedListingIdsProvider: non-autoDispose라 한 번 조회가 실패하면(빈 Set으로 조용히
+  ///     삼킴, wishlist_repository.dart) 앱이 켜져 있는 동안 하트가 계속 빈 채로 남는다 —
+  ///     유일한 다른 무효화 지점은 찜 토글 성공(wish_button.dart)뿐이라 사용자가 하트를 한 번도
+  ///     안 누르면 영영 복구되지 않는다(코드리뷰 지적). 홈 탭은 카드를 보여주는 화면 중 유일한
+  ///     실제 탭이고(검색·AI는 홈에서 push되는 화면이라 별도 탭이 아니다), 이 provider는 화면
+  ///     전역이 공유하는 단일 인스턴스라 홈 탭 재진입만으로도 검색·AI 진입점까지 함께 복구된다.
   final void Function(WidgetRef ref)? onActivate;
 }
 
@@ -102,7 +109,10 @@ final _kTabBranches = <_TabBranch>[
     icon: Icons.home_outlined,
     selectedIcon: Icons.home,
     builder: (context, state) => const HomeScreen(),
-    onActivate: (ref) => ref.invalidate(recentListingsProvider),
+    onActivate: (ref) {
+      ref.invalidate(recentListingsProvider);
+      ref.invalidate(wishedListingIdsProvider);
+    },
   ),
   _TabBranch(
     key: const Key('tab_wishlist'),
@@ -111,7 +121,11 @@ final _kTabBranches = <_TabBranch>[
     label: '찜',
     icon: Icons.favorite_border,
     selectedIcon: Icons.favorite,
-    builder: (context, state) => const WishlistPlaceholderScreen(),
+    builder: (context, state) => const WishlistScreen(),
+    // wishlistProvider는 autoDispose지만 이 브랜치도 IndexedStack으로 영구 마운트되므로
+    // (recentListingsProvider·chatRoomsProvider와 같은 함정, 위 _TabBranch.onActivate 문서
+    // 참조) 탭을 다시 누를 때 명시 무효화해야 "방금 취소한 찜"이 즉시 사라진다.
+    onActivate: (ref) => ref.invalidate(wishlistProvider),
   ),
   _TabBranch(
     key: const Key('tab_chat'),

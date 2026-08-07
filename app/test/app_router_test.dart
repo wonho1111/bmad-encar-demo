@@ -70,7 +70,8 @@ import 'package:app/features/listings/listing_form.dart';
 import 'package:app/features/listings/listings_providers.dart';
 import 'package:app/features/listings/listings_repository.dart';
 import 'package:app/features/listings/sell_controller.dart';
-import 'package:app/features/wishlist/wishlist_placeholder_screen.dart';
+import 'package:app/features/wishlist/wishlist_providers.dart';
+import 'package:app/features/wishlist/wishlist_screen.dart';
 
 /// require_user_test.dart·current_role_provider_test.dart와 동일한 최소 가짜 사용자.
 User _fakeUser({String? role}) => User(
@@ -288,12 +289,16 @@ void main() {
     });
   });
 
-  group('매트릭스 5행 — 찜 탭 진입 → 플레이스홀더, 크래시 없음', () {
-    testWidgets('하단 "찜" 탭을 누르면 플레이스홀더가 뜨고 예외가 없다', (tester) async {
+  group('매트릭스 5행 — 찜 탭 진입 → 실제 찜 목록 화면, 크래시 없음(Story 16.3)', () {
+    testWidgets('하단 "찜" 탭을 누르면 WishlistScreen이 뜨고 예외가 없다(0건이면 빈 상태 안내)',
+        (tester) async {
       await tester.pumpWidget(
         _harness(
           user: _fakeUser(role: null),
-          extraOverrides: [_recentListings(const [])],
+          extraOverrides: [
+            _recentListings(const []),
+            wishlistProvider.overrideWith((ref) async => const []),
+          ],
         ),
       );
       await tester.pumpAndSettle();
@@ -304,10 +309,10 @@ void main() {
       expect(
         tester.takeException(),
         isNull,
-        reason: '찜 탭 진입이 예외 없이 렌더돼야 한다(16.3 이전)',
+        reason: '찜 탭 진입이 예외 없이 렌더돼야 한다',
       );
-      expect(find.byKey(const Key('wishlist_placeholder')), findsOneWidget);
-      expect(find.text('찜 목록은 곧 제공됩니다.'), findsOneWidget);
+      expect(find.byType(WishlistScreen), findsOneWidget);
+      expect(find.byKey(const Key('wishlist_empty')), findsOneWidget);
       // 홈은 여전히 트리에 있다 — 사라진 게 아니라 IndexedStack이 오프스테이지로 보존한 것이다
       // (아래 탭 보존 group과 같은 전제). `find`류는 기본적으로 offstage 요소를 건너뛰므로
       // (`skipOffstage`), 보존을 실제로 확인하려면 그 스킵을 꺼야 한다 — 껐다 켰다 비교해
@@ -748,6 +753,87 @@ void main() {
     });
   });
 
+  group('wishlistProvider 재조회 — 찜 탭 재진입 시 autoDispose 계약을 명시 무효화로 대신한다', () {
+    // 위 recentListings·chatRooms와 같은 원인·같은 계약(Story 16.3) — '/wishlist' 브랜치도
+    // IndexedStack으로 영구 마운트돼 wishlistProvider(FutureProvider.autoDispose)의 자연
+    // dispose가 안 일어난다. app_router.dart의 `_TabBranch.onActivate`가 찜 탭 활성화 시
+    // ref.invalidate(wishlistProvider)를 명시 호출하는지를 조회 횟수로 확인한다 — 이게 없으면
+    // 찜 목록에서 하트를 해제해도(다른 탭에 갔다와야만) 타일이 안 사라진다는 뜻이다.
+    testWidgets('찜 탭을 한 번 본 뒤 홈 탭으로 갔다가 돌아오면 조회가 다시 일어난다(2회)', (tester) async {
+      var fetchCount = 0;
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          extraOverrides: [
+            _recentListings(const []),
+            wishlistProvider.overrideWith((ref) async {
+              fetchCount++;
+              return const [];
+            }),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+      expect(fetchCount, 1, reason: '첫 진입은 정상적으로 1회 조회돼야 한다');
+
+      await tester.tap(find.byKey(const Key('tab_home')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+
+      expect(
+        fetchCount,
+        2,
+        reason:
+            '탭을 재방문했는데 1회에 멈춰 있으면 무효화가 안 걸린 것이다 — 찜을 해제해도 '
+            '탭을 나갔다 들어오기 전까지 타일이 그대로 남는 실사용 버그와 같은 증상이다',
+      );
+    });
+  });
+
+  group('wishedListingIdsProvider 재조회 — 홈 탭 재활성화 시 명시 무효화를 실행한다(코드리뷰 지적 P8)', () {
+    // app_router.dart의 tab_home `_TabBranch.onActivate`가 recentListingsProvider와 나란히
+    // `ref.invalidate(wishedListingIdsProvider)`도 호출한다(_TabBranch.onActivate 문서 참조 —
+    // wishedListingIdsProvider는 non-autoDispose라 한 번 조회가 실패하면 앱이 켜져 있는 동안
+    // 하트가 계속 빈 채로 남는다). 그 줄을 지워도 스위트가 green이었다(코드리뷰 지적, 실측) —
+    // 위 recentListingsProvider·wishlistProvider group과 같은 fetchCount 패턴으로 고정한다.
+    testWidgets('홈 탭을 한 번 본 뒤 찜 탭으로 갔다가 돌아오면 조회가 다시 일어난다(2회)', (tester) async {
+      var fetchCount = 0;
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          extraOverrides: [
+            _recentListings(const []),
+            wishedListingIdsProvider.overrideWith((ref) async {
+              fetchCount++;
+              return const <String>{};
+            }),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(fetchCount, 1,
+          reason: '첫 진입은 HomeScreen이 카드 하트를 위해 watch하므로 1회 조회돼야 한다');
+
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tab_home')));
+      await tester.pumpAndSettle();
+
+      expect(
+        fetchCount,
+        2,
+        reason:
+            '탭을 재방문했는데 1회에 멈춰 있으면 무효화가 안 걸린 것이다 — 첫 조회가 실패해도 '
+            '(빈 Set으로 조용히 삼킴) 하트를 한 번도 안 누르면 세션 내내 복구되지 않는 '
+            '실사용 버그와 같은 증상이다',
+      );
+    });
+  });
+
   group('sellControllerProvider 재조회 — 내차팔기 탭 활성화 시 잔여 상태를 지운다', () {
     // 위 두 형제(chatRooms·recentListings)와 같은 원인·같은 계약인데, 이 세 번째만
     // 어떤 테스트도 보지 않았다 — app_router.dart의 그 줄을 지워도 스위트가 전부 초록이었다
@@ -929,7 +1015,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('tab_wishlist')));
       await tester.pumpAndSettle();
-      expect(find.byType(WishlistPlaceholderScreen), findsOneWidget);
+      expect(find.byType(WishlistScreen), findsOneWidget);
 
       // 시스템 back 제스처/버튼을 시뮬레이션한다 — 이 메서드가 PopScope가 등록한
       // popDisposition을 실제로 태운다(canPop==false면 핸들된 것으로 처리되고 앱까지는
