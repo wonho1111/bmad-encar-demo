@@ -446,18 +446,18 @@ Story 16.4(Flutter 앱 미러링)가 같은 계약을 그대로 따라야 하므
 
 ⚠️ **이 절은 §1 `EMBEDDING_DIM`·§7 `CHAT.MESSAGE_MAX_LENGTH`와 강제 방식이 다르다.** §1·§7은 코드가
 **실제로 import해서 쓰는 공유 상수 하나**라 한쪽만 고치면 타입 불일치·빌드 실패로 드러난다. 반면
-§12.1의 토픽 형식은 언어가 달라 공유가 불가능하고, **서로 다른 세 곳에 각자 따로 쓰인 문자열
+§12.1의 토픽 형식은 언어가 달라 공유가 불가능하고, **서로 다른 네 곳에 각자 따로 쓰인 문자열
 리터럴**로 존재한다:
 
 1. `supabase/migrations/0023_chat_realtime_broadcast.sql` — 트리거(방송)와 RLS 정책(구독 인가)
 2. `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`의 `roomTopic()` — 구독
 3. `api/tests/integration/test_chat_realtime_broadcast_real_db.py`의 `_TOPIC_PREFIX` — 실DB 검증
+4. `app/lib/features/chat/chat_repository.dart`의 `roomTopic()` — 구독(Epic 16.4, Flutter 앱)
 
 한쪽만 바뀌어도 컴파일도 lint도 통과하므로, 이 계약은 문서가 아니라 **실행되는 검사**로 고정한다
-(CLAUDE.md B9): `web/src/app/(user)/chat/[roomId]/__tests__/roomTopicContract.test.ts`가 세 사본을
+(CLAUDE.md B9): `web/src/app/(user)/chat/[roomId]/__tests__/roomTopicContract.test.ts`가 네 사본을
 읽어 같은 문자열인지 단언하고 `private: true` 구독도 함께 확인한다 — `npm test`(vitest)에 포함되므로
-CI에서 매 push마다 돈다. 값을 바꿀 땐 세 곳을 함께 고치고, 그 검사가 green인지 확인한다.
-Epic 16.4가 Dart로 네 번째 사본을 만들면 그 검사에 한 줄을 더한다.
+CI에서 매 push마다 돈다. 값을 바꿀 땐 네 곳을 함께 고치고, 그 검사가 green인지 확인한다.
 
 ### 12.1 구독 토픽 형식
 
@@ -467,7 +467,9 @@ Epic 16.4가 Dart로 네 번째 사본을 만들면 그 검사에 한 줄을 더
   이름으로 구독을 시도하게 된다) — 값을 바꿀 땐 세 곳을 함께 고치고, 위 도입부가 가리키는
   `roomTopicContract.test.ts`가 green인지 확인한다(그 검사가 이 일치를 고정한다).
 - web `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`의 `roomTopic()` 헬퍼가 이 형식을
-  만든다. app이 같은 상수를 따로 두게 되면(Epic 16.4) 이 문자열 템플릿을 그대로 옮긴다.
+  만든다. Epic 16.4가 `app/lib/features/chat/chat_repository.dart`에 같은 이름의 top-level
+  함수 `roomTopic(String roomId) => 'chat:room:$roomId'`로 이 문자열 템플릿을 그대로 옮겼다 —
+  이 자리가 위 도입부가 말하는 네 번째 사본이다.
 
 ### 12.2 private 채널 + setAuth 타이밍
 
@@ -701,17 +703,32 @@ Epic 16 Story 16.4(Flutter 안읽음 미러링, §12.5의 실시간 구독 미�
   넣어 "점+숫자"를 한 요소로 표기하고, `aria-label`에도 건수를 반영한다(예: "채팅, 안읽음 메시지
   3건" — 비색 신호 중복, UX-DR22). 0이면 배지를 렌더하지 않는다. **보이는 배지는 99 초과를
   "99+"로 누르지만 `aria-label`은 정확한 건수를 유지한다** — 상한을 둔 이유가 작은 원형 배지의
-  레이아웃 사정이라 화면 낭독에는 해당되지 않는다(후속 코드리뷰 patch). 방 목록 각 행에는 방별 개별
-  안읽음 표시를 두지 않는다(FR57 AC가 요구하는 건 내비 총합과 정렬뿐 — Never, 과설계 금지).
+  레이아웃 사정이라 화면 낭독에는 해당되지 않는다(후속 코드리뷰 patch).
+  - ✎ **정정(Epic 16.4 코드리뷰)**: 이 문단은 예전에 "방 목록 각 행에는 방별 개별 안읽음
+    표시를 두지 않는다(FR57 AC가 요구하는 건 내비 총합과 정렬뿐 — Never, 과설계 금지)"라고
+    적어 뒀었다. 그 Never는 **DW-548(대장, 2026-07-29)로 사용자 결정에 의해 뒤집혔다** — 총합
+    배지만으로는 목록에 들어가도 어느 방이 새 메시지인지 알 수 없어 배지가 절반만 일한다는
+    지적 때문이다(근거는 `0026_chat_unread_by_room.sql` 헤더 주석 참조). 방별 배지는 실제로
+    구현돼 있다: web `web/src/app/(user)/chat/page.tsx` 141-172행(`chat_unread_by_room()` RPC
+    소비), app `app/lib/features/chat/chat_list_screen.dart`의 `_RoomTile`(Epic 16.4가 같은
+    RPC를 `chatUnreadByRoomProvider`로 미러링). 위 문단의 "총합·정렬만" 문구는 이 문서 드리프트였다 —
+    지금 정본은: 내비 총합 + 방 목록 정렬 + **방별 개별 배지** 세 가지 전부다.
   배지 색은 **`bg-red-600`(#DC2626)** 이다 — 10px 소형 텍스트라 흰 글자 대비가 WCAG AA(4.5:1)를
-  넘어야 하고, `bg-red-500`(#EF4444)은 3.76:1로 미달이다(후속 코드리뷰 patch, 실측). 라이트·다크
-  양쪽에서 같은 값을 쓴다. **RPC가 실패하면 배지를 렌더하지 않는다**(0과 구분 표시하지 않음) —
-  배지는 부가 정보라 헤더·페이지 렌더 자체를 막지 않는다(콘솔 로그만). Flutter(16.4)도 이 두 가지를
-  그대로 따른다.
+  넘어야 하고, `bg-red-500`(#EF4444)은 3.76:1로 미달이다(후속 코드리뷰 patch, 실측: #DC2626은
+  흰 배경 대비 4.83:1). 라이트·다크 양쪽에서 같은 값을 쓴다. app은 라이트 고정이라 동일한
+  용도의 토큰(`AppColors.danger`, `#C0392B`)을 재사용한다 — 새 색을 하드코딩하지 않는다는
+  기존 관례(`app_theme.dart` 규칙)를 따른 것이다. 정확히 같은 hex는 아니지만
+  `#C0392B`의 흰 글자 대비는 **5.44:1**(WCAG AA 4.5:1 충족, 오히려 web의 4.83:1보다 높다,
+  실측, 코드리뷰 patch) — 웹 다크모드가 없는 앱에는 대비 재계산이 필요 없는 범위의 차이다.
+  **RPC가 실패하면 배지를 렌더하지 않는다**(0과 구분 표시하지 않음) — 배지는 부가 정보라
+  헤더·페이지 렌더 자체를 막지 않는다(콘솔 로그만). Flutter(16.4)는 이 실패-폴백을 `chat_repository.dart`의
+  `fetchUnreadTotal()`/`fetchUnreadByRoom()`이 각각 `0`/`{}`로 흡수하는 형태로 구현한다(호출부는
+  실패와 "0건"을 구분하지 않는다 — web과 동일 방침).
   카운트 계산은 `web/src/components/layout/AppHeader.tsx`가 **consumer 분기·로그인 상태일 때만**
   `chat_unread_count()`를 호출해 맡는다(admin 분기·비로그인은 호출하지 않음) — 이 때문에
   `AppHeader`가 비동기 컴포넌트로 바뀌었다(대장 #209, `#183` getUser 증폭 층에 RPC 호출이
-  하나 더 얹힘).
+  하나 더 얹힘). app에는 admin 화면 자체가 없으므로(Epic 16.4 범위 밖) 이 분기가 필요 없다 —
+  `chatUnreadTotalProvider`는 로그인 후 도달하는 하단 4탭 셸에서만 그려진다.
 
 ---
 

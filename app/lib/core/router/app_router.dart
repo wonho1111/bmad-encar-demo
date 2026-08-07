@@ -137,7 +137,14 @@ final _kTabBranches = <_TabBranch>[
     // showAppBar: false — 셸(_AppShell)이 이미 공통 AppBar(제목+아바타)를 그린다.
     // 홈 퀵액션의 Navigator.push(ChatListScreen())는 기본값(true)이라 영향 없다.
     builder: (context, state) => const ChatListScreen(showAppBar: false),
-    onActivate: (ref) => ref.invalidate(chatRoomsProvider),
+    // chatUnreadTotalProvider(내비 배지, non-autoDispose)·chatUnreadByRoomProvider(목록 배지,
+    // autoDispose) 둘 다 탭 재진입 시 명시 무효화한다(Story 16.4, §12.6 — "다음 진입/로드
+    // 시점 기준" 갱신을 이 탭 활성화 경로가 구현한다. chatRoomsProvider와 같은 이유·같은 자리).
+    onActivate: (ref) {
+      ref.invalidate(chatRoomsProvider);
+      ref.invalidate(chatUnreadTotalProvider);
+      ref.invalidate(chatUnreadByRoomProvider);
+    },
   ),
   _TabBranch(
     key: const Key('tab_sell'),
@@ -172,7 +179,15 @@ final _kTabBranches = <_TabBranch>[
 /// 구동할 수 있다(app_router_test.dart).
 final appRouterProvider = Provider<GoRouter>((ref) {
   final refresh = _GoRouterRefreshNotifier();
-  ref.listen(authStateProvider, (previous, next) => refresh.notify());
+  ref.listen(authStateProvider, (previous, next) {
+    refresh.notify();
+    // chatUnreadTotalProvider(내비 배지)는 non-autoDispose이고 셸의 NavigationBar가 어느
+    // 탭에 있든 항상 watch한다(_ChatTabIcon) — 채팅 탭 activate 무효화(_kTabBranches)만으로는
+    // "계정 A 로그아웃 → 계정 B 로그인, 채팅 탭을 아직 안 누름" 경로를 못 잡는다. 이 경로에서는
+    // B가 채팅 탭을 누르기 전까지 A의 안읽음 숫자가 그대로 남아 보인다(코드리뷰 patch 1) —
+    // 인증 상태가 바뀌는 모든 자리(로그인·로그아웃 둘 다)에서 다시 조회하게 한다.
+    ref.invalidate(chatUnreadTotalProvider);
+  });
 
   // 상세류 push(AI 채팅·탐색·매물 상세·채팅방 등)를 셸 밖으로 보낼 때 쓰는 루트 Navigator
   // key. 지금은 각 화면이 `Navigator.of(context, rootNavigator: true)`로 이 Navigator를
@@ -338,11 +353,44 @@ class _AppShell extends ConsumerWidget {
             for (final b in _kTabBranches)
               NavigationDestination(
                 key: b.key,
-                icon: Icon(b.icon),
-                selectedIcon: Icon(b.selectedIcon),
+                // 채팅 탭만 안읽음 총합 배지를 얹는다(§12.6) — 나머지 탭은 평범한 아이콘.
+                icon: b.key == const Key('tab_chat')
+                    ? const _ChatTabIcon(icon: Icons.chat_bubble_outline)
+                    : Icon(b.icon),
+                selectedIcon: b.key == const Key('tab_chat')
+                    ? const _ChatTabIcon(icon: Icons.chat_bubble)
+                    : Icon(b.selectedIcon),
                 label: b.label,
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 채팅 탭 아이콘 — chatUnreadTotalProvider 총합을 배지로 얹는다(Story 16.4, §12.6). 0이거나
+/// RPC 실패(폴백 0, chat_repository.dart)면 배지를 그리지 않는다. 시각 표기는 99 초과를 "99+"로
+/// 누르지만, 스크린리더 낭독은 `ExcludeSemantics`로 그 표기를 지우고 정확한 건수를 별도로
+/// 읽게 한다(색+숫자 동시 표기와 같은 비색 신호 중복 정신, web SiteNav aria-label 미러).
+class _ChatTabIcon extends ConsumerWidget {
+  const _ChatTabIcon({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(chatUnreadTotalProvider).maybeWhen(data: (v) => v, orElse: () => 0);
+    final iconWidget = Icon(icon);
+    if (unread <= 0) return iconWidget;
+    return Semantics(
+      label: '채팅, 안읽음 메시지 $unread건',
+      child: ExcludeSemantics(
+        child: Badge(
+          backgroundColor: AppColors.danger,
+          textColor: Colors.white,
+          label: Text(unread > 99 ? '99+' : '$unread'),
+          child: iconWidget,
         ),
       ),
     );

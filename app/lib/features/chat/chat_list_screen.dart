@@ -34,6 +34,12 @@ class ChatListScreen extends ConsumerWidget {
     // 위젯 테스트가 이 화면을 렌더하려면 실제 `Supabase.initialize`가 필요했고,
     // shared_preferences가 dev 의존으로 승격돼 있었다(spec-16-1 Task).
     final myId = ref.watch(currentUserProvider)?.id;
+    // 방별 안읽음 배지(DW-548, docs/conventions.md §12.6) — RPC 실패는 빈 Map으로 폴백돼 있으므로
+    // (chat_repository.dart) 여기서는 "없으면 0"으로만 읽는다. 렌더 자체를 막지 않는다.
+    final unreadByRoom = ref.watch(chatUnreadByRoomProvider).maybeWhen(
+      data: (m) => m,
+      orElse: () => const <String, int>{},
+    );
 
     return Scaffold(
       appBar: showAppBar ? AppBar(title: const Text('문의 채팅')) : null,
@@ -76,8 +82,12 @@ class ChatListScreen extends ConsumerWidget {
               ),
               itemCount: rooms.length,
               separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) =>
-                  _RoomTile(room: rooms[i], myId: myId, ref: ref),
+              itemBuilder: (context, i) => _RoomTile(
+                room: rooms[i],
+                myId: myId,
+                ref: ref,
+                unread: unreadByRoom[rooms[i].id] ?? 0,
+              ),
             ),
           );
         },
@@ -87,13 +97,21 @@ class ChatListScreen extends ConsumerWidget {
 }
 
 class _RoomTile extends StatelessWidget {
-  const _RoomTile({required this.room, required this.myId, required this.ref});
+  const _RoomTile({
+    required this.room,
+    required this.myId,
+    required this.ref,
+    required this.unread,
+  });
 
   final ChatRoomSummary room;
   final String? myId;
 
   /// 방을 닫고 돌아왔을 때 chatRoomsProvider를 무효화하는 데만 쓴다(review, spec-16-1 P2).
   final WidgetRef ref;
+
+  /// 이 방의 안읽음 메시지 수(DW-548) — 0이면 배지를 그리지 않는다.
+  final int unread;
 
   @override
   Widget build(BuildContext context) {
@@ -173,6 +191,23 @@ class _RoomTile extends StatelessWidget {
                           ),
                   ),
                   const SizedBox(width: 8),
+                  // 방별 안읽음 배지(DW-548, §12.6) — 0건이면 그리지 않는다. 색+숫자를 함께
+                  // 표기하고(비색 신호 중복), 시각 상한("99+")과 스크린리더 낭독(정확한 건수)을
+                  // 분리한다(app_router.dart의 내비 총합 배지와 같은 규칙).
+                  if (unread > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Semantics(
+                        label: '안읽음 메시지 $unread건',
+                        child: ExcludeSemantics(
+                          child: Badge(
+                            backgroundColor: AppColors.danger,
+                            textColor: Colors.white,
+                            label: Text(unread > 99 ? '99+' : '$unread'),
+                          ),
+                        ),
+                      ),
+                    ),
                   const Icon(Icons.chevron_right, color: AppColors.inkMuted),
                 ],
               ),

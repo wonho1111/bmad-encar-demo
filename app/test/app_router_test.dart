@@ -91,14 +91,29 @@ User _fakeUser({String? role}) => User(
 /// `appRouterProvider`가 `ref.listen(authStateProvider, ...)`로 refreshListenable을
 /// 연결하는데, 오버라이드하지 않으면 그 provider의 실제 구현이 전역 `supabase` 싱글턴을
 /// 만져 "초기화 안 됨" 예외로 죽는다.
+// chatUnreadTotalProvider(Story 16.4, §12.6)는 non-autoDispose이고 하단 NavigationBar
+// (`_ChatTabIcon`, app_router.dart)가 셸 자체에서 매 프레임 watch한다 — chatRoomsProvider와
+// 달리 채팅 탭을 누르기 전에도, 채팅과 무관한 이 파일의 다른 모든 테스트에서도 조회가 나간다.
+// 기본값을 0/빈 Map으로 고정해 두지 않으면 이 파일의 모든 홈-셸 테스트가 실 Supabase 네트워크를
+// 매번 건드린다(가짜 자격증명뿐이라 매번 실패하지만, 느리고 시끄럽다). 이 파일의 다섯
+// ProviderContainer/_harness 구성이 이 기본값을 공유한다. Riverpod는 같은 provider를
+// overrides 리스트에 두 번 넣으면 assert로 죽으므로(실측 확인), 이 두 provider 자체를
+// 검증하는 테스트는 이 기본값을 넣지 않고 카운팅 override를 직접 넣는다.
+List<Override> _chatUnreadDefaults() => [
+  chatUnreadTotalProvider.overrideWith((ref) async => 0),
+  chatUnreadByRoomProvider.overrideWith((ref) async => const <String, int>{}),
+];
+
 Widget _harness({
   required User? user,
   List<Override> extraOverrides = const [],
+  bool chatUnreadDefaults = true,
 }) {
   return ProviderScope(
     overrides: [
       currentUserProvider.overrideWithValue(user),
       authStateProvider.overrideWith((ref) => const Stream<AuthState>.empty()),
+      if (chatUnreadDefaults) ..._chatUnreadDefaults(),
       ...extraOverrides,
     ],
     child: Consumer(
@@ -153,6 +168,14 @@ class _FakeChatRepo extends ChatRepository {
     String roomId, {
     String? atOrAfterCreatedAt,
   }) async => const [];
+
+  /// Story 16.4 — ChatRoomScreen이 진입 시 당사자 확인(markRoomRead 게이트)을 위해 직접
+  /// `fetchRoom`을 호출한다. 오버라이드하지 않으면 실 Supabase 클라이언트로 네트워크 호출이
+  /// 나가버린다(가짜 자격증명뿐인 테스트 환경에서는 무의미하고 느리다) — null(참여자 아님)로
+  /// 고정해 markRoomRead 호출 자체를 건너뛰게 한다(이 파일의 테스트는 읽음 갱신을 검증하지
+  /// 않는다 — 그건 chat_room_screen_test.dart 몫).
+  @override
+  Future<ChatRoomSummary?> fetchRoom(String roomId) async => null;
 }
 
 /// go_search 테스트용 — SearchController.build()의 `Future.microtask(search)`가 실제
@@ -712,6 +735,138 @@ void main() {
     });
   });
 
+  group('chatUnreadTotalProvider·chatUnreadByRoomProvider 재조회 — 채팅 탭 재진입 시 무효화(Story 16.4, §12.6)', () {
+    // §12.6 Always: "다음 진입/로드 시점 기준"으로 배지가 줄어야 한다 — 방을 읽고 채팅 탭을
+    // 나갔다 재진입하면 그 시점에 다시 조회돼야 한다는 뜻이다. app_router.dart의 tab_chat
+    // onActivate가 chatRoomsProvider와 나란히 이 두 provider도 invalidate하는지 조회 횟수로 확인한다.
+    //
+    // 두 provider는 수명이 다르다(chatRoomsProvider와 대비해 주의할 점): chatUnreadTotalProvider는
+    // non-autoDispose이고 하단 NavigationBar(셸 자체, `_ChatTabIcon`)가 매 프레임 watch하므로
+    // **앱을 켜자마자(채팅 탭을 누르기 전에도)** 이미 1회 조회된다. 반면 chatUnreadByRoomProvider는
+    // ChatListScreen(브랜치 콘텐츠) 안에서만 watch하므로 chatRoomsProvider와 같은 패턴 —
+    // 채팅 탭을 처음 열 때 비로소 1회 조회된다.
+    testWidgets('채팅 탭을 한 번 본 뒤 홈으로 갔다가 돌아오면 안읽음 배지 두 provider 모두 다시 조회된다', (
+      tester,
+    ) async {
+      var totalFetchCount = 0;
+      var byRoomFetchCount = 0;
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          chatUnreadDefaults: false, // 이 테스트 자신이 카운팅 override를 넣는다(중복 override 금지).
+          extraOverrides: [
+            _recentListings(const []),
+            chatRoomsProvider.overrideWith((ref) async => const <ChatRoomSummary>[]),
+            chatUnreadTotalProvider.overrideWith((ref) async {
+              totalFetchCount++;
+              return 0;
+            }),
+            chatUnreadByRoomProvider.overrideWith((ref) async {
+              byRoomFetchCount++;
+              return const <String, int>{};
+            }),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(totalFetchCount, 1, reason: '내비 배지는 셸이 항상 그리므로 채팅 탭을 누르기 전에도 조회된다');
+      expect(byRoomFetchCount, 0, reason: '방별 배지는 ChatListScreen 안에서만 watch하므로 아직 안 열림');
+
+      await tester.tap(find.byKey(const Key('tab_chat')));
+      await tester.pumpAndSettle();
+      expect(totalFetchCount, 2, reason: '탭 활성화 onActivate가 무효화해 다시 조회된다');
+      expect(byRoomFetchCount, 1, reason: '첫 진입은 정상적으로 1회 조회돼야 한다');
+
+      await tester.tap(find.byKey(const Key('tab_home')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('tab_chat')));
+      await tester.pumpAndSettle();
+
+      expect(
+        totalFetchCount,
+        3,
+        reason: '탭을 재방문했는데 안 늘었으면 무효화가 안 걸린 것이다 — 방금 읽은 방의 안읽음 '
+            '감소가 내비 배지에 영원히 반영되지 않는 실사용 버그와 같은 증상이다',
+      );
+      expect(byRoomFetchCount, 2, reason: '목록 각 행의 방별 배지도 같은 이유로 재조회돼야 한다');
+    });
+  });
+
+  group('_ChatTabIcon 안읽음 배지 — 실제 렌더된 숫자·99+ 캡·시맨틱스(spec-16-4 I/O 매트릭스, 코드리뷰 지적)', () {
+    // 위 두 group은 provider *조회 횟수*만 세고, 배지가 실제로 무엇을 그리는지는 아무 테스트도
+    // 확인하지 않았다(코드리뷰 지적) — chatUnreadTotalProvider를 구체적인 값으로 오버라이드해
+    // app_router.dart의 `_ChatTabIcon`이 그 값을 실제로 렌더하는지 여기서 직접 본다.
+    testWidgets('안읽음 7건 → 배지 숫자 "7"이 보이고, 시맨틱 라벨도 같은 건수를 담는다', (
+      tester,
+    ) async {
+      // 기본적으로 위젯 테스트는 접근성 트리를 만들지 않는다 — 이 핸들이 살아있는 동안만
+      // 실제로 만들어진다(wish_button_test.dart와 동일 패턴).
+      final semanticsHandle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          chatUnreadDefaults: false, // 이 테스트 자신이 구체값으로 override한다(중복 override 금지).
+          extraOverrides: [
+            _recentListings(const []),
+            chatUnreadTotalProvider.overrideWith((ref) async => 7),
+            chatUnreadByRoomProvider.overrideWith((ref) async => const <String, int>{}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(of: find.byKey(const Key('tab_chat')), matching: find.text('7')),
+        findsOneWidget,
+        reason: '99 이하는 시각 배지에 실제 건수를 그대로 보여야 한다',
+      );
+      // NavigationDestination 자신의 탭 라벨("채팅")과 우리 배지 Semantics의 label이 상위
+      // 시맨틱 노드로 병합돼("채팅\n채팅, 안읽음 메시지 7건" 형태) 정확히 일치 비교는 항상
+      // 실패한다(실측) — RegExp로 부분일치를 확인한다(exact String 매처는 실측 결과와 다름).
+      expect(
+        find.bySemanticsLabel(RegExp('채팅, 안읽음 메시지 7건')),
+        findsOneWidget,
+        reason: '스크린리더 라벨도 같은 건수를 담아야 한다(ExcludeSemantics가 시각 텍스트만 감춘다)',
+      );
+      semanticsHandle.dispose();
+    });
+
+    testWidgets('안읽음 150건 → 시각 배지는 "99+"로 캡되지만 시맨틱 라벨은 실제 건수(150)를 담는다', (
+      tester,
+    ) async {
+      final semanticsHandle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          chatUnreadDefaults: false,
+          extraOverrides: [
+            _recentListings(const []),
+            chatUnreadTotalProvider.overrideWith((ref) async => 150),
+            chatUnreadByRoomProvider.overrideWith((ref) async => const <String, int>{}),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(of: find.byKey(const Key('tab_chat')), matching: find.text('99+')),
+        findsOneWidget,
+        reason: '99 초과는 시각적으로 "99+"로 눌러야 한다',
+      );
+      expect(
+        find.descendant(of: find.byKey(const Key('tab_chat')), matching: find.text('150')),
+        findsNothing,
+        reason: '시각 텍스트에 150이 그대로 노출되면 캡이 동작하지 않은 것이다',
+      );
+      expect(
+        find.bySemanticsLabel(RegExp('채팅, 안읽음 메시지 150건')),
+        findsOneWidget,
+        reason: '스크린리더는 캡 없이 실제 건수(150)를 그대로 읽어야 한다',
+      );
+      semanticsHandle.dispose();
+    });
+  });
+
   group('recentListingsProvider 재조회 — 홈 탭 재진입 시 autoDispose 계약을 명시 무효화로 대신한다', () {
     // chatRoomsProvider와 똑같은 결함이었다(review, spec-16-1 P1) — '/home' 브랜치도
     // IndexedStack으로 영구 마운트돼 recentListingsProvider(FutureProvider.autoDispose)의
@@ -845,6 +1000,7 @@ void main() {
           authStateProvider.overrideWith(
             (ref) => const Stream<AuthState>.empty(),
           ),
+          ..._chatUnreadDefaults(),
           _recentListings(const []),
         ],
       );
@@ -898,6 +1054,7 @@ void main() {
           authStateProvider.overrideWith(
             (ref) => const Stream<AuthState>.empty(),
           ),
+          ..._chatUnreadDefaults(),
           _recentListings(const []),
           listingsRepositoryProvider.overrideWithValue(_GatedRepo(gate)),
         ],
@@ -1131,6 +1288,7 @@ void main() {
             authControllerProvider.overrideWith(
               () => _FakeAuthController(authEvents),
             ),
+            ..._chatUnreadDefaults(),
             _recentListings(const []),
           ],
         );
@@ -1191,6 +1349,7 @@ void main() {
             (ref) => ref.watch(_fakeUserProvider),
           ),
           authStateProvider.overrideWith((ref) => authEvents.stream),
+          ..._chatUnreadDefaults(),
           _recentListings(const []),
         ],
       );

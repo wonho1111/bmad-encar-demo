@@ -15,8 +15,8 @@ int? _asInt(Object? v) {
   return null;
 }
 
-/// 메시지 1건. created_at 은 ISO 문자열(timestamptz) 그대로 — 폴링 커서로 문자열 비교에 쓴다.
-///   (web ChatMessageRow 와 동일 계약: id·room_id·sender_id·body·created_at)
+/// 메시지 1건. created_at 은 ISO 문자열(timestamptz) 그대로 — 갭보정 커서로 문자열 비교에 쓴다.
+///   (web ChatMessageRow 와 동일 계약: id·room_id·sender_id·body·created_at·client_message_id)
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -24,6 +24,7 @@ class ChatMessage {
     required this.senderId,
     required this.body,
     required this.createdAt,
+    this.clientMessageId,
   });
 
   final String id;
@@ -32,7 +33,11 @@ class ChatMessage {
   final String body;
   final String createdAt; // ISO 문자열. 시간순 정렬·gte 커서 비교에 문자열 그대로 사용(ISO 는 사전식=시간순).
 
-  /// Supabase row(Map) → 메시지. 5필드가 올바른 문자열이 아니면 null(깨진 행 제외).
+  /// 멱등키(0022) — Story 12.3 이전 행은 NULL, 이후 행은 sendMessage 가 항상 채운다(web 미러,
+  /// docs/conventions.md §12.4). 브로드캐스트 에코·재전송 수렴 판정에 쓴다.
+  final String? clientMessageId;
+
+  /// Supabase row(Map) → 메시지. 5개 필수 필드가 올바른 문자열이 아니면 null(깨진 행 제외).
   static ChatMessage? fromMap(Object? raw) {
     if (raw is! Map) return null;
     final id = raw['id'];
@@ -48,14 +53,26 @@ class ChatMessage {
         createdAt is! String) {
       return null;
     }
+    final clientMessageId = raw['client_message_id'];
     return ChatMessage(
       id: id,
       roomId: roomId,
       senderId: senderId,
       body: body,
       createdAt: createdAt,
+      clientMessageId: clientMessageId is String ? clientMessageId : null,
     );
   }
+}
+
+/// 오프라인(연결 끊김) 큐에 쌓인 메시지 1건 — 제출 시점에 만든 client_message_id 를 그대로 들고
+/// 있다가 재연결 시 재사용한다(web QueuedMessage 미러, docs/conventions.md §12.5 — 새 키를 만들지
+/// 않는다. 어떤 항목을 재시도하는지 큐 자체가 이미 안다).
+class QueuedChatMessage {
+  const QueuedChatMessage({required this.clientMessageId, required this.body});
+
+  final String clientMessageId;
+  final String body;
 }
 
 /// 채팅방에 임베드된 매물 요약(목록·헤더 표시용). web ChatRoomRow.listings 미러.
@@ -112,6 +129,7 @@ class ChatRoomSummary {
     this.buyerName,
     this.sellerName,
     this.listing,
+    this.lastMessageAt,
   });
 
   final String id;
@@ -121,6 +139,10 @@ class ChatRoomSummary {
   final String? buyerName; // 구매자 표시 이름(0008). 없으면(예전 방) 역할만 폴백.
   final String? sellerName; // 판매자 표시 이름(0008).
   final ChatRoomListing? listing; // 임베드 매물. null=sold/조회불가 → 플레이스홀더.
+
+  /// 방 목록 정렬 기준(FR57, Story 12.5/16.4 — `docs/conventions.md` §12.6). ISO 문자열 그대로
+  /// (표시용이 아니라 fetchRooms 의 정렬 select 계약을 모델에도 반영해 두는 용도).
+  final String? lastMessageAt;
 
   static ChatRoomSummary? fromMap(Object? raw) {
     if (raw is! Map) return null;
@@ -136,6 +158,7 @@ class ChatRoomSummary {
     }
     final buyerName = raw['buyer_name'];
     final sellerName = raw['seller_name'];
+    final lastMessageAt = raw['last_message_at'];
     return ChatRoomSummary(
       id: id,
       listingId: listingId,
@@ -145,6 +168,7 @@ class ChatRoomSummary {
       sellerName: sellerName is String ? sellerName : null,
       // listings 임베드는 PostgREST 가 단일 객체로 준다(FK 단방향). null/리스트형 모두 방어.
       listing: ChatRoomListing.fromMap(raw['listings']),
+      lastMessageAt: lastMessageAt is String ? lastMessageAt : null,
     );
   }
 }

@@ -5462,3 +5462,23 @@ source_spec: `spec-16-3-신뢰속성-찜-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+- source_spec: `spec-16-4-실시간-채팅-앱.md`
+  summary: 채팅방 최초 `SUBSCRIBED` 도달 시 도는 "조회~구독 사이 틈 보정" 재조회(`§12.3`, `_initialSyncDone` 블록)가 성공해도, 그 이전에 초기 로드가 실패해 세워둔 `_loadError`("과거 대화를 불러오지 못했습니다") 안내를 지우지 않는다 — 갭보정(`_gapFillFromCursor`)에는 있는 "자기가 세운 안내만 거둔다" 복구 로직이 이 블록에는 없다.
+  evidence: `app/lib/features/chat/chat_room_screen.dart`의 `handleSubscribeStatus`(`!_initialSyncDone` 분기)를 직접 읽어 확인 — `_mergeIncoming(msgs)`만 하고 `_loadError`/`_loadErrorSource`를 건드리지 않는다. 다만 이건 이 스토리가 새로 만든 결함이 아니라 **미러 원본인 web의 동일한 특성**이다 — web `ChatRoomMessages.tsx`의 `if (!initialSyncDone) { ... void (async () => { const res = await fetchMessages(...); if (cancelled || 'error' in res) return; mergeIncoming(res.messages); })(); }` 블록도 똑같이 loadError를 지우지 않는다(직접 확인). 즉 web·app 양쪽에 동일하게 존재하는 특성이라, app만 고치면 "미러링" 원칙(§12.3을 web과 동일하게 따른다)에서 벗어나고 두 구현이 갈라진다.
+  trigger: web 쪽을 함께 손대는 자리에서 고친다 — `gapFillFromCursor`가 이미 쓰는 "자기가 세운 안내만 거둔다"(`_loadErrorSource === 'initial'`이면 거둠) 규칙을 이 블록에도 적용하되, web `ChatRoomMessages.tsx`의 해당 블록도 같은 패스에서 함께 고쳐 드리프트를 만들지 않는다.
+
+- source_spec: `spec-16-4-실시간-채팅-앱.md`
+  summary: 앱이 백그라운드로 갔다가 돌아왔을 때(OS가 소켓을 정지시키거나 끊었는데 `channel.subscribe()` 상태 콜백이 아무 것도 안 보내는 경우) 갭보정을 트리거할 생명주기 훅(`WidgetsBindingObserver`/`AppLifecycleState.resumed`)이 `ChatRoomScreen`에 없다 — 상태 콜백(channelError/timedOut/subscribed)에만 의존한다.
+  evidence: `app/lib/features/chat/chat_room_screen.dart`에 `WidgetsBindingObserver` mixin이나 `didChangeAppLifecycleState` 오버라이드가 없음을 직접 확인(grep 0건). `realtime_client`의 자동 재조인이 백그라운드/포그라운드 전환에서도 실제로 상태 콜백을 정확히 쏘는지는 라이브러리 소스 검토로만 확인했고(설계 스펙 Design Notes 참조), 실제 기기의 OS 레벨 소켓 정지·복귀 상황은 검증하지 못했다 — 이 세션(헤드리스 샌드박스, CanvasKit 크래시)에서는 실기기/정상 브라우저 실측 자체가 불가능했다(스펙 자신의 Manual checks가 이미 이 한계를 인지하고 있었음).
+  trigger: 실기기(SM-D 등) 검증 시(Epic 16-6, SM-D 통합 시연 검증 범위) 앱을 백그라운드로 보냈다 몇 분 뒤 복귀시켜 메시지가 자동으로 따라잡히는지 확인한다. 안 따라잡히면 `didChangeAppLifecycleState`에서 `resumed` 시 `_gapFillFromCursor()`를 직접 호출하는 방어 코드를 추가한다.
+
+- source_spec: `spec-16-4-실시간-채팅-앱.md`
+  summary: 폴링(3초 `Timer.periodic`)을 걷어내면서 "소켓이 상태 콜백 없이 조용히 멎는" 경우의 최후 백스톱이 사라졌다 — 이전엔 폴링이 결국 다시 물어봐서 따라잡았지만, 지금은 `channelError`/`timedOut`/`subscribed` 콜백이 아예 안 오면 복구 경로가 없다.
+  evidence: `app/lib/features/chat/chat_room_screen.dart`에서 `Timer.periodic` 전체 삭제를 diff로 확인. 다만 이건 이번 스토리의 실수가 아니라 **스펙 Never 절이 명시적으로 요구한 설계**다(`spec-16-4-실시간-채팅-앱.md`의 "수동 재구독·채널/소켓 재생성 코드 금지 — 라이브러리의 자동 rejoin에 의존한다") — web `docs/conventions.md` §12.5도 동일하게 "수동 재구독·채널/소켓 재생성 코드는 만들지 않는다"고 못박아 뒀고, web 쪽도 폴링 백스톱 없이 이 위험을 이미 감수하고 있다(web은 Story 12.3에서 폴링을 걷어낸 뒤 12.4~12.6에서도 이 백스톱을 되살리지 않았다).
+  trigger: 실사용에서 "메시지가 안 온다"는 신고가 반복되면(특히 특정 네트워크 환경·기기에서), 그 자리에서 `realtime_client`의 실제 재조인 신뢰성을 재실측하고, 그래도 부족하면 web·app 동시에 저빈도(예: 30초) 백업 재조회를 다시 도입할지 결정한다. `docs/conventions.md`의 관련 대장 항목(`@supabase/supabase-js`/`realtime-js` 버전 업그레이드 시 재실측 트리거)과 같은 자리에서 함께 판단한다.
+
+- source_spec: `spec-16-4-실시간-채팅-앱.md`
+  summary: 스펙의 Manual checks(로컬 Supabase에서 두 계정으로 실제 실시간 송수신·재연결 실측)가 아직 한 번도 실행되지 않았다 — 자동화 검증(flutter analyze/test, npm test)은 전부 통과했지만, 실제 소켓 동작(private 채널 RLS 평가·broadcast 전달·재연결 자동 rejoin)은 위젯테스트의 상태-콜백 시뮬레이션으로만 검증됐다.
+  evidence: 구현 서브에이전트가 실제로 로컬 Supabase(Docker, 마이그레이션 0022~0030 전부 적용 확인, 테스트 계정 buyer@test.com/seller-seed2@test.com 사이 기존 채팅방 존재 확인)와 앱 빌드까지 준비했으나, 이 세션(헤드리스 샌드박스)에서 Playwright로 빌드된 Flutter 웹 앱을 열자 CanvasKit이 `CONTEXT_LOST_WEBGL`로 크래시해 실제 화면 조작이 불가능했다(세션 메모리에 이미 기록된 이 환경의 알려진 한계). intent-alignment 리뷰 렌즈도 독립적으로 "스펙 자신이 유일한 실제 검증 경로라고 명시한 이 수동 확인이 실행됐다는 증거가 diff/스펙 어디에도 없다"고 지적했다.
+  trigger: 실기기 또는 정상 Flutter 웹/모바일 실행 환경(이 샌드박스 밖)에서 두 계정으로 직접 채팅방을 열어: (1) 폴링 없이 상대 메시지가 즉시 보이는지 (2) 한쪽 네트워크를 끊었다 복구했을 때 배너 전환과 오프라인 큐 flush가 실제로 동작하는지 (3) 갭보정이 실제로 놓친 메시지를 채우는지 확인한다. 늦어도 Epic 16-6(SM-D 통합 시연 검증)에서 반드시 확인한다.

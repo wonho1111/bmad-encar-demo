@@ -2,20 +2,24 @@
 // "주석·문서는 계약이 아니다. 지켜야 하는 규칙이면 실행되는 검사로 바꾼다").
 //
 // 왜 필요한가:
-//   `chat:room:{room_id}`라는 토픽 문자열은 **서로 다른 언어로 쓰인 세 벌의 리터럴**로 존재한다 —
+//   `chat:room:{room_id}`라는 토픽 문자열은 **서로 다른 언어로 쓰인 네 벌의 리터럴**로 존재한다 —
 //   ① `supabase/migrations/0023_chat_realtime_broadcast.sql`의 트리거(방송을 내보내는 쪽)와
 //      RLS 정책(구독을 인가하는 쪽), ② `ChatRoomMessages.tsx`의 `roomTopic()`(구독하는 쪽),
 //      ③ `api/tests/integration/test_chat_realtime_broadcast_real_db.py`의 `_TOPIC_PREFIX`(실DB로
-//      방송을 검증하는 쪽). 한쪽만 바꿔도 컴파일·lint·기존 테스트가 전부 통과하는데, 실제로는
-//      "방송은 계속 나가는데 아무도 못 듣는" 무음 실패가 된다. docs/conventions.md §12가 이 위험을
-//      글로 적어뒀지만 글은 실행되지 않는다 — 이 파일이 그 자리를 대신한다.
+//      방송을 검증하는 쪽), ④ `app/lib/features/chat/chat_repository.dart`의 `roomTopic()`
+//      (Flutter 앱 구독, Epic 16 Story 16.4). 한쪽만 바꿔도 컴파일·lint·기존 테스트가 전부
+//      통과하는데, 실제로는 "방송은 계속 나가는데 아무도 못 듣는" 무음 실패가 된다.
+//      docs/conventions.md §12가 이 위험을 글로 적어뒀지만 글은 실행되지 않는다 — 이 파일이
+//      그 자리를 대신한다.
 //
 // 이 검사가 **안 보는 것**:
 //   · 실제 Realtime 서버가 그 토픽으로 방송을 내보내고 구독이 붙는지(런타임 동작) — 그건
-//     `api/tests/integration/test_chat_realtime_broadcast_real_db.py`(실DB)와 Story 12.6의 수동
-//     2-브라우저 검증 몫이다. 여기서는 "세 벌의 문자열이 서로 같은가"만 정적으로 고정한다.
-//   · Flutter 앱(Epic 16 Story 16.4가 네 번째 사본을 만들 자리) — 아직 존재하지 않으므로 범위 밖.
-//     그 사본이 생기면 여기에 한 줄 추가한다.
+//     `api/tests/integration/test_chat_realtime_broadcast_real_db.py`(실DB)와 Story 12.6/16.4의
+//     수동 2-클라이언트 검증 몫이다. 여기서는 "네 벌의 문자열이 서로 같은가"만 정적으로 고정한다.
+//   Dart `roomTopic()`이 실제로 `supabase.channel(...)` 호출부(`chat_room_screen.dart`의
+//   `_defaultChatSubscribe`)에서 private 채널로 쓰이는지는 아래 별도 검사가 앵커해서 본다
+//   (코드리뷰 patch 2 — 이전엔 함수 *정의*만 대조하고 배선은 안 봐서, 함수는 맞는데 호출부가
+//   `roomTopic(roomId)`를 안 쓰거나 `private:true`가 빠져도 이 파일 전체가 green이었다).
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +33,8 @@ const PY_INTEGRATION = join(
   REPO_ROOT,
   'api/tests/integration/test_chat_realtime_broadcast_real_db.py',
 );
+const DART_REPO = join(REPO_ROOT, 'app/lib/features/chat/chat_repository.dart');
+const DART_ROOM_SCREEN = join(REPO_ROOT, 'app/lib/features/chat/chat_room_screen.dart');
 
 // SQL에서 `'<접두사>' || <테이블별칭>.<컬럼>::text` 모양을 모두 뽑는다. 트리거의
 // `'chat:room:' || new.room_id::text`와 RLS의 `'chat:room:' || r.id::text` 둘 다 잡히고,
@@ -52,6 +58,19 @@ function allMigrationsSql(): string {
 // `-- 설명` 줄주석 제거 — 인자 사이에 주석이 끼면 인자 위치 정규식이 못 잡는다.
 function stripSqlComments(sql: string): string {
   return sql.replace(/--[^\n]*/g, '');
+}
+
+// `//` 줄주석 제거 — Dart 쪽 검사 전용. 실측으로 드러난 함정(코드리뷰 patch 2 자체 검증 중
+// 발견): `_defaultChatSubscribe` 바로 위 doc comment(64행)가 실제 호출 코드를 설명하려고
+// `supabase.channel(roomTopic(roomId), opts: RealtimeChannelConfig(private: true, ...`를
+// 그대로 인용해 적어뒀다 — 아래 호출부 앵커 검사가 이 주석 문자열에도 매치돼, 실제 호출 코드를
+// `roomTopic(roomId)` 없이 리터럴로 망가뜨려도(뮤테이션 테스트로 확인) 주석만 남아 있으면
+// green이 나왔다. 실제 코드 줄만 보게 주석을 먼저 걷어낸다.
+function stripDartLineComments(source: string): string {
+  return source
+    .split('\n')
+    .map((line) => line.replace(/\/\/.*$/, ''))
+    .join('\n');
 }
 
 function sqlTopicPrefixes(): string[] {
@@ -186,5 +205,33 @@ describe('채팅 실시간 토픽 계약 — SQL·TS·Python 세 사본이 같�
     const match = source.match(/^_TOPIC_PREFIX\s*=\s*"([^"]*)"/m);
     expect(match, '_TOPIC_PREFIX 상수를 찾지 못했습니다').not.toBeNull();
     expect(match![1]).toBe(sqlPrefix);
+  });
+
+  it('app/chat_repository.dart의 roomTopic()이 SQL과 동일한 토픽을 만든다(Epic 16.4, 네 번째 사본)', () => {
+    // docs/conventions.md §12 도입부가 지정한 자리 — Dart 쪽이 세 번째 사본(web)을 그대로
+    // 옮긴 top-level 함수다. 템플릿 리터럴 보간부(`${roomId}`)를 뺀 접두사가 SQL과 같아야 한다.
+    const [sqlPrefix] = sqlTopicPrefixes();
+    const source = readFileSync(DART_REPO, 'utf8');
+    // Dart 문자열 보간은 `${roomId}`가 아니라 단순 식별자라 `$roomId`(중괄호 없음) 형태다.
+    const match = source.match(/String roomTopic\(String roomId\)\s*=>\s*'([^']*)\$roomId'/);
+    expect(
+      match,
+      'roomTopic() 함수를 찾지 못했습니다(이름·형태가 바뀌었다면 이 검사도 함께 고칠 것)',
+    ).not.toBeNull();
+    expect(match![1]).toBe(sqlPrefix);
+  });
+
+  it('app/chat_room_screen.dart의 _defaultChatSubscribe가 roomTopic()을 private 채널로 실제 호출한다(코드리뷰 patch 2)', () => {
+    // 위 검사는 Dart `roomTopic()` *함수 정의*만 SQL과 대조한다 — 그 함수가 실제 채널 생성
+    // 호출부(`supabase.channel(...)`)에서 쓰이는지, 그 호출이 private:true인지는 안 봤다. 위
+    // web `private:true` 검사와 같은 원칙(호출 하나에 앵커 — 파일 어딘가에 channel(과 private:true가
+    // 따로 있어도 통과하는 게으른 매칭을 피한다)으로, Dart 쪽 호출부도 같은 축을 고정한다.
+    // 주석을 먼저 걷어낸다 — 이 함수 바로 위 doc comment가 같은 호출부 문자열을 그대로 인용해
+    // 적어뒀어서, 주석을 안 걷으면 실제 코드가 망가져도(roomTopic(roomId)이 빠져도) 주석
+    // 문자열에 매치돼 green이 나온다(위 stripDartLineComments 주석 참조, 실측).
+    const source = stripDartLineComments(readFileSync(DART_ROOM_SCREEN, 'utf8'));
+    expect(source).toMatch(
+      /supabase\.channel\(\s*roomTopic\(roomId\)\s*,\s*opts:\s*RealtimeChannelConfig\(\s*private:\s*true\b/,
+    );
   });
 });
