@@ -4,6 +4,7 @@ type: 'feature'
 created: '2026-08-08'
 status: 'done'
 baseline_revision: 'd9d4f9ea531b03bd4e3f25e55a5f657c995706ef'
+final_revision: '62d029d643da7735761fb5c93a0a8cce2de21145'
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
@@ -110,7 +111,38 @@ warnings: ['multiple-goals', 'oversized']
 
 ## Review Triage Log
 
-### 2026-08-08 — Review pass
+### 2026-08-08 — Review pass (후속 2차)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 13 (high 1, medium 3, low 9)
+- defer: 1 (high 0, medium 1, low 0)
+- reject: 7 (high 0, medium 0, low 7)
+- addressed_findings:
+  - `[high]` `[patch]` **실시간 수신이 아예 동작하지 않았다** — `handleBroadcastInsert`가 브로드캐스트 봉투를 한 단계 얕게 읽어(`payload['record']`) 실제 방송이 오면 항상 `record == null`로 조기 return했다. `realtime_client-2.8.0`의 콜백은 안쪽 payload가 아니라 `{'type','event','payload'}` 전체 봉투를 넘긴다(실측: 라이브러리 자신의 `test/socket_test.dart:588-593`·`:594-625`가 정확히 이 형태를 단언). `docs/conventions.md` §12.3도 `message.payload.record`라고 못박아 뒀고 web도 그렇게 읽는다 — 스펙 intent-contract의 `payload['record']` 표기가 §12.3을 옮겨 적으며 한 단계를 흘린 것이고, §12.3이라는 단일 출처가 명확하므로 해석은 하나뿐이라 patch로 처리했다. 이번 스토리가 폴링 백스톱을 걷어냈으므로 상대 메시지는 방을 나갔다 다시 들어오기 전까지 영영 오지 않는 상태였다. `extractBroadcastRecord()` 순수 함수로 분리해 `payload['payload']['record']`를 방어적으로 읽도록 수정. 이 결함이 1차 리뷰를 통과한 이유는 **위젯테스트가 프로덕션 코드와 똑같이 틀린 모양을 스스로 만들어 넣어** 계약을 검사하는 게 아니라 정의하고 있었기 때문 — 그래서 테스트 페이로드를 실제 봉투 모양으로 고치고, 추가로 실제 `realtime_client`의 디스패치 경로(`RealtimeClient.onConnMessage`에 진짜 프레임 투입, 소켓 불필요)를 태우는 `app/test/chat_realtime_envelope_test.dart`를 신설했다(적용 에이전트가 함수 본문 변형으로 red/green 확인, 오케스트레이터가 **다른 형태**로 재검증 — 호출부를 원래 버그 표현으로 되돌려 red 2건 → 원복 green 24건)
+  - `[medium]` `[patch]` 방을 열고 뒤로 나오는 **가장 흔한 경로**에서 안읽음 배지가 안 줄었다 — `chat_list_screen.dart`의 pop 복귀 훅이 `chatRoomsProvider`만 무효화하고 이번 스토리가 새로 만든 배지 provider 2종은 빼먹었다. 사용자는 이미 채팅 탭에 있으므로 탭 `onActivate`도 다시 안 돌아, "방 읽었는데 배지는 그대로"가 계속 남는다(스펙 AC "배지가 다음 진입 시점에 그만큼 줄어든다" 미충족). 바로 그 자리의 주석이 spec-16-1 P2에서 똑같은 결함을 고쳤다고 적어둔 곳인데 새 provider가 그 패턴을 다시 물려받았다 — 세 provider 모두 무효화 + 복귀 후 재조회 단언 테스트 추가
+  - `[medium]` `[patch]` 온라인 전송 응답을 기다리는 도중 연결이 끊기면 그 메시지가 **조용히 증발**했다 — 끊기면 입력창이 즉시 다시 열리므로(연타가드는 온라인 전용) 사용자가 다음 글을 타이핑하고, 그 상태에서 앞선 전송이 실패하면 pending 버블은 지워지고 큐에도 안 들어가며 본문 복원도 "입력창이 비어있을 때만" 규칙에 걸려 안 된다 — 실패 시점에 끊겨 있으면 같은 `client_message_id`로 큐에 남겨 재연결 flush가 가져가도록 수정(복원 규칙 자체는 스펙 명시라 그대로 둠)
+  - `[medium]` `[patch]` 실제 구독 배선(`_defaultChatSubscribe`)이 **어떤 테스트로도 실행되지 않고**, 유일한 정적 앵커 검사도 `private: true`까지만 보고 `replay: ReplayOption(...)`·`onBroadcast(event:'INSERT')`·`subscribe(onStatus)`는 안 봤다 — 위 high 결함이 통과한 구조적 이유다(verification-gap·intent-alignment 독립 지적). 앵커를 세 자리까지 넓히고 `'INSERT'` 리터럴을 0023이 방송하는 이벤트와 대조. 기존 `stripDartLineComments` 방어는 유지
+  - `[low]` `[patch]` `_flushQueue`가 `senderId: _myId ?? ''`로 빈 문자열을 지어내 보냈다 — `_send()`는 같은 조건에서 아예 중단하는데 두 경로가 전제를 다르게 봤다(adversarial·edge-case-hunter 독립 발견). `myId == null`이면 큐를 그대로 남기고 중단하도록 통일
+  - `[low]` `[patch]` 세션이 없을 때 `_subscribeRealtime()`이 배너도 에러도 없이 조용히 return했다 — 폴링이 없어진 지금 방은 멀쩡해 보이면서 아무것도 못 받는다(adversarial·edge-case-hunter 독립 발견). 바로 아래 catch와 같은 톤으로 `_realtimeError`를 세우도록 수정
+  - `[low]` `[patch]` 한 번 끊긴 적이 있으면 `subscribed`가 와도 `_realtimeError`가 안 지워져, 빨간 "연결이 끊겼습니다"가 초록 "다시 연결됐어요" 위에 그대로 남을 수 있었다 — 분기 앞으로 옮겨 항상 지우도록 수정
+  - `[low]` `[patch]` `docs/conventions.md` §12.2가 "구독 전 `setAuth` 필수, 내부 동작에 기대지 않는다"고 명령형으로 못박아 뒀는데 Dart 구현은 의도적으로 둘 다 안 하고(스펙 Design Notes 실측 + Never 절이 이식 금지), §12.2엔 그 예외가 아무 데도 안 적혀 있었다 — 다음에 §12를 미러링하는 사람이 코드와 계약 중 뭘 따를지 동전을 던지게 된다(CLAUDE.md B8). §12.1·§12.4·§12.6이 이미 쓰는 "✎" 형식으로 Dart 예외를 실측 근거(파일·행)와 함께 등재(문서만, 코드 무변경)
+  - `[low]` `[patch]` 방 목록 타일 제목에 `maxLines`/`overflow`가 없는데 이번에 그 행에 배지+여백을 끼워 넣어 폭을 좁혔다 — 규칙 13(D5)이 요구하는 truncate 대신 줄바꿈으로 흡수될 수 있었다. `maxLines: 1` + 말줄임 추가 + 320dp 좁은 폭에 긴 제목·3자리 배지를 함께 렌더하는 테스트 추가
+  - `[low]` `[patch]` `fetchRooms`의 `last_message_at desc, id desc` 정렬(FR57/§12.6)이 Dart 쪽에서 아무 검사에도 안 걸려 있었다 — `created_at`으로 되돌려도 전부 green. web이 같은 계약을 정적 소스 스캔으로 고정한 기법(`unreadWiringContract.test.ts`)을 Dart에 그대로 이식
+  - `[low]` `[patch]` 지난 패스가 넣은 "계정 전환 시 이전 사용자 배지 잔존 방지" 배선(`authStateProvider` → invalidate)이 무검증이었다 — 실제 인증 이벤트를 흘리는 테스트 2개가 상수 override라 조회 횟수를 안 봤다. 카운팅 override로 바꿔 재조회를 단언
+  - `[low]` `[patch]` `markRoomRead`의 upsert 인자·`onConflict: 'user_id,room_id'`가 무검증이었다 — 틀려도 catch가 콘솔로 삼켜 "배지가 영영 안 줄어듦"이 조용히 지나간다. web의 동일 테스트(`chat.test.ts`) 기법을 미러링해 가짜 http 클라이언트로 실제 요청(경로·쿼리·헤더·본문)을 단언
+  - `[low]` `[patch]` `_lastFailed` → `reuseFailedKey` 배선이 무검증이었다(순수 함수만 테스트) — 그 대입을 지워도 green이고, 실제 결과는 `UNIQUE(room_id, client_message_id)`를 못 걸고 **같은 메시지가 두 행** 남는 것이다. 실패 후 같은 본문 재전송 시 같은 키 재사용 / 다른 본문은 새 키를 단언하도록 확장
+- deferred (장부에 신규 등재):
+  - `[medium]` 앱에 채팅 2000자 클라이언트 가드가 전혀 없고 `23514`를 무조건 "빈 메시지"로 안내한다(§7의 3중 방어 중 DB 한 겹만 존재) — 이번 스토리 이전 리비전에서 이미 그랬음을 직접 확인했고 스펙 Never가 명시적으로 범위에서 뺐다. 다만 이번에 도입한 오프라인 큐 때문에 영향이 커졌다(초과 메시지 1건이 큐 머리에 박히면 뒤의 정상 메시지까지 재연결마다 영원히 막힌다)
+- rejected_as_noise (기록용, 근거 포함):
+  - 큐 flush에 재시도 상한·항목 폐기 경로가 없어 영구 실패 항목이 뒤를 막는다 — 스펙 Always가 "실패 항목(과 그 뒤 전부)은 remaining으로 남겨 다음 재연결 때 재시도"라고 이 동작을 그대로 규정했다(영구 실패를 만드는 유일한 실제 원인인 길이 초과는 위 defer로 등재)
+  - 초기 로드를 `await`한 뒤 구독을 시작해 "조회~구독" 틈이 넓어진다 — §12.3이 그 틈을 메우려고 둔 "최초 SUBSCRIBED 1회 재조회"가 이미 설계상 커버하는 지점이다
+  - 내비 배지가 실시간으로 오르지 않아 알림 역할을 못 한다 — 스펙 Always가 "둘 다 다음 진입/로드 시점 기준이지 실시간 감소가 아니다"라고 규정한 동작이다
+  - 방이 열려 있는 동안 도착한 메시지가 읽음 처리되지 않는다 — 스펙 Always 명시(1차 패스에서도 같은 근거로 기각)
+  - `markRoomRead`가 기기 시각을 쓴다 — web `markChatRoomRead`도 동일(1차 패스 기각 유지)
+  - `docs/conventions.md` §12.6이 뒤집힌 Never와 현행 규칙을 동시에 살려 자기모순이다 — 실제 문서를 직접 읽어 반증했다: 옛 문구는 규범 자리에서 빠지고 "예전에 …라고 적어 뒀었다"는 과거형 인용으로만 남았으며 문단이 "지금 정본은 … 세 가지 전부다"로 닫힌다(§12.4가 이미 쓰는 "✎ 정정" 관례와 동일 형식)
+  - `_markReadIfParticipant`가 `build()`의 `chatRoomDetailProvider`와 같은 행을 한 번 더 조회한다 — 방 진입마다 중복 왕복 1회일 뿐 사용자에게 드러나는 결과 차이가 없다
+
+### 2026-08-08 — Review pass (1차)
 - intent_gap: 0
 - bad_spec: 0
 - patch: 9 (high 0, medium 5, low 4)
@@ -202,8 +234,41 @@ warnings: ['multiple-goals', 'oversized']
 - I/O & Edge-Case Matrix 9행 전부 실행되는 테스트로 커버(방 목록 정렬 1행만 이 레포의 기존 관례상 네트워크 호출 리포지토리 메서드는 단위테스트하지 않는다는 이유로 코드 직접 대조로 대체 — `wishlist_repository_test.dart` 선례와 동일 근거)
 - Manual checks(로컬 Supabase 2계정 실시간 송수신 실측)는 이 세션(헤드리스 샌드박스)에서 CanvasKit `CONTEXT_LOST_WEBGL` 크래시로 실행 불가 — 장부에 등재(위 Files changed의 deferred-work.md 항목)
 
+
 **Residual risks:**
 - 실제 소켓 연결·2계정 동시 송수신·진짜 네트워크 끊김→재연결은 위젯테스트의 상태-콜백 시뮬레이션으로만 검증됐고, 실기기/정상 브라우저에서 한 번도 실측되지 않았다(대장 등재, 트리거: 실기기 검증 또는 Epic 16-6).
 - `realtime_client`의 자동 재조인 타이밍·백오프가 실제 네트워크 플랩 상황에서 §12.5가 기대하는 대로 동작하는지 라이브러리 소스 검토로만 확인했다.
 - 최초 SUBSCRIBED 재조회 성공이 초기 로드 실패 안내를 안 지우는 특성이 web과 app 양쪽에 동일하게 존재한다(대장 등재, web과 함께 고칠 자리).
 - 앱 백그라운드/포그라운드 전환 시 갭보정을 트리거할 생명주기 훅이 없다(대장 등재, 실기기 검증 필요).
+
+---
+
+## 후속 리뷰 패스 (2026-08-08, 2차)
+
+**Summary:** `done`으로 닫혔던 스토리를 새 세션에서 다시 검토해 **실시간 수신이 실제로는 전혀 동작하지 않고 있었다**는 것을 잡아냈다(브로드캐스트 봉투를 한 단계 얕게 읽음 — 이 스토리의 헤드라인 기능). 1차 패스가 이걸 놓친 이유는 위젯테스트가 프로덕션 코드와 똑같이 틀린 페이로드 모양을 직접 만들어 넣어, 계약을 **검사하는 게 아니라 정의**하고 있었기 때문이다. 그 밖에 배지 갱신 누락·끊김 중 전송 유실 등 12건을 더 고치고, 실제 라이브러리 디스패치 경로를 태우는 검사를 신설했다.
+
+**Files changed (2차):**
+- `app/lib/features/chat/chat_room_screen.dart` -- `extractBroadcastRecord()` 신설(봉투 깊이 수정), 끊김 중 전송 실패 시 큐 보존, `_flushQueue` myId 가드, 세션 없음 시 에러 배너, `subscribed`에서 `_realtimeError` 항상 해제
+- `app/lib/features/chat/chat_list_screen.dart` -- pop 복귀 시 배지 provider 2종도 무효화, 제목 말줄임(D5)
+- `docs/conventions.md` -- §12.2에 Dart 예외(자동 재인증 실측 근거) 등재
+- `web/src/app/(user)/chat/[roomId]/__tests__/roomTopicContract.test.ts` -- 앵커를 `replay`·`onBroadcast`·`subscribe`까지 확장
+- `app/test/chat_realtime_envelope_test.dart` (신규) -- 실제 `realtime_client` 디스패치로 봉투 깊이를 고정
+- `app/test/chat_room_screen_test.dart`·`chat_list_screen_test.dart`·`chat_repository_test.dart`·`app_router_test.dart` -- 위 배선들의 회귀 검사 추가
+- `_bmad-output/implementation-artifacts/deferred-work.md` -- defer 1건 등재
+
+**Review findings breakdown (2차):** patch 13건(high 1, medium 3, low 9 — 전부 반영+재검증) · defer 1건(medium) · reject 7건(전부 low, 근거는 Review Triage Log).
+
+**Follow-up review recommendation:** true (high 1건 존재 → 무조건 true. 점수도 3×3 + 1×9 = 18 ≥ 5).
+
+**Verification performed (2차, 오케스트레이터 직접 실행):**
+- `flutter analyze` — `No issues found!`
+- `flutter test` — 297/297 green(신규 검사 포함)
+- `npm test -- roomTopicContract unreadWiringContract` — 14/14 green
+- `flutter build web --dart-define-from-file=.env.json` — `✓ Built build/web`
+- **핵심 결함 검사의 red/green을 형태를 바꿔 재확인**: 적용 에이전트는 `extractBroadcastRecord` 본문을 변형해 red를 봤다고 보고했는데, 그 표기에서만 성립할 수 있으므로 오케스트레이터가 **호출부를 원래 버그 표현(`payload['record']`)으로 되돌리는 다른 형태**로 다시 변형 → red 2건 확인 → 백업본으로 원복 → green 24건 확인(`git checkout` 미사용)
+
+**Residual risks (2차 시점):**
+- ⚠️ **실기기 실측이 여전히 0회다.** 이번 패스가 잡은 결함은 "자동 검사는 전부 green인데 실제 기능은 죽어 있었다"는 형태였고, 그걸 잡아낸 것은 테스트가 아니라 라이브러리 소스·계약 문서와의 대조였다. 남은 실제-소켓 축(private 채널 RLS 평가, 재연결 자동 rejoin, 2계정 송수신)은 여전히 같은 사각지대에 있다 — 대장에 등재된 Manual checks를 실기기에서 반드시 돌려야 한다(트리거: Epic 16-6).
+- 앱 백그라운드/포그라운드 전환 시 갭보정을 트리거할 생명주기 훅이 없다(대장 등재, 실기기 검증 필요).
+- 최초 SUBSCRIBED 재조회 성공이 초기 로드 실패 안내를 안 지우는 특성이 web·app 양쪽에 동일하게 존재한다(대장 등재, web과 함께 고칠 자리).
+- 앱에 채팅 2000자 클라이언트 가드가 없어 초과 메시지가 오프라인 큐 머리에 박히면 뒤가 막힌다(2차 defer로 대장 등재).

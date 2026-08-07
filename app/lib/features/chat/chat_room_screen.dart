@@ -86,6 +86,21 @@ void _defaultChatUnsubscribe(Object handle) {
   supabase.removeChannel(handle as RealtimeChannel);
 }
 
+/// `channel.onBroadcast(...)` 콜백이 받는 인자에서 신규 행(§12.3의 `record`)을 뽑아내는 순수 함수.
+///
+/// ⚠️ 콜백 인자는 innerPayload(`{'record': ...}`)가 **아니라** 전체 broadcast envelope
+/// (`{'type': 'broadcast', 'event': ..., 'payload': innerPayload}`)다 — 실측:
+/// `realtime_client-2.8.0`의 `test/socket_test.dart:588-593`(바이너리 프레임)·`:594-625`(legacy v1
+/// 프레임) 둘 다 콜백이 정확히 이 envelope 형태를 받는 것을 단언한다. 신규 행은 그 안쪽
+/// `payload['record']`에 있다 — 한 단계 얕게 읽으면(`payload['record']`) 항상 null이 되어 실시간
+/// 수신이 조용히 죽는다(코드리뷰 patch 1, 이 스토리의 헤드라인 결함).
+/// 안쪽 payload가 없거나 Map이 아니면 null(방어적 — 던지지 않는다).
+Object? extractBroadcastRecord(Map<String, dynamic> envelope) {
+  final innerPayload = envelope['payload'];
+  if (innerPayload is! Map) return null;
+  return innerPayload['record'];
+}
+
 /// UUID v4 문자열 생성(client_message_id 용) — 별도 패키지 의존 없이 `dart:math`만으로 만든다
 /// (web `crypto.randomUUID()` 관례를 Dart로 옮긴 것, A2 — 이 하나의 용도로 새 패키지를 더하지 않는다).
 final Random _uuidRandom = Random.secure();
@@ -229,6 +244,12 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
       // 도달하므로(app_router.dart redirect) 실사용에서 이 분기는 사실상 도달하지 않는다 —
       // 방어적 가드다(부수 효과로, subscribeOverride 를 안 주는 위젯테스트가 실제 네트워크를
       // 건드리지 않게 막아준다).
+      //
+      // 그래도 이 분기가 조용히 return만 하면(코드리뷰 patch 5) 채널도 없고 _realtimeError도
+      // 없고 배너도 없다 — 폴링이 없는 이 화면은 방이 겉으로 멀쩡해 보이면서 평생 아무것도
+      // 못 받는다. 위 주석의 "사실상 도달하지 않는다"는 가정이 깨지는 경우(세션 만료 타이밍 등)
+      // 를 대비해, 아래 catch 블록과 같은 톤으로 안내를 세운다.
+      setState(() => _realtimeError = '실시간 연결을 시작하지 못했습니다. 새로고침 후 다시 시도해주세요.');
       return;
     }
     // (subscribeFn ?? _defaultChatSubscribe)가 동기적으로 던질 수 있다(예: channel.subscribe()가
@@ -305,7 +326,7 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
   @visibleForTesting
   void handleBroadcastInsert(Map<String, dynamic> payload) {
     if (_disposed) return;
-    final record = payload['record'];
+    final record = extractBroadcastRecord(payload);
     final message = ChatMessage.fromMap(record);
     if (message == null) return;
     _mergeIncoming([message]);
@@ -348,6 +369,12 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
         setState(() => _realtimeError = '실시간 연결이 끊겼습니다. 새로고침 후 다시 시도해주세요.');
       case RealtimeSubscribeStatus.subscribed:
         _disconnected = false;
+        // subscribed에 닿았다는 것 자체가 "지금은 연결돼 있다"는 뜻이다 — 재연결(_everDropped)
+        // 이든 최초 구독이든 상관없이 항상 지운다(코드리뷰 patch 6). 예전엔 else 분기(최초
+        // 구독)에만 있어서, 한 번이라도 끊겼다 재연결한 뒤(_everDropped=true)로는 이 분기를
+        // 다시는 안 타 CLOSED가 세운 빨간 "실시간 연결이 끊겼습니다"가 초록 "다시 연결됐어요"
+        // 배너 위에 영구히 남을 수 있었다.
+        setState(() => _realtimeError = null);
         if (_everDropped) {
           // 재연결(§12.5 Always) — 배너를 초록으로 바꾸고 큐 flush + 갭보정을 항상 함께 돌린다.
           _reconnectBannerTimer?.cancel();
@@ -359,8 +386,6 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
           });
           unawaited(_flushQueue());
           unawaited(_gapFillFromCursor());
-        } else {
-          setState(() => _realtimeError = null);
         }
         if (!_initialSyncDone) {
           _initialSyncDone = true;
@@ -387,13 +412,23 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
     }
     final snapshot = _pendingQueue.where((p) => p.clientMessageId != _onlineInFlightKey).toList();
     if (snapshot.isEmpty) return;
+    final myId = _myId;
+    if (myId == null) {
+      // `_send()`는 myId == null이면 애초에 시도조차 하지 않고 bail-out한다(같은 전제) — 이
+      // 자리도 같아야 한다(코드리뷰 patch 4). 여기서 안 막으면 senderId에 빈 문자열(`_myId ?? ''`)
+      // 이 실려 나가 RLS가 그냥 일반 네트워크 오류처럼 보이는 거부를 하고, 큐도 잘못 소모된다.
+      // 큐는 그대로 남겨 다음 재연결에 다시 시도하고, 새 문구를 만들지 않고 기존 "일부 실패"
+      // 안내를 그대로 재사용한다.
+      setState(() => _queueStuckNotice = '메시지 ${snapshot.length}건을 아직 보내지 못했습니다.');
+      return;
+    }
     _isFlushing = true;
     try {
       final result = await flushChatMessageQueue(
         snapshot,
         (msg) => _repo.sendMessage(
           roomId: widget.roomId,
-          senderId: _myId ?? '',
+          senderId: myId,
           body: msg.body,
           clientMessageId: msg.clientMessageId,
         ),
@@ -501,6 +536,14 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
             // 응답만 유실되고 서버엔 저장된 경우 — 브로드캐스트 에코가 이미 목록에 올려뒀다.
             _removePendingById(clientMessageId);
             _lastFailed = null;
+          } else if (_disconnected) {
+            // 응답을 기다리는 동안 연결이 끊긴 경우(코드리뷰 patch 3) — pending을 지우지 않고
+            // 오프라인 큐에 그대로 남겨(§12.5) 재연결 flush가 같은 clientMessageId로 재시도하게
+            // 한다. 여기서 지우고 _error·입력 복원을 했다면, 끊긴 동안엔 입력창이 잠기지 않아
+            // (§12.5 Always) 사용자가 이미 다음 메시지를 타이핑해 뒀을 수 있는데 그 위에 옛 본문을
+            // 덮어써 사용자가 쓰던 글이 사라진다 — 이 경로는 애초에 실패 안내가 아니라 "다음
+            // 재연결을 기다리는 정상 큐잉 상태"다.
+            _lastFailed = null;
           } else {
             setState(() {
               _error = message;
@@ -520,6 +563,9 @@ class ChatRoomScreenState extends ConsumerState<ChatRoomScreen> {
       print('[chat/room] 메시지 전송 예외: $e');
       if (clientMessageId != null && _landedKeys.contains(clientMessageId)) {
         _removePendingById(clientMessageId);
+        _lastFailed = null;
+      } else if (_disconnected) {
+        // 위 SendMessageFailure 분기와 동일 이유(코드리뷰 patch 3) — 예외 경로도 같게 다룬다.
         _lastFailed = null;
       } else {
         setState(() {

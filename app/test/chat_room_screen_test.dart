@@ -10,6 +10,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// StateProvider는 riverpod 3에서 "legacy" API로 분리돼 기본 barrel엔 없다(app_router_test.dart와
+// 동일 이유) — 세션 중 사용자가 null로 바뀌는(P4 시나리오) mutable 테스트 상태로만 쓴다.
+import 'package:flutter_riverpod/legacy.dart' show StateProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -136,6 +139,36 @@ Widget _harness({
   );
 }
 
+/// 세션 중 사용자가 null로 바뀌는(예: 로그아웃) 시나리오 전용 harness — `_myId`가 `ref.read`로
+/// 즉시 읽히므로(§12.4 Design Notes — Dart는 ref 미러링이 필요 없다), 이 provider의 state를
+/// 바꾸면 다음 `_flushQueue()` 호출부터 바로 반영된다(코드리뷰 patch 4 테스트용).
+final _mutableUserProvider = StateProvider<User?>((ref) => null);
+
+Widget _harnessMutableUser({
+  required User? initialUser,
+  required ChatRepository repo,
+  required _CapturedRealtime captured,
+}) {
+  return ProviderScope(
+    overrides: [
+      _mutableUserProvider.overrideWith((ref) => initialUser),
+      currentUserProvider.overrideWith((ref) => ref.watch(_mutableUserProvider)),
+      chatRepositoryProvider.overrideWithValue(repo),
+    ],
+    child: MaterialApp(
+      home: ChatRoomScreen(
+        roomId: 'room-1',
+        subscribeOverride: ({required roomId, required onInsert, required onStatus}) {
+          captured.onInsert = onInsert;
+          captured.onStatus = onStatus;
+          return Object();
+        },
+        unsubscribeOverride: (_) {},
+      ),
+    ),
+  );
+}
+
 void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -210,6 +243,35 @@ void main() {
 
       expect(find.byKey(const Key('chat_error')), findsOneWidget);
       expect(find.text('실패할 메시지'), findsOneWidget, reason: '입력창이 비어있었으므로 복원된다');
+
+      // 코드리뷰 patch 13 — `_lastFailed = FailedSend(...)` 대입(화면 배선)이 실제로 쓰이는지는
+      // 이때까지 어떤 테스트도 안 봤다(순수함수 reuseFailedKey 자체는 chat_repository_test.dart가
+      // 이미 본다). 이 대입들을 지워도 그 단위테스트는 여전히 green이었다 — 실제 결과는 재시도가
+      // 항상 새 키를 만들어 DB의 UNIQUE(room_id, client_message_id) 가드를 그냥 우회하고, 같은
+      // 메시지가 중복 행으로 남는 것이다. 같은 본문으로 다시 보내면 같은 키가 재사용되는지 여기서
+      // 직접 확인한다.
+      final firstClientMessageId = repo.sendCalls.single['clientMessageId'];
+      await tester.tap(find.byKey(const Key('chat_send')));
+      await tester.pumpAndSettle();
+
+      expect(repo.sendCalls.length, 2);
+      expect(
+        repo.sendCalls[1]['clientMessageId'],
+        firstClientMessageId,
+        reason: '같은 본문으로 재시도하면 직전 실패의 client_message_id를 재사용해야 한다(§12.4)',
+      );
+
+      // 본문이 다르면 옛 키를 재사용하면 안 된다(엉뚱한 메시지가 옛 메시지로 오인된다).
+      await tester.enterText(find.byKey(const Key('chat_input')), '다른 메시지');
+      await tester.tap(find.byKey(const Key('chat_send')));
+      await tester.pumpAndSettle();
+
+      expect(repo.sendCalls.length, 3);
+      expect(
+        repo.sendCalls[2]['clientMessageId'],
+        isNot(firstClientMessageId),
+        reason: '본문이 다르면 새 client_message_id를 만들어야 한다',
+      );
     });
   });
 
@@ -253,6 +315,63 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.markRoomReadCalls, isEmpty);
+    });
+  });
+
+  group('subscribeOverride 없이 실 세션도 없으면 안내를 남긴다(코드리뷰 patch 5)', () {
+    testWidgets('구독을 시도조차 못 하면 조용히 죽지 않고 chat_realtime_error 안내가 뜬다', (
+      tester,
+    ) async {
+      final repo = _FakeChatRepository();
+      // captured를 안 주면 _harness가 subscribeOverride를 null로 둔다 — 이 테스트 환경엔 실
+      // Supabase 세션이 없으므로(setUpAll이 로그인은 하지 않는다) `_subscribeRealtime()`의
+      // "subscribeFn == null && currentSession == null" 분기를 그대로 태운다. 폴링이 없는 이
+      // 화면이 아무 안내 없이 "겉보기엔 멀쩡한데 평생 아무것도 못 받는" 상태가 되면 안 된다.
+      await tester.pumpWidget(_harness(user: _fakeUser(_buyerId), repo: repo));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('chat_realtime_error')),
+        findsOneWidget,
+        reason: '채널도 없고 안내도 없으면 사용자는 방이 정상인 줄 알고 계속 기다리게 된다',
+      );
+    });
+  });
+
+  group('subscribed 도달 시 _realtimeError를 무조건 지운다(코드리뷰 patch 6)', () {
+    testWidgets(
+        'closed로 빨간 안내가 세워진 뒤 channelError→subscribed(재연결)로 와도 그 안내가 지워진다', (
+      tester,
+    ) async {
+      final captured = _CapturedRealtime();
+      final repo = _FakeChatRepository();
+      await tester.pumpWidget(_harness(user: _fakeUser(_buyerId), repo: repo, captured: captured));
+      await tester.pumpAndSettle();
+
+      // closed 분기가 빨간 _realtimeError를 세운다(12.3 이래의 기존 분기).
+      captured.onStatus!(RealtimeSubscribeStatus.closed, null);
+      await tester.pump();
+      expect(find.byKey(const Key('chat_realtime_error')), findsOneWidget);
+
+      // 끊겼다(channelError, _everDropped=true) → 재연결(subscribed)까지 온다. 예전 코드는
+      // subscribed의 "재연결(_everDropped)" 분기에서 _realtimeError를 안 지웠으므로, 빨간
+      // "실시간 연결이 끊겼습니다" 문구가 초록 "다시 연결됐어요" 배너 위에 영구히 남았다.
+      captured.onStatus!(RealtimeSubscribeStatus.channelError, null);
+      await tester.pump();
+      captured.onStatus!(RealtimeSubscribeStatus.subscribed, null);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('chat_realtime_error')),
+        findsNothing,
+        reason: 'subscribed에 닿았다는 것 자체가 지금은 연결돼 있다는 뜻이므로, 재연결 분기든 '
+            '최초 구독 분기든 상관없이 지워야 한다',
+      );
+      expect(
+        find.byKey(const Key('chat_reconnected_banner')),
+        findsOneWidget,
+        reason: '재연결 배너도 정상적으로 함께 떠야 한다(이 패치가 그 배선을 건드리지 않았다는 확인)',
+      );
     });
   });
 
@@ -333,13 +452,20 @@ void main() {
       await tester.pumpWidget(_harness(user: _fakeUser(_buyerId), repo: repo, captured: captured));
       await tester.pumpAndSettle();
 
+      // 실제 realtime_client onBroadcast 콜백은 innerPayload가 아니라 전체 broadcast envelope를
+      // 넘긴다(코드리뷰 patch 1, extractBroadcastRecord 주석 참조) — 위젯테스트도 그 실제 모양을
+      // 그대로 흉내 낸다(테스트가 결함을 가리지 않도록).
       captured.onInsert!({
-        'record': {
-          'id': 'broadcast-1',
-          'room_id': 'room-1',
-          'sender_id': _sellerId,
-          'body': '실시간으로 온 메시지',
-          'created_at': '2026-08-08T00:00:01+00:00',
+        'type': 'broadcast',
+        'event': 'INSERT',
+        'payload': {
+          'record': {
+            'id': 'broadcast-1',
+            'room_id': 'room-1',
+            'sender_id': _sellerId,
+            'body': '실시간으로 온 메시지',
+            'created_at': '2026-08-08T00:00:01+00:00',
+          },
         },
       });
       await tester.pump();
@@ -386,14 +512,19 @@ void main() {
       final clientMessageIdB = repo.sendCalls.firstWhere((c) => c['body'] == 'B')['clientMessageId']!;
 
       // 이제 그 실패했던 메시지의 브로드캐스트 에코가 뒤늦게 도착한다(서버엔 이미 저장돼 있었다).
+      // 실제 envelope 모양(전체 broadcast envelope, innerPayload가 아니다)을 그대로 흉내 낸다.
       captured.onInsert!({
-        'record': {
-          'id': 'broadcast-b',
-          'room_id': 'room-1',
-          'sender_id': _buyerId,
-          'body': 'B',
-          'created_at': '2026-08-08T00:00:02+00:00',
-          'client_message_id': clientMessageIdB,
+        'type': 'broadcast',
+        'event': 'INSERT',
+        'payload': {
+          'record': {
+            'id': 'broadcast-b',
+            'room_id': 'room-1',
+            'sender_id': _buyerId,
+            'body': 'B',
+            'created_at': '2026-08-08T00:00:02+00:00',
+            'client_message_id': clientMessageIdB,
+          },
         },
       });
       await tester.pump();
@@ -517,6 +648,155 @@ void main() {
             '자기가 세운 안내만 거둔다(§12.5) — 갭보정 실패로 세운 안내는 그 다음 갭보정이 '
             '성공해야 지워진다. 다른 무관한 성공(예: flush)으로는 안 지워져야 하고, 실제로 '
             '그 다음 갭보정이 성공했으니 지금은 지워져야 한다',
+      );
+    });
+  });
+
+  group('온라인 전송 응답 대기 중 끊김 → 실패해도 pending을 지우지 않고 큐로 넘긴다(코드리뷰 patch 3)', () {
+    testWidgets(
+        '전송 응답을 기다리는 동안 channelError → 뒤늦게 실패 응답 → pending이 그대로 남고, '
+        '재연결 시 같은 clientMessageId로 재시도돼 성공한다', (tester) async {
+      final gate = Completer<SendMessageResult>();
+      var callCount = 0;
+      final repo = _FakeChatRepository(
+        sendMessageImpl: (body, clientMessageId) {
+          callCount++;
+          // 1번째 호출(온라인 경로) — 끊기기 전에 이미 나간 요청이라 gate가 풀릴 때까지 대기.
+          if (callCount == 1) return gate.future;
+          // 2번째 호출(재연결 flush) — 이번엔 성공.
+          return Future.value(
+            SendMessageSuccess(_msg('flushed-1', _buyerId, body, clientMessageId: clientMessageId)),
+          );
+        },
+      );
+      final captured = _CapturedRealtime();
+      await tester.pumpWidget(_harness(user: _fakeUser(_buyerId), repo: repo, captured: captured));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const Key('chat_input')), '전송 중 끊긴 메시지');
+      await tester.tap(find.byKey(const Key('chat_send')));
+      await tester.pump(); // pending 버블은 응답을 기다리지 않고 즉시 뜬다.
+
+      expect(repo.sendCalls.length, 1);
+      final clientMessageId = repo.sendCalls.single['clientMessageId']!;
+      expect(find.byKey(Key('pending_$clientMessageId')), findsOneWidget);
+
+      // 응답을 기다리는 도중 연결이 끊긴다 — §12.5 Always: 끊긴 동안에도 입력·전송은 잠기지
+      // 않는다(연타 가드는 온라인 경로 전용). 이 순서(전송 → 응답 대기 중 끊김)가 바로 이
+      // 결함이 실제로 일어나는 자리다.
+      captured.onStatus!(RealtimeSubscribeStatus.channelError, null);
+      await tester.pump();
+
+      // 뒤늦게 실패 응답이 도착한다(예: 요청은 이미 나갔는데 응답 왕복 중 끊긴 경우).
+      gate.complete(const SendMessageFailure('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(Key('pending_$clientMessageId')),
+        findsOneWidget,
+        reason:
+            '끊긴 채로 실패했으니 pending을 지우면 안 된다 — 지우고 아무 데도 안 남기면 사용자가 '
+            '화면에서 본 메시지가 조용히 사라진다(재큐잉 없이 드롭됨)',
+      );
+      expect(
+        find.byKey(const Key('chat_error')),
+        findsNothing,
+        reason: '끊긴 채로 실패한 건 "에러"가 아니라 "다음 재연결을 기다리는 정상 큐잉 상태"다',
+      );
+
+      // 재연결 — flush가 같은 clientMessageId로 재시도한다.
+      captured.onStatus!(RealtimeSubscribeStatus.subscribed, null);
+      await tester.pumpAndSettle();
+
+      expect(callCount, 2, reason: '재연결 flush가 실제로 재시도해야 한다');
+      expect(
+        repo.sendCalls.last['clientMessageId'],
+        clientMessageId,
+        reason: '새 키를 만들지 않고 기존 clientMessageId를 재사용해야 한다(§12.5 — 새 키면 '
+            'UNIQUE(room_id, client_message_id) 가드를 우회해 중복 행이 생길 수 있다)',
+      );
+      expect(find.byKey(Key('pending_$clientMessageId')), findsNothing, reason: '재시도가 성공해 확정됐다');
+      expect(find.byKey(const Key('msg_flushed-1')), findsOneWidget);
+    });
+
+    testWidgets('입력창이 비어있지 않아도(다음 메시지를 타이핑 중이어도) 그 글이 안 사라진다', (tester) async {
+      // §12.5 후속 리뷰 정정("입력창이 비어있을 때만 복원")을 이 실패 경로에서도 지킨다는
+      // 것을 직접 확인한다 — 끊긴 채 실패한 온라인 전송이 입력창을 건드리면(옛 본문을 억지로
+      // 채우면) 사용자가 그 사이 입력해 둔 다음 메시지가 사라진다.
+      final gate = Completer<SendMessageResult>();
+      final repo = _FakeChatRepository(sendMessageImpl: (body, clientMessageId) => gate.future);
+      final captured = _CapturedRealtime();
+      await tester.pumpWidget(_harness(user: _fakeUser(_buyerId), repo: repo, captured: captured));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byKey(const Key('chat_input')), '첫 메시지');
+      await tester.tap(find.byKey(const Key('chat_send')));
+      await tester.pump();
+
+      captured.onStatus!(RealtimeSubscribeStatus.channelError, null);
+      await tester.pump();
+
+      // 끊긴 동안엔 입력창이 잠기지 않으므로 사용자가 다음 글을 타이핑해 둔다.
+      await tester.enterText(find.byKey(const Key('chat_input')), '타이핑 중인 다음 메시지');
+      await tester.pump();
+
+      gate.complete(const SendMessageFailure('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('타이핑 중인 다음 메시지'),
+        findsOneWidget,
+        reason: '입력창이 비어있지 않았으므로 실패한 첫 메시지의 본문으로 덮어써지면 안 된다',
+      );
+    });
+  });
+
+  group('_flushQueue — myId == null이면 bail-out한다(코드리뷰 patch 4)', () {
+    // `_send()`는 myId == null이면 애초에 시도조차 하지 않는데, `_flushQueue()`는 같은 전제를
+    // 공유하지 않고 `senderId: _myId ?? ''`로 빈 문자열을 실어 보냈다 — 두 경로가 같은 전제를
+    // 다르게 다루면, RLS가 빈 sender_id를 거부하는 게 일반 네트워크 오류처럼 보인다. 이 테스트는
+    // 재연결 시점에 세션이 이미 없는(로그아웃된) 상태를 만들어 flush가 네트워크를 아예 안 타고
+    // 큐를 그대로 남기는지 확인한다.
+    testWidgets('재연결 시점에 myId가 null이면 sendMessage를 호출하지 않고 큐를 그대로 남긴다', (
+      tester,
+    ) async {
+      final repo = _FakeChatRepository();
+      final captured = _CapturedRealtime();
+      await tester.pumpWidget(
+        _harnessMutableUser(initialUser: _fakeUser(_buyerId), repo: repo, captured: captured),
+      );
+      await tester.pumpAndSettle();
+
+      // 끊긴 동안 큐에 적재.
+      captured.onStatus!(RealtimeSubscribeStatus.channelError, null);
+      await tester.pump();
+      await tester.enterText(find.byKey(const Key('chat_input')), '세션 없이 재연결됨');
+      await tester.tap(find.byKey(const Key('chat_send')));
+      await tester.pump();
+      expect(repo.sendCalls, isEmpty);
+
+      // 재연결 직전 세션이 사라진다(예: 다른 탭에서 로그아웃).
+      final element = tester.element(find.byType(ChatRoomScreen));
+      ProviderScope.containerOf(element).read(_mutableUserProvider.notifier).state = null;
+
+      captured.onStatus!(RealtimeSubscribeStatus.subscribed, null);
+      await tester.pumpAndSettle();
+
+      expect(
+        repo.sendCalls,
+        isEmpty,
+        reason: 'myId가 없으면 네트워크를 아예 타면 안 된다(빈 sender_id로 나가면 RLS가 일반 '
+            '오류처럼 거부한다) — _send()와 같은 전제를 공유해야 한다',
+      );
+      expect(
+        find.byKey(const Key('chat_queue_stuck_notice')),
+        findsOneWidget,
+        reason: '큐가 안 비워졌으니 기존 "일부 실패" 안내를 그대로 재사용해 사용자에게 알려야 한다',
+      );
+      expect(
+        find.text('세션 없이 재연결됨'),
+        findsOneWidget,
+        reason: 'pending 버블이 그대로 남아 있어야 한다(드롭되지 않음)',
       );
     });
   });

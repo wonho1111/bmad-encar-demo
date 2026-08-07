@@ -1274,6 +1274,12 @@ void main() {
         final authEvents = StreamController<AuthState>.broadcast();
         addTearDown(authEvents.close);
 
+        // 코드리뷰 patch 1(spec-16-4)이 appRouterProvider의 ref.listen(authStateProvider, ...)에
+        // 추가한 ref.invalidate(chatUnreadTotalProvider) 배선을 이 테스트가 실제로 세되, 지금까지는
+        // authEvents가 실제로 흘렀는지(redirect 재평가)만 봤지 그 배선 자체가 재조회를 일으키는지는
+        // 아무도 세지 않았다(코드리뷰 patch 11) — `ref.invalidate(...)`를 통째로 지워도 이 테스트는
+        // 계속 green이었다는 뜻이다. 카운팅 override로 직접 확인한다.
+        var totalFetchCount = 0;
         final container = ProviderContainer(
           overrides: [
             // currentUserProvider를 고정값이 아니라 이 provider를 watch하는 형태로 오버라이드해야
@@ -1288,7 +1294,11 @@ void main() {
             authControllerProvider.overrideWith(
               () => _FakeAuthController(authEvents),
             ),
-            ..._chatUnreadDefaults(),
+            chatUnreadTotalProvider.overrideWith((ref) async {
+              totalFetchCount++;
+              return 0;
+            }),
+            chatUnreadByRoomProvider.overrideWith((ref) async => const <String, int>{}),
             _recentListings(const []),
           ],
         );
@@ -1314,6 +1324,7 @@ void main() {
           findsOneWidget,
           reason: '로그아웃 전엔 홈 셸이 보여야 이후 전환 확인이 의미가 있다',
         );
+        expect(totalFetchCount, 1, reason: '셸의 내비 배지가 항상 watch하므로 로그아웃 전에도 1회 조회된다');
 
         await tester.tap(find.byKey(const Key('profile_avatar')));
         await tester.pumpAndSettle();
@@ -1329,6 +1340,15 @@ void main() {
               '머물렀을 것이다 — 이 단언이 통과한다는 것은 ref.listen 브리지가 실제로 '
               '작동했다는 뜻이다(스텁이 아니라 리액티브 경로 자체를 태움)',
         );
+        expect(
+          totalFetchCount,
+          2,
+          reason:
+              'ref.listen(authStateProvider)이 chatUnreadTotalProvider도 invalidate해야 '
+              '한다(코드리뷰 patch 1) — 계정 A 로그아웃 → 계정 B 로그인까지 채팅 탭을 한 번도 '
+              '안 눌러도 A의 안읽음 숫자가 안 남게 하는 배선이다. 늘지 않으면 이 배선이 없거나 '
+              '지워진 것이다',
+        );
       },
     );
 
@@ -1343,13 +1363,22 @@ void main() {
       final authEvents = StreamController<AuthState>.broadcast();
       addTearDown(authEvents.close);
 
+      // 위 로그아웃 테스트와 같은 이유(코드리뷰 patch 11) — 로그인 방향도
+      // ref.listen(authStateProvider)이 chatUnreadTotalProvider를 invalidate하는지 카운팅으로
+      // 직접 확인한다(계정 B 로그인 시점에 계정 A의 안읽음 숫자가 안 남으려면 이 방향도 돌아야
+      // 한다 — 로그아웃 방향만 세면 로그인 방향 배선이 빠져도 안 잡힌다).
+      var totalFetchCount = 0;
       final container = ProviderContainer(
         overrides: [
           currentUserProvider.overrideWith(
             (ref) => ref.watch(_fakeUserProvider),
           ),
           authStateProvider.overrideWith((ref) => authEvents.stream),
-          ..._chatUnreadDefaults(),
+          chatUnreadTotalProvider.overrideWith((ref) async {
+            totalFetchCount++;
+            return 0;
+          }),
+          chatUnreadByRoomProvider.overrideWith((ref) async => const <String, int>{}),
           _recentListings(const []),
         ],
       );
@@ -1360,11 +1389,30 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: Consumer(
-            builder: (context, ref, _) {
-              final router = ref.watch(appRouterProvider);
-              return MaterialApp.router(routerConfig: router);
-            },
+          // 로그인 전엔 /login 화면이라 셸(_ChatTabIcon)이 아직 없어 chatUnreadTotalProvider를
+          // 아무도 watch하지 않는다 — non-autoDispose라도 한 번도 안 읽힌 provider를
+          // invalidate()하면 아무 일도 안 일어난다(만들 상태 자체가 없다). 그래서 이 로그인
+          // 방향 재조회를 실제로 관찰하려면 로그인 **전부터** 누군가 이 provider를 계속
+          // watch하고 있어야 한다 — 실제 앱에서는 "이미 한 번 로그인했던 세션에서 로그아웃한
+          // 뒤 다시 로그인"이 이 조건과 같다. 아래 Consumer가 그 "이미 watch 중" 상태를 흉내
+          // 낸다(chat_list_screen_test.dart의 동일 기법).
+          child: Column(
+            children: [
+              Consumer(
+                builder: (context, ref, _) {
+                  ref.watch(chatUnreadTotalProvider);
+                  return const SizedBox.shrink();
+                },
+              ),
+              Expanded(
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final router = ref.watch(appRouterProvider);
+                    return MaterialApp.router(routerConfig: router);
+                  },
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -1373,6 +1421,11 @@ void main() {
         find.byKey(const Key('login_email')),
         findsOneWidget,
         reason: '로그인 전엔 /login에 있어야 이후 전환 확인이 의미가 있다',
+      );
+      expect(
+        totalFetchCount,
+        1,
+        reason: '위 Consumer가 처음부터 watch하므로 로그인 전에 이미 1회 조회돼 있다',
       );
 
       // 로그인 성공을 흉내 낸다 — currentUser를 채우고 인증 스트림에 signedIn을 흘린다.
@@ -1386,6 +1439,11 @@ void main() {
         reason:
             'currentUser가 채워지고 refreshListenable이 알림을 받으면 redirect가 '
             '재평가돼 인증 라우트(/login)에서 /home으로 밀려나야 한다',
+      );
+      expect(
+        totalFetchCount,
+        2,
+        reason: '로그인 이벤트에서도 chatUnreadTotalProvider가 재조회돼야 한다(코드리뷰 patch 11)',
       );
     });
   });

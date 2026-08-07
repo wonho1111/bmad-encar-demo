@@ -142,13 +142,24 @@ class _RoomTile extends StatelessWidget {
         // onDestinationSelected)만 무효화를 걸어뒀더니, 실제로 가장 흔한 경로인 "채팅 탭 →
         // 방 열기 → 뒤로가기"는 안 잡혀 읽지 않음 카운터·최근 메시지가 방을 나와도 갱신되지
         // 않았다(review, spec-16-1 P2).
+        //
+        // chatUnreadByRoomProvider(목록 배지)·chatUnreadTotalProvider(내비 배지)도 함께
+        // 무효화한다(Story 16.4 코드리뷰 patch 2) — 위 spec-16-1 P2가 고친 건 chatRoomsProvider
+        // 뿐이었는데, 이 스토리가 새로 추가한 두 안읽음 provider는 같은 pop-back 경로에서
+        // 다시 그 버그 클래스를 물려받았다: 방에서 markRoomRead가 끝나고 돌아와도 이미 채팅
+        // 탭에 있으므로 app_router.dart의 탭 onActivate(재진입 트리거)가 다시 안 불려 배지가
+        // 그대로 남는다(§12.6 "다음 진입 시점에 그만큼 줄어든다" 위반).
         onTap: () => Navigator.of(context, rootNavigator: true)
             .push(
               MaterialPageRoute(
                 builder: (_) => ChatRoomScreen(roomId: room.id),
               ),
             )
-            .then((_) => ref.invalidate(chatRoomsProvider)),
+            .then((_) {
+              ref.invalidate(chatRoomsProvider);
+              ref.invalidate(chatUnreadByRoomProvider);
+              ref.invalidate(chatUnreadTotalProvider);
+            }),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -166,6 +177,8 @@ class _RoomTile extends StatelessWidget {
                             children: [
                               Text(
                                 '[${l.manufacturer}] ${l.model} · ${l.year}년',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.inkPrimary,

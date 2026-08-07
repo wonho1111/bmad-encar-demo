@@ -483,6 +483,18 @@ CI에서 매 push마다 돈다. 값을 바꿀 땐 네 곳을 함께 고치고, �
   회전되는 동안 구독이 만료된 토큰으로 굳지 않게 한다. (참고: `@supabase/supabase-js` 클라이언트
   자체도 `TOKEN_REFRESHED`/`SIGNED_IN`에서 내부적으로 비슷한 재동기화를 하지만, 초기 로드 시점의
   최초 `setAuth`는 이 규칙이 명시적으로 책임진다 — 내부 동작에 기대지 않는다.)
+  - ✎ **Dart 예외(Epic 16.4 코드리뷰, 실측)**: 위 두 규칙(구독 전 수동 `setAuth` + `onAuthStateChange`
+    마다 재호출)은 web(`@supabase/supabase-js`)에 대한 것이다 — 그 클라이언트는 이 재동기화를
+    보장하지 않으므로 수동 배선이 필요하다. Dart `realtime_client-2.8.0`
+    (`~/.pub-cache/hosted/pub.dev/realtime_client-2.8.0/lib/src/realtime_channel.dart:165-190`,
+    실측 확인)은 사정이 다르다 — 채널이 매 join/rejoin마다 `socket.accessToken`(항상 최신 세션
+    토큰)을 join payload에 실어 보내고, 응답 후 `socket.setAuth(socket.accessToken)`을
+    **라이브러리가 자동으로** 호출한다. 그래서 앱(`app/lib/features/chat/chat_room_screen.dart`)은
+    구독 전 수동 `setAuth`도, `onAuthStateChange → setAuth` 재호출도 어느 쪽도 부르지 않는다
+    (스펙 spec-16-4 Never 절 — 검증 없이 "당연히 이식"하면 없어도 될 상태 배선이 하나 늘어난다).
+    "내부 동작에 기대지 않는다"는 위 web 규칙과 모순되지 않는다 — web은 라이브러리가 그 보장을
+    안 하니 수동 배선으로 명시 책임지는 것이고, Dart는 라이브러리 자신이 그 재인증을 실측으로
+    보장하므로 그 계약에 기대는 것이지 "확인 안 하고 넘겨짚는 것"이 아니다.
 
 ### 12.3 payload 파싱 규칙
 

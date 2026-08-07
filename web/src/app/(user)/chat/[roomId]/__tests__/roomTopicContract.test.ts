@@ -197,6 +197,15 @@ describe('채팅 실시간 토픽 계약 — SQL·TS·Python 세 사본이 같�
     const on = source.match(/channel\.on\(\s*'broadcast',\s*\{\s*event:\s*'([^']*)'/);
     expect(on, "channel.on('broadcast', { event: ... }) 구독을 찾지 못했습니다").not.toBeNull();
     expect(on![1]).toBe('INSERT');
+
+    // app(Flutter)도 같은 축이다(Epic 16.4 코드리뷰 patch 9) — Dart 쪽엔 이 교차검사가 전혀
+    // 없었다. `channel.onBroadcast(event: 'INSERT', ...)`의 'INSERT' 리터럴이 위에서 이미 확인한
+    // SQL(AFTER INSERT 전용 → tg_op은 항상 'INSERT')과 어긋나면, 방송은 계속 나가는데 Dart
+    // 구독만 그 이벤트를 걸러내 조용히 0건 수신이 된다.
+    const dartSource = stripDartLineComments(readFileSync(DART_ROOM_SCREEN, 'utf8'));
+    const dartOn = dartSource.match(/channel\.onBroadcast\(\s*event:\s*'([^']*)'/);
+    expect(dartOn, "channel.onBroadcast(event: ...) 구독을 찾지 못했습니다").not.toBeNull();
+    expect(dartOn![1]).toBe('INSERT');
   });
 
   it('api 실DB 통합테스트의 _TOPIC_PREFIX가 SQL과 같다', () => {
@@ -230,8 +239,20 @@ describe('채팅 실시간 토픽 계약 — SQL·TS·Python 세 사본이 같�
     // 적어뒀어서, 주석을 안 걷으면 실제 코드가 망가져도(roomTopic(roomId)이 빠져도) 주석
     // 문자열에 매치돼 green이 나온다(위 stripDartLineComments 주석 참조, 실측).
     const source = stripDartLineComments(readFileSync(DART_ROOM_SCREEN, 'utf8'));
+    // private:true 앵커는 그대로 유지하고, 같은 RealtimeChannelConfig(...) 호출 안에 갭보정의
+    // Broadcast Replay(§12.5)까지 이어져 있는지 함께 본다(코드리뷰 patch 9) — 이전엔
+    // private:true까지만 앵커돼 있어서, `replay: ReplayOption(...)` 전체를 지워도(갭보정 두
+    // 경로 중 하나가 통째로 사라져도) 이 검사는 계속 green이었다(web의 동일 결함을 고친
+    // "채널 생성 호출에 앵커한다" 원칙을 Dart 쪽에도 적용).
     expect(source).toMatch(
-      /supabase\.channel\(\s*roomTopic\(roomId\)\s*,\s*opts:\s*RealtimeChannelConfig\(\s*private:\s*true\b/,
+      /supabase\.channel\(\s*roomTopic\(roomId\)\s*,\s*opts:\s*RealtimeChannelConfig\(\s*private:\s*true\b[^)]*replay:\s*ReplayOption\(\s*since:/,
     );
+
+    // 채널을 private+replay로 열어놓기만 하고 정작 아무 이벤트도 안 구독하거나(onBroadcast 삭제)
+    // subscribe() 자체를 안 부르면(채널이 join되지 않아 위 config 전체가 무의미해진다) 방은
+    // 여전히 죽는다 — 이 두 실제 배선 호출도 함께 고정한다(코드리뷰 patch 9, 이전엔 이 두 호출을
+    // 확인하는 검사가 전혀 없었다).
+    expect(source).toMatch(/channel\.onBroadcast\(\s*event:\s*'INSERT'\s*,\s*callback:\s*onInsert\s*\)/);
+    expect(source).toMatch(/channel\.subscribe\(onStatus\)/);
   });
 });

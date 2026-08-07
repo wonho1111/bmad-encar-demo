@@ -1,14 +1,192 @@
 // Story 16.4 채팅 레포지토리 순수 함수 단위테스트 — roomTopic 형식·reuseFailedKey 4분기·
 // flushChatMessageQueue(전부성공/부분실패시 순서·remaining 보존/예외를 실패로 흡수)·
 // isIdempotentResendMatch(멱등 재전송 23505 후 재조회한 기존 행이 내 전송인지 판정, 3분기)·
-// parseUnreadByRoomRows(chat_unread_by_room() RPC 응답 매핑, 코드리뷰 patch 6).
-// web messages.test.ts(reuseFailedKey·flushMessageQueue)와 동일한 시나리오를 Dart로 미러링한다
-// (docs/conventions.md §12.4·§12.5).
+// parseUnreadByRoomRows(chat_unread_by_room() RPC 응답 매핑, 코드리뷰 patch 6)·
+// markRoomRead 실제 upsert 배선(코드리뷰 patch 12, 가짜 httpClient로 실 SupabaseClient 구동).
+// web messages.test.ts(reuseFailedKey·flushMessageQueue)·chat.test.ts(markChatRoomRead)와 동일한
+// 시나리오를 Dart로 미러링한다(docs/conventions.md §12.4·§12.5·§12.6).
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:app/features/chat/chat_models.dart';
 import 'package:app/features/chat/chat_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart' show SupabaseClient;
+
+/// `SupabaseClient(..., httpClient: ...)`에 주입할 가짜 HTTP 클라이언트 — 실제 네트워크를 타지
+/// 않고 나간 요청(메서드·URL·헤더·본문)을 그대로 캡처한다. web `chat.test.ts`가 `vi.fn()`으로
+/// `.from().upsert()`를 통째로 목킹하는 것과 같은 목적을 Dart 쪽 실제 주입 지점으로 이룬다
+/// (mockito/mocktail 등 새 패키지 없이 `package:http`의 `BaseClient`만으로 충분 — A2).
+class _CapturedRequest {
+  _CapturedRequest({
+    required this.method,
+    required this.url,
+    required this.headers,
+    required this.body,
+  });
+
+  final String method;
+  final Uri url;
+  final Map<String, String> headers;
+  final String body;
+}
+
+class _FakeHttpClient extends http.BaseClient {
+  // 두 테스트 모두 성공 응답(201, 빈 본문)만 필요해 커스터마이즈 지점을 두지 않는다(A2) —
+  // 실패 응답 시나리오가 필요해지면 그때 매개변수화한다.
+  static const int _statusCode = 201;
+  static const String _responseBody = '';
+
+  final List<_CapturedRequest> requests = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    var body = '';
+    if (request is http.Request) body = request.body;
+    requests.add(
+      _CapturedRequest(
+        method: request.method,
+        url: request.url,
+        headers: Map<String, String>.from(request.headers),
+        body: body,
+      ),
+    );
+    final bytes = utf8.encode(_responseBody);
+    return http.StreamedResponse(
+      Stream.value(bytes),
+      _statusCode,
+      request: request,
+      headers: {'content-length': '${bytes.length}'},
+    );
+  }
+}
+
+/// 로그인 세션을 네트워크 없이 주입한다 — `markRoomRead`가 `_client.auth.currentUser?.id`를
+/// 읽으므로 세션이 있어야 upsert까지 도달한다. `access_token`이 진짜 JWT가 아니어도 무방하다:
+/// `gotrue-2.22.0`의 `Session._expiresAt`는 JWT 파싱이 실패하면(FormatException) null을 반환하고
+/// `isExpired`는 `expiresAt == null`이면 false로 본다(실측 확인) — 그래서 `recoverSession`이
+/// "만료 안 됨" 분기로 들어가 네트워크 재발급 없이 세션을 즉시 저장한다.
+Future<void> _signIn(SupabaseClient client, String userId) => client.auth.recoverSession(
+  jsonEncode({
+    'access_token': 'not-a-real-jwt',
+    'token_type': 'bearer',
+    'refresh_token': 'refresh-token',
+    'expires_in': 3600,
+    'user': {
+      'id': userId,
+      'aud': 'authenticated',
+      'app_metadata': <String, dynamic>{},
+      'created_at': '2026-01-01T00:00:00Z',
+    },
+  }),
+);
 
 void main() {
+  group('markRoomRead — 실제 upsert 배선(FR57/§12.6, 코드리뷰 patch 12)', () {
+    // markRoomRead()는 실 네트워크 호출 메서드라 위젯테스트가 지금까지 ChatRepository를 통째로
+    // 가짜로 갈아 끼워 검증해 왔다(chat_room_screen_test.dart의 _FakeChatRepository) — 그래서
+    // upsert의 실제 인자(테이블명·(user_id, room_id) 복합키·onConflict 문자열)는 어떤 테스트로도
+    // 실행되지 않았다. web은 이 정확히 같은 문제를 가짜 SupabaseClient(`chat.test.ts`)로 잡는다
+    // — `ChatRepository`의 생성자가 이미 `SupabaseClient? client`를 받으므로, `SupabaseClient`
+    // 자체가 지원하는 `httpClient` 주입 지점으로 같은 효과를 낸다(새 mock 패키지 불필요, A2).
+    test('chat_room_reads에 (user_id, room_id) 복합키로 upsert하고 onConflict를 싣는다', () async {
+      final fakeHttp = _FakeHttpClient();
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-anon-key-not-real',
+        httpClient: fakeHttp,
+      );
+      addTearDown(client.dispose);
+      await _signIn(client, 'user-1');
+
+      final repo = ChatRepository(client: client);
+      await repo.markRoomRead('room-1');
+
+      expect(fakeHttp.requests, hasLength(1));
+      final req = fakeHttp.requests.single;
+      expect(req.method, 'POST');
+      expect(req.url.path, endsWith('/rest/v1/chat_room_reads'));
+      expect(
+        req.url.queryParameters['on_conflict'],
+        'user_id,room_id',
+        reason: '복합 PK(user_id, room_id) 위에서 UPSERT가 성립하려면 이 충돌 대상이 필요하다',
+      );
+      expect(req.headers['Prefer'], contains('resolution=merge-duplicates'));
+
+      final body = jsonDecode(req.body) as Map<String, dynamic>;
+      expect(body['user_id'], 'user-1');
+      expect(body['room_id'], 'room-1');
+      expect(body['last_read_at'], isA<String>());
+      expect(
+        () => DateTime.parse(body['last_read_at'] as String),
+        returnsNormally,
+        reason: 'last_read_at은 파싱 가능한 ISO 문자열이어야 한다',
+      );
+    });
+
+    test('로그인 세션이 없으면(currentUser == null) upsert를 아예 시도하지 않는다', () async {
+      final fakeHttp = _FakeHttpClient();
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-anon-key-not-real',
+        httpClient: fakeHttp,
+      );
+      addTearDown(client.dispose);
+      // _signIn을 호출하지 않는다 — currentUser가 null인 상태 그대로.
+
+      final repo = ChatRepository(client: client);
+      await repo.markRoomRead('room-1');
+
+      expect(fakeHttp.requests, isEmpty, reason: '보낼 사람이 없으면 네트워크를 아예 타면 안 된다');
+    });
+  });
+
+  group('fetchRooms 정렬 배선(FR57/§12.6, 코드리뷰 patch 10) — 소스 정적 스캔', () {
+    // fetchRooms()는 실 네트워크 호출 메서드라 이 레포 관례상(다른 레포지토리 테스트들과 동일 —
+    // wishlist_repository_test.dart 헤더 참조) 위젯/유닛 테스트로 실행하지 않는다 — 오직
+    // ChatRoomSummary.fromMap 파싱만 chat_model_test.dart가 본다. 그래서 `.order('last_message_at', …)`
+    // 를 `created_at`으로 되돌려도(방 생성순으로 회귀해도) 어떤 테스트도 안 잡았다. web이 같은
+    // 문제를 `unreadWiringContract.test.ts`(소스 정적 스캔)로 고정한 것과 동일 기법을 Dart
+    // 소스에도 적용한다(B9 "실행되는 검사로 고정").
+    //
+    // 이 검사가 안 보는 것: 정렬이 실제 화면에 최신순으로 보이는지(런타임 동작) — 그건 스펙의
+    // Manual checks(로컬 Supabase 실측) 몫이다. 여기서는 "쿼리가 그 컬럼으로 정렬을 건다"만 본다.
+    test('fetchRooms는 last_message_at desc, id desc로 정렬한다', () {
+      final source = File('lib/features/chat/chat_repository.dart').readAsStringSync();
+      final methodStart = source.indexOf('Future<List<ChatRoomSummary>> fetchRooms(');
+      expect(
+        methodStart,
+        greaterThan(-1),
+        reason: 'fetchRooms 메서드를 찾지 못했습니다(이름이 바뀌었다면 이 검사도 함께 고칠 것)',
+      );
+      // 다음 메서드(fetchRoom) 시작 전까지로 본문을 잘라, 다른 메서드의 .order() 호출과
+      // (예: fetchMessages의 created_at·id 정렬) 섞이지 않게 한다.
+      final nextMethodStart = source.indexOf(
+        '\n  Future<ChatRoomSummary?> fetchRoom(',
+        methodStart,
+      );
+      expect(nextMethodStart, greaterThan(methodStart));
+      final body = source.substring(methodStart, nextMethodStart);
+
+      final orderKeys = RegExp(
+        r"\.order\(\s*'([a-z0-9_]+)'",
+      ).allMatches(body).map((m) => m.group(1)).toList();
+
+      expect(orderKeys.length, greaterThanOrEqualTo(2));
+      expect(
+        orderKeys[0],
+        'last_message_at',
+        reason: '방 생성 시각(created_at)이 아니라 그 방의 마지막 메시지 시각순이어야 한다(§12.6)',
+      );
+      expect(orderKeys[1], 'id', reason: '동시각 안정화용 2차정렬(기존 관례 유지)');
+      expect(
+        body,
+        contains("order('last_message_at', ascending: false)"),
+        reason: '내림차순(최신 문의가 위)이어야 한다',
+      );
+    });
+  });
   group('roomTopic', () {
     test('chat:room:{roomId} 형식 — 0023 SQL 트리거·RLS 리터럴과 문자 그대로 동일해야 한다', () {
       expect(roomTopic('abc-123'), 'chat:room:abc-123');
