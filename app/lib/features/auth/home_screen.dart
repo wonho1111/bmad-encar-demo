@@ -1,6 +1,20 @@
-// 인증 후 홈 — 역할·이메일 + 매물 탐색 진입(②) + AI 검색 전역 진입(③, FAB) + 최근 매물 미리보기.
-// nav-ia-rules §1·§2: 구매자/판매자 공통 홈(R1 상위집합), 1순위 과업=매물 탐색(R2),
-//   AI 는 전역 진입점(R3, Flutter=FAB). 판매자 전용(등록·관리)은 역할에 따라 노출.
+// 인증 후 홈 — AI 검색부(①, 최상단) + 역할·이메일 + 매물 탐색 진입(②) + 최근 매물 미리보기.
+// nav-ia-rules §1·§2: 구매자/판매자 공통 홈(R1 상위집합), 1순위 과업=매물 탐색(R2).
+//   판매자 전용(등록·관리)은 역할에 따라 노출.
+//
+// ⚠️ **AI 진입은 2026-08-07에 FAB → 홈 최상단 검색부로 옮겼다.** 원래는 nav-ia-rules R3
+//   (*"Flutter에서는 FAB 또는 상시 탭으로"*)를 근거로 FAB였는데, 2026-07-12 UX 확정 D12가
+//   그걸 **명시적으로 폐기**했다:
+//     *"AI 검색 = FAB 아님. **홈 최상단 큰 검색부**(웹 히어로 딥 petrol 밴드의 앱 번역판).
+//       'AI가 제품의 얼굴'이라는 위계를 웹·앱 1:1 대응. (이전 앱의 AI=FAB는 'AI가 부가기능'
+//       이던 흔적 → 폐기.)"*
+//   근거는 Material Design 안티패턴(검색을 단일 FAB에 넣는 것)과 P2P 관례(FAB=생성 액션)다.
+//   같은 날 웹의 떠 있는 'AI 검색' 버튼도 같은 이유로 제거했다(`web/src/app/page.tsx`).
+//
+//   ⚠️ **아직 안 된 것**: D12의 나머지 절반인 **하단 4탭(홈(AI)·찜·채팅·내차팔기)** 은
+//   Story 16.1 몫이라 여기 없다. 웹 디자인 토큰(petrol 밴드) 미러링도 16.1이다 — 그래서
+//   이 검색부는 **지금 앱 스타일(zinc/차콜)** 로 만들었다. 16.1이 이 자리를 히어로 밴드로
+//   바꾸면서 하단 탭을 붙인다. 그때까지도 AI 진입로는 끊기지 않는다(그래서 FAB만 떼지 않았다).
 // 관리자(admin)는 모바일 제외(AR9) → main.dart 가 차단 화면으로 보낸다.
 // 디자인: 웹 차콜/zinc 미니멀. 프로필 카드 + 검색 CTA + 퀵액션 + 최근 매물(웹 홈과 동형).
 //   기능·동선·위젯 Key 는 그대로, 겉모습만 데모용으로 보강.
@@ -45,15 +59,6 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      // AI 검색 전역 진입(nav-ia R3) — 어느 화면에서든 닿는 보조 동작을 홈에서 FAB 로.
-      floatingActionButton: FloatingActionButton.extended(
-        key: const Key('ai_fab'),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const AiChatScreen()),
-        ),
-        icon: const Icon(Icons.smart_toy_outlined),
-        label: const Text('AI 검색'),
-      ),
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
@@ -62,15 +67,24 @@ class HomeScreen extends ConsumerWidget {
           child: SingleChildScrollView(
             // 내용이 짧아도 당겨서 새로고침이 되도록 항상 스크롤 가능.
             physics: const AlwaysScrollableScrollPhysics(),
-            // 하단 패딩: 시스템 내비바 + FAB 가림 방지.
+            // 하단 패딩: 시스템 내비바 가림 방지(FAB이 없어져 그만큼의 여유는 뺐다).
             padding: EdgeInsets.fromLTRB(
-                16, 16, 16, 96 + MediaQuery.of(context).viewPadding.bottom),
+                16, 16, 16, 24 + MediaQuery.of(context).viewPadding.bottom),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // AI 검색부 — **홈 최상단**(D12). "AI가 제품의 얼굴"이라는 위계를 위치로
+                  // 표현한다: 매물 탐색 CTA(R2)보다 위에 둔다. 웹 홈도 히어로가 최상단이다.
+                  _AiSearchCta(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AiChatScreen()),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
                   // 프로필 카드 — 이메일. 역할 배지는 '회원' 고정이다(역할 통합):
                   // 구매자/판매자 구분이 사라져 표시할 역할이 없고, 관리자는 모바일에서
                   // 애초에 차단되므로(main.dart, AR9) 이 화면에 도달하지 않는다.
@@ -212,6 +226,55 @@ class _ProfileCard extends StatelessWidget {
 }
 
 /// 검색 CTA — 큰 카드(엔카 "어떤 차를 찾고 있나요?" 스타일). 누르면 매물 탐색.
+/// AI 검색 진입 — 홈 최상단(D12: "AI 검색 = FAB 아님. 홈 최상단 큰 검색부").
+/// `_SearchCta`(매물 탐색)와 같은 모양을 쓰되 **채움색으로 위계를 준다** — 둘이 나란히
+/// 있을 때 어느 쪽이 이 제품의 얼굴인지가 보여야 한다(D12의 "AI가 제품의 얼굴" 위계).
+/// ⚠️ 색은 지금 앱 토큰(zinc/차콜)이다. 웹의 petrol 히어로 밴드 미러링은 Story 16.1 몫.
+class _AiSearchCta extends StatelessWidget {
+  const _AiSearchCta({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      key: const Key('go_ai'),
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+        decoration: BoxDecoration(
+          color: AppColors.ink,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.smart_toy_outlined, color: Colors.white, size: 22),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('원하는 차를 말로 찾으세요',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+                  SizedBox(height: 2),
+                  // 웹 히어로 placeholder와 같은 예시 문구(D13 마이크로카피).
+                  Text('예: 3천만원대 무사고 흰색 SUV',
+                      style: TextStyle(color: Color(0xFFD4D4D8), fontSize: 13)),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Color(0xFFD4D4D8)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SearchCta extends StatelessWidget {
   const _SearchCta({required this.onTap});
 
