@@ -22,11 +22,15 @@ import 'auth_controller.dart';
 /// final blocked = requireUser(ref, title);
 /// if (blocked != null) return blocked;
 /// ```
-Widget? requireUser(WidgetRef ref, String title) {
+///
+/// `showAppBar`(spec-16-1): 하단 4탭 셸의 탭 루트(SellScreen)에서 호출될 때는 셸이 이미
+/// 공통 AppBar를 그리므로 `false`를 넘긴다 — 안 넘기면 세션이 끊긴 순간 이 안내 화면이
+/// 자기 AppBar를 또 달아 셸 AppBar와 겹친다(spec-16-1 Task).
+Widget? requireUser(WidgetRef ref, String title, {bool showAppBar = true}) {
   final user = ref.watch(currentUserProvider);
   if (user != null) return null;
   return Scaffold(
-    appBar: AppBar(title: Text(title)),
+    appBar: showAppBar ? AppBar(title: Text(title)) : null,
     body: const Center(
       child: Padding(
         padding: EdgeInsets.all(24),

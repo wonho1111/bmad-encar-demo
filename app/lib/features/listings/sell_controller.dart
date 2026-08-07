@@ -10,12 +10,12 @@
 //   4) 로딩 중 재호출은 무시(중복 제출 차단).
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/supabase/supabase_client.dart';
+import '../auth/auth_controller.dart';
 import 'listing_errors.dart';
 import 'listing_form.dart';
 import 'listings_providers.dart';
 
-/// 등록 화면 상태 = (현재 입력) + (로딩) + (에러/성공 메시지) + (수정 모드 식별자).
+/// 등록 화면 상태 = (현재 입력) + (로딩) + (에러/성공 메시지) + (수정 모드 식별자) + (주인).
 /// 7.4에서 수정(edit) 모드 추가: editingId 가 null 이면 등록(INSERT), 값이 있으면 수정(UPDATE).
 class SellState {
   const SellState({
@@ -25,6 +25,7 @@ class SellState {
     this.success,
     this.editingId,
     this.done = false,
+    this.owner,
   });
 
   final ListingFormInput input;
@@ -34,6 +35,15 @@ class SellState {
   final String? editingId; // null=등록 모드, 값=수정 대상 매물 id(수정 모드).
   final bool done; // 수정 성공 후 화면 닫기 신호(등록 모드에선 사용 안 함).
 
+  /// 이 진행상태/결과를 시작한 **화면 인스턴스**의 식별자(SellScreen 이 자기 것을 넘긴다).
+  ///
+  /// ⚠️ editingId 로는 화면을 구분할 수 없다. 하단 4탭 셸이 '/sell' 브랜치를 영구 마운트하므로
+  /// **등록 모드 화면이 동시에 둘** 존재할 수 있다 — 탭 루트와 홈 퀵액션(go_sell)이 push 하는
+  /// 화면. 둘 다 editingId==null 이라, editingId 만으로 "내 결과인지" 판정하면 한쪽의 등록
+  /// 성공이 다른 쪽의 미저장 초안을 지우고 유령 배너를 띄운다(실측 재현). 인스턴스 식별자를
+  /// 상태에 실어야 그 구분이 가능해진다.
+  final Object? owner;
+
   SellState copyWith({
     ListingFormInput? input,
     bool? loading,
@@ -41,6 +51,7 @@ class SellState {
     String? success,
     String? editingId,
     bool? done,
+    Object? owner,
   }) {
     return SellState(
       input: input ?? this.input,
@@ -50,6 +61,7 @@ class SellState {
       success: success,
       editingId: editingId ?? this.editingId,
       done: done ?? this.done,
+      owner: owner ?? this.owner,
     );
   }
 }
@@ -70,16 +82,25 @@ class SellController extends Notifier<SellState> {
       input: input,
       loading: state.loading,
       editingId: state.editingId,
+      owner: state.owner,
     );
   }
 
   /// 제출. 검증 → 세션 확인 → (등록 모드)INSERT / (수정 모드)UPDATE. 결과를 state 로 흘린다.
   ///
-  /// editingIdOverride: 화면이 수정 모드 id 를 명시 전달하면 그것을 우선한다.
-  ///   startEdit 가 post-frame 으로 늦게 도는 첫 프레임에 submit 이 들어와도 등록(INSERT)로 새지 않게 하는 안전장치.
-  Future<void> submit({String? editingIdOverride}) async {
+  /// editingId: 호출부(SellScreen)가 **항상 명시**한다 — null=등록, 값=그 id 수정.
+  ///   ⚠️ **state.editingId로 폴백하지 않는다**(spec-16-1). 하단 4탭 셸이 '/sell' 브랜치를
+  ///   영구 마운트하면서 이 provider의 `autoDispose`가 사실상 무력화됐다 — 수정 화면
+  ///   (startEdit)을 한 번 거치면 state.editingId가 다음 등록 진입까지 살아남는다. 예전엔
+  ///   `editingIdOverride ?? state.editingId`로 폴백해, 등록 탭에서 새 매물을 등록해도
+  ///   직전 수정 대상이 그대로 UPDATE로 새는 데이터 손상이 실측됐다(review_loop_iteration 1,
+  ///   bug #2, high). 화면이 명시한 값만 신뢰하면 이 leak이 원천 차단된다.
+  ///
+  /// owner: 호출한 **화면 인스턴스**의 식별자. 이 제출이 만드는 로딩/성공/에러에 그대로 실려,
+  ///   각 화면이 `state.owner == 내 식별자`로 "내 결과인지"를 판정한다(SellState.owner 주석 참조).
+  ///   생략하면 null 이 실려 어느 화면도 자기 것으로 보지 않는다(테스트가 컨트롤러만 구동할 때).
+  Future<void> submit({required String? editingId, Object? owner}) async {
     if (state.loading) return; // 중복 제출 차단.
-    final editingId = editingIdOverride ?? state.editingId;
 
     // 1) 클라이언트 검증(순수 함수). 실패면 쓰기 없이 한국어 오류. editingId 보존.
     final result = validateAndBuildListing(state.input);
@@ -88,19 +109,29 @@ class SellController extends Notifier<SellState> {
         input: state.input,
         editingId: editingId,
         error: result.message,
+        owner: owner,
       );
       return;
     }
 
-    state = SellState(input: state.input, loading: true, editingId: editingId);
+    state = SellState(
+      input: state.input,
+      loading: true,
+      editingId: editingId,
+      owner: owner,
+    );
     try {
       // 2) 현재 로그인 사용자 확인 — seller_id 명시용(위조는 RLS 가 막지만 명시가 정상 경로).
-      final user = supabase.auth.currentUser;
+      //    전역 supabase 싱글턴을 직접 읽지 않고 currentUserProvider를 거친다 — 위젯 테스트가
+      //    실제 Supabase.initialize 없이 이 컨트롤러를 구동할 수 있게 한다(chat_list_screen.dart와
+      //    같은 이유, spec-16-1 Task).
+      final user = ref.read(currentUserProvider);
       if (user == null) {
         state = SellState(
           input: state.input,
           editingId: editingId,
           error: '로그인이 필요합니다. 다시 로그인 후 시도해주세요.',
+          owner: owner,
         );
         return;
       }
@@ -111,9 +142,10 @@ class SellController extends Notifier<SellState> {
         // 3a) 등록 모드 — INSERT(on_sale 즉시 생성).
         await repo.createListing(result.payload!, sellerId: user.id);
         // 성공 → 폼 초기화 + 성공 안내(즉시 노출 FR7).
-        state = const SellState(
-          input: ListingFormInput(),
+        state = SellState(
+          input: const ListingFormInput(),
           success: '매물이 등록되었습니다. 구매자에게 바로 노출됩니다.',
+          owner: owner,
         );
       } else {
         // 3b) 수정 모드 — UPDATE(15필드, status·seller_id 미포함). 0행이면 RLS 차단(타인)·없음.
@@ -125,6 +157,7 @@ class SellController extends Notifier<SellState> {
             input: state.input,
             editingId: editingId,
             error: ownEditDeniedMessage,
+            owner: owner,
           );
           return;
         }
@@ -134,6 +167,7 @@ class SellController extends Notifier<SellState> {
           editingId: editingId,
           success: '매물 정보가 수정되었습니다.',
           done: true,
+          owner: owner,
         );
       }
     } catch (e) {
@@ -144,6 +178,7 @@ class SellController extends Notifier<SellState> {
         input: state.input,
         editingId: editingId,
         error: toKoreanListingError(e),
+        owner: owner,
       );
     }
   }

@@ -152,7 +152,11 @@ class MyListingsScreen extends ConsumerWidget {
                         ? null
                         : () async {
                             // 수정 화면으로 이동 → 수정 성공(true)이면 목록 새로고침.
-                            final changed = await Navigator.of(context).push<bool>(
+                            // rootNavigator: true — spec-16-1 셸 경계 원칙(Code Map)을
+                            // 동일하게 적용한다.
+                            final changed =
+                                await Navigator.of(context, rootNavigator: true)
+                                    .push<bool>(
                               MaterialPageRoute(
                                 builder: (_) =>
                                     EditListingScreen(listingId: l.id),

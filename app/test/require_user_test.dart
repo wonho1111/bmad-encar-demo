@@ -23,12 +23,12 @@ import 'package:app/features/listings/sell_screen.dart';
 
 /// 최소한의 가짜 사용자. RequireUser는 null 여부만 보므로 필드 값은 의미 없다.
 User _fakeUser({String? role}) => User(
-      id: '00000000-0000-0000-0000-000000000001',
-      appMetadata: const {},
-      userMetadata: role == null ? const {} : {'role': role},
-      aud: 'authenticated',
-      createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
-    );
+  id: '00000000-0000-0000-0000-000000000001',
+  appMetadata: const {},
+  userMetadata: role == null ? const {} : {'role': role},
+  aud: 'authenticated',
+  createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
+);
 
 /// 호출부와 **같은 관례**로 게이트를 쓴다 — 테스트만 다른 방식으로 부르면
 /// 화면에서 깨지는 모양을 못 본다.
@@ -44,9 +44,9 @@ class _GateHost extends ConsumerWidget {
 }
 
 Widget _harness({required User? user}) => ProviderScope(
-      overrides: [currentUserProvider.overrideWithValue(user)],
-      child: const MaterialApp(home: _GateHost()),
-    );
+  overrides: [currentUserProvider.overrideWithValue(user)],
+  child: const MaterialApp(home: _GateHost()),
+);
 
 void main() {
   group('RequireUser — 로그인만 본다(역할은 안 본다)', () {
@@ -76,6 +76,70 @@ void main() {
     }
   });
 
+  group('RequireUser — showAppBar 파라미터(review, spec-16-1 P5)', () {
+    // 하단 4탭 셸의 '내차팔기' 탭 루트(SellScreen(showAppBar: false))에서 세션이 끊기면,
+    // requireUser가 showAppBar를 그대로 물려받아야 한다 — 안 물려주면(뮤테이션:
+    // `requireUser(ref, title, showAppBar: widget.showAppBar)` → `requireUser(ref, title)`)
+    // 기본값(true)이 적용돼 이 안내 화면이 자기 AppBar를 또 그린다. 셸이 이미 AppBar를
+    // 그리고 있으므로 그 위에 하나가 더 겹친다.
+    testWidgets('showAppBar:false — 미로그인이어도 자기 AppBar를 그리지 않는다(셸이 이미 그리므로)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [currentUserProvider.overrideWithValue(null)],
+          child: MaterialApp(
+            home: Consumer(
+              builder: (context, ref, _) {
+                return requireUser(ref, '테스트', showAppBar: false) ??
+                    const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byType(AppBar),
+        findsNothing,
+        reason:
+            'showAppBar:false를 무시하면(뮤테이션) 기본값 true가 적용돼 여기서 '
+            'AppBar가 하나 잡힌다',
+      );
+      expect(find.byKey(const Key('require_user_blocked')), findsOneWidget);
+    });
+
+    testWidgets('내차팔기 탭처럼 셸 AppBar 안에 SellScreen(showAppBar:false)을 올렸을 때 — '
+        '미로그인이면 셸 AppBar 하나만 남는다', (tester) async {
+      // app_router.dart의 _AppShell을 통째로 구동하지 않고, 그 배치(셸 AppBar + 탭
+      // 화면을 body로)만 얇게 흉내낸다 — SellScreen(showAppBar: false)가 자기 AppBar를
+      // 안 그린다는 계약이 지켜지는지가 검사 대상이다.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [currentUserProvider.overrideWithValue(null)],
+          child: MaterialApp(
+            home: Scaffold(
+              appBar: AppBar(title: const Text('매물 등록')), // 셸의 공통 AppBar를 흉내낸다.
+              body: const SellScreen(showAppBar: false),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byType(AppBar),
+        findsOneWidget,
+        reason:
+            'requireUser(showAppBar: widget.showAppBar) 배선이 뮤테이션으로 빠지면 '
+            '(requireUser(ref, title)로 되돌아가면) 미로그인 안내가 자기 AppBar를 또 '
+            '그려 셸 AppBar와 함께 2개가 된다',
+      );
+      expect(find.byKey(const Key('require_user_blocked')), findsOneWidget);
+    });
+  });
+
   // 위 group은 게이트 **자체**만 본다. 게이트가 아무리 옳아도 화면이 안 쓰면 소용없다 —
   // 원래 결함이 정확히 그 모양이었다(세 화면이 각자 인라인 가드를 들고 있었다).
   // 미로그인 상태로 각 화면을 그리면 게이트가 즉시 막으므로, 본문이 Supabase를 건드리기 전에
@@ -89,10 +153,12 @@ void main() {
 
     screens.forEach((name, screen) {
       testWidgets('$name — 미로그인이면 공용 게이트 안내가 뜬다', (tester) async {
-        await tester.pumpWidget(ProviderScope(
-          overrides: [currentUserProvider.overrideWithValue(null)],
-          child: MaterialApp(home: screen),
-        ));
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [currentUserProvider.overrideWithValue(null)],
+            child: MaterialApp(home: screen),
+          ),
+        );
         await tester.pump();
 
         expect(

@@ -1,7 +1,7 @@
 // 매물 카드 위젯 — 탐색 목록·AI 검색 결과·홈 미리보기가 공유한다(web ListingCard 의 Flutter 판).
 // 사진 없음. 요약(제조사·모델·연식 / 가격(강조) / 주행·연료·지역, Story 10.1·대장 #67) + (있으면) 판매자 이름.
 // 누르면 매물 상세로 이동(onTap 콜백을 받아 상위가 라우팅 — 화면 의존을 줄임).
-// 디자인: 웹 차콜/zinc 미니멀 — 흰 카드 + zinc-200 보더, 가격을 굵게 강조.
+// 디자인: 웹 DESIGN.md 라이트 팔레트(Story 16.1) — 흰 카드 + border-hairline, 가격을 굵게 강조.
 import 'package:flutter/material.dart';
 
 import '../../core/format/number_format.dart';
@@ -19,10 +19,10 @@ class ListingCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       elevation: 0,
-      color: Colors.white,
+      color: AppColors.surfaceRaised,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: AppColors.border),
+        side: const BorderSide(color: AppColors.borderHairline),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -36,7 +36,7 @@ class ListingCard extends StatelessWidget {
               Text(
                 '[${listing.manufacturer}] ${listing.model} · ${listing.year}년',
                 style: const TextStyle(
-                    fontWeight: FontWeight.w600, color: AppColors.ink2),
+                    fontWeight: FontWeight.w600, color: AppColors.inkPrimary),
               ),
               const SizedBox(height: 3),
               // 가격 — 굵게 강조(원·천단위 콤마).
@@ -45,7 +45,7 @@ class ListingCard extends StatelessWidget {
                 style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
-                    color: AppColors.ink2),
+                    color: AppColors.inkPrimary),
               ),
               const SizedBox(height: 3),
               // 주행거리·연료·지역 — 보조 정보(muted). web ListingCard.tsx meta 줄과 같은 모양
@@ -57,7 +57,7 @@ class ListingCard extends StatelessWidget {
                     .join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+                style: const TextStyle(color: AppColors.inkMuted, fontSize: 12.5),
               ),
               // 판매자 표시 이름(있을 때만). AI 결과처럼 값이 없으면 줄 자체를 숨긴다.
               if (listing.sellerName != null && listing.sellerName!.isNotEmpty) ...[

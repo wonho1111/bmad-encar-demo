@@ -1,5 +1,7 @@
-// 사용자 역할 enum — web의 lib/constants.ts USER_ROLE 와 값이 일치해야 한다
-// (DB 트리거 handle_new_user 가 여전히 이 문자열만 배정한다).
+// 사용자 역할 enum — web의 lib/constants.ts USER_ROLE 와 값이 일치해야 한다.
+// ⚠️ (DW-681로 바로잡음) DB 트리거 handle_new_user는 더 이상 이 문자열만 배정하지
+//   않는다 — 0028(Story 14.1)이 신규 가입 기본값을 'user'로 바꿨다. 아래 정본은
+//   docs/conventions.md §14(Role 어휘)다.
 // ⚠️ profiles.role의 DB CHECK는 Epic 14(Story 14.1, 0027)로 완화되어 이 3값만 강제하지 않는다.
 //   다만 이 enum이 실제로 파싱하는 값은 profiles.role이 **아니다** — currentRoleProvider
 //   (auth_controller.dart)가 읽는 것은 세션의 `user_metadata['role']`이고, 그건 web 가입 폼이

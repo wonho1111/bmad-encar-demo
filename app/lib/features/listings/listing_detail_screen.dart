@@ -112,7 +112,9 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
 
     switch (res) {
       case OpenRoomSuccess(:final roomId):
-        Navigator.of(context).push(
+        // rootNavigator: true — 이 화면이 홈의 최근 매물 카드처럼 셸 브랜치 안에서 도달됐을
+        // 수 있으므로, 채팅방을 셸 밖 루트 Navigator에 쌓는다(spec-16-1 셸 경계).
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(builder: (_) => ChatRoomScreen(roomId: roomId)),
         );
       case OpenRoomFailure(:final message):

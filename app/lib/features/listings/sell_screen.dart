@@ -2,9 +2,14 @@
 // 사진 없음(업로드 위젯 없음). 검증·INSERT 는 SellController 가 담당, 화면은 입력 수집·표시만.
 //
 // 역할 가드(AC4): 판매자(seller)만 진입. buyer 가 어떻게든 닿으면 입력 대신 안내를 보여준다.
-//   (admin 은 main.dart AuthGate 가 이미 차단 — 모바일 제외 AR9.)
+//   (admin 은 core/router/app_router.dart의 GoRouter redirect가 이미 차단 — 모바일 제외 AR9.)
 // 위젯 패턴은 signup_screen(ConsumerStatefulWidget + SingleChildScrollView + 에러/성공 텍스트)과
 //   search_screen(DropdownButtonFormField)을 따른다.
+//
+// ⚠️ **셸 경계(spec-16-1)**: 이 화면은 두 자리에서 쓰인다 — ① 하단 4탭 셸의 '내차팔기' 브랜치
+//   루트(`app_router.dart`, `showAppBar: false`, 항상 등록 모드) ② `home_screen.dart`의
+//   "매물 등록" 퀵액션·`my_listings_screen.dart`의 "수정" 버튼이 셸 밖 루트 Navigator로 여는
+//   단독 화면(`showAppBar: true`, 기본값 — 뒤로가기가 있는 자기 AppBar가 필요).
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,10 +24,16 @@ import 'sell_controller.dart';
 ///   · editDetail == null → 등록 모드(INSERT).
 ///   · editDetail != null → 수정 모드(UPDATE) — 기존 값으로 폼을 채우고, 성공 시 화면을 닫는다(done).
 class SellScreen extends ConsumerStatefulWidget {
-  const SellScreen({super.key, this.editDetail});
+  const SellScreen({super.key, this.editDetail, this.showAppBar = true});
 
   /// 수정 대상 매물 상세(수정 모드일 때만). null 이면 등록 모드.
   final ListingDetail? editDetail;
+
+  /// 하단 4탭 셸의 '내차팔기' 브랜치 루트로 쓰일 때는 셸이 이미 공통 AppBar(제목+프로필
+  /// 아바타)를 그리므로 이 화면 자신의 AppBar를 끈다(app_router.dart가 false로 넘긴다).
+  /// 기본값 true — 홈의 "매물 등록" 퀵액션·수정 진입처럼 단독 화면으로 열릴 때는
+  /// 뒤로가기가 있는 자기 AppBar가 그대로 필요하다(spec-16-1 Never: 퀵액션 유지).
+  final bool showAppBar;
 
   bool get isEdit => editDetail != null;
 
@@ -48,6 +59,11 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String? _transmission;
   String? _region;
   bool _accidentFree = true;
+
+  /// 이 화면 인스턴스의 식별자. 공유 sellControllerProvider 의 상태가 "내가 시작한 것"인지
+  /// 판정하는 데 쓴다 — editingId 로는 판정할 수 없다(등록 모드 화면이 동시에 둘 뜰 수 있다:
+  /// '/sell' 탭 루트와 홈 퀵액션 go_sell 이 push 하는 화면. SellState.owner 주석 참조).
+  final Object _owner = Object();
 
   @override
   void initState() {
@@ -76,6 +92,20 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         if (mounted) {
           ref.read(sellControllerProvider.notifier).startEdit(detail.id, input);
         }
+      });
+    } else {
+      // 등록 모드 새 진입 — sellControllerProvider는 하단 4탭 셸의 '/sell' 브랜치가
+      // 영구 마운트하는 인스턴스와 같은 것을 공유한다(수정 화면도 이 provider를 쓴다).
+      // 그래서 이전에 다른 화면 인스턴스가 남긴 success/error가 이 새 등록 화면에
+      // 유령 배너로 새어 보일 수 있다 — 열자마자 지운다(review, spec-16-1 P3). 빌드 중
+      // provider 수정은 금지라 위 수정 모드와 같은 방식으로 다음 프레임에 미룬다.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // 다른 화면의 제출이 진행 중이면 건드리지 않는다 — 무효화하면 새 컨트롤러의
+        // loading 이 false 라 그쪽 버튼이 다시 눌려 같은 매물이 두 번 INSERT 될 수 있다
+        // (app_router.dart의 탭 활성화 무효화와 같은 이유).
+        if (!mounted) return;
+        if (ref.read(sellControllerProvider).loading) return;
+        ref.invalidate(sellControllerProvider);
       });
     }
   }
@@ -114,9 +144,11 @@ class _SellScreenState extends ConsumerState<SellScreen> {
     );
     final notifier = ref.read(sellControllerProvider.notifier);
     notifier.updateInput(input);
-    // 수정 모드면 대상 id 를 명시 전달 — 컨트롤러의 editingId 가 (post-frame startEdit 가 아직 안 돈) 첫 프레임에
-    //   null 이더라도 등록(INSERT)로 새지 않고 반드시 수정(UPDATE)으로 가게 한다(중복 등록 사고 방지).
-    notifier.submit(editingIdOverride: widget.editDetail?.id);
+    // 등록/수정 모드는 항상 이 화면의 생성자 인자(widget.editDetail)로만 정한다 — 컨트롤러의
+    // state.editingId로 폴백하지 않는다(spec-16-1). '/sell' 탭이 하단 셸에 영구 마운트되면서
+    // sellControllerProvider의 autoDispose가 무력화됐고, 예전엔 submit()이 state.editingId로
+    // 폴백해 직전 수정 대상 id가 다음 등록에 새어 UPDATE로 잘못 나갔다(실측된 데이터 손상 버그).
+    notifier.submit(editingId: widget.editDetail?.id, owner: _owner);
   }
 
   /// 등록 성공 시 폼 입력 위젯을 비운다(컨트롤러는 입력을 초기화했지만 화면 컨트롤러도 맞춘다).
@@ -149,17 +181,35 @@ class _SellScreenState extends ConsumerState<SellScreen> {
     // 옛 가드는 `role != UserRole.seller`로 막았다 — 웹 14.3이 requireRole(SELLER) →
     // requireUser()로 완화한 것을 앱에 미러링한다. 등록자 본인만 수정/삭제하는 것은
     // 계정 역할이 아니라 소유권(RLS)이 강제한다.
-    final blocked = requireUser(ref, title);
+    final blocked = requireUser(ref, title, showAppBar: widget.showAppBar);
     if (blocked != null) return blocked;
 
     final sell = ref.watch(sellControllerProvider);
+    // 이번 상태(성공/에러/진행중)가 "이 화면이 시작한 것"인지 **인스턴스 식별자**로 판정한다.
+    // sellControllerProvider가 등록 탭 루트·수정 화면·홈 퀵액션이 push한 등록 화면 사이에
+    // 공유되므로(셸 브랜치 영구 마운트), 남의 결과에 반응하면 사고가 난다.
+    //
+    // ⚠️ 예전엔 editingId로 판정했는데 그걸론 **등록 화면 둘**을 구분하지 못했다('/sell' 탭
+    // 루트와 go_sell이 push한 화면 — 둘 다 editingId==null). 실측: 한쪽에서 등록에 성공하면
+    // 다른 쪽의 미저장 초안이 지워지고 유령 성공 배너가 떴다(review, spec-16-1 후속 리뷰).
+    final mine = sell.owner != null && sell.owner == _owner;
+    // 진행중(loading)도 같은 기준으로 거른다 — 안 그러면 남의 제출이 도는 동안 이 화면의
+    // 등록 버튼이 "등록 중…"으로 잠기고, SellController.submit()의 `if (state.loading) return`
+    // 때문에 눌러도 아무 일이 안 일어난다(실측 재현).
+    final busy = mine && sell.loading;
 
     if (sell.success != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        // build() 시점에 캡처한 `sell`이 아니라 지금 시점의 최신 상태를 다시 읽는다 —
+        // 이 콜백이 실행되기 전에 다른 화면의 제출이 이미 상태를 더 바꿔놨을 수 있다.
+        final current = ref.read(sellControllerProvider);
+        if (current.success == null) return; // 이미 다른 화면이 소비/초기화했다.
+        final currentMine = current.owner != null && current.owner == _owner;
+        if (!currentMine) return;
         if (isEdit) {
           // 수정 성공 → 화면을 닫고 목록으로 복귀(true 를 돌려줘 목록이 새로고침하게).
-          if (sell.done && Navigator.of(context).canPop()) {
+          if (current.done && Navigator.of(context).canPop()) {
             Navigator.of(context).pop(true);
           }
         } else {
@@ -170,14 +220,20 @@ class _SellScreenState extends ConsumerState<SellScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: widget.showAppBar ? AppBar(title: Text(title)) : null,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 등록 버튼이 가리지 않게.
+            // 하단 패딩: `viewPadding.bottom`이 아니라 `MediaQuery.paddingOf(context).bottom`을
+            // 쓴다 — 탭 루트로 쓰일 때 셸의 NavigationBar가 이미 그 시스템 인셋을 흡수하므로,
+            // 원본 viewPadding을 또 더하면 하단 여백이 이중으로 커진다(spec-16-1 Task).
             padding: EdgeInsets.fromLTRB(
-                20, 20, 20, 20 + MediaQuery.of(context).viewPadding.bottom),
+              20,
+              20,
+              20,
+              20 + MediaQuery.paddingOf(context).bottom,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -189,36 +245,75 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                _dropdown('제조사', 'sell_manufacturer', _manufacturer,
-                    ListingOptions.manufacturer, (v) => setState(() => _manufacturer = v)),
+                _dropdown(
+                  '제조사',
+                  'sell_manufacturer',
+                  _manufacturer,
+                  ListingOptions.manufacturer,
+                  (v) => setState(() => _manufacturer = v),
+                ),
                 const SizedBox(height: 12),
                 _text('모델', 'sell_model', _model, hint: '예: 아반떼 CN7'),
                 const SizedBox(height: 12),
-                _dropdown('차종', 'sell_body_type', _bodyType, ListingOptions.bodyType,
-                    (v) => setState(() => _bodyType = v)),
+                _dropdown(
+                  '차종',
+                  'sell_body_type',
+                  _bodyType,
+                  ListingOptions.bodyType,
+                  (v) => setState(() => _bodyType = v),
+                ),
                 const SizedBox(height: 12),
                 _number('연식 (년)', 'sell_year', _year, hint: '예: 2021'),
                 const SizedBox(height: 12),
                 _number('가격 (원)', 'sell_price', _price, hint: '예: 29800000'),
                 const SizedBox(height: 12),
-                _number('주행거리 (km)', 'sell_mileage', _mileage, hint: '예: 103000'),
+                _number(
+                  '주행거리 (km)',
+                  'sell_mileage',
+                  _mileage,
+                  hint: '예: 103000',
+                ),
                 const SizedBox(height: 12),
-                _dropdown('색상', 'sell_color', _color, ListingOptions.color,
-                    (v) => setState(() => _color = v)),
+                _dropdown(
+                  '색상',
+                  'sell_color',
+                  _color,
+                  ListingOptions.color,
+                  (v) => setState(() => _color = v),
+                ),
                 const SizedBox(height: 12),
-                _dropdown('연료', 'sell_fuel', _fuel, ListingOptions.fuel,
-                    (v) => setState(() => _fuel = v)),
+                _dropdown(
+                  '연료',
+                  'sell_fuel',
+                  _fuel,
+                  ListingOptions.fuel,
+                  (v) => setState(() => _fuel = v),
+                ),
                 const SizedBox(height: 12),
-                _dropdown('변속기', 'sell_transmission', _transmission,
-                    ListingOptions.transmission, (v) => setState(() => _transmission = v)),
+                _dropdown(
+                  '변속기',
+                  'sell_transmission',
+                  _transmission,
+                  ListingOptions.transmission,
+                  (v) => setState(() => _transmission = v),
+                ),
                 const SizedBox(height: 12),
-                _number('배기량 (cc)', 'sell_displacement', _displacement,
-                    hint: '예: 1598 (전기차는 0)'),
+                _number(
+                  '배기량 (cc)',
+                  'sell_displacement',
+                  _displacement,
+                  hint: '예: 1598 (전기차는 0)',
+                ),
                 const SizedBox(height: 12),
                 _number('인승 (명)', 'sell_seats', _seats, hint: '예: 5'),
                 const SizedBox(height: 12),
-                _dropdown('지역', 'sell_region', _region, ListingOptions.region,
-                    (v) => setState(() => _region = v)),
+                _dropdown(
+                  '지역',
+                  'sell_region',
+                  _region,
+                  ListingOptions.region,
+                  (v) => setState(() => _region = v),
+                ),
                 const SizedBox(height: 12),
 
                 SwitchListTile(
@@ -226,28 +321,42 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('무사고 차량'),
                   value: _accidentFree,
-                  onChanged: sell.loading
+                  onChanged: busy
                       ? null
                       : (v) => setState(() => _accidentFree = v),
                 ),
 
-                _text('옵션 (쉼표로 구분, 선택)', 'sell_options', _options,
-                    hint: '예: 선루프, 후방카메라, 내비게이션'),
+                _text(
+                  '옵션 (쉼표로 구분, 선택)',
+                  'sell_options',
+                  _options,
+                  hint: '예: 선루프, 후방카메라, 내비게이션',
+                ),
                 const SizedBox(height: 12),
-                _text('설명 (선택)', 'sell_description', _description,
-                    hint: '차량 상태·이력 등을 자유롭게', maxLines: 3),
+                _text(
+                  '설명 (선택)',
+                  'sell_description',
+                  _description,
+                  hint: '차량 상태·이력 등을 자유롭게',
+                  maxLines: 3,
+                ),
                 const SizedBox(height: 16),
 
-                if (sell.error != null)
+                // `mine`이 아닌 error/success는 안 그린다 — 등록 탭 루트와 수정 화면이
+                // sellControllerProvider를 공유하므로, 안 걸러내면 남의(다른 editingId)
+                // 결과 배너가 이 화면에도 유령처럼 보인다(review, spec-16-1 P3).
+                if (mine && sell.error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
                       sell.error!,
                       key: const Key('sell_error'),
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
-                if (sell.success != null)
+                if (mine && sell.success != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
@@ -259,9 +368,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
 
                 FilledButton(
                   key: const Key('sell_submit'),
-                  onPressed: sell.loading ? null : _submit,
+                  onPressed: busy ? null : _submit,
                   child: Text(
-                    sell.loading
+                    busy
                         ? (isEdit ? '수정 중…' : '등록 중…')
                         : (isEdit ? '수정 완료' : '매물 등록'),
                   ),
@@ -275,29 +384,52 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   }
 
   // ── 입력 위젯 헬퍼 ───────────────────────────────────────────────
-  Widget _text(String label, String keyName, TextEditingController c,
-      {String? hint, int maxLines = 1}) {
+  Widget _text(
+    String label,
+    String keyName,
+    TextEditingController c, {
+    String? hint,
+    int maxLines = 1,
+  }) {
     return TextField(
       key: Key(keyName),
       controller: c,
       maxLines: maxLines,
-      decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+      ),
     );
   }
 
-  Widget _number(String label, String keyName, TextEditingController c, {String? hint}) {
+  Widget _number(
+    String label,
+    String keyName,
+    TextEditingController c, {
+    String? hint,
+  }) {
     return TextField(
       key: Key(keyName),
       controller: c,
       keyboardType: TextInputType.number,
       // 숫자만 입력 가능(소수점·부호 차단) — 정수 저장 규칙을 입력 단계부터 돕는다.
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+      ),
     );
   }
 
-  Widget _dropdown(String label, String keyName, String? value, List<String> options,
-      ValueChanged<String?> onChanged) {
+  Widget _dropdown(
+    String label,
+    String keyName,
+    String? value,
+    List<String> options,
+    ValueChanged<String?> onChanged,
+  ) {
     return DropdownButtonFormField<String?>(
       key: Key(keyName),
       initialValue: value,
@@ -305,7 +437,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       decoration: InputDecoration(labelText: label, isDense: true),
       items: [
         const DropdownMenuItem<String?>(value: null, child: Text('선택')),
-        ...options.map((o) => DropdownMenuItem<String?>(value: o, child: Text(o))),
+        ...options.map(
+          (o) => DropdownMenuItem<String?>(value: o, child: Text(o)),
+        ),
       ],
       onChanged: onChanged,
     );

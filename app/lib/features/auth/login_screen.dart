@@ -1,7 +1,8 @@
 // 로그인 화면 (FR2) — 이메일·비밀번호로 로그인. (web login/page.tsx 동작 이식)
-// 성공하면 authStateProvider 가 인증으로 흘러 main.dart 가 홈으로 분기한다.
+// 성공하면 authStateProvider 가 인증으로 흘러 app_router.dart의 redirect가 홈 셸로 보낸다.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'auth_controller.dart';
 import 'auth_errors.dart';
@@ -95,9 +96,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 12),
                 TextButton(
                   key: const Key('go_signup'),
-                  onPressed: loading
-                      ? null
-                      : () => Navigator.of(context).pushNamed('/signup'),
+                  // `MaterialApp.router`(GoRouter) 아래서는 Navigator.pushNamed가 참조할
+                  // 라우트 테이블이 없다 — go_router 자체의 push를 써야 한다
+                  // (`/signup`은 app_router.dart의 최상위 GoRoute).
+                  onPressed: loading ? null : () => context.push('/signup'),
                   child: const Text('아직 계정이 없으신가요? 회원가입'),
                 ),
               ],

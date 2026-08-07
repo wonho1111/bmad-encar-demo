@@ -59,7 +59,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _openDetail(String id) {
-    Navigator.of(context).push(
+    // rootNavigator: true — 이 화면 자체가 홈의 rootNavigator push로만 도달하므로 지금은
+    // 항상 이미 셸 밖이지만, 셸 경계를 파라미터가 아니라 "어느 Navigator에 쌓느냐"로 고정
+    // 하는 spec-16-1 원칙을 이 push에도 동일하게 적용한다(Code Map).
+    Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(builder: (_) => ListingDetailScreen(listingId: id)),
     );
   }

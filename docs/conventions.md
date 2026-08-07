@@ -721,3 +721,34 @@ FocusTrap은 8.2 코드리뷰에서 `...rest`를 컨테이너 `div`로 전달하
 > **현재 미준수 1건**: `SiteNav`의 드롭다운·햄버거 패널이 `menu`/`listbox` role 없이
 > `aria-label`만 쓴다(장부 `DW-454`, 구 `#154`). `SellForm`의 이탈 확인 모달은 규약대로
 > 3종을 다 붙였다(`role="dialog"` + `aria-modal` + `aria-labelledby`) — 2026-07-29 실측.
+
+## 14. Role 어휘 (Story 16.1, DW-681)
+
+역할(role) 값의 정본은 지금까지 `0029_unify_existing_account_roles.sql`의 컬럼 주석에만
+있었고 이 문서엔 없었다(DW-681 — "role 어휘의 정본이 DB 컬럼 주석에만 있고
+`docs/conventions.md`엔 없다"). 값이 흩어진 사본(`web/src/lib/constants.ts`의 `USER_ROLE`·
+`app/lib/features/auth/user_role.dart`의 `UserRole` enum)은 **이 절**을 따른다 — 값을 바꾸면
+여기부터 먼저 고친다(§0 문서 규칙과 동일한 단일 출처 원칙).
+
+- **정본 문구** (`0029`의 `profiles.role` 컬럼 주석, 글자 그대로):
+  > 계정 종류. admin만 특별 취급(`is_admin()`) — 그 외는 전부 `'user'`이며 구매/판매 구분이
+  > 없다(역할 통합, 0027·0028·0029). 매물 접근 권한은 이 값이 아니라 소유권(`seller_id`)+RLS로
+  > 판정한다.
+- **DB에 실제로 저장되는 값**: `profiles.role`은 `admin` 또는 `user` 두 값뿐이다(0029가
+  기존 `buyer`/`seller` 계정을 전부 `user`로 통일했고, 0028이 신규 가입 기본값을 `user`로
+  바꿨다). `buyer`/`seller`는 더 이상 DB에 새로 쓰이지 않는다.
+  - ⚠️ **CHECK 제약은 이 두 값으로 좁혀져 있지 않다** — 0027이 CHECK를 완화해 DB가 강제하는
+    값 집합이 아니다. 위 "실제로 저장되는 값"은 **트리거·마이그레이션이 실제로 채우는 값**을
+    말하는 것이지, 컬럼이 허용하는 값의 전부가 아니다.
+- **앱(Flutter) 쪽 계약이 다른 이유**: `app/lib/features/auth/user_role.dart`의 `UserRole`
+  enum은 `buyer`/`seller`/`admin` 세 값만 안다 — `'user'`나 그 밖의 미상 문자열은
+  `UserRole.fromValue()`가 **의도적으로 `null`로 삼킨다**(모르는 값을 억지로 매핑하지 않는다).
+  그래서 `currentRoleProvider`(`auth_controller.dart`)는 role 메타데이터가 없을 때뿐 아니라
+  `'user'`일 때도 `null`을 반환한다 — 둘 다 "특별 취급할 역할 없음"으로 같게 다뤄지고,
+  판정에 쓰는 것은 이 값 자체가 아니라 **`null`이 아닌가/`admin`인가** 두 가지뿐이다
+  (`app_router.dart`의 `redirect`·구 `main.dart`의 `AuthGate`가 그렇게 쓴다). 이 계약은
+  `app/test/current_role_provider_test.dart`(DW-686)가 고정한다.
+- **권한 판정은 role이 아니라 소유권+RLS다** — 위 정본 문구 그대로다. `role`은 "관리자인가
+  아닌가"만 가르는 값이고, 매물 접근·채팅 참여 같은 나머지 권한은 각 테이블의 RLS(§6·§8)와
+  `seller_id`/`buyer_id` 같은 소유권 컬럼이 판정한다. 새 화면·API를 짤 때 `role=='user'`
+  같은 비교로 "일반 사용자만 가능"을 표현하지 않는다 — 그 구분 자체가 이미 없다.

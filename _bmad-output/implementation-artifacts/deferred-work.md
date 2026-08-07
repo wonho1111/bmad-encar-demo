@@ -4826,7 +4826,8 @@ summary: `profiles.role`의 어휘는 web·app·db 경계를 가로지르는 값
 evidence: `_bmad-output/project-context.md` 규칙 1이 "web·app·api·db 경계를 가로지르는 값은 **전부 거기(conventions.md) 정의돼 있다**. 코드보다 그 문서를 먼저 고친다"로 못박았고, `constants.ts` 헤더도 "docs/conventions.md(단일 출처)와 값이 일치해야 한다"고 적혀 있다. 그런데 `grep -niE "role" docs/conventions.md`는 `service_role` 키(§5)·ARIA role(§접근성)·`information_schema.role_table_grants` 쿼리만 반환하고 `profiles.role` 어휘를 다루는 절은 0건이다. `app/lib/features/auth/user_role.dart:2`의 "(DB 트리거 handle_new_user 가 여전히 이 문자열만 배정한다)"는 0028 이후 **거짓**이며, 그 enum엔 `user` 멤버가 없어 `fromValue('user') → null`이다. project-context.md:26이 기록한 이 리포의 반복 실패 모드("요약이 원본보다 늙어 틀린 값이 에이전트에 주입됐다 — 3건 실측")가 재발하기 좋은 자리다.
 trigger: ~~Epic 16 첫 스토리에서 `currentRoleProvider`가 무엇을 읽을지 정하는 자리~~ → **그 자리는 2026-08-06 `16-0`으로 지나갔고 이 항목은 이행되지 않았다.** 재지정: **Story 16.1 착수 시** — 앱 코드를 처음 본격적으로 손대는 스토리이고, 하단 4탭이 `currentRoleProvider`(admin 차단, `main.dart:77`)와 만나는 자리다. 그 인수조건으로 심어뒀다(2026-08-07, epics 문서).
 ✎ 2026-08-07 재확인 — **아직 없다.** `docs/conventions.md`에 role 어휘를 정의하는 절이 없다(grep: RLS·GRANT 문맥의 `service_role`·`role_table_grants`만 나온다). 다만 `0029`가 **DB 컬럼 주석**으로는 정본을 남겼다: *"계정 종류. admin만 특별 취급(is_admin()) — 그 외는 전부 'user'이며 구매/판매 구분이 없다(역할 통합, 0027·0028·0029). 매물 접근 권한은 이 값이 아니라 소유권(seller_id)+RLS로 판정한다."* 즉 **정본이 DB에만 있고 문서에는 없는 상태**다.
-status: open
+resolution: **2026-08-07 Story 16.1이 해소.** `docs/conventions.md`에 `## 14. Role 어휘` 절을 끝에 추가(§1~13 번호는 그대로)했고, `0029` 컬럼 주석을 정본 문구로 그대로 옮겼다. `user_role.dart`의 stale 헤더 주석(DB 트리거가 여전히 buyer/seller만 배정한다는 거짓 주장)은 이 항목의 범위(문서 절 신설)가 아니라 손대지 않았다 — 필요하면 별도 항목으로.
+status: resolved
 ### DW-682: `0028`의 buyer/seller 통과 분기에 제거 트리거가 어디에도 없다 — Flutter가 role 전송을 멈추는 순간 영구 사문화된다
 
 source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
@@ -4881,7 +4882,8 @@ summary: DW-678은 **행동**의 갭(web 신규 가입 계정이 앱 판매화�
 evidence: `widget_test.dart`가 단언하는 것은 옛 계약(role은 buyer/seller/admin 셋뿐)이고, 0028 이후 DB가 실제로 배정하는 `'user'`는 그 enum에 아예 없다. `grep -rln "sell_screen|my_listings|edit_listing|home_screen|chat_list_screen|currentRoleProvider" app/test/` → 0건(다섯 화면 어느 것도 앱 테스트가 건드리지 않는다). 그래서 "앱 CI가 초록"은 "앱이 정상"이 아니라 "앱이 무엇을 약속하는지 아무도 안 본다"를 뜻한다. **지금 당장 red가 되는 단언을 심는 것은 일부러 CI를 깨는 것**이라 이번 스토리에서 하지 않았다 — 앱이 새 계약을 채택하는 스토리와 같은 커밋에 들어가야 한다.
 trigger: ~~Epic 16의 앱 role 정합성 스토리 착수 시~~ → **그 스토리(`16-0`)는 2026-08-06에 끝났고 이 항목은 이행되지 않았다.** 재지정: **Story 16.1 착수 시** — 앱 테스트를 다시 손대는 자리다. 그 인수조건으로 심어뒀다(2026-08-07, epics 문서).
 ✎ 2026-08-07 실측 — **아직 없다.** `grep -rn 'currentRoleProvider' app/test/` → **0건**. `16-0`이 위젯 테스트 8건을 추가했지만(`require_user_test.dart` 등) 전부 **게이트가 로그인만 보는지**를 보고, `currentRoleProvider`가 role 없는 세션에서 무엇을 돌려주는지는 아무도 단언하지 않는다. 그 provider는 지금도 살아 있고(`auth_controller.dart:28`) `main.dart:77`의 admin 차단이 그 값을 쓴다 — 즉 **쓰이는데 계약이 안 잡혀 있다.**
-status: open
+resolution: **2026-08-07 Story 16.1이 해소.** `app/test/current_role_provider_test.dart`(신규)가 `currentRoleProvider`를 role 없음/`'user'`/`'admin'` 세 세션에서 각각 단언한다(`null`/`null`/`UserRole.admin`) — `require_user_test.dart`의 `_fakeUser`+`ProviderScope(overrides:)` 패턴을 재사용. `flutter test`로 실행·통과 확인(리뷰 세션이 직접 재실행).
+status: resolved
 ### DW-687: web 배포와 원격 `0028` 적용 사이의 창에서 가입한 계정은 영구히 `'buyer'`로 남는다
 
 source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
@@ -5352,3 +5354,34 @@ resolution: **2026-08-07 해소.** `ai_fab`을 떼고 D12가 정한 자리 — *
   · **남은 것은 16.1 본연의 범위**이지 이월 항목이 아니다: 하단 4탭(홈(AI)·찜·채팅·내차팔기)과 웹 petrol 히어로 밴드 토큰 미러링. 그래서 이 항목은 닫는다 — 16.1 인수조건이 이미 둘 다 명시하고 있다.
   · `app_theme.dart:93`의 `floatingActionButtonTheme`은 **그대로 뒀다**(이제 쓰는 화면이 없다). 지우지 않은 이유는 그 파일 전체가 16.1의 토큰 미러링 대상이라, 지금 손대면 그 스토리와 충돌하기 때문이다. **지우라는 뜻이 아니라 16.1이 볼 것**으로 남긴다.
 status: resolved
+
+### DW-729: 앱의 색 토큰 17종이 **웹 팔레트의 사본인데 어긋나도 아무도 모른다** — 대조 검사도, 정본 절도 없다
+origin: 2026-08-07 Story 16.1(디자인 토큰 미러 + 하단 4탭) 3회차 리뷰. 4개 리뷰 렌즈 중 2개(adversarial·verification-gap)가 독립적으로 같은 자리를 지목했다.
+location: `app/lib/core/theme/app_theme.dart`의 `AppColors`(17종) ↔ `web/src/app/globals.css`의 `:root` 라이트 값 · 비어 있는 자리 = `docs/conventions.md`(색 토큰 절 없음)
+severity: low
+summary: 16.1이 웹 라이트 팔레트(petrol/amber/trust-green 등) hex를 앱에 그대로 옮겨 적었다. **지금 값은 17/17 정확히 일치한다**(이번 리뷰가 직접 대조 확인) — 즉 **틀린 게 아니라 고정돼 있지 않은 것**이다. 웹이 토큰 하나를 조정하면 앱만 옛 hex에 남고 CI는 계속 초록이다.
+evidence: `grep -rn '1E6E6A|F0A339' --include=*.dart --include=*.ts --include=*.yml`(node_modules·build 제외) → `app_theme.dart` 정의부 2건뿐, 테스트·린트 참조 **0건**. `grep -niE 'petrol|amber|trust-green' docs/conventions.md` → **0건**(16.1이 추가한 §14는 role 어휘만 다룬다). 반면 `_bmad-output/implementation-artifacts/epic-16-context.md:60`은 *"시각 토큰의 원본은 웹 DESIGN.md이며 계약 형태로 `docs/conventions.md`에 이월된다"*고 이미 적어놨다 — 그 이월이 안 됐다.
+why_it_matters: 이 리포가 **이미 겪은 실패 모드**다 — `_bmad-output/project-context.md:26`이 *"요약이 원본보다 늙어 틀린 값이 에이전트에 주입됐다 — 3건 실측"*으로 기록하고 있고, 그래서 "값은 한쪽에만 산다"를 규칙으로 세웠다. 색 토큰은 그 규칙 밖에 있는 네 번째 사본이다. 게다가 16.2(이미지·카드)·16.3(신뢰속성)이 이 토큰 위에 카드와 뱃지를 그리므로 어긋남이 누적된다.
+fix_sketch: 둘 중 하나. (a) `docs/conventions.md`에 색 토큰 절을 신설해 정본을 한 곳에 두고 `app_theme.dart`·`globals.css`가 그 절을 인용하게 한다(§14 role 절을 만든 것과 같은 방식, epic-16-context가 원래 그러기로 적은 것). (b) **실행되는 검사로 못박는다**(CLAUDE.md B9) — `globals.css`의 `:root` 블록을 파싱해 hex를 뽑고 `AppColors`와 대조하는 테스트를 app 잡에 건다. 사람 눈 diff 대조는 계약이 아니다. **채택 전 red 확인**: 앱 hex 한 개를 일부러 틀리게 바꿔 검사가 실제로 잡는지 본다.
+scope_note: 16.1의 intent-contract가 요구한 것은 **1회 전사**("라이트 값만 hex 그대로 옮긴다")이지 드리프트 가드가 아니다. 그래서 그 스토리에서 하지 않았고, 여기 적는다.
+trigger: **Story 16.2 착수 시**(그 스토리가 이 토큰 위에 카드를 그리므로 가장 먼저 사본이 늙는 자리다). 늦어도 Epic 16 마감 전.
+status: open
+
+### DW-730: 앱 전반에 **Material 기본색 리터럴 29곳**이 남아 있고, 토큰 사용을 강제하는 검사가 없다
+origin: 2026-08-07 Story 16.1(디자인 토큰 미러 + 하단 4탭) 4회차(후속) 리뷰. adversarial 렌즈가 지목, 리뷰 세션이 직접 세어 확인.
+location: `app/lib/**` 전반 — 예: `sell_screen.dart`의 안내문 `Colors.grey`, `ai_chat_screen.dart:125,142`, `chat_list_screen.dart`의 에러/빈상태 아이콘 `Colors.red`·`Colors.grey`, `listing_card.dart` 등
+severity: low
+summary: 16.1은 `AppColors` 17종을 웹 팔레트에서 미러링하고 "**새** 하드코딩 색 금지"를 규칙으로 세웠다. 그 규칙은 **이번 변경이 새로 도입하는 색**만 막았고(실제로 `onPetrol`·`onPetrolMuted` 토큰 신설로 3곳을 걷어냈다), **선재하던 리터럴 29곳은 그대로**다. 그리고 이 규칙을 실행하는 검사가 없다 — 주석과 스펙 문장뿐이다.
+evidence: `grep -rnE 'Colors\.(grey|red|green|white|black|blue|orange|amber)' app/lib --include=*.dart | wc -l` → **29**. `flutter analyze` → 0 issues(이 규칙을 보는 lint 없음). `grep -rn 'AppColors' app/test` → 색 토큰 사용을 강제하는 단언 0건.
+why_it_matters: 16.2(카드·이미지)·16.3(신뢰속성 뱃지)이 이 팔레트 위에 화면을 그린다. 의미 토큰과 Material 기본색이 섞인 채로 카드를 다시 그리면 "petrol 계열인데 회색만 튀는" 어긋남이 화면 단위로 굳는다. 또 [[DW-729]]가 제안한 드리프트 대조 검사도 **무엇을 검사 대상으로 볼지**가 정해져 있지 않으면 범위를 못 정한다.
+fix_sketch: (a) 리터럴을 의미 토큰으로 옮긴다(`Colors.grey`→`AppColors.inkMuted`, `Colors.red`→`AppColors.danger` 등 — 자리마다 역할을 보고 매핑한다. 일괄 치환 금지: 16.1 Design Notes "색 토큰 분리 지침"이 같은 이유로 사이트별 판단을 요구했다). (b) 규칙을 **실행되는 검사로** 바꾼다(CLAUDE.md B9) — `app_theme.dart` 밖에서 `Colors.<이름>`을 쓰면 실패하는 테스트/lint. **채택 전 red 확인**: 리터럴 하나를 되살려 검사가 잡는지 본다.
+scope_note: 16.1의 intent-contract가 요구한 것은 라이트 팔레트 **전사**와 새 하드코딩 금지이지 기존 코드 전면 토큰화가 아니다. 이번 변경이 만든 결함도 아니다(선재) — 그래서 이 스토리에서 하지 않고 여기 적는다.
+trigger: **Story 16.2 착수 시** — [[DW-729]]와 같은 자리에서 함께 본다(둘 다 색 토큰의 정본·강제 문제이고, 16.2가 카드를 다시 그리며 이 코드를 직접 만진다).
+status: open
+
+### DW-731: Follow-up review still recommended for 16-1-디자인-토큰-미러-하단-4탭-내비 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-1-디자인-토큰-미러-하단-4탭-내비.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

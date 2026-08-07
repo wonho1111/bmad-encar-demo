@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../listings/listing_card.dart';
 import '../listings/listing_detail_screen.dart';
 import 'ai_search_api.dart';
@@ -63,11 +64,13 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _messages.add(ChatMessage(
-          role: 'assistant',
-          content: result.answer,
-          listings: result.listings,
-        ));
+        _messages.add(
+          ChatMessage(
+            role: 'assistant',
+            content: result.answer,
+            listings: result.listings,
+          ),
+        );
         _loading = false;
       });
       _scrollToBottom();
@@ -134,7 +137,10 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
                           alignment: Alignment.centerLeft,
                           child: Padding(
                             padding: EdgeInsets.symmetric(vertical: 6),
-                            child: Text('검색 중…', style: TextStyle(color: Colors.grey)),
+                            child: Text(
+                              '검색 중…',
+                              style: TextStyle(color: Colors.grey),
+                            ),
                           ),
                         );
                       }
@@ -212,7 +218,9 @@ class _MessageBubble extends StatelessWidget {
           ),
           child: Text(
             message.content,
-            style: const TextStyle(color: Colors.white),
+            // petrol(브랜드 색) 배경 위 잉크는 하드코딩 흰색 대신 토큰을 쓴다(review,
+            // spec-16-1 P10 — app_router.dart 프로필 아이콘과 같은 규칙).
+            style: const TextStyle(color: AppColors.onPetrol),
           ),
         ),
       );

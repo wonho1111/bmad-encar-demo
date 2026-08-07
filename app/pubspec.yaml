@@ -37,10 +37,17 @@ dependencies:
   supabase_flutter: ^2.15.0
   flutter_riverpod: ^3.3.2
   http: ^1.6.0
+  go_router: ^17.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # 위젯 테스트가 가짜 자격증명으로 Supabase.initialize를 부르는데 그게 내부적으로
+  # shared_preferences를 쓴다 — 전이 의존성이라 직접 선언해 lint를 만족시킨다.
+  # 초기화가 아직 필요한 이유는 app_router_test.dart의 setUpAll 주석에 적어뒀다
+  # (ChatRoomScreen의 전역 직독 + ListingsRepository 생성자의 `client ?? supabase`).
+  # ChatListScreen은 더 이상 이유가 아니다 — currentUserProvider로 옮겼다(spec-16-1 Task).
+  shared_preferences: ^2.5.5
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -71,22 +78,22 @@ flutter:
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
 
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
+  # Pretendard(OFL, orioncactus/pretendard v1.3.9 정적 OTF) — 웹과 동일 폰트.
+  # 타이포 스케일이 쓰는 굵기(500/600/700/800) + 기본(400, Regular)을 넣는다
+  # (DESIGN.md typography.scale에 400 자체는 없지만, fontWeight를 명시하지 않는 Text가
+  # 기본값 w400으로 떨어질 때 이 family에 그 굵기가 없으면 다른 폰트로 조용히 폴백한다 —
+  # 코드리뷰 지적, 4웨이트만으론 "명시 안 한 텍스트"가 전부 새 폰트를 못 탄다).
+  # web은 self-host woff2를 쓰지만 Flutter는 폰트 에셋으로 woff2를 못 쓰므로 OTF로 새로 받았다.
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: fonts/Pretendard-Regular.otf
+          weight: 400
+        - asset: fonts/Pretendard-Medium.otf
+          weight: 500
+        - asset: fonts/Pretendard-SemiBold.otf
+          weight: 600
+        - asset: fonts/Pretendard-Bold.otf
+          weight: 700
+        - asset: fonts/Pretendard-ExtraBold.otf
+          weight: 800
