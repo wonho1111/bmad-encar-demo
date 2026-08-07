@@ -61,6 +61,84 @@ void main() {
     });
   });
 
+  // Story 16.2 PATCH 1 — AI 검색 결과 카드에 사진을 붙이려면 image_path(api 전용, 경로) →
+  // image_url(카드 계약, 공개 URL)로 바꿔야 한다(web resolveCardImage 미러). getPublicUrl은
+  // 전역 supabase 인스턴스가 필요해 단위 테스트에서 못 쓰므로, 가짜 imageUrlBuilder를 주입한다.
+  group('parseSearchResult — image_path → image_url 매핑(web aiSearch.test.ts 미러)', () {
+    Map<String, Object?> baseListing() => {
+          'id': 'l1',
+          'manufacturer': '현대',
+          'model': '아반떼',
+          'year': 2021,
+          'price': 18000000,
+          'mileage': 20000,
+          'region': '서울',
+        };
+
+    test('image_path가 있으면 주입한 빌더로 image_url을 조립하고, image_path는 버려진다', () {
+      final r = parseSearchResult(
+        {
+          'answer': 'x',
+          'listings': [
+            {...baseListing(), 'image_path': 'uid/l1/a.webp', 'image_count': 3},
+          ],
+        },
+        imageUrlBuilder: (path) => 'https://cdn.test/$path',
+      );
+      final card = r.listings.single;
+      expect(card.imageUrl, 'https://cdn.test/uid/l1/a.webp');
+      expect(card.imagePath, isNull); // 카드는 image_url만 안다 — 경로는 image_url 자리로 소멸한다.
+      expect(card.imageCount, 3);
+    });
+
+    test(
+        'image_path가 null인데 image_count만 있으면 → imageUrl도 imageCount도 0'
+        '(사진 준비중 위에 "N장" 배지가 뜨는 모순을 막는 가드)', () {
+      final r = parseSearchResult(
+        {
+          'answer': 'x',
+          'listings': [
+            {...baseListing(), 'image_path': null, 'image_count': 3},
+          ],
+        },
+        imageUrlBuilder: (path) => 'https://cdn.test/$path',
+      );
+      final card = r.listings.single;
+      expect(card.imageUrl, isNull);
+      expect(card.imageCount, 0);
+    });
+
+    test('image_path가 공백 문자열이면 경로 없음으로 취급한다', () {
+      final r = parseSearchResult(
+        {
+          'answer': 'x',
+          'listings': [
+            {...baseListing(), 'image_path': '   ', 'image_count': 5},
+          ],
+        },
+        imageUrlBuilder: (path) => 'https://cdn.test/$path',
+      );
+      final card = r.listings.single;
+      expect(card.imageUrl, isNull);
+      expect(card.imageCount, 0);
+    });
+
+    test('image_count가 음수면 0으로 하한한다(경로는 정상이라 imageUrl은 채워진다)', () {
+      final r = parseSearchResult(
+        {
+          'answer': 'x',
+          'listings': [
+            {...baseListing(), 'image_path': 'uid/l1/a.webp', 'image_count': -3},
+          ],
+        },
+        imageUrlBuilder: (path) => 'https://cdn.test/$path',
+      );
+      final card = r.listings.single;
+      expect(card.imageUrl, isNotNull);
+      expect(card.imageCount, 0);
+    });
+  });
+
   group('buildContext (멀티턴 직렬화)', () {
     test('role/content 만 추려 순서 유지', () {
       final ctx = buildContext([

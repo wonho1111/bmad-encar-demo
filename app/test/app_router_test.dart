@@ -588,6 +588,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        // Story 16.2가 카드에 5:3 사진 셀을 추가해 카드가 커졌다 — 기본 테스트 뷰포트(800×600)
+        // 밖으로 밀려날 수 있어 탭 전에 스크롤로 보이게 한다(홈 화면은 SingleChildScrollView).
+        await tester.ensureVisible(find.byType(ListingCard));
+        await tester.pumpAndSettle();
+
         await tester.tap(find.byType(ListingCard));
         await tester.pumpAndSettle();
 

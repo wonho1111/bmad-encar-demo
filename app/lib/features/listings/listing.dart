@@ -6,7 +6,9 @@
 // 숫자는 int/double/문자열 어느 형태로 와도 안전하게 int 로 바꾼다(서버·드라이버 차이 흡수).
 
 /// 숫자 필드를 안전하게 int 로. null·문자열·double 어떤 형태든 흡수, 실패 시 null.
-int? _asInt(Object? v) {
+/// public(밑줄 없음) — `listings_repository.dart`가 `listing_images.sort_order` 파싱에도
+/// 재사용한다(계약값 coercion 로직을 두 곳에 따로 두지 않는다, 이 파일과 같은 방어 원칙).
+int? asInt(Object? v) {
   if (v == null) return null;
   if (v is int) return v;
   if (v is double) return v.toInt();
@@ -51,19 +53,16 @@ class ListingCardData {
   // 대표 사진의 **버킷 상대 경로**(`{user_id}/{listing_id}/{filename}`) — AI 응답(/ai/search) 전용.
   // api는 URL을 만들지 않으므로(conventions.md §10) `image_url` 대신 이 필드가 채워져 온다.
   //
-  // ⚠️ **이 스토리(9.6) 전후로 앱 동작은 같다.** Supabase 직접 조회 경로는 이 필드를 주지 않고,
-  //    `listing_card.dart`는 애초에 사진을 그리지 않는다(web의 9.4에 해당하는 작업이 app에 없다).
-  //    앱 카드에 사진을 붙이는 것은 **Epic 16(16.2 이미지 카드 재설계)**의 몫이다 —
-  //    여기서는 계약 락스텝(conventions.md §4.1)을 맞추기 위해 **파싱만** 해 둔다.
+  // Story 16.2가 이 변환을 실제로 구현했다: `ai_search_api.dart`의 `parseSearchResult`가
+  // `image_path`를 받아 공개 URL로 바꿔 `image_url` 자리에 넣고, `fromMap`에는 경로 자체를
+  // 넘기지 않는다(web `aiSearch.ts`의 `resolveCardImage` 미러). 그 결과 이 `imagePath` 필드는
+  // **앱 코드 어디에서도 채워지지 않는다** — Supabase 직접 조회 경로도 안 채우고, AI 응답
+  // 경로도 매핑 단계에서 바로 소비해 버려서 안 채운다. 그런데도 남겨 두는 이유는 순전히
+  // conventions.md §4.1 계약 락스텝(web `ListingCardData`와 필드 형태를 맞춘다) 때문이다.
   //
-  // ⚠️ **Epic 16이 이 필드를 쓸 때 지킬 방향** (✎ 2026-07-20 코드리뷰 정정):
-  //    원래 여기 *"렌더할 때 getPublicUrl로 URL을 만들어 써라"*라고 적혀 있었는데, 이는
-  //    정본(conventions.md §10)과 **반대 방향**이다. 정본은 *"AI 응답을 받는 쪽은 `image_path`를
-  //    URL로 바꿔 `image_url` 자리에 넣고 **경로는 버린다**. 카드는 `image_url` 하나만 안다"*이다
-  //    (web `aiSearch.ts`의 `resolveCardImage`가 그 구현이다).
-  //    → 즉 변환은 **응답 매핑 계층에서 한 번**, 렌더 시점이 아니다. 이 주석을 그대로 믿고
-  //      카드가 경로를 들고 있다가 그릴 때 변환하면 web과 다른 구조가 되고, 그게 §4.1
-  //      락스텝이 애초에 막으려던 드리프트다.
+  // ⚠️ (✎ 2026-07-20 코드리뷰 정정, 지금도 유효한 방향) 변환은 **응답 매핑 계층에서 한 번**
+  //    일어나야지, 렌더 시점에 카드가 경로를 들고 있다가 바꾸면 안 된다 — 그러면 web과 다른
+  //    구조가 되고, 그게 §4.1 락스텝이 애초에 막으려던 드리프트다.
   final String? imagePath;
   final int? viewCount; // Epic 11
   final int? imageCount; // Epic 9
@@ -83,9 +82,9 @@ class ListingCardData {
     final manufacturer = raw['manufacturer'];
     final model = raw['model'];
     final region = raw['region'];
-    final year = _asInt(raw['year']);
-    final price = _asInt(raw['price']);
-    final mileage = _asInt(raw['mileage']);
+    final year = asInt(raw['year']);
+    final price = asInt(raw['price']);
+    final mileage = asInt(raw['mileage']);
 
     if (id is! String ||
         manufacturer is! String ||
@@ -98,6 +97,11 @@ class ListingCardData {
     }
 
     final sellerName = raw['seller_name'];
+    final imageUrl = raw['image_url'] is String ? raw['image_url'] as String : null;
+    // "url 없으면 count도 0" — 모든 생산자(Supabase 직접 조회·AI 응답 매핑 등)가 카드를 만들 때
+    // 반드시 이 fromMap을 지나므로, 이 한 곳에서만 강제하면 새 생산자가 생겨도 놓칠 수 없다(B9).
+    final rawImageCount = asInt(raw['image_count']);
+    final imageCount = (imageUrl == null || imageUrl.trim().isEmpty) ? 0 : rawImageCount;
     return ListingCardData(
       id: id,
       manufacturer: manufacturer,
@@ -107,10 +111,10 @@ class ListingCardData {
       mileage: mileage,
       region: region,
       sellerName: sellerName is String ? sellerName : null,
-      imageUrl: raw['image_url'] is String ? raw['image_url'] as String : null,
+      imageUrl: imageUrl,
       imagePath: raw['image_path'] is String ? raw['image_path'] as String : null,
-      viewCount: _asInt(raw['view_count']),
-      imageCount: _asInt(raw['image_count']),
+      viewCount: asInt(raw['view_count']),
+      imageCount: imageCount,
       fuel: raw['fuel'] is String ? raw['fuel'] as String : null,
       accidentStatus: raw['accident_status'] is String ? raw['accident_status'] as String : null,
       isSingleOwner: raw['is_single_owner'] is bool ? raw['is_single_owner'] as bool : null,
@@ -159,8 +163,8 @@ class OwnListing {
     final manufacturer = raw['manufacturer'];
     final model = raw['model'];
     final status = raw['status'];
-    final year = _asInt(raw['year']);
-    final price = _asInt(raw['price']);
+    final year = asInt(raw['year']);
+    final price = asInt(raw['price']);
 
     if (id is! String ||
         manufacturer is! String ||
@@ -203,6 +207,7 @@ class ListingDetail {
     this.sellerName,
     this.options,
     this.description,
+    this.imageUrls = const [],
   });
 
   final String id;
@@ -224,6 +229,34 @@ class ListingDetail {
   final String? sellerName;
   final List<String>? options; // text[]; 비거나 null 가능
   final String? description;
+  // 상세 갤러리 전체 URL(공개 URL, sort_order·id 순). `listings` 단일 row엔 없는 데이터라
+  // fromMap이 채우지 않는다 — `listing_images` 별도 조회 후 withImages로 부착한다(Story 16.2).
+  final List<String> imageUrls;
+
+  /// `listing_images` 조회 결과(공개 URL 리스트)를 부착한 새 인스턴스를 만든다.
+  /// fromMap이 읽는 단일 `listings` row엔 없는 데이터라 부착 지점이 별도로 필요하다.
+  ListingDetail withImages(List<String> urls) => ListingDetail(
+        id: id,
+        sellerId: sellerId,
+        manufacturer: manufacturer,
+        model: model,
+        bodyType: bodyType,
+        year: year,
+        price: price,
+        mileage: mileage,
+        color: color,
+        fuel: fuel,
+        transmission: transmission,
+        displacement: displacement,
+        seats: seats,
+        region: region,
+        accidentFree: accidentFree,
+        status: status,
+        sellerName: sellerName,
+        options: options,
+        description: description,
+        imageUrls: urls,
+      );
 
   /// Supabase row → 상세. 필수 필드가 빠지면 null(못 찾음으로 처리).
   static ListingDetail? fromMap(Object? raw) {
@@ -239,11 +272,11 @@ class ListingDetail {
     final region = raw['region'];
     final status = raw['status'];
     final accidentFree = raw['accident_free'];
-    final year = _asInt(raw['year']);
-    final price = _asInt(raw['price']);
-    final mileage = _asInt(raw['mileage']);
-    final displacement = _asInt(raw['displacement']);
-    final seats = _asInt(raw['seats']);
+    final year = asInt(raw['year']);
+    final price = asInt(raw['price']);
+    final mileage = asInt(raw['mileage']);
+    final displacement = asInt(raw['displacement']);
+    final seats = asInt(raw['seats']);
 
     if (id is! String ||
         sellerId is! String ||

@@ -5365,7 +5365,8 @@ why_it_matters: 이 리포가 **이미 겪은 실패 모드**다 — `_bmad-outp
 fix_sketch: 둘 중 하나. (a) `docs/conventions.md`에 색 토큰 절을 신설해 정본을 한 곳에 두고 `app_theme.dart`·`globals.css`가 그 절을 인용하게 한다(§14 role 절을 만든 것과 같은 방식, epic-16-context가 원래 그러기로 적은 것). (b) **실행되는 검사로 못박는다**(CLAUDE.md B9) — `globals.css`의 `:root` 블록을 파싱해 hex를 뽑고 `AppColors`와 대조하는 테스트를 app 잡에 건다. 사람 눈 diff 대조는 계약이 아니다. **채택 전 red 확인**: 앱 hex 한 개를 일부러 틀리게 바꿔 검사가 실제로 잡는지 본다.
 scope_note: 16.1의 intent-contract가 요구한 것은 **1회 전사**("라이트 값만 hex 그대로 옮긴다")이지 드리프트 가드가 아니다. 그래서 그 스토리에서 하지 않았고, 여기 적는다.
 trigger: **Story 16.2 착수 시**(그 스토리가 이 토큰 위에 카드를 그리므로 가장 먼저 사본이 늙는 자리다). 늦어도 Epic 16 마감 전.
-status: open
+status: done 2026-08-07
+resolution: **2026-08-07 Story 16.2가 해소.** fix_sketch (b)를 채택했다(conventions.md에 색 절을 신설하는 (a)는 이 프로젝트가 이미 겪은 "사본이 원본보다 늙는" 실패를 반복하므로 기각 — spec-16-2 Design Notes 근거). `app/test/app_theme_color_drift_test.dart`(신규)가 `web/src/app/globals.css`의 `:root` 라이트 블록 + `@theme static`의 `--color-accent-amber`를 상대경로로 직접 읽어 `AppColors` 17종과 hex 문자열로 대조한다(사본을 늘리지 않고 정본을 직접 읽음 — 파일을 못 읽는 샌드박스에서만 리터럴 폴백 사용). **채택 전 실측**: `AppColors.brandPetrol`을 `#1E6E6A`→`#1E6E6B`로 한 글자 틀리게 바꿔 `flutter test`가 red가 되는 것을 확인했고, 원복해 green(18/18 case: 17종 대조 + 개수 단언)임을 재확인했다.
 
 ### DW-730: 앱 전반에 **Material 기본색 리터럴 29곳**이 남아 있고, 토큰 사용을 강제하는 검사가 없다
 origin: 2026-08-07 Story 16.1(디자인 토큰 미러 + 하단 4탭) 4회차(후속) 리뷰. adversarial 렌즈가 지목, 리뷰 세션이 직접 세어 확인.
@@ -5377,11 +5378,50 @@ why_it_matters: 16.2(카드·이미지)·16.3(신뢰속성 뱃지)이 이 팔레
 fix_sketch: (a) 리터럴을 의미 토큰으로 옮긴다(`Colors.grey`→`AppColors.inkMuted`, `Colors.red`→`AppColors.danger` 등 — 자리마다 역할을 보고 매핑한다. 일괄 치환 금지: 16.1 Design Notes "색 토큰 분리 지침"이 같은 이유로 사이트별 판단을 요구했다). (b) 규칙을 **실행되는 검사로** 바꾼다(CLAUDE.md B9) — `app_theme.dart` 밖에서 `Colors.<이름>`을 쓰면 실패하는 테스트/lint. **채택 전 red 확인**: 리터럴 하나를 되살려 검사가 잡는지 본다.
 scope_note: 16.1의 intent-contract가 요구한 것은 라이트 팔레트 **전사**와 새 하드코딩 금지이지 기존 코드 전면 토큰화가 아니다. 이번 변경이 만든 결함도 아니다(선재) — 그래서 이 스토리에서 하지 않고 여기 적는다.
 trigger: **Story 16.2 착수 시** — [[DW-729]]와 같은 자리에서 함께 본다(둘 다 색 토큰의 정본·강제 문제이고, 16.2가 카드를 다시 그리며 이 코드를 직접 만진다).
+progress: **2026-08-07 Story 16.2가 이 스토리가 실제로 만지는 2개 파일 범위로 부분 해소.** spec-16-2 Boundaries가 범위를 "listing_card.dart·listing_detail_screen.dart 한정"으로 명시했다(A2/A3 — 무관한 chat/auth/sell 화면을 건드리지 않는다). `listing_card.dart`의 `Color(0xFFA1A1AA)`(옛 zinc 팔레트 잔재, 이 grep 패턴엔 안 걸리지만 같은 결함) → `AppColors.inkMuted`, `listing_detail_screen.dart`의 6곳(`Colors.red`·`Colors.grey`·`Colors.green[100]`·`Colors.green[800]`·`Colors.grey[600]`×2) → `AppColors.danger`/`inkMuted`/`trustGreenBg`/`trustGreenInk`로 역할별 매핑했다. 재실측: `grep -rnE 'Colors\.(grey|red|green|white|black|blue|orange|amber)' app/lib --include=*.dart | wc -l` → **25**(29 - 이번에 고친 6 + 아래 신규 2). ⚠️ **새로 생긴 2곳**: `app/lib/features/listings/listing_photo_widgets.dart`(신규 파일)의 "N장"/"k/N" 배지 pill이 `Colors.black`/`Colors.white`를 쓴다 — 이건 이 항목이 말하는 "토큰화 누락"이 아니라 web `bg-black text-white`와 똑같이 **의도적으로 스왑 안 되는 고정 상수**다(배지는 사진 밝기와 무관하게 항상 불투명 검정이어야 하고, 앱은 라이트 고정이라 다크 스왑 자체가 없다 — AppColors에 넣어도 값이 안 바뀌므로 굳이 이원화하지 않았다). 남은 23곳(chat/auth/sell/main.dart/app_theme.dart 등)은 여전히 미해소 — fix_sketch (a)(리터럴→의미 토큰 매핑)·(b)(실행되는 검사)는 그대로 유효하다.
+trigger(잔여 23곳): 그 화면들을 실제로 손대는 다음 스토리 착수 시(Epic 16.3~16.5 후보 — 16.3이 chat 근처를 만지면 그 자리에서 함께 본다). 그전에 규모가 더 늘면(새 화면이 `Colors.*`를 계속 새로 쓰면) 늦어도 Epic 16 마감 전에 별도로 본다.
 status: open
 
 ### DW-731: Follow-up review still recommended for 16-1-디자인-토큰-미러-하단-4탭-내비 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-16-1-디자인-토큰-미러-하단-4탭-내비.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+- source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
+  summary: `epics-increment-2026-07-12.md`의 Story 16.2 AC 원문이 여전히 "앱은 서명 원본 이미지를 Storage에서 받아 렌더한다(api는 storage_path만 반환하므로 앱이 서명)"이라고 적혀 있어, Story 9.0(공개 버킷 전환, `0014_listing_images_public_bucket.sql`)으로 이미 낡은 "서명" 표현이 정정 없이 남아 있다.
+  evidence: 같은 문서의 Epic 9 AC 줄들(467·498·574행)은 Story 9.0 반영 시점에 "✎ 정정(2026-07-19/20)" 주석이 소급으로 붙어 있는데, 16.2 AC 블록만 그 정정 패스에서 빠졌다. 이번 스토리는 스펙 Design Notes에 정정 근거(conventions.md §10, migration 0014)를 남기고 "공개 URL"로 바로잡아 진행했지만, 그 정정은 이번에 새로 쓴 스펙 문서에만 있고 원본 계획 문서(`epics-increment-2026-07-12.md`)에는 반영되지 않았다 — 다음 사람이 원본만 보면 다시 "서명"으로 오해할 수 있다.
+  trigger: `epics-increment-2026-07-12.md`를 다음에 편집할 기회(다른 스토리 추가·수정 등)에 16.2 AC 줄에도 같은 형식의 "✎ 정정" 주석을 소급 부여한다. 그 전에 누군가 16.2 AC를 문자 그대로 읽고 서명 URL을 재도입하려 하면 그때 즉시 바로잡는다.
+
+- source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
+  summary: 앱 `fetchListings`가 페이지네이션 없이 `on_sale` 매물 **전량**을 한 번에 가져온다(`app/lib` 전역에 `.range()`/`.limit()` 0건). Story 16.2가 그 목록에 매물당 사진까지 붙이면서 한 화면이 끌고 오는 비용이 커졌다.
+  evidence: 16.2 리뷰 중 실측한 로컬 Storage 원본은 **1600×992 · 161KB · `cache-control: no-cache`**다(공개 URL GET으로 직접 확인). 16.2가 `cacheWidth`로 디코드 크기는 셀 크기에 맞췄지만, 전송량과 행 수 자체는 목록이 무한정 자라는 구조 그대로다. 같은 무제한 id 목록이 `listing_images` 배치 조회의 `.inFilter()`에도 그대로 들어가, 매물 수가 커지면 PostgREST 쿼리스트링 길이 한도에 먼저 닿는다(web은 같은 자리에 50개 청크를 둔다). 페이지네이션 부재 자체는 16.2가 만든 게 아니라 그 이전부터 있던 구조이며, 16.2는 그 위에 사진을 얹어 비용만 키웠다.
+  trigger: 앱 목록에 페이지네이션·무한스크롤을 넣는 스토리 착수 시(또는 시드/운영 매물이 100건을 넘을 때). 그때 `.range()` 도입과 `_fetchCovers`의 `.inFilter()` 청크(web `COVER_IMAGES_CHUNK_SIZE=50` 미러)를 **같이** 넣는다 — 목록만 페이징하고 사진 조회를 그대로 두면 청크 문제가 그대로 남는다.
+
+- source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
+  summary: `_fetchCovers`의 무제한 `listing_images` 배치 조회는 쿼리스트링 길이보다 **PostgREST 응답 행 수 상한(`max_rows`)에 먼저** 닿고, 그 초과는 에러가 아니라 **잘린 200 응답**으로 와서 16.2가 붙인 try/catch가 아예 발동하지 않는다.
+  evidence: `supabase/config.toml:18`에 `max_rows = 1000`(호스티드 기본값도 동일). `_fetchCovers`는 `on_sale` 전량의 id로 `listing_images`를 한 번에 조회하므로, 매물당 사진 5~10장 기준 **매물 100~200건**이면 이미 1000행에 닿는다 — 위의 쿼리스트링 한도(매물 수천 건대)보다 훨씬 이른 지점이다. 잘린 응답은 정상 200이라 `catch`가 안 잡고 `pickCoverImages`도 못 알아채, 뒤쪽 매물은 대표사진이 사라지고 "N장"이 실제보다 적게 표시된다 — **조용한 오답**이지 실패가 아니다. web이 같은 자리에 둔 50개 청크는 응답을 매번 작게 유지해 이 상한에 부수적으로 걸리지 않는다. 위 페이지네이션 항목과 트리거는 이웃하지만 **고장 방식이 다르다**(요청 거부 vs 무성 절단)이라 따로 적는다.
+  trigger: 위 페이지네이션 항목과 같은 자리에서 함께 본다(청크를 넣으면 이 항목도 같이 닫힌다). 그 전에라도 매물이 100건을 넘으면 `_fetchCovers`가 받은 행 수를 `max_rows`와 비교해 경고를 남기는 최소 방어를 먼저 넣는다.
+
+- source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
+  summary: 홈 화면(`recentListingsProvider`)이 매물 **4건**을 그리려고 `fetchListings`로 `on_sale` 전량을 가져온 뒤 `take(4)` 한다 — 16.2가 그 경로에 매물당 사진 조회까지 얹으면서, 앱의 첫 화면이 코드베이스에서 가장 넓은 `.inFilter()`를 날리고 거의 전부를 버리게 됐다.
+  evidence: `app/lib/features/listings/listings_providers.dart`의 `recentListingsProvider`가 `fetchListings(...)` 결과에 `.take(4)`를 적용한다(조회 단계가 아니라 반환 후 자르기). 16.2 이전에는 매물 행만 낭비했지만, 이제 `_fetchCovers`가 그 전량 id로 `listing_images`까지 조회한다. 위 두 항목(페이지네이션·`max_rows`)의 한도에 **가장 먼저 닿을 화면이 홈**인데, 화면에는 카드 4장만 보이므로 증상이 그 자리와 연결되지 않는다.
+  trigger: 위 페이지네이션 스토리에서 `.range()`를 도입할 때 홈 경로를 같이 고친다(`fetchListings`에 행 수 상한 인자를 두고 홈이 4를 넘기는 형태). 그 전에 홈이 느려졌다는 신호가 오면 그 자리에서 먼저 본다.
+
+- source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
+  summary: 카드·갤러리 사진의 **전송량**은 아무도 소유하고 있지 않다 — 16.2가 원본 크기를 실측하고도 디코드 축(`cacheWidth`)만 고쳤고, `Image.network`에는 디스크 캐시가 없어 앱을 껐다 켤 때마다 보이는 사진을 전부 다시 받는다.
+  evidence: 실측 원본 = **1600×992 · 161KB · `cache-control: no-cache`**. `cacheWidth`는 메모리 디코드 크기만 줄이고 네트워크 바이트는 그대로다. Flutter의 `Image.network`는 프로세스 메모리 `ImageCache`만 쓰고 디스크 캐시가 없어 콜드 스타트마다 재다운로드된다. web은 같은 문제를 `next/image`로 처리했다(원본 1600px 대 표시 364px를 측정한 뒤 도입). NFR7("저비용 서빙, 목록 카드 대표 1장")이 걸린 축인데, 위 페이지네이션 항목은 이 문제를 "매물 수" 프레임으로만 잡고 있어 **매물이 적어도 발생하는 장당 전송 비용**은 어느 항목도 소유하지 않는다.
+  trigger: 실기기 시연·성능 확인(Epic 16-6 SM-D 통합 시연 검증)에서 사진 로딩이 체감되면 그 자리에서. 늦어도 Epic 16 마감 전에 `cached_network_image`(디스크 캐시) 도입 또는 축소본 파생 저장 중 하나를 결정한다.
+
+- source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
+  summary: 장부 항목 `DW-730`의 정본 `trigger:` 줄이 **이미 소진된 조건**("Story 16.2 착수 시")을 그대로 들고 있고, 실제로 살아 있는 잔여 트리거는 표준 밖 키인 `trigger(잔여 23곳):`에 적혀 있다 — `trigger:`를 읽는 사람·sweep은 "이미 지난 조건"만 보게 된다.
+  evidence: `deferred-work.md`의 DW-730은 `status: open`이면서 `trigger:`(소진됨)와 `trigger(잔여 23곳):`(실제 조건) 두 줄을 함께 갖고 있다. 정본 포맷(`.claude/skills/bmad-loop-sweep/deferred-work-format.md`)은 항목당 `trigger:` 하나를 규정한다. 1차 리뷰가 같은 항목에서 예약어 오용(`resolution:` → `progress:`)을 이미 한 번 고쳤는데, 같은 편집에서 이 키가 새로 생겼다. **이번 세션은 기존 항목을 수정할 권한이 없어**(오케스트레이터 소유) 여기 신규로만 적는다.
+  trigger: 다음 sweep 실행 시 오케스트레이터가 DW-730의 `trigger:`를 잔여 조건(chat/auth/sell을 실제로 만지는 다음 스토리 착수 시, 늦어도 Epic 16 마감 전)으로 갱신하고 `trigger(잔여 23곳):` 줄을 없앤다.
+
+### DW-732: Follow-up review still recommended for 16-2-이미지-카드-재설계-앱 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

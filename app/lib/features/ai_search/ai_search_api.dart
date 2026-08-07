@@ -12,7 +12,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../core/supabase/env.dart';
+import '../../core/supabase/storage_helper.dart';
 import '../listings/listing.dart';
+import '../listings/listing_images_bucket.dart';
 
 /// 멀티턴 대화 한 턴(FR18). 서버 ConversationTurn 과 동일(role + content).
 class ConversationTurn {
@@ -104,17 +106,41 @@ Future<SearchResult> searchAi({
 
 /// 200 응답 본문(이미 디코드된 객체) → SearchResult.
 /// listings 는 카드 7필드 가드(ListingCardData.fromMap)로 걸러 깨진 원소를 버린다.
+///
+/// api(`api/app/schemas/ai.py`)는 `image_url`을 채우지 않는다 — `image_path`(버킷 상대 경로)만
+/// 보낸다(api는 URL을 만들지 않는다, listing.dart 53~68행 주석 참조: 변환은 "응답 매핑 계층에서
+/// 한 번, 렌더 시점이 아니다"). 그래서 여기서 `image_path` → 공개 URL로 바꿔 `image_url` 자리에
+/// 넣고, 경로 자체는 `fromMap`에 넘기지 않는다(web `resolveCardImage`의 미러) — 안 그러면 카드가
+/// 항상 "사진 준비중" 플레이스홀더 위에 모순되게 "N장" 배지를 얹는다.
+///
+/// [imageUrlBuilder]: 기본은 `getPublicUrl`(전역 `supabase` 인스턴스 필요)이지만, 단위 테스트는
+/// `supabase`를 초기화하지 않으므로 가짜 빌더를 주입할 수 있게 시접(seam)을 열어둔다.
 /// 순수 함수로 분리 — 단위 테스트가 네트워크 없이 응답 파싱을 검증한다.
-SearchResult parseSearchResult(Object? data) {
+SearchResult parseSearchResult(
+  Object? data, {
+  String Function(String path)? imageUrlBuilder,
+}) {
   if (data is! Map) {
     return const SearchResult(answer: '', listings: []);
   }
+  final buildUrl =
+      imageUrlBuilder ?? ((p) => getPublicUrl(listingImagesBucket, p));
   final answer = data['answer'];
   final rawListings = data['listings'];
   final listings = <ListingCardData>[];
   if (rawListings is List) {
     for (final item in rawListings) {
-      final card = ListingCardData.fromMap(item);
+      if (item is! Map) continue; // fromMap도 걸러내지만 image_path 변환 전에 먼저 배제.
+      final rawPath = item['image_path'];
+      final path = rawPath is String ? rawPath.trim() : '';
+      final url = path.isEmpty ? null : buildUrl(path);
+      final rawCount = asInt(item['image_count']) ?? 0;
+      final mapped = {...item}..remove('image_path'); // 카드는 image_url만 안다(경로는 버린다).
+      mapped['image_url'] = url;
+      // "url 없으면 count도 0" 강제는 여기서 하지 않는다 — `ListingCardData.fromMap`이 모든
+      // 생산자를 대신해 그 규칙을 지킨다(listing.dart 참조). 여기서는 음수 방어만 남긴다.
+      mapped['image_count'] = rawCount < 0 ? 0 : rawCount;
+      final card = ListingCardData.fromMap(mapped);
       if (card != null) listings.add(card); // 깨진 원소는 버린다(web isValidListing 동일).
     }
   }

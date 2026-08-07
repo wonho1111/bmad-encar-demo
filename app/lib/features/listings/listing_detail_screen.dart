@@ -1,15 +1,19 @@
 // 매물 상세 화면(FR10·11 재현) — id 로 판매중 매물 1건을 조회해 FR5 15필드 + 옵션·설명을 표시.
-// 사진 없음. 못 찾음(없음·sold·삭제)·조회 실패를 구분해 안내한다(web listings/[id] 패턴).
+// 사진 갤러리(Story 16.2, web ListingGallery.tsx 미러 — 썸네일 스트립은 이식하지 않는다).
+// 못 찾음(없음·sold·삭제)·조회 실패를 구분해 안내한다(web listings/[id] 패턴).
 // 뒤로가기는 시스템 back(AppBar 기본 ← ) — 출처(탐색/AI결과)로 복귀(nav-ia R5).
+import 'package:flutter/foundation.dart' show debugPrint, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/format/number_format.dart';
 import '../../core/supabase/supabase_client.dart';
+import '../../core/theme/app_theme.dart';
 import '../chat/chat_providers.dart';
 import '../chat/chat_repository.dart';
 import '../chat/chat_room_screen.dart';
 import 'listing.dart';
+import 'listing_photo_widgets.dart';
 import 'listings_providers.dart';
 
 class ListingDetailScreen extends ConsumerWidget {
@@ -29,7 +33,7 @@ class ListingDetailScreen extends ConsumerWidget {
         error: (e, _) => _MessageBody(
           key: const Key('detail_error'),
           icon: Icons.error_outline,
-          color: Colors.red,
+          color: AppColors.danger,
           message: '매물 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
         ),
         data: (listing) {
@@ -38,7 +42,7 @@ class ListingDetailScreen extends ConsumerWidget {
             return const _MessageBody(
               key: Key('detail_not_found'),
               icon: Icons.search_off,
-              color: Colors.grey,
+              color: AppColors.inkMuted,
               message: '매물을 찾을 수 없습니다. 판매가 완료되었거나 삭제된 매물일 수 있습니다.',
             );
           }
@@ -147,15 +151,15 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.green[100],
+                color: AppColors.trustGreenBg,
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(
+              child: const Text(
                 '판매중',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.green[800],
+                  color: AppColors.trustGreenInk,
                 ),
               ),
             ),
@@ -164,11 +168,15 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
         const SizedBox(height: 4),
         Text(
           '${listing.year}년 · ${wonText(listing.price)}',
-          style: TextStyle(color: Colors.grey[600]),
+          style: const TextStyle(color: AppColors.inkMuted),
         ),
+        const SizedBox(height: 16),
+
+        // 사진 갤러리 — 스와이프 + "k/N" 카운터(Story 16.2). 0장이면 플레이스홀더(CM-A, 크래시 없음).
+        ListingGallery(imageUrls: listing.imageUrls),
         const SizedBox(height: 20),
 
-        // 기본 정보(FR5 15필드). 사진 없음.
+        // 기본 정보(FR5 15필드).
         const Text('기본 정보', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         _row('제조사', listing.manufacturer),
@@ -240,10 +248,99 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
         children: [
           SizedBox(
             width: 88,
-            child: Text(label, style: TextStyle(color: Colors.grey[600])),
+            child: Text(label, style: const TextStyle(color: AppColors.inkMuted)),
           ),
           Expanded(child: Text(value)),
         ],
+      ),
+    );
+  }
+}
+
+/// 상세 사진 갤러리 — PageView 스와이프 + "k/N" 카운터(web ListingGallery.tsx의 축약판,
+/// 썸네일 스트립은 이식하지 않는다 — AC가 요구하는 건 스와이프+카운터뿐, A2 범위 최소화).
+/// 0장이면 PageView를 만들지 않고 플레이스홀더만 그린다(CM-A, 크래시 없음).
+class ListingGallery extends StatefulWidget {
+  const ListingGallery({super.key, required this.imageUrls});
+
+  final List<String> imageUrls;
+
+  @override
+  State<ListingGallery> createState() => _ListingGalleryState();
+}
+
+class _ListingGalleryState extends State<ListingGallery> {
+  final _controller = PageController();
+  int _index = 0;
+
+  @override
+  void didUpdateWidget(ListingGallery oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 사진 목록이 바뀐 채로 이 위젯 인스턴스가 재사용되면(예: provider 재조회) 이전 _index가
+    // 새 리스트 길이를 넘어설 수 있다 — "5/3" 같은 불가능한 카운터를 막기 위해 0으로 되돌린다.
+    if (!listEquals(widget.imageUrls, oldWidget.imageUrls)) {
+      _index = 0;
+      if (_controller.hasClients) {
+        _controller.jumpToPage(0);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = widget.imageUrls;
+    final count = urls.length;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: AspectRatio(
+        aspectRatio: 5 / 3,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // 표시 크기로 디코드해 메모리 사용을 실제 셀 크기에 맞춘다(원본 대신 셀 픽셀
+            // 크기로 디코드 — 스와이프로 여러 장을 열어도 원본 전체를 메모리에 쌓지 않는다).
+            final width =
+                constraints.maxWidth * MediaQuery.devicePixelRatioOf(context);
+            final cacheWidth = width.isFinite && width > 0 ? width.round() : null;
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                if (count == 0)
+                  const PhotoPlaceholder()
+                else
+                  PageView.builder(
+                    controller: _controller,
+                    itemCount: count,
+                    onPageChanged: (i) => setState(() => _index = i),
+                    itemBuilder: (context, i) => Image.network(
+                      urls[i],
+                      fit: BoxFit.cover,
+                      cacheWidth: cacheWidth,
+                      errorBuilder: (context, error, stackTrace) {
+                        // 사진은 부가정보 — 로드 실패를 "판매자가 사진을 안 올림"과 구분해 남긴다.
+                        debugPrint('매물 상세 갤러리 사진 로드 실패(${urls[i]}): $error');
+                        return const PhotoPlaceholder();
+                      },
+                    ),
+                  ),
+                // "k/N" 카운터 — 사진이 로드에 실패해 플레이스홀더가 떠도 계속 보인다
+                // (분기 밖에 둔 이유: 장수 정보까지 함께 사라지면 안 된다, web과 동일 원칙).
+                if (count >= 1)
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: PhotoCountBadge(text: '${_index + 1}/$count'),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
