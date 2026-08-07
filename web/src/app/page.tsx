@@ -5,7 +5,16 @@
 //      홈에 바로 노출 + '전체 보기'→/search. 로그인·비로그인 양쪽 분기에 동일하게 렌더한다.
 //      ⚠️ 홈은 필터·URL 상태를 소유하지 않는다(읽기 전용 발췌). 본격 탐색·필터는 /search가 소유.
 //         → 검색 로직 이원화·회귀 방지. ListingCard를 그대로 재사용해 표시 로직도 단일 출처.
-//   ② AI 검색 — 페이지 한구석 버튼이 아니라 "어디서든 닿는 전역 진입"으로 떠 있는 버튼(R3).
+//   ② AI 검색 진입 — **상단바 'AI로 찾기' 링크**가 담당한다(SiteNav, 모든 소비자 화면 상시).
+//
+// ⚠️ **떠 있는 'AI 검색' 버튼은 2026-08-07에 제거했다.** 2026-06-25에 nav-ia-rules R3
+//   (*"web에서는 가벼운 플로팅/상시 진입으로"* — 플로팅 **또는** 상시 진입)를 근거로 넣었는데,
+//   2026-07-12 UX 확정(D12)이 그 뒤에 **웹엔 FAB이 없다는 것을 전제로** 앱의 "FAB 없음"까지
+//   결정했다. 즉 확정 결정이 사실과 어긋난 상태로 한 달 넘게 있었다. 목업 6장(landing-1·
+//   consistency-1·detail-1·forms-2·ai-flow-1·card-final-1)에도 `position:fixed` 요소가 0개다.
+//   R3는 "플로팅/상시 진입" 둘 중 하나면 충족이고, 상단바 링크가 이미 전역 상시라 **R3도 그대로
+//   지켜진다**(진입로가 줄지 않는다). 홈은 히어로가 AI 진입의 주인공이라 실질 손실도 없다.
+//   ⚠️ 되살리려면 D12 문장부터 고쳐야 한다 — 코드만 바꾸면 같은 어긋남이 반복된다.
 //
 // ⚠️ **"본인 정보 영역"(역할 배지·표시 이름·구매문의 n건·판매중 n건)은 2026-07-29에 제거했다.**
 //   2026-06-24 개편(nav-ia-rules.md)이 "구매자 홈=본인정보"로 넣었던 섹션인데, 2026-07-12 UX
@@ -17,7 +26,6 @@
 //
 // 관리자는 여기서 /admin으로 랜딩 유도(아래 분기). 보호 경로 "차단"은 proxy(미들웨어)+requireRole 담당.
 // 서버에서는 getSession()이 아니라 getUser()를 쓴다 — 쿠키를 그대로 믿지 않고 Auth 서버에 재검증해 신뢰 가능.
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { USER_ROLE, ROLE_LABEL, type UserRole } from '@/lib/constants';
@@ -88,16 +96,6 @@ export default async function Home() {
               (필터·상태는 /search가 소유, 랜딩은 URL 쿼리를 소유하지 않는다). */}
           <PopularRecentGrid popular={popular} recent={recent} wishedIds={wishedIds} authed />
         </main>
-
-        {/* ② AI 검색 전역 진입 — 화면 우하단에 떠 있는 버튼(어느 화면에서든 닿는 전역 동작, R3).
-            서버 컴포넌트 그대로 — 단순 링크라 클라이언트 상태가 필요 없다. fixed로 본문 위에 띄운다. */}
-        <Link
-          href="/ai"
-          aria-label="AI 검색 열기"
-          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-brand-petrol px-5 py-3 text-sm font-medium text-surface-base shadow-lg transition-colors hover:bg-brand-petrol-strong"
-        >
-          <span aria-hidden>✨</span> AI 검색
-        </Link>
       </>
     );
   }
