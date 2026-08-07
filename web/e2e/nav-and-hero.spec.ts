@@ -135,6 +135,34 @@ test.describe('스토리 11-2 상단 내비', () => {
     await expect(page.getByRole('link', { name: '채팅' })).toBeVisible();
   });
 
+  // 홈에 떠 있는 AI 진입(플로팅) 부재 — UX 확정 D12가 *"웹엔 FAB 없어 일관"* 을 **전제로**
+  // 앱의 "FAB 없음"까지 결정했는데, 실제 웹엔 2026-06-25부터 플로팅 'AI 검색' 버튼이 있었고
+  // 그 어긋남을 한 달 넘게 아무도 몰랐다(2026-08-07 제거). 문서에 적어두면 또 놓치므로 검사로 박는다.
+  //
+  // 라벨이 아니라 **떠 있다는 성질**로 잡는다 — 다른 이름·아이콘으로 되살아나도 걸리게 하려고
+  // `/ai`로 가는 링크의 computed position이 fixed/sticky인지를 본다(라벨만 보면 문구를 바꾸는
+  // 순간 검사가 조용히 통과한다). 상단바 'AI로 찾기'는 static이라 여기 안 걸린다.
+  test('B5b [mobile 390] 홈에 떠 있는 AI 진입이 없다(D12 — 웹엔 FAB 없음)', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== PROJECT_NAMES.mobile, '모바일 전용 케이스');
+
+    await login(page);
+    await page.goto('/');
+
+    const floatingAiCount = await page.evaluate(() =>
+      [...document.querySelectorAll('a[href="/ai"]')].filter((el) => {
+        const pos = getComputedStyle(el).position;
+        return pos === 'fixed' || pos === 'sticky';
+      }).length,
+    );
+    expect(floatingAiCount, '홈에 떠 있는 /ai 진입이 있으면 안 된다').toBe(0);
+
+    // 그런데 "없다"만 보면 AI로 갈 길이 통째로 사라져도 초록이 된다 — 진입로가 남아 있는지 같이 본다.
+    // 모바일에선 상단바 링크가 햄버거 안이라, 상시로 보이는 AI 진입은 히어로 입력창이다.
+    await expect(heroInput(page)).toBeVisible();
+  });
+
   test('B6 [desktop] /account 렌더', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== PROJECT_NAMES.desktop, '데스크톱 전용 케이스');
 

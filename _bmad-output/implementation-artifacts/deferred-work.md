@@ -5335,3 +5335,15 @@ why_it_matters: 이 검사는 **실행 순서에 의존**하며, 실패한 실�
 fix_sketch: 두 갈래 중 하나. (a) **시드가 참가자 양쪽의 `chat_room_reads` 행을 만들게 한다** — 테스트가 기대하는 "이미 읽은 방" 상태를 시드가 책임진다(권장: 다른 검사들도 같은 전제를 쓸 수 있다). (b) 테스트가 전제를 스스로 만든다 — 방문 전에 양쪽 read 행을 넣고 시작한다. 어느 쪽이든 **`supabase db reset` 직후 한 번에 통과하는지**로 검증할 것(그게 이 결함의 정의다).
 trigger: **다음 E2E 전수 실행 직전**(= Epic 16 마감 시점) — DW-689·690·693과 같은 자리에서 함께 본다. CI에 E2E를 올리는 판단(#182·#168)을 하게 되면 **그때는 필수 선행**이다(깨끗한 DB에서 항상 빨갛기 때문).
 status: open
+
+### DW-728: Flutter 앱에 **AI FAB이 아직 붙어 있다** — UX 확정(D12)이 폐기하라고 한 바로 그 물건
+origin: 2026-08-07 사용자 질문("플로팅 버튼에 내 차 팔기 넣기로 하지 않았나")에서 기획 재확인 중 발견. 같은 확인에서 **웹** 플로팅은 제거했고(아래 `related`), 앱 쪽만 남았다.
+location: `app/lib/features/auth/home_screen.dart:49`(`FloatingActionButton.extended`, `key: Key('ai_fab')`, 라벨 "AI 검색") · 테마 정의는 `app/lib/core/theme/app_theme.dart:93`
+severity: low
+summary: UX 확정 D12는 앱 홈을 **"하단 4탭(홈(AI)·찜·채팅·내차팔기) + FAB 없음"**으로 정하면서, AI를 FAB에 두는 A안을 명시적으로 폐기했다(*"이전 앱의 AI=FAB는 'AI가 부가기능'이던 흔적 → 폐기"*). 그런데 현재 앱 홈에는 그 AI FAB이 그대로 있다.
+evidence: `grep -rn 'FloatingActionButton' app/lib/` → `home_screen.dart:49` 1건. 같은 파일 주석이 근거로 **nav-ia-rules R3**를 인용하고 있다 — 웹에서 제거한 것과 **정확히 같은 형태의 어긋남**이다(옛 문서를 근거로 만든 것이 새 확정 뒤에도 남음). 하단 내비는 아직 없다: `grep -rn 'NavigationBar\|BottomNavigationBar' app/lib/` → **0건**.
+why_it_matters: 사용자가 *"앱엔 내 차 팔기 플로팅이 있는 것 아니냐"*고 기억할 만큼 이 영역의 문서·구현이 어긋나 있다. 참고로 **"내 차 팔기를 FAB로"는 B안으로 검토됐다가 기각**됐다(근거: *"탭+FAB 내차팔기 중복"* — 하단탭에 내차팔기가 이미 있어서). 즉 앱의 정답은 A안도 B안도 아닌 **FAB 없음**이다.
+fix_sketch: ⚠️ **지금 FAB만 떼면 안 된다.** 앱엔 하단탭이 아직 없어서(위 evidence) FAB이 유일한 AI 진입로다 — 떼는 순간 AI 검색에 갈 길이 사라진다. **하단 4탭을 만드는 스토리와 같은 커밋에서 교체**해야 한다("문 먼저, 그다음 정리" — 2026-08-06 웹 14-3→14-2에서 배운 순서 그대로).
+trigger: **Story 16.1(디자인 토큰 미러 + 하단 4탭 내비)** — 그 인수조건이 이미 *"하단 4탭(… FAB 없음)"*이라 자리가 이미 있다. 착수 시 이 항목을 열어 `ai_fab` 제거까지 같은 스토리 안에서 끝낸다.
+related: 웹 쪽 같은 어긋남은 2026-08-07에 **해소**했다 — 홈의 플로팅 'AI 검색'을 제거하고, 되살아나면 잡히도록 E2E `B5b`(`web/e2e/nav-and-hero.spec.ts`)를 신설했다(라벨이 아니라 `position:fixed/sticky`로 잡아 다른 이름으로 되살아나도 걸린다. 일부러 다른 라벨로 되살려 red 확인함).
+status: open
