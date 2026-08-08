@@ -5533,3 +5533,29 @@ source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260808-154358-5a0b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-735: 앱 매물 상세에 **하단 고정 바(가격 + 문의하기)가 없다** — 웹엔 있고 UX 목업이 명시한 것인데 Epic 16 어느 인수조건에도 안 들어 있다
+origin: 2026-08-08 사용자 지시("등재해"). 같은 날 실기기 눈 확인(갤럭시 S21) 중 웹↔앱을 나란히 놓고 비교하다 발견 — 자동 검사나 리뷰가 아니라 **사람이 화면을 봐서** 나온 항목이다.
+location: 없는 자리 = `app/lib/features/listings/listing_detail_screen.dart`(문의하기가 스크롤 본문 끝에 있음, :241~256) · 웹 정본 = `web/src/app/(user)/listings/[id]/InquiryCta.tsx:138` · 목업 = `_bmad-output/planning-artifacts/ux-designs/ux-bmad-encar-demo-2026-07-12/mockups/detail-1.html:246`(`.m-sticky-bar`)
+severity: medium
+summary: UX 목업이 모바일 상세를 *"동일 정보를 세로로 쌓은 뒤 **하단에 가격+문의하기 스티키 바를 고정**한다"*(detail-1.html:258 캡션)로 확정했고 **웹은 그대로 구현돼 있다**. 앱만 없다 — 문의하기가 본문 맨 끝 인라인 버튼이라 **스크롤을 끝까지 내려야 나온다**. 이 서비스의 1급 전환 동작(문의)이 상세 화면에서 항상 보이지 않는다는 뜻이다.
+evidence: 웹 — `InquiryCta.tsx:138`이 `className="fixed inset-x-0 bottom-0 z-10 … lg:hidden"`으로 **모바일 하단 고정 바**를, `:127`이 `<aside className="hidden lg:block">`으로 데스크톱 sticky aside를 그린다(한 컴포넌트가 두 배치를 함께 소유 — #82 종결, Story 10.6). `page.tsx:234`가 `pb-28 lg:pb-6`으로 그 바의 자리를 비워둔다. 앱 — `grep -nE 'bottomNavigationBar|persistentFooterButtons' app/lib/features/listings/listing_detail_screen.dart` → **0건**이고, 문의하기는 `:256`의 본문 인라인 버튼이다. 계획 — `awk '/Story 16\./,0' epics-increment-2026-07-12.md | grep -iE '스티키|sticky|하단 고정'` → **0건**(Story 16.1~16.7 전수).
+why_it_matters: **아무도 안 하면 영영 안 된다.** 16.2의 인수조건은 상세에 대해 "사진 갤러리(스와이프 + 1/N 카운터)"까지만 요구했고 그 규격대로 이행됐다 — 스티키 바는 그 밖이다. 즉 미룬 것이 아니라 **어느 스토리도 자기 것으로 갖지 않은 자리**다([[DW-546]]이 기록한 "애초에 아무 스토리도 이 화면들을 자기 것으로 안 가졌다"와 같은 계열). 그리고 이건 **16.6이 검증할 대상**이기도 하다 — 16.6은 "웹과 동일 디자인 언어임을 실폰에서 검증"하는데, 검증만 하고 고칠 스토리가 없으면 16.6이 결함을 발견하고도 처리할 자리가 없다.
+fix_sketch: `Scaffold`의 `bottomNavigationBar`(또는 `persistentFooterButtons`)에 가격 + 문의하기를 얹고, 본문 인라인 버튼은 **같은 커밋에서** 제거한다(둘 다 남기면 같은 행동이 한 화면에 두 번 — 웹이 `InquiryCta` 하나로 합쳐 없앤 문제 #82의 재현이다). ⚠️ **분기 3개(anon/owner/inquiry)를 웹과 같이 한 자리에서 계산한다** — 지금 앱은 `:137`에서 본인 매물이면 버튼을 숨기는데, 바로 옮길 때 이 판정이 두 군데로 갈라지면 16.1~16.3에서 반복해 나온 "한 경로만 고치면 다른 데서 샌다"가 그대로 재현된다. ⚠️ 하단 4탭 셸 **밖** 화면이므로(16.1이 확정한 셸 경계) 탭바와 겹칠 일은 없지만, `:141`의 시스템 내비바 패딩 계산은 바로 옮겨가야 한다.
+scope_note: 16.2가 만든 결함이 아니다(선재 — 앱 상세는 Epic 7부터 인라인 버튼이었다). 새 스토리가 필요한 크기도 아니다 — 화면 하나의 배치 변경이다.
+trigger: **Story 16.6(SM-D 통합 시연 검증) 착수 시** — 그 스토리가 상세 화면을 실폰에서 웹과 대조하는 자리이므로 여기서 함께 처리하고 닫는다. 16.8(앱 홈 랜딩 미러)이 신설되면 그쪽이 더 자연스럽다(둘 다 "웹에 있는데 앱에 안 옮겨진 레이아웃"으로 같은 계열).
+related: [[DW-736]](같은 눈 확인에서 나온 홈 쪽 같은 계열) · [[DW-546]](어느 스토리도 자기 것으로 안 가진 화면들)
+status: open
+
+### DW-736: 앱 홈이 **웹 랜딩(Epic 11) 구조를 안 물려받았고**, 하단 4탭과 중복되는 Epic 7 잔재 버튼 3개가 남아 있다 — 목업(app-home-2.html)에 정답이 이미 있다
+origin: 2026-08-08 사용자 지적("홈화면이 웹과 너무 다르다 — 색상 같은 거 말고 그냥 전체적으로. 수정 계획 있는 거지?"). 계획 문서를 전수 확인한 결과 **수정 계획이 없음**을 확인했고, 같은 날 사용자 지시로 등재.
+location: `app/lib/features/auth/home_screen.dart`(퀵액션 3개 = `:104` 문의 채팅 `Key('go_chat')` · `:117` 매물 등록 `Key('go_sell')` · `:131` 내 매물 관리 `Key('go_my_listings')`) · 웹 정본 = `web/src/app/page.tsx:90~97`(`HeroSearch` · `CategoryChips` · `PopularRecentGrid`) · 목업 = `.../mockups/app-home-2.html`
+severity: medium
+summary: 웹 홈은 Epic 11("AI 히어로 랜딩 + 내비")이 만든 구조다 — 히어로 밴드 + 알약형 검색 + 제안 칩 + 차종 칩 + "지금 인기"·"최신" 2단 그리드. **Epic 16에는 이 에픽에 대응하는 앱 스토리가 없다.** 16.1이 홈 구조를 언급한 건 *"프로필은 우상단 아바타, 내 차 사기는 홈 하단 스크롤/필터에서 도달"* 한 줄뿐이고, 히어로·제안칩·차종칩·인기/최신 2단은 **어느 인수조건에도 없다**. 동시에 16.1이 하단 4탭을 새로 만들면서 **옛 홈의 퀵액션 3개를 안 치웠다** — 문의 채팅·매물 등록·내 매물 관리가 하단 탭(채팅·내차팔기)과 같은 곳으로 가는 두 번째 문으로 남았다.
+evidence: 웹 — `web/src/app/page.tsx:90~97`이 `<HeroSearch/> <CategoryChips/> <PopularRecentGrid popular recent/>`를 그리고, `:75` 주석이 *"인기(view_count desc)·최신(created_at desc) 각 4건"*(Story 11.4, FR34)이라고 근거를 남긴다. 앱 — `grep -nE '문의 채팅|매물 등록|내 매물 관리' app/lib/features/auth/home_screen.dart` → `:104`·`:117`·`:131` 3건이 `_QuickAction` 카드로 살아 있다. 계획 — `grep -nE '^#+ *Story 16\.' epics-increment-2026-07-12.md` → 16.1~16.7 **7개뿐**이고 그중 홈 랜딩을 소유한 것이 없다. **목업엔 이미 있다** — `mockups/app-home-2.html`을 렌더해 확인: 딥 petrol 히어로 + "원하는 차를 **말**로 찾으세요"(말만 amber) + amber 검색 버튼 + 제안 칩 3개(가성비 좋은 첫차·전기 SUV·무사고 세단) + 차종 칩 줄(전체·경차·세단·SUV·전기·수입) + **"지금 인기"·"방금 올라온 매물" 2섹션**(각 전체보기 →) + 하단 4탭 + 우상단 아바타. **퀵액션 3개는 목업에 없다.**
+why_it_matters: 홈은 시연에서 **제일 먼저 보이는 화면**이다. 그리고 이건 [[DW-728]](앱 AI FAB)·16.7(앱 사진 업로더)과 **똑같은 모양**이다 — 웹에서 한 일에 앱 짝이 없어 계획에서 통째로 빠진 자리. 두 건 다 착수 직전에 사람이 찾아서 심었다. 퀵액션 3개는 별개 축으로, 16.1이 만든 **미완의 이행**이다(새 문을 만들고 옛 문을 안 닫음 — 웹 14-3→14-2에서 세운 "문 먼저, 그다음 정리"의 뒷단이 빠졌다). 지금 상태에선 같은 기능에 진입로가 둘이라, 이후 어느 한쪽만 고치면 다른 쪽이 조용히 어긋난다(16.1~16.3 리뷰가 반복해 잡은 그 실패 모드).
+fix_sketch: **Story 16.8(앱 홈 랜딩 미러) 신설**을 권한다 — 근거 문서가 이미 다 있어서 새로 결정할 것이 없다(목업 `app-home-2.html` + 웹 Epic 11 구현 + UX 확정 D12). 범위: ①히어로 밴드(제안 칩 포함) ②차종 칩 줄 ③"지금 인기"(view_count desc)·"최신"(created_at desc) 2섹션 — 웹 `fetchPopularAndRecentListings`와 **같은 정렬·같은 건수** ④퀵액션 3개 제거. ⚠️ ④는 ①~③과 **같은 커밋**이어야 한다(먼저 지우면 판매자가 매물 등록에 갈 길이 하단 탭뿐인데 그 탭이 그 화면을 제대로 안 열면 갇힌다 — DW-728에서 "떼기만 하면 안 된다"고 배운 순서 그대로). ⚠️ 검사는 **있음/없음이 아니라 순서와 개수까지** 고정한다(`home_ai_entry_test.dart`가 이미 "AI 진입이 탐색 CTA보다 위"를 좌표로 단언하는 선례).
+scope_note: 색 토큰은 이미 맞다([[DW-729]] 해소 — `app_theme_color_drift_test.dart`가 웹 `globals.css`를 직접 읽어 17종 대조). 여기서 말하는 것은 **레이아웃·정보구조**이지 색이 아니다.
+trigger: **Story 16.8 신설 여부 결정 시**(사용자 결정 대기 중, 2026-08-08). 신설하면 이 항목은 그 스토리가 닫는다. **신설하지 않기로 하면 16.6(통합 시연 검증) 착수 시**로 옮겨 그 자리에서 최소한 퀵액션 3개 제거만이라도 처리한다 — 16.6이 "웹과 동일 디자인 언어"를 검증하는 스토리라 홈이 다르면 그 검증이 성립하지 않는다. ⚠️ 어느 쪽이든 **16.6보다 먼저** 결론이 나야 한다.
+related: [[DW-735]](같은 눈 확인에서 나온 상세 쪽 같은 계열) · [[DW-728]](앱 AI FAB — 웹에 있는 결정이 앱에 안 옮겨진 같은 모양, 해소됨) · [[DW-729]](색 토큰 드리프트 — 색 축은 이미 닫혔다)
+status: open
