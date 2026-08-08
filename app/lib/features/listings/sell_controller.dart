@@ -37,11 +37,14 @@ class SellState {
 
   /// 이 진행상태/결과를 시작한 **화면 인스턴스**의 식별자(SellScreen 이 자기 것을 넘긴다).
   ///
-  /// ⚠️ editingId 로는 화면을 구분할 수 없다. 하단 4탭 셸이 '/sell' 브랜치를 영구 마운트하므로
-  /// **등록 모드 화면이 동시에 둘** 존재할 수 있다 — 탭 루트와 홈 퀵액션(go_sell)이 push 하는
-  /// 화면. 둘 다 editingId==null 이라, editingId 만으로 "내 결과인지" 판정하면 한쪽의 등록
-  /// 성공이 다른 쪽의 미저장 초안을 지우고 유령 배너를 띄운다(실측 재현). 인스턴스 식별자를
-  /// 상태에 실어야 그 구분이 가능해진다.
+  /// ⚠️ editingId 만으로는 화면을 구분할 수 없다. 원래 이 상수가 지키던 시나리오는 하단 4탭
+  /// 셸의 '/sell' 탭 루트(영구 마운트)와 옛 홈 퀵액션 go_sell이 push하던 **두 번째 등록
+  /// 화면**이 둘 다 editingId==null이라 구분이 안 되던 것이었다(실측 재현) — go_sell은
+  /// spec-16-8에서 제거돼 이 특정 조합은 지금 재현되지 않는다(후속 코드리뷰 spec-16-8 2차
+  /// 리뷰 P8). 다만 '/sell' 탭 루트(등록, editingId=null)와 my_listings_screen.dart의
+  /// "수정" 버튼이 여는 수정 화면(editingId=실제 매물 id)은 지금도 같은
+  /// sellControllerProvider를 동시에 공유한다 — editingId 값이 우연히 갈리는 데 기대지 않고
+  /// 인스턴스 식별자로 명시 구분하기 위해 이 필드를 유지한다.
   final Object? owner;
 
   SellState copyWith({

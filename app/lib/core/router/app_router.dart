@@ -30,6 +30,7 @@ import '../../features/auth/user_role.dart';
 import '../../features/chat/chat_list_screen.dart';
 import '../../features/chat/chat_providers.dart';
 import '../../features/listings/listings_providers.dart';
+import '../../features/listings/my_listings_screen.dart';
 import '../../features/listings/sell_controller.dart';
 import '../../features/listings/sell_screen.dart';
 import '../../features/wishlist/wishlist_providers.dart';
@@ -87,6 +88,8 @@ class _TabBranch {
   ///     매물이 등록 전 목록에 고정되던 버그(review, spec-16-1 P1) — home_screen.dart의
   ///     `.then((_) => ref.invalidate(...))`는 퀵액션(rootNavigator push) 경로만 잡고
   ///     하단 탭 전환 경로는 못 잡았다.
+  ///   · popularListingsProvider: recentListingsProvider와 같은 함정 — 빠뜨리면 "지금 인기"가
+  ///     앱 실행 중 딱 한 번만 조회된다(후속 코드리뷰 spec-16-8 2차 리뷰 P3).
   ///   · sellControllerProvider: 등록 탭 루트와 수정 화면(push)이 같은 provider를 공유해
   ///     한쪽의 success/error/editingId가 다른 쪽에 새던 문제(review, spec-16-1 P3) — 탭을
   ///     누를 때마다 무효화해 이전 화면이 남긴 잔여 상태를 지운다. 입력 중이던 텍스트는
@@ -111,6 +114,12 @@ final _kTabBranches = <_TabBranch>[
     builder: (context, state) => const HomeScreen(),
     onActivate: (ref) {
       ref.invalidate(recentListingsProvider);
+      // popularListingsProvider("지금 인기")도 recentListingsProvider와 같은 함정을 그대로
+      // 진다 — 홈 브랜치가 IndexedStack으로 영구 마운트돼 autoDispose가 무력화되므로, 홈 탭을
+      // 다시 눌러도 이 무효화가 없으면 "지금 인기"는 앱 실행 중 딱 한 번만 조회된다(후속
+      // 코드리뷰 spec-16-8 2차 리뷰 P3 — 당겨서 새로고침 경로는 이미 두 provider를 한 쌍으로
+      // 다루는데, 탭 재진입 경로만 하나를 빠뜨리고 있었다).
+      ref.invalidate(popularListingsProvider);
       ref.invalidate(wishedListingIdsProvider);
     },
   ),
@@ -135,7 +144,10 @@ final _kTabBranches = <_TabBranch>[
     icon: Icons.chat_bubble_outline,
     selectedIcon: Icons.chat_bubble,
     // showAppBar: false — 셸(_AppShell)이 이미 공통 AppBar(제목+아바타)를 그린다.
-    // 홈 퀵액션의 Navigator.push(ChatListScreen())는 기본값(true)이라 영향 없다.
+    // ⚠️ 옛 홈 퀵액션 "문의 채팅"의 Navigator.push(ChatListScreen())(기본값 true라 영향 없었다)는
+    // spec-16-8에서 제거됐다(후속 코드리뷰 spec-16-8 2차 리뷰 P8) — `grep -rn 'ChatListScreen('
+    // app/lib` 실측 결과 지금 ChatListScreen을 만드는 자리는 이 탭 루트(showAppBar: false)
+    // 하나뿐이라, showAppBar 기본값(true)을 실제로 쓰는 진입점은 현재 없다.
     builder: (context, state) => const ChatListScreen(showAppBar: false),
     // chatUnreadTotalProvider(내비 배지, non-autoDispose)·chatUnreadByRoomProvider(목록 배지,
     // autoDispose) 둘 다 탭 재진입 시 명시 무효화한다(Story 16.4, §12.6 — "다음 진입/로드
@@ -422,6 +434,15 @@ class _ProfileAvatarButton extends ConsumerWidget {
           child: Text(user?.email ?? '-', key: const Key('profile_email')),
         ),
         const PopupMenuDivider(),
+        // 내 매물 관리(spec-16-8 patch 1) — 홈 퀵액션 3개(go_my_listings 포함) 제거로 앱
+        // 전체에서 MyListingsScreen에 닿는 길이 없어졌다(코드리뷰 발견, `grep -rn
+        // MyListingsScreen app/lib` 실측 0건). 웹 프로필 메뉴(`SiteNav.tsx:197` "내 매물 관리")와
+        // 같은 자리에 복원한다.
+        const PopupMenuItem<String>(
+          value: 'my_listings',
+          key: Key('my_listings'),
+          child: Text('내 매물 관리'),
+        ),
         PopupMenuItem<String>(
           value: 'logout',
           key: const Key('logout'),
@@ -432,6 +453,37 @@ class _ProfileAvatarButton extends ConsumerWidget {
         ),
       ],
       onSelected: (value) async {
+        if (value == 'my_listings') {
+          // home_screen.dart가 예전에 go_my_listings 퀵액션에서 쓰던 것과 동일한 push —
+          // 이 버튼도 셸(NavigationBar·AppBar) 위 오버레이에서 눌리므로 rootNavigator: true로
+          // 셸 밖(진짜 루트 Navigator)에 쌓아야 셸 크롬이 그 위에 남지 않는다(spec-16-1 셸 경계).
+          //
+          // ⚠️ await(push) 뒤에 `ref`를 그대로 쓰지 않는다(후속 코드리뷰 spec-16-8 발견) —
+          // MyListingsScreen이 열려 있는 동안 세션이 만료되거나 로그아웃하면 위 redirect가
+          // 셸(`_AppShell`, 이 `_ProfileAvatarButton`을 포함)을 통째로 갈아치우고,
+          // pop이 그 뒤에 도착하면 flutter_riverpod 3.3.2의 `_assertNotDisposed()`가
+          // unmounted element에 대해 진짜 `StateError`를 던진다(assert가 아니라 모든 빌드
+          // 모드에서). `ConsumerWidget`의 `ref`는 그 시점엔 이미 못 쓴다 — 같은 실패 모드의
+          // 자매 가드는 search_screen.dart의 `if (!mounted) return;`이지만, 여기는
+          // StatelessWidget이 아니라 `ref` 자체가 죽으므로 그 형태를 못 쓴다. 대신
+          // wish_button.dart의 `_toggle`과 같은 방식으로 push 전에 컨테이너를 동기적으로
+          // 미리 잡아 그 참조로 무효화한다.
+          //
+          // .then((_) => ...) — 옛 go_my_listings 퀵액션이 갖고 있던
+          // `.then((_) => ref.invalidate(recentListingsProvider))`를 그대로 복원한다(후속
+          // 코드리뷰 spec-16-8 2차 리뷰 P2). 이 push는 rootNavigator라 pop해도 _TabBranch의
+          // 홈 탭 onActivate(위)를 거치지 않으므로, 여기서 직접 무효화하지 않으면 내 매물
+          // 관리에서 구매완료(markSold)·삭제한 결과가 홈 "지금 인기"·"방금 올라온 매물"에
+          // 반영되지 않는다.
+          final container = ProviderScope.containerOf(context, listen: false);
+          Navigator.of(context, rootNavigator: true)
+              .push(MaterialPageRoute(builder: (_) => const MyListingsScreen()))
+              .then((_) {
+            container.invalidate(recentListingsProvider);
+            container.invalidate(popularListingsProvider);
+          });
+          return;
+        }
         if (value != 'logout' || loading) return;
         // AuthController.signOut()은 실패 시 rethrow한다 — await 없이 fire-and-forget으로
         // 부르면 실패가 "눌러도 아무 반응 없는 버튼"으로만 보인다(spec-16-1 Task). 실패를

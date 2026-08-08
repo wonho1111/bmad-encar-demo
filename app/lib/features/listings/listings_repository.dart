@@ -176,6 +176,18 @@ List<String> buildGalleryUrls(
   return sortGalleryPaths(rows).map(buildUrl).toList();
 }
 
+/// 카드 select 컬럼 — `fetchListings`(매물 탐색)·`fetchPopularListings`(홈 "지금 인기")가
+/// 공유한다. `@visibleForTesting`: 위 `listingDetailColumns`와 같은 선례(spec-16-8 2차 리뷰
+/// P4) — 두 메서드가 각자 리터럴로 들고 있으면 §4.1 락스텝 갱신(ListingCard 필드 변경 시
+/// conventions → web → api → app 동시 반영) 때 한쪽만 갱신되고도 스위트가 계속 green일 수
+/// 있다(신뢰속성 3컬럼이 listingDetailColumns에서 빠져도 조용히 통과했던 것과 같은 실패
+/// 모드, 이미 이 리포에서 실측·해소된 패턴). 상수 하나로 합쳐 두 메서드가 실제로 참조하는지를
+/// 테스트가 직접 단언한다.
+@visibleForTesting
+const String listingCardColumns =
+    'id, manufacturer, model, year, price, mileage, region, seller_name, '
+    'fuel, accident_status, is_single_owner, is_non_smoker, options';
+
 class ListingsRepository {
   ListingsRepository({SupabaseClient? client}) : _client = client ?? supabase;
 
@@ -193,10 +205,7 @@ class ListingsRepository {
   /// 매물 목록(요약 7필드) — 필터 적용 + created_at desc, id desc 안정 정렬.
   /// 필터는 값이 있을 때만 체이닝(web SearchPage 와 동일). 키워드는 model ilike.
   Future<List<ListingCardData>> fetchListings(ResolvedFilters f) async {
-    var query = _buyerQuery(
-      'id, manufacturer, model, year, price, mileage, region, seller_name, '
-      'fuel, accident_status, is_single_owner, is_non_smoker, options',
-    );
+    var query = _buyerQuery(listingCardColumns);
 
     if (f.keyword != null) {
       query = query.ilike('model', '%${f.keyword}%'); // 모델명 부분일치(대소문자 무시).
@@ -226,6 +235,27 @@ class ListingsRepository {
         .map((r) => r['id'])
         .whereType<String>()
         .toList();
+    final covers = await _fetchCovers(ids);
+
+    return attachCoverImages(
+      rows,
+      covers,
+      (p) => getPublicUrl(listingImagesBucket, p),
+    );
+  }
+
+  /// "지금 인기" 섹션(spec-16-8)의 유일한 데이터 출처 — view_count desc, id desc 2차 정렬키,
+  /// 상위 [limit]건. web `fetchPopularAndRecentListings`의 인기 단(view_count desc)과 같은
+  /// 정렬·같은 건수(spec-16-8 Always). fetchListings와 같은 컬럼·같은 커버사진 부착
+  /// (_fetchCovers/attachCoverImages 재사용) — 인기 매물도 같은 ListingCard 위젯으로 그려지므로
+  /// 계약을 두 조회 경로에서 갈라 두지 않는다.
+  Future<List<ListingCardData>> fetchPopularListings({int limit = 4}) async {
+    final rows = await _buyerQuery(listingCardColumns)
+        .order('view_count', ascending: false)
+        .order('id', ascending: false)
+        .limit(limit);
+
+    final ids = rows.map((r) => r['id']).whereType<String>().toList();
     final covers = await _fetchCovers(ids);
 
     return attachCoverImages(

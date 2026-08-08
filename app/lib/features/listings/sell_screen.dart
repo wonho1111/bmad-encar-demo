@@ -7,9 +7,10 @@
 //   search_screen(DropdownButtonFormField)을 따른다.
 //
 // ⚠️ **셸 경계(spec-16-1)**: 이 화면은 두 자리에서 쓰인다 — ① 하단 4탭 셸의 '내차팔기' 브랜치
-//   루트(`app_router.dart`, `showAppBar: false`, 항상 등록 모드) ② `home_screen.dart`의
-//   "매물 등록" 퀵액션·`my_listings_screen.dart`의 "수정" 버튼이 셸 밖 루트 Navigator로 여는
-//   단독 화면(`showAppBar: true`, 기본값 — 뒤로가기가 있는 자기 AppBar가 필요).
+//   루트(`app_router.dart`, `showAppBar: false`, 항상 등록 모드) ② `my_listings_screen.dart`의
+//   "수정" 버튼이 셸 밖 루트 Navigator로 여는 단독 화면(`showAppBar: true`, 기본값 — 뒤로가기가
+//   있는 자기 AppBar가 필요). (spec-16-8이 홈의 "매물 등록" 퀵액션을 제거해 그 진입점은 더 이상
+//   없다 — 등록은 이제 ①의 '내차팔기' 탭으로만 들어온다.)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,8 +32,10 @@ class SellScreen extends ConsumerStatefulWidget {
 
   /// 하단 4탭 셸의 '내차팔기' 브랜치 루트로 쓰일 때는 셸이 이미 공통 AppBar(제목+프로필
   /// 아바타)를 그리므로 이 화면 자신의 AppBar를 끈다(app_router.dart가 false로 넘긴다).
-  /// 기본값 true — 홈의 "매물 등록" 퀵액션·수정 진입처럼 단독 화면으로 열릴 때는
-  /// 뒤로가기가 있는 자기 AppBar가 그대로 필요하다(spec-16-1 Never: 퀵액션 유지).
+  /// 기본값 true — my_listings_screen.dart의 "수정" 버튼이 여는 단독 화면(editDetail 채워짐,
+  /// EditListingScreen 경유)처럼 단독으로 열릴 때는 뒤로가기가 있는 자기 AppBar가 그대로
+  /// 필요하다(후속 코드리뷰 spec-16-8 2차 리뷰 P8 — 홈의 "매물 등록" 퀵액션은 spec-16-8에서
+  /// 이미 제거됐다. 지금은 이 기본값을 쓰는 단독 진입점이 "수정" 하나뿐이다).
   final bool showAppBar;
 
   bool get isEdit => editDetail != null;
@@ -61,8 +64,13 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   bool _accidentFree = true;
 
   /// 이 화면 인스턴스의 식별자. 공유 sellControllerProvider 의 상태가 "내가 시작한 것"인지
-  /// 판정하는 데 쓴다 — editingId 로는 판정할 수 없다(등록 모드 화면이 동시에 둘 뜰 수 있다:
-  /// '/sell' 탭 루트와 홈 퀵액션 go_sell 이 push 하는 화면. SellState.owner 주석 참조).
+  /// 판정하는 데 쓴다 — editingId 만으로는 부족하다(후속 코드리뷰 spec-16-8 2차 리뷰 P8로
+  /// 갱신: "등록 모드 화면이 동시에 둘" 뜨던 옛 경로(go_sell 퀵액션)는 spec-16-8에서 사라졌지만,
+  /// '/sell' 탭 루트(등록, editingId=null, IndexedStack으로 영구 마운트)와 my_listings의
+  /// "수정" 버튼이 rootNavigator로 여는 수정 화면(editingId=해당 매물 id)이 여전히 같은
+  /// sellControllerProvider를 공유한 채 **동시에** 마운트될 수 있다 — 둘의 editingId는
+  /// 지금은 다르지만(null vs 실제 id), 우연히 값이 갈리는 데 기대지 않고 인스턴스 식별자로
+  /// 명시 구분한다. SellState.owner 주석 참조).
   final Object _owner = Object();
 
   @override
@@ -186,12 +194,18 @@ class _SellScreenState extends ConsumerState<SellScreen> {
 
     final sell = ref.watch(sellControllerProvider);
     // 이번 상태(성공/에러/진행중)가 "이 화면이 시작한 것"인지 **인스턴스 식별자**로 판정한다.
-    // sellControllerProvider가 등록 탭 루트·수정 화면·홈 퀵액션이 push한 등록 화면 사이에
-    // 공유되므로(셸 브랜치 영구 마운트), 남의 결과에 반응하면 사고가 난다.
+    // sellControllerProvider가 등록 탭 루트와 수정 화면(my_listings_screen.dart → 이 화면을
+    // editDetail 채워 여는 경로) 사이에 공유되므로(등록 탭은 셸 브랜치 영구 마운트, 수정
+    // 화면은 그 위에 rootNavigator push라 동시에 마운트될 수 있다), 남의 결과에 반응하면
+    // 사고가 난다.
     //
-    // ⚠️ 예전엔 editingId로 판정했는데 그걸론 **등록 화면 둘**을 구분하지 못했다('/sell' 탭
-    // 루트와 go_sell이 push한 화면 — 둘 다 editingId==null). 실측: 한쪽에서 등록에 성공하면
-    // 다른 쪽의 미저장 초안이 지워지고 유령 성공 배너가 떴다(review, spec-16-1 후속 리뷰).
+    // ⚠️ 예전엔 editingId로 판정했는데 그걸론 **등록 화면 둘**을 구분하지 못했다(옛 홈
+    // 퀵액션 go_sell이 push한 두 번째 등록 화면과 '/sell' 탭 루트 — 둘 다 editingId==null).
+    // 실측: 한쪽에서 등록에 성공하면 다른 쪽의 미저장 초안이 지워지고 유령 성공 배너가 떴다
+    // (review, spec-16-1 후속 리뷰). go_sell은 spec-16-8에서 제거돼 그 특정 경로는 지금
+    // 재현되지 않지만(후속 코드리뷰 spec-16-8 2차 리뷰 P8), 인스턴스 식별자 판정 자체는
+    // 등록 탭 루트·수정 화면이 여전히 같은 provider를 동시에 공유한다는 사실 때문에 그대로
+    // 필요하다 — editingId가 우연히 갈리는 데(null vs 실제 id) 기대지 않는다.
     final mine = sell.owner != null && sell.owner == _owner;
     // 진행중(loading)도 같은 기준으로 거른다 — 안 그러면 남의 제출이 도는 동안 이 화면의
     // 등록 버튼이 "등록 중…"으로 잠기고, SellController.submit()의 `if (state.loading) return`

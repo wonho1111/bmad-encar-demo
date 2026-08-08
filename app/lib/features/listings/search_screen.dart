@@ -11,7 +11,16 @@ import 'listing_filters.dart';
 import 'listings_providers.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  // 차종 칩(spec-16-8 AC2) 목적지 계약 — 값이 있으면 진입 즉시 그 필터로 조회한다(수동 검색
+  // 버튼 없이). 둘 다 null이면(홈의 "전체" 칩) 무필터로 조회한다 — 컨트롤러가 이전 진입에서
+  // 다른 필터를 들고 있어도 이 진입이 그 값을 항상 되돌린다(후속 코드리뷰 spec-16-8 2차 리뷰
+  // P1: 예전엔 둘 다 null이면 아예 스킵해서, SUV 칩 → 뒤로가기 → "전체" 칩으로 들어오면
+  // searchControllerProvider(앱 전역 싱글턴)가 SUV 입력·결과를 그대로 들고 있어 "전체" 라벨
+  // 아래 SUV 매물만 보이는 AC2 위반이 있었다).
+  const SearchScreen({super.key, this.initialBodyType, this.initialFuel});
+
+  final String? initialBodyType;
+  final String? initialFuel;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -29,6 +38,39 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String? _fuel;
   String? _transmission;
   String? _region;
+
+  @override
+  void initState() {
+    super.initState();
+    _bodyType = widget.initialBodyType;
+    _fuel = widget.initialFuel;
+
+    // "필터 진입 경합" 방어(spec-16-8 Design Notes) — searchControllerProvider는 앱 전역
+    // 싱글턴이라, 이번이 이 세션의 첫 진입이면 provider의 build()가 빈 필터 초기조회를
+    // Future.microtask로 예약해 둔다. 그 예약이 **우리보다 먼저 큐에 서게** 강제로 provider를
+    // 먼저 살린 뒤(동기), 우리 필터 조회는 별도 microtask로 그 다음 순번에 세운다 — 그러면
+    // SearchController.search()의 requestId 채번 순서가 항상 "자동 빈 조회 → 우리 필터 조회"가
+    // 되어, 응답이 어떤 순서로 와도 최종 화면은 필터 결과를 보여준다(호출 순서 재배치로 해결).
+    //
+    // ⚠️ (후속 코드리뷰 spec-16-8 2차 리뷰 P1) 둘 다 null("전체" 칩)이어도 이 아래 블록을
+    // 그대로 타야 한다 — 예전엔 여기서 조기 return해 "전체" 진입이 컨트롤러를 전혀 건드리지
+    // 않았고, 그러면 컨트롤러가 이전 진입(예: SUV 칩)의 입력·결과를 그대로 들고 있어 "전체"
+    // 라벨 아래 SUV 결과가 보이는 버그가 났다. updateInput에 null을 그대로 넘기면
+    // ListingFilterInput(bodyType: null, fuel: null) = 무필터라 "전체"의 의미와 정확히 같다.
+    ref.read(searchControllerProvider.notifier);
+    Future.microtask(() {
+      // 이 마이크로태스크가 실행되기 전에 화면이 dispose될 수 있다(예: 칩 탭 직후 빠르게
+      // 뒤로가기) — 그러면 disposed 상태의 ConsumerState에서 ref.read/setState를 호출해
+      // 예외가 난다(코드리뷰 발견, spec-16-8 Review Triage Log #3).
+      if (!mounted) return;
+      final notifier = ref.read(searchControllerProvider.notifier);
+      notifier.updateInput(ListingFilterInput(
+        bodyType: widget.initialBodyType,
+        fuel: widget.initialFuel,
+      ));
+      notifier.search();
+    });
+  }
 
   @override
   void dispose() {

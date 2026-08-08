@@ -6,6 +6,7 @@
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/auth/home_screen.dart';
 import 'package:app/features/listings/listing.dart';
+import 'package:app/features/listings/listing_detail_screen.dart';
 import 'package:app/features/listings/listings_providers.dart';
 import 'package:app/features/wishlist/wishlist_providers.dart';
 import 'package:flutter/material.dart';
@@ -60,6 +61,9 @@ void main() {
           currentUserProvider.overrideWithValue(_fakeUser()),
           recentListingsProvider
               .overrideWith((ref) async => const [wishedListing, otherListing]),
+          // 홈이 spec-16-8부터 "지금 인기" 섹션도 함께 그린다 — 오버라이드하지 않으면 실
+          // 네트워크를 타 이 테스트가 흔들린다(recentListingsProvider와 같은 이유).
+          popularListingsProvider.overrideWith((ref) async => const <ListingCardData>[]),
           // 실제 카드 진입점(home/search/ai)이 전부 공유하는 단일 provider — 여기만
           // 오버라이드해도 화면이 그 값을 정말로 ListingCard.wished까지 실어 나르는지 본다.
           wishedListingIdsProvider.overrideWith((ref) async => {'wished-1'}),
@@ -80,6 +84,88 @@ void main() {
       find.byIcon(Icons.favorite_border),
       findsOneWidget,
       reason: '찜 안 한 매물(other-1) 카드는 빈 하트여야 한다',
+    );
+  });
+
+  // T5(spec-16-8 검증 갭) — 위 테스트·다른 모든 테스트를 통틀어 popularListingsProvider에는
+  // 항상 빈 목록·에러·카운팅 스텁만 주어졌다("지금 인기" 섹션이 실제 카드를 렌더한 적이
+  // 한 번도 없었다). 그래서 그 섹션의 데이터 분기(카드 렌더·ValueKey(l.id)·wished 배선·카드
+  // 탭 → ListingDetailScreen)는 어떤 테스트도 실행한 적이 없다 — 예를 들어
+  // `wished: wishedIds.contains('${l.id}-BROKEN')`로 배선을 깨도(측정된 뮤테이션) 스위트가
+  // 계속 green이었다. 위 테스트와 같은 모양으로 "지금 인기" 섹션을 직접 확인한다.
+  testWidgets(
+      '홈 "지금 인기" 카드는 wishedListingIdsProvider 값을 실제로 반영하고, 탭하면 상세로 이동한다',
+      (tester) async {
+    const wishedListing = ListingCardData(
+      id: 'popular-wished-1',
+      manufacturer: '현대',
+      model: '투싼',
+      year: 2022,
+      price: 28000000,
+      mileage: 15000,
+      region: '서울',
+    );
+    const otherListing = ListingCardData(
+      id: 'popular-other-1',
+      manufacturer: '기아',
+      model: '스포티지',
+      year: 2021,
+      price: 26000000,
+      mileage: 22000,
+      region: '부산',
+    );
+
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          currentUserProvider.overrideWithValue(_fakeUser()),
+          recentListingsProvider.overrideWith((ref) async => const <ListingCardData>[]),
+          popularListingsProvider
+              .overrideWith((ref) async => const [wishedListing, otherListing]),
+          wishedListingIdsProvider.overrideWith((ref) async => {'popular-wished-1'}),
+          // 카드 탭 → ListingDetailScreen 이동만 확인하면 되므로 "찾을 수 없음" 분기(null)로
+          // 충분하다(app_router_test.dart의 "최근 매물 카드" 테스트와 동일한 방식).
+          listingDetailProvider('popular-wished-1').overrideWith((ref) async => null),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('[현대] 투싼 · 2022년'),
+      findsOneWidget,
+      reason: '"지금 인기" 섹션이 카드를 실제로 렌더해야 한다',
+    );
+    expect(find.text('[기아] 스포티지 · 2021년'), findsOneWidget);
+    expect(
+      find.byIcon(Icons.favorite),
+      findsOneWidget,
+      reason: '"지금 인기" 섹션에서도 찜한 매물(popular-wished-1)만 채워진 하트여야 한다 — '
+          'wished: wishedIds.contains(\'\${l.id}-BROKEN\')처럼 배선이 깨지면(측정된 뮤테이션) '
+          '이 섹션의 두 카드가 모두 빈 하트가 된다',
+    );
+    expect(
+      find.byIcon(Icons.favorite_border),
+      findsOneWidget,
+      reason: '찜 안 한 매물(popular-other-1) 카드는 빈 하트여야 한다',
+    );
+
+    final wishedCard = find.byKey(const ValueKey('popular-wished-1'));
+    await tester.ensureVisible(wishedCard);
+    await tester.tap(wishedCard);
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byType(ListingDetailScreen),
+      findsOneWidget,
+      reason: '"지금 인기" 카드를 탭하면 상세 화면으로 이동해야 한다',
     );
   });
 }

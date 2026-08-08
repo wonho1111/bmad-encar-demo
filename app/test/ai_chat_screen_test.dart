@@ -101,6 +101,64 @@ void main() {
     );
   });
 
+  // spec-16-8 AC5 — 히어로 제안 칩·실 입력 제출의 목적지 계약: initialQuery가 있으면 화면이
+  // 열리자마자 그 문장으로 이미 조회를 시작한 상태다(입력창에 채우기만 하는 게 아니라, 직접
+  // 타이핑 제출과 동일한 _submit(overrideQuery:) 파이프라인을 그대로 탄다).
+  testWidgets(
+      'initialQuery가 있으면 화면이 열리자마자 그 문장으로 이미 제출된 상태다(직접 타이핑과 동일 파이프라인)',
+      (tester) async {
+    var callCount = 0;
+    final sentQueries = <String>[];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+        ],
+        child: MaterialApp(
+          home: AiChatScreen(
+            initialQuery: '4천만원대 전기 SUV',
+            searchAiOverride: ({required query, context, required accessToken}) async {
+              callCount++;
+              sentQueries.add(query);
+              return const SearchResult(answer: '조건에 맞는 매물을 찾았어요.', listings: []);
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(callCount, 1, reason: '화면 진입만으로 자동 제출됐어야 한다');
+    expect(sentQueries, ['4천만원대 전기 SUV']);
+    // 입력창에 채우기만 한 게 아니라 실제로 제출됐다 — user 버블 + 응답 버블 둘 다 보인다.
+    expect(find.text('4천만원대 전기 SUV'), findsOneWidget);
+    expect(find.text('조건에 맞는 매물을 찾았어요.'), findsOneWidget);
+  });
+
+  testWidgets('initialQuery가 없으면(null) 자동 제출하지 않는다(기존 동작 무파괴)',
+      (tester) async {
+    var callCount = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+        ],
+        child: MaterialApp(
+          home: AiChatScreen(
+            searchAiOverride: ({required query, context, required accessToken}) async {
+              callCount++;
+              return const SearchResult(answer: 'x', listings: []);
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(callCount, 0, reason: 'initialQuery가 없으면 자동 제출이 없어야 한다');
+  });
+
   // Story 16.5 — 되묻기 칩 렌더·탭 전송·500자 상한 (I/O 매트릭스).
   //
   // ⚠️ 이 검사들이 **안 보는 것**(추측이 아니라 이번 리뷰에서 실제로 확인한 범위):

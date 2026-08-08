@@ -141,11 +141,17 @@ void main() {
     );
   });
 
-  testWidgets('내차팔기 탭의 초안은 **다른 등록 화면**의 등록 성공에도 지워지지 않는다', (tester) async {
-    // 위 테스트는 "남의 **수정**"만 봤다. 그런데 등록 모드 화면은 동시에 **둘** 뜰 수 있다 —
-    // '/sell' 탭 루트와 홈 퀵액션(go_sell)이 push 하는 화면. 둘 다 editingId==null 이라
-    // editingId 로 "내 것"을 판정하던 예전 코드는 이 경우를 구분하지 못했고, 한쪽의 등록
-    // 성공이 다른 쪽의 미저장 초안을 지웠다(실측 재현 — 이 검사가 그 회귀를 고정한다).
+  testWidgets('내차팔기 탭의 초안은 **owner가 다른** 제출의 등록 성공에도 지워지지 않는다', (tester) async {
+    // 위 테스트는 editingId가 다른(수정 vs 등록) 경우만 봤다. 이 테스트가 원래 지키던
+    // 시나리오는 등록 모드 화면이 동시에 **둘** 뜨는 경우였다 — '/sell' 탭 루트와 옛 홈
+    // 퀵액션(go_sell)이 push 하던 화면, 둘 다 editingId==null. go_sell은 spec-16-8에서
+    // 제거돼 그 조합은 지금 재현되지 않는다(sell_controller.dart의 owner 필드 주석과 같은
+    // 사정, 후속 코드리뷰 spec-16-8 2차 리뷰 P8). 지금 sellControllerProvider를 실제로
+    // 동시에 공유하는 쌍은 '/sell' 탭 루트(등록, editingId=null)와
+    // my_listings_screen.dart의 "수정" 버튼이 여는 수정 화면(editingId=실제 매물 id, 위
+    // 테스트가 이미 다룸)이다. 이 테스트는 그 판정이 editingId가 우연히 갈리는 데 기대지
+    // 않고 owner 필드로 이뤄진다는 것 자체를 검사한다 — owner만 다르고 editingId는 똑같이
+    // null인 상황을 직접 만들어 확인한다(실측 재현 — 이 검사가 그 회귀를 고정한다).
     final container = ProviderContainer(
       overrides: [
         listingsRepositoryProvider.overrideWithValue(_RecordingRepo()),
@@ -166,8 +172,7 @@ void main() {
     await tester.pump();
     expect(find.text('내가 쓰던 초안'), findsOneWidget);
 
-    // 홈 퀵액션이 push한 **다른 등록 화면**이 등록에 성공한 상황(editingId는 똑같이 null,
-    // owner만 다르다).
+    // owner가 다른 화면이 등록에 성공한 상황(editingId는 이 화면과 똑같이 null, owner만 다르다).
     final notifier = container.read(sellControllerProvider.notifier);
     notifier.updateInput(_validInput);
     await notifier.submit(editingId: null, owner: Object());

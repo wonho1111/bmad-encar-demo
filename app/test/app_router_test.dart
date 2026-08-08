@@ -28,11 +28,16 @@
 //     sell_controller_test.dart가 본다 — 15필드 폼을 위젯 테스트로 채우는 것보다
 //     컨트롤러를 직접 구동하는 쪽이 더 빠르고 안정적이다(A2 단순함).
 //   · AC7("go_ai·go_search·go_chat·go_sell·go_my_listings·최근매물카드 중 어느 것이든")의
-//     모든 진입점을 낱낱이 돌리지는 않는다 — go_ai·go_search·go_chat·go_sell·최근매물카드·
-//     채팅방(chat_list_screen.dart 방 탭)까지 "브랜치 안에서 시작하는 push 포함, 전부
+//     모든 진입점을 낱낱이 돌리지는 않는다 — go_ai·go_search·최근매물카드·채팅방
+//     (chat_list_screen.dart 방 탭)까지 "브랜치 안에서 시작하는 push 포함, 전부
 //     rootNavigator: true 메커니즘을 쓴다"는 사실을 대표 검증한다(review, spec-16-1 P4 —
 //     브랜치 **안에서** 시작하는 push가 특히 회귀 위험이 크다: 셸 경계 코드가 화면
 //     자신이 아니라 그 화면을 여는 쪽에 있어서, 새 진입점을 추가할 때 빠뜨리기 쉽다).
+//     ⚠️ spec-16-8(DW-736 해소)이 홈 퀵액션 3개(go_chat·go_sell·go_my_listings)를 제거해
+//     이 세 진입점 자체가 사라졌다 — 그 push 지점을 검증하던 옛 테스트도 함께 지웠다.
+//     대신 spec-16-8이 새로 만든 두 in-branch push 지점(히어로 제안 칩 → AiChatScreen,
+//     차종 칩 → SearchScreen)을 같은 "AppBar 단일성" group에 추가했다(같은 원칙: 새
+//     진입점은 놓치기 쉽다).
 //   · 브랜치 안(그 탭의 Navigator)에 직접 push한 화면이 탭 전환 후에도 남아있는지 —
 //     이 앱 아키텍처에서는 애초에 도달 불가능하다(설계상 한계, review, spec-16-1 P13).
 //     실제 상세류 push는 전부 `rootNavigator: true`로 셸 밖(진짜 루트 Navigator)에
@@ -58,6 +63,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:app/core/router/app_router.dart';
+import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/auth/home_screen.dart';
 import 'package:app/features/chat/chat_list_screen.dart';
@@ -66,9 +72,11 @@ import 'package:app/features/chat/chat_providers.dart';
 import 'package:app/features/chat/chat_repository.dart';
 import 'package:app/features/listings/listing.dart';
 import 'package:app/features/listings/listing_card.dart';
+import 'package:app/features/listings/listing_filters.dart';
 import 'package:app/features/listings/listing_form.dart';
 import 'package:app/features/listings/listings_providers.dart';
 import 'package:app/features/listings/listings_repository.dart';
+import 'package:app/features/listings/search_screen.dart';
 import 'package:app/features/listings/sell_controller.dart';
 import 'package:app/features/wishlist/wishlist_providers.dart';
 import 'package:app/features/wishlist/wishlist_screen.dart';
@@ -108,12 +116,24 @@ Widget _harness({
   required User? user,
   List<Override> extraOverrides = const [],
   bool chatUnreadDefaults = true,
+  // popularListingsProvider 재조회 자체를 세는 테스트(spec-16-8 2차 리뷰 P3)는 extraOverrides로
+  // 카운팅 override를 직접 넣어야 하는데, 아래 기본 override가 먼저 배열에 들어가 있으면 같은
+  // provider가 두 번 겹쳐 Riverpod assert로 죽는다(위 chatUnreadDefaults와 같은 함정·같은 탈출구) —
+  // 그 테스트만 false로 이 기본값을 끈다.
+  bool popularListingsDefault = true,
 }) {
   return ProviderScope(
     overrides: [
       currentUserProvider.overrideWithValue(user),
       authStateProvider.overrideWith((ref) => const Stream<AuthState>.empty()),
       if (chatUnreadDefaults) ..._chatUnreadDefaults(),
+      // spec-16-8 — 홈이 popularListingsProvider("지금 인기")도 함께 그린다. 이 파일의 대부분
+      // 테스트는 "지금 인기" 자체의 데이터·재조회를 검증하지 않으므로(그건 home_ai_entry_test.dart·
+      // home_screen_wishlist_test.dart, 그리고 재조회는 아래 popularListingsProvider 재조회
+      // group 몫), 오버라이드하지 않으면 이 파일의 모든 홈-셸 테스트가 실 네트워크를 매번
+      // 건드리므로, recentListingsProvider와 달리 여기서는 기본값 하나로 고정한다.
+      if (popularListingsDefault)
+        popularListingsProvider.overrideWith((ref) async => const <ListingCardData>[]),
       ...extraOverrides,
     ],
     child: Consumer(
@@ -184,6 +204,21 @@ class _FakeSearchController extends SearchController {
   @override
   SearchState build() =>
       const SearchState(results: AsyncValue.data(<ListingCardData>[]));
+}
+
+/// 차종 칩(spec-16-8) 테스트용 — SearchScreen(initialBodyType:)의 즉시조회는
+/// searchControllerProvider의 실제 search()를 그대로 타므로(build()를 우회하는
+/// _FakeSearchController와 달리), 레포 층에서 네트워크를 끊는다. 어떤 필터로 조회됐는지도
+/// 기록한다(T3 — 차종 칩 → SearchScreen 필터 배선을 실제로 관찰하기 위해,
+/// search_screen_test.dart의 _RecordingFakeRepository와 같은 패턴).
+class _RecordingSearchRepo extends ListingsRepository {
+  final calls = <ResolvedFilters>[];
+
+  @override
+  Future<List<ListingCardData>> fetchListings(ResolvedFilters f) async {
+    calls.add(f);
+    return const [];
+  }
 }
 
 /// 쓰기가 끝나는 시점을 테스트가 잡고 있는 가짜 레포 — "제출이 진행 중"인 순간을 만든다.
@@ -437,7 +472,9 @@ void main() {
       // 안 보이는지를 본다 — AppBar 개수뿐 아니라 NavigationBar findsNothing까지 함께 본다
       // (AppBar만 세면 셸이 그대로 남아있어도 위에 화면이 덮어 AppBar가 우연히 1개로 보일 수
       // 있다 — 실제로는 NavigationBar가 화면 아래 계속 깔려 있는 상태를 놓친다).
-      testWidgets('go_ai(AI 검색) — 셸이 사라지고 AiChatScreen만 남는다', (tester) async {
+      testWidgets(
+          'go_ai 히어로(실 입력 제출, spec-16-8) — 셸이 사라지고 AiChatScreen만 남는다',
+          (tester) async {
         await tester.pumpWidget(
           _harness(
             user: _fakeUser(role: null),
@@ -446,7 +483,15 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('go_ai')));
+        // spec-16-8부터 히어로 카드 자체는 더 이상 탭 대상이 아니다(실 입력창 + amber 검색
+        // 버튼 + 제안 칩으로 확장돼 카드 배경을 눌러도 반응하지 않는다) — 그 안의 실제 제출
+        // 경로(입력+검색 버튼)로 대신 확인한다. AiChatScreen은 initialQuery로 즉시 제출을
+        // 시도하지만 이 하네스엔 실 Supabase 세션이 없어 accessToken이 비어 있고, searchAi는
+        // 그 경우 네트워크를 타기 전에 즉시 AiSearchException을 던진다(ai_search_api.dart) —
+        // 그래서 이 push가 실 네트워크로 느려지거나 흔들리지 않는다.
+        await tester.enterText(
+            find.byKey(const Key('hero_query_input')), '아반떼 찾아줘');
+        await tester.tap(find.byKey(const Key('hero_search_button')));
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
@@ -464,43 +509,22 @@ void main() {
           findsNothing,
           reason: '셸 제목("중고차 직거래")도 함께 사라져야 한다',
         );
-      });
-
-      testWidgets('go_chat(문의 채팅 퀵액션) — 셸이 사라지고 ChatListScreen만 남는다', (
-        tester,
-      ) async {
-        await tester.pumpWidget(
-          _harness(
-            user: _fakeUser(role: null),
-            extraOverrides: [
-              _recentListings(const []),
-              // chatRoomsProvider는 FutureProvider.autoDispose — 빌드 즉시 조회를 시도하므로
-              // 실제 Supabase 없이 크래시하지 않도록 빈 목록으로 대체한다.
-              chatRoomsProvider.overrideWith(
-                (ref) async => const <ChatRoomSummary>[],
-              ),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
-
-        await tester.tap(find.byKey(const Key('go_chat')));
-        await tester.pumpAndSettle();
-
-        expect(tester.takeException(), isNull);
+        // T4(spec-16-8 검증 갭) — 셸이 사라졌다는 것만으론 AiChatScreen이 실제로 타이핑한
+        // 문장을 받았는지 모른다. home_screen.dart가 AiChatScreen(initialQuery: query) 대신
+        // const AiChatScreen()을 넘겨도(문장이 통째로 사라져도) 위 AppBar/NavigationBar
+        // 단언은 여전히 통과하므로, initialQuery 자체를 직접 읽어 확인한다.
         expect(
-          find.byType(AppBar),
-          findsOneWidget,
-          reason:
-              '이게 바로 review_loop_iteration 1이 실측한 재현 시나리오다 — 첫 구현은 '
-              '여기서 AppBar가 2개(셸 것 + ChatListScreen 자기 것) 잡혔다',
+          tester.widget<AiChatScreen>(find.byType(AiChatScreen)).initialQuery,
+          '아반떼 찾아줘',
+          reason: '히어로 실 입력 제출은 타이핑한 문장을 그대로 AiChatScreen에 넘겨야 한다',
         );
-        expect(find.byType(NavigationBar), findsNothing);
       });
 
-      testWidgets('go_sell(매물 등록 퀵액션) — 셸이 사라지고 SellScreen만 남는다', (
-        tester,
-      ) async {
+      // spec-16-8이 새로 만든 in-branch push 지점 — 히어로 제안 칩 탭도 실 입력 제출과 같은
+      // rootNavigator push 경로를 탄다(AC5). 위 테스트가 실 입력 경로, 이 테스트가 칩 경로.
+      testWidgets(
+          '히어로 제안 칩(spec-16-8) — 셸이 사라지고 AiChatScreen만 남는다',
+          (tester) async {
         await tester.pumpWidget(
           _harness(
             user: _fakeUser(role: null),
@@ -509,11 +533,115 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('go_sell')));
+        await tester.tap(
+            find.byKey(const ValueKey('hero_suggestion_가성비 좋은 첫차')));
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
         expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byType(NavigationBar), findsNothing);
+        // T4(spec-16-8 검증 갭) — 위 AppBar/NavigationBar 단언만으론 AiChatScreen이 칩
+        // 문장을 실제로 받았는지 모른다(const AiChatScreen()으로 바뀌어도 그대로 통과한다).
+        expect(
+          tester.widget<AiChatScreen>(find.byType(AiChatScreen)).initialQuery,
+          '가성비 좋은 첫차',
+          reason: '히어로 제안 칩 탭도 그 칩 문장을 그대로 AiChatScreen에 넘겨야 한다(AC5)',
+        );
+      });
+
+      // spec-16-8이 새로 만든 또 다른 in-branch push 지점 — 차종 칩 탭도 SearchScreen을
+      // rootNavigator push로 연다(AC2). listingsRepositoryProvider를 직접 오버라이드한다 —
+      // SearchScreen(initialBodyType:)의 즉시조회는 searchControllerProvider의 실제
+      // search()를 그대로 타므로(go_search 테스트의 _FakeSearchController와 달리 build()를
+      // 우회할 수 없다), 레포 층에서 네트워크를 끊어야 한다.
+      testWidgets('차종 칩(spec-16-8) — 셸이 사라지고 SearchScreen만 남는다, SUV 필터가 '
+          '실제로 레포에 전달된다(T3)', (
+        tester,
+      ) async {
+        final repo = _RecordingSearchRepo();
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            extraOverrides: [
+              _recentListings(const []),
+              listingsRepositoryProvider.overrideWithValue(repo),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('category_chip_SUV')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byType(NavigationBar), findsNothing);
+        // T3(spec-16-8 검증 갭) — 셸 경계만 봐서는 SearchScreen이 실제로 SUV로 좁혀 조회했는지
+        // 모른다(home_screen.dart가 SearchScreen(initialBodyType:, initialFuel:) 대신
+        // const SearchScreen()을 넘겨도 위 단언은 그대로 통과한다 — 라벨은 "SUV"인데 결과는
+        // 전체 매물). 레포가 실제로 받은 필터를 직접 확인한다.
+        expect(
+          repo.calls.any((f) => f.bodyType == 'SUV'),
+          isTrue,
+          reason: 'SUV 칩을 탭하면 SearchScreen이 bodyType=SUV로 실제 조회해야 한다',
+        );
+      });
+
+      testWidgets('차종 칩(spec-16-8) — 전기 칩은 fuel=전기 필터가 실제로 레포에 전달된다(T3)', (
+        tester,
+      ) async {
+        final repo = _RecordingSearchRepo();
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            extraOverrides: [
+              _recentListings(const []),
+              listingsRepositoryProvider.overrideWithValue(repo),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('category_chip_전기')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byType(NavigationBar), findsNothing);
+        expect(
+          repo.calls.any((f) => f.fuel == '전기'),
+          isTrue,
+          reason: '전기 칩을 탭하면 SearchScreen이 fuel=전기로 실제 조회해야 한다',
+        );
+      });
+
+      // 코드리뷰 patch 1(spec-16-8) — 홈 퀵액션 3개(go_my_listings 포함) 제거로 앱 전체에서
+      // MyListingsScreen에 닿는 길이 사라졌던 것을 프로필 아바타 메뉴(app_router.dart)에
+      // 복원한 진입점. 다른 in-branch push들과 같은 rootNavigator: true 계약을 진다.
+      testWidgets('프로필 메뉴 "내 매물 관리"(spec-16-8 patch 1) — 셸이 사라지고 '
+          'MyListingsScreen만 남는다', (tester) async {
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            extraOverrides: [_recentListings(const [])],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const Key('profile_avatar')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('my_listings')));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byType(AppBar),
+          findsOneWidget,
+          reason:
+              '프로필 메뉴는 셸(NavigationBar·AppBar) 위 오버레이에서 열린다 — '
+              'rootNavigator: true가 빠지면 셸 AppBar 위에 MyListingsScreen 자기 '
+              'AppBar가 겹쳐 2개가 된다',
+        );
         expect(find.byType(NavigationBar), findsNothing);
       });
 
@@ -595,6 +723,74 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
+        expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byType(NavigationBar), findsNothing);
+      });
+
+      // T6(spec-16-8 검증 갭) — `grep -rn '전체보기' app/test/`가 지금까지 아무것도 못 찾았다.
+      // 두 섹션 헤더("지금 인기"·"방금 올라온 매물")의 "전체보기 ›" 링크는 홈 섹션에서 전체
+      // 목록으로 가는 유일한 길인데, 그걸 실제로 탭하는 테스트가 없었다(home_screen.dart의
+      // onMore를 () {}로 비워도 스위트가 green이었다 — 측정됨). "전체보기 ›" 문자열이 두
+      // 섹션에 똑같이 나오므로 화면 렌더 순서(지금 인기 → 방금 올라온 매물, home_screen.dart
+      // 구조)에 기대 .at(0)/.at(1)로 가른다.
+      testWidgets('"지금 인기" 전체보기(T6) — 셸이 사라지고 SearchScreen만 남는다', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            extraOverrides: [
+              _recentListings(const []),
+              searchControllerProvider.overrideWith(
+                () => _FakeSearchController(),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final moreLinks = find.text('전체보기 ›');
+        expect(moreLinks, findsNWidgets(2),
+            reason: '"지금 인기"·"방금 올라온 매물" 두 섹션 헤더 모두 전체보기 링크를 가져야 한다');
+
+        await tester.ensureVisible(moreLinks.at(0));
+        await tester.tap(moreLinks.at(0));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SearchScreen), findsOneWidget,
+            reason: '"지금 인기" 전체보기를 탭하면 SearchScreen이 열려야 한다 — onMore가 () {}로 '
+                '비워지면(뮤테이션 실측: 스위트가 green이었다) 이 화면 헤더는 죽은 링크가 된다');
+        expect(find.byType(AppBar), findsOneWidget);
+        expect(find.byType(NavigationBar), findsNothing);
+      });
+
+      testWidgets('"방금 올라온 매물" 전체보기(T6) — 셸이 사라지고 SearchScreen만 남는다', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            extraOverrides: [
+              _recentListings(const []),
+              searchControllerProvider.overrideWith(
+                () => _FakeSearchController(),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final moreLinks = find.text('전체보기 ›');
+        expect(moreLinks, findsNWidgets(2));
+
+        await tester.ensureVisible(moreLinks.at(1));
+        await tester.tap(moreLinks.at(1));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.byType(SearchScreen), findsOneWidget,
+            reason: '"방금 올라온 매물" 전체보기를 탭하면 SearchScreen이 열려야 한다');
         expect(find.byType(AppBar), findsOneWidget);
         expect(find.byType(NavigationBar), findsNothing);
       });
@@ -689,6 +885,65 @@ void main() {
               '방을 열었다 돌아오면 채팅방 목록이 다시 조회돼야 한다 — 탭 재진입 '
               '무효화(app_router.dart)만으로는 이 경로(같은 탭 안에서 방을 여닫는 것)를 '
               '못 잡는다',
+        );
+      });
+    },
+  );
+
+  group(
+    '프로필 메뉴 "내 매물 관리" 복귀 — recentListingsProvider·popularListingsProvider 재조회'
+    '(spec-16-8 2차 리뷰 P2)',
+    () {
+      // 예전 홈 퀵액션(go_my_listings)은 `.then((_) => ref.invalidate(recentListingsProvider))`를
+      // 갖고 있었다. 그 퀵액션을 프로필 메뉴(app_router.dart)로 옮기며 그 .then이 빠졌다(코드리뷰
+      // 발견) — 이 push는 rootNavigator라 pop해도 _TabBranch.onActivate(홈 탭 재활성화 무효화,
+      // recentListingsProvider·wishedListingIdsProvider만 무효화)를 거치지 않는다. 그래서 내
+      // 매물 관리에서 구매완료(markSold)·삭제를 하고 돌아와도 홈 "지금 인기"·"방금 올라온 매물"이
+      // 갱신되지 않는다. 채팅방(위 group)이 같은 형태의 push+pop 재조회를 이미 검증하는 것과
+      // 같은 패턴으로 확인한다.
+      testWidgets('내 매물 관리를 열었다 돌아오면 두 홈 섹션이 다시 조회된다', (tester) async {
+        var recentCount = 0;
+        var popularCount = 0;
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            popularListingsDefault: false,
+            extraOverrides: [
+              recentListingsProvider.overrideWith((ref) async {
+                recentCount++;
+                return const <ListingCardData>[];
+              }),
+              popularListingsProvider.overrideWith((ref) async {
+                popularCount++;
+                return const <ListingCardData>[];
+              }),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(recentCount, 1, reason: '첫 진입은 정상적으로 1회 조회돼야 한다');
+        expect(popularCount, 1, reason: '첫 진입은 정상적으로 1회 조회돼야 한다');
+
+        await tester.tap(find.byKey(const Key('profile_avatar')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('my_listings')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BackButton), findsOneWidget);
+        await tester.tap(find.byType(BackButton));
+        await tester.pumpAndSettle();
+
+        expect(
+          recentCount,
+          2,
+          reason:
+              '내 매물 관리에서 바뀐 상태(구매완료·삭제)가 홈 "방금 올라온 매물"에 반영되려면 '
+              '돌아올 때 재조회돼야 한다',
+        );
+        expect(
+          popularCount,
+          2,
+          reason: '같은 이유로 "지금 인기"도 재조회돼야 한다',
         );
       });
     },
@@ -907,6 +1162,49 @@ void main() {
       );
     });
   });
+
+  group(
+    'popularListingsProvider 재조회 — 홈 탭 재진입 시 autoDispose 계약을 명시 무효화로 대신한다'
+    '(spec-16-8 2차 리뷰 P3)',
+    () {
+      // 위 recentListingsProvider와 같은 함정 — `_kTabBranches`의 홈 탭 onActivate가
+      // recentListingsProvider·wishedListingIdsProvider만 무효화하고 popularListingsProvider를
+      // 빠뜨렸다(코드리뷰 발견). 이 파일의 나머지 홈-셸 테스트는 popularListingsProvider를
+      // 상수로 고정해 두므로(`_harness`의 기본 override), 재조회 자체를 세려면 그 기본값을
+      // `popularListingsDefault: false`로 끄고 카운팅 override를 직접 넣어야 한다.
+      testWidgets('홈 탭을 한 번 본 뒤 찜 탭으로 갔다가 돌아오면 조회가 다시 일어난다(2회)', (tester) async {
+        var fetchCount = 0;
+        await tester.pumpWidget(
+          _harness(
+            user: _fakeUser(role: null),
+            popularListingsDefault: false,
+            extraOverrides: [
+              _recentListings(const []),
+              popularListingsProvider.overrideWith((ref) async {
+                fetchCount++;
+                return const <ListingCardData>[];
+              }),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(fetchCount, 1, reason: '첫 진입은 정상적으로 1회 조회돼야 한다');
+
+        await tester.tap(find.byKey(const Key('tab_wishlist')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('tab_home')));
+        await tester.pumpAndSettle();
+
+        expect(
+          fetchCount,
+          2,
+          reason:
+              '탭을 재방문했는데 1회에 멈춰 있으면 무효화가 안 걸린 것이다 — "지금 인기"가 '
+              '앱 실행 중 한 번만 조회되고 다시는 안 바뀌는 실사용 버그와 같은 증상이다',
+        );
+      });
+    },
+  );
 
   group('wishlistProvider 재조회 — 찜 탭 재진입 시 autoDispose 계약을 명시 무효화로 대신한다', () {
     // 위 recentListings·chatRooms와 같은 원인·같은 계약(Story 16.3) — '/wishlist' 브랜치도

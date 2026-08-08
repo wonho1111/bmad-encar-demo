@@ -2,12 +2,14 @@
 //   RLS(chat_rooms_select_participant)가 내 방만 통과(별도 필터 불필요). 각 행: 매물 요약 + 상대 표기.
 //   매물 임베드 null(sold·조회불가)이면 플레이스홀더(FR11). 빈 상태는 역할별 분기.
 //
-// ⚠️ **셸 경계(spec-16-1)**: 이 화면은 두 자리에서 쓰인다 — ① 하단 4탭 셸의 '채팅' 브랜치
-//   루트(`app_router.dart`, `showAppBar: false` — 셸이 이미 공통 AppBar를 그린다) ②
-//   `home_screen.dart`의 "문의 채팅" 퀵액션이 셸 밖 루트 Navigator로 여는 단독 화면
-//   (`showAppBar: true`, 기본값 — 뒤로가기가 있는 자기 AppBar가 필요). 방 하나를 여는
-//   push는 `rootNavigator: true`로 셸 밖으로 보낸다 — 이 화면이 셸 브랜치 루트로 쓰일 때
-//   그 push가 브랜치 안에 남으면 셸 AppBar·NavigationBar가 방 화면 위에 그대로 남는다.
+// ⚠️ **셸 경계(spec-16-1)**: 방 하나를 여는 push는 `rootNavigator: true`로 셸 밖으로
+//   보낸다 — 이 화면이 셸 브랜치 루트로 쓰일 때 그 push가 브랜치 안에 남으면 셸
+//   AppBar·NavigationBar가 방 화면 위에 그대로 남는다.
+//   ⚠️ **spec-16-8로 진입점이 하나로 줄었다**(후속 코드리뷰 spec-16-8 2차 리뷰 P8 확인,
+//   `grep -rn 'ChatListScreen(' app/lib`) — 지금 이 화면을 만드는 자리는 하단 4탭 셸의
+//   '채팅' 브랜치 루트(`app_router.dart`, `showAppBar: false` — 셸이 이미 공통 AppBar를
+//   그린다) 하나뿐이다. 예전엔 `home_screen.dart`의 "문의 채팅" 퀵액션도 이 화면을
+//   `showAppBar: true`(기본값)로 단독으로 열었으나, 그 퀵액션은 spec-16-8에서 제거됐다.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,8 +25,9 @@ class ChatListScreen extends ConsumerWidget {
 
   /// 하단 4탭 셸의 '채팅' 브랜치 루트로 쓰일 때는 셸이 이미 공통 AppBar(제목+프로필
   /// 아바타)를 그리므로 이 화면 자신의 AppBar를 끈다(app_router.dart가 false로 넘긴다).
-  /// 기본값 true — 홈의 "문의 채팅" 퀵액션처럼 단독 화면으로 열릴 때는 뒤로가기가 있는
-  /// 자기 AppBar가 그대로 필요하다(spec-16-1 Never: 퀵액션 유지).
+  /// 기본값 true지만, 지금 그 기본값을 실제로 쓰는 진입점은 없다(위 셸 경계 주석 참조 —
+  /// 홈의 "문의 채팅" 퀵액션은 spec-16-8에서 제거됐다). 단독 화면으로 여는 진입점이 다시
+  /// 생기면 뒤로가기가 있는 자기 AppBar가 필요하므로 기본값을 true로 남겨 둔다.
   final bool showAppBar;
 
   @override

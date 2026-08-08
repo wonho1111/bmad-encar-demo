@@ -5497,6 +5497,11 @@ status: open
   evidence: `scripts/dev-api.sh`로 로컬 FastAPI(진짜 `GEMINI_API_KEY` 사용, `api/.env`)를 로컬 Supabase(Docker, 이미 buyer@test.com 등 시드 계정 존재)에 붙여 띄우고, buyer 세션 토큰으로 `/ai/search`를 4번 직접 호출했다 — ① "패밀리카로 무난한 거 추천해줘"(모호한 질의) → `clarify:{question, chips:["3천만원 이하","SUV","전기차"]}`, `listings:[]`(스펙 I/O 매트릭스 "되묻기 응답" 행과 정확히 일치, DW-594가 기록한 가격/차종/연료 3축도 라이브로 재확인) ② 그 대화에 이어 칩 문자열 "SUV"를 `_submit(overrideQuery:)`가 실제로 보내는 것과 동일한 `context` 배열로 재요청 → `clarify:null`, 매물카드 5건("칩 탭" 행) ③ "오늘 날씨 어때?"(REJECT) → `clarify:null`, `narrowed_by:["price<=30000000","body_type=SUV","fuel=전기"]`, `listings:[]`("거절 응답" 행) ④ 6개 항목짜리(3턴) context로 4번째 되묻기 시도 → `clarify:null`이지만 매물카드 5건("되묻기 상한 초과" 행, 서버가 클라 카운터 없이 스스로 강제). 네 응답 모두 JSON 구조가 `parseSearchResult`/`parseClarifyPayload`/`parseNarrowedBy`가 기대하는 형태와 필드명까지 정확히 일치했다(별도 매핑 수정 불필요). 반면 화면 조작은 두 경로 다 막혔다 — (a) 같은 코드를 `--dart-define`으로 로컬 API를 가리키게 재빌드해 Playwright(Chromium)로 열었더니 이번엔 이전 선례(CanvasKit `CONTEXT_LOST_WEBGL`)와 **다른** 에러("Null check operator used on a null value" — Flutter 웹 부트스트랩 도중 JS 예외)로 화면이 끝까지 흰 배경으로 남았다(콘솔 에러 1건 직접 확인, 스크린샷 캡처) (b) `flutter devices`가 한 차례 실물 Android 기기(SM G991N, adb-over-network)를 보고했으나 곧이어 `adb devices -l`이 빈 목록을 반환해 실제로는 상호작용할 수 없었다(연결이 불안정/일시적이었던 것으로 보임).
   trigger: 정상 렌더 가능한 환경(이 샌드박스 밖 — 실기기 안정 연결 또는 CanvasKit이 죽지 않는 브라우저)에서 위와 동일한 buyer 계정·질의로 실제 화면을 열어 칩이 그려지고 탭이 다음 턴을 잇는지 눈으로 1회 확인한다. 늦어도 Epic 16-6(SM-D 통합 시연 검증)에서 16.2~16.5 전체를 실기기로 볼 때 이 스토리분도 함께 확인한다.
 
+- source_spec: `spec-16-8-앱-홈-랜딩-미러.md`
+  summary: 스펙의 Manual checks(로컬/개발 API로 앱 홈을 열어 히어로·차종칩·인기/최신 섹션이 실제로 이 순서로 보이는지, 차종 칩 탭이 실제로 필터링된 탐색 결과로 이어지는지 1회 실측)가 이 세션에서 실행되지 못했다 — `flutter analyze`(0 issues)·`flutter test`(334건 전체 green)·`flutter build web`은 전부 통과했지만, 실제 렌더는 확인하지 못했다.
+  evidence: `flutter build web --dart-define-from-file=.env.json`으로 실제 빌드 산출물을 만들어 로컬 정적 서버(`python3 -m http.server`)로 서빙하고 Playwright(Chromium)로 열었으나, 콘솔에 `WebGL: CONTEXT_LOST_WEBGL`(경고)과 `TypeError: Cannot read properties of undefined (reading 'init')`(에러, Dart 스택트레이스 최상단 "Null check operator used on a null value")가 뜨며 화면이 끝까지 렌더되지 않았다 — spec-16-5(바로 위 항목, DW 장부)가 이미 기록한 것과 **동일한 에러 문자열**의 재현이다(이 샌드박스의 알려진 환경 한계, 이번 변경이 만든 결함이 아니다). 대신 순서·개수·필터 목적지·섹션별 에러 격리(intent-contract Always·I/O 매트릭스) 전부를 위젯테스트로 대체 확인했다 — `home_ai_entry_test.dart`(좌표 순서 히어로>차종칩>지금인기>최신, 퀵액션 개수=0 — 채택 전 순서를 실제로 뒤집어 red 확인 후 되돌려 green 재확인), `search_screen_test.dart`(initialBodyType 즉시조회 + 필터 진입 경합 재현), `ai_chat_screen_test.dart`(initialQuery 자동제출), `app_router_test.dart`(히어로 제안칩·차종칩 push가 실제로 셸을 벗어나는지).
+  trigger: 정상 렌더 가능한 환경(이 샌드박스 밖 — 실기기 또는 CanvasKit이 죽지 않는 브라우저)에서 로컬/개발 API로 앱 홈을 열어 히어로·차종칩·"지금 인기"·"방금 올라온 매물" 섹션이 이 순서로 보이는지, 차종 칩 탭이 실제로 필터링된 탐색 결과로 이어지는지 눈으로 1회 확인한다. 늦어도 Epic 16-6(SM-D 통합 시연 검증, 계획 문서상 16.8·16.7 다음 순서)에서 확인한다.
+
 - source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
   summary: 데모 각본(`EXPERIENCE.md`)이 시연자에게 "7인승" 되묻기 칩을 누르라고 지시하는데 서버는 그 칩을 절대 보내지 않는다(고정 3축 = 가격·차종·연료). 두 정본이 갈린 사실 자체는 DW-594가 추적하고 있었으나, 16.5가 "칩 값의 의미는 렌더링과 무관하다"는 결정으로 그 항목을 닫으면서 **불일치는 그대로인 채 추적만 사라졌다**.
   evidence: 16.5는 앱 렌더 관점에서만 판단했고(서버 문자열을 그대로 그린다), 어느 쪽 문서도 고치지 않았다 — 16.5 스펙의 Residual risks 자신이 "어느 쪽이 제품적으로 옳은지는 여전히 미정"이라고 적는다. 서버 칩 3축은 이번 스토리의 라이브 curl 실측(위 항목 evidence)에서 `["3천만원 이하","SUV","전기차"]`로 재확인됐다. 즉 시연자가 각본대로 "7인승"을 찾으면 화면에 없다. CLAUDE.md B8("일을 끝내면 대장을 닫는다" — 뒤집으면, 안 끝난 일이 닫히면 '안 한 것'과 '했는지 모르는 것'이 구별되지 않는다)에 걸리는 형태라 신규 항목으로 다시 세운다.
@@ -5560,4 +5565,63 @@ scope_note: 색 토큰은 이미 맞다([[DW-729]] 해소 — `app_theme_color_d
 trigger: **Story 16.8 신설 여부 결정 시**(사용자 결정 대기 중, 2026-08-08). 신설하면 이 항목은 그 스토리가 닫는다. **신설하지 않기로 하면 16.6(통합 시연 검증) 착수 시**로 옮겨 그 자리에서 최소한 퀵액션 3개 제거만이라도 처리한다 — 16.6이 "웹과 동일 디자인 언어"를 검증하는 스토리라 홈이 다르면 그 검증이 성립하지 않는다. ⚠️ 어느 쪽이든 **16.6보다 먼저** 결론이 나야 한다.
 related: [[DW-735]](같은 눈 확인에서 나온 상세 쪽 같은 계열) · [[DW-728]](앱 AI FAB — 웹에 있는 결정이 앱에 안 옮겨진 같은 모양, 해소됨) · [[DW-729]](색 토큰 드리프트 — 색 축은 이미 닫혔다)
 decision: **2026-08-08 사용자 결정 — Story 16.8(앱 홈 랜딩 미러) 신설.** 계획 문서(`epics-increment-2026-07-12.md`)와 스프린트 장부(`sprint-status.yaml`) 양쪽에 심었고, 실행 순서를 **16.8 → 16.7 → 16.6**으로 잡았다(16.6이 검증 스토리라 대상 화면이 먼저 있어야 한다 — sprint-status에서 16-6 줄을 16-7 아래로 내렸다. 그 파일의 나열 순서가 곧 실행 순서다). 이 항목이 말한 4가지(히어로+제안칩·차종칩·인기/최신 2섹션·퀵액션 3개 제거)가 전부 16.8의 인수조건으로 들어갔고, "같은 커밋이어야 한다"는 주의와 "순서·개수까지 단언하는 검사" 요구도 함께 심었다. **이 항목은 16.8이 닫는다.**
+status: done 2026-08-08 — Story 16.8 구현으로 해소. `app/lib/features/auth/home_screen.dart`가 웹 Epic 11 구조(히어로 실입력+제안칩 4개 → 차종 칩 6개 → "지금 인기"(view_count desc)·"방금 올라온 매물"(created_at desc) 2섹션, 각 4건)를 미러하고, 퀵액션 3개(`Key('go_chat')`·`Key('go_sell')`·`Key('go_my_listings')`)와 전용 `_QuickAction` 클래스를 **같은 커밋에서** 제거했다(DW-728 순서 그대로). `home_ai_entry_test.dart`가 히어로>차종칩>지금인기>최신 좌표와 퀵액션 개수=0을 단언한다.
+
+### DW-737: 홈 "방금 올라온 매물"은 웹과 달리 **SQL `.limit(4)`가 아니라 on_sale 전량을 받아 Dart에서 `take(4)`** 한다
+origin: 2026-08-08 spec-16-8 후속 코드리뷰(intent-alignment 렌즈). 이번 스토리가 만든 결함은 아니고, 기존 `recentListingsProvider`를 그대로 재사용하면서 드러났다.
+location: `app/lib/features/listings/listings_providers.dart:28-34`(`fetchListings(...)` 후 `list.take(4)`) · 웹 정본 = `web/src/lib/listings.ts:238`(`.limit(POPULAR_RECENT_GRID_COUNT)`)
+severity: low
+summary: spec-16-8의 Always는 인기·최신 두 섹션을 "각 4건, 웹 `fetchPopularAndRecentListings` 미러"로 못박았다. 이번에 신설한 `fetchPopularListings`는 실제로 SQL `.limit(4)`를 걸어 웹과 같은 모양인데, **최신 단만** 기존 provider를 재사용해 서버에서 on_sale 전량을 받아 온 뒤 클라이언트에서 4건을 자른다. 화면에 보이는 4건은 동일하므로 지금 틀린 값이 나오는 것은 아니다 — 어긋난 것은 조회 계층의 모양이다.
+evidence: `listings_providers.dart:31-33` — `await repo.fetchListings(ResolvedFilters.fromInput(const ListingFilterInput()))` 뒤 `list.take(4)`. `listings_repository.dart`의 `fetchListings` 주석 자신이 *"페이지네이션 없이 on_sale 전량을 반환한다(app/lib 전역에 .range()/.limit() 0건)"*고 적는다. 반면 `fetchPopularListings`는 `.limit(limit)`(기본 4)를 건다.
+why_it_matters: 데모 데이터 규모에선 무해하지만, 매물이 늘면 홈 진입마다 전량 조회 + 그 전량 id로 `listing_images` 배치 조회까지 돈다(같은 주석이 "실 서비스 규모로 자라면 목록 자체에 페이지네이션이 먼저 필요"라고 예고한 자리). 그리고 "웹과 같은 정렬·건수"라는 계약을 조회 계층에서 읽으면 두 섹션이 서로 다른 규칙을 쓰는 상태다.
+fix_sketch: `fetchListings`에 선택적 `limit` 파라미터를 더하거나(기존 호출부 무영향, 기본 null), 최신 전용 조회를 `fetchPopularListings`와 동형으로 하나 세운다. 어느 쪽이든 `listings_repository_card_columns_test.dart`가 이미 쓰는 소스텍스트 가드에 `.limit(` 단언을 최신 단에도 추가해 닫는다.
+scope_note: 선재 — `recentListingsProvider`는 Story 16.2부터 이 모양이었고, spec-16-8은 그 provider를 "재사용"하도록 Code Map에 명시했다. 16.8이 만든 것이 아니다.
+trigger: **매물 목록에 페이지네이션을 처음 넣는 자리**(`fetchListings`에 `.range()`/`.limit()`가 들어가는 순간 — 그때 이 `take(4)`도 같은 커밋에서 서버 limit으로 옮긴다). 그 전에라도 **Epic 16-6(SM-D 통합 시연 검증)에서 홈 로딩이 느리게 느껴지면** 그 자리에서 처리한다.
+related: [[DW-736]](이 항목이 드러난 스토리)
+status: open
+
+### DW-738: 앱은 **비로그인 열람을 아예 지원하지 않는다** — 모든 경로가 `/login`으로 리다이렉트되는데 Epic 16 요구사항은 "비로그인 매물 열람 가능"을 요구한다
+origin: 2026-08-08 spec-16-8 후속 코드리뷰(adversarial 렌즈). 에픽 컨텍스트 문서가 이번 커밋에 재컴파일되면서 "목록·상세·**홈**"으로 범위가 넓어져 불일치가 눈에 띄었다.
+location: `app/lib/core/router/app_router.dart:224-228`(`if (user == null) return isAuthRoute ? null : '/login';`) · 요구사항 = `_bmad-output/implementation-artifacts/epic-16-context.md:25` · 웹 정본 = `supabase/migrations/0011_listings_anon_select.sql`(anon SELECT 정책이 실제로 존재)
+severity: low
+summary: 에픽 요구사항은 *"비로그인 사용자도 매물 열람(목록·상세·홈)은 가능하다. 로그인 게이트는 '행동'에만 건다"*이고, 웹은 그렇게 구현돼 있다(anon RLS 정책까지 DB에 있다). 앱은 GoRouter `redirect`가 미인증 사용자를 **모든 경로에서** `/login`으로 보내므로 이 요구사항이 앱에선 성립하지 않는다. 즉 문서가 앱에서 도달 불가능한 상태를 요구사항으로 선언하고 있다.
+evidence: `app_router.dart:225-227` 실측 — `user == null`이면 `/login`(auth 경로 제외) 외의 분기가 없다. 반면 `epic-16-context.md:25`는 비로그인 열람을 요구사항으로 적고, 같은 파일이 "AI 검색·문의·매물 등록·찜만 게이트"라고 범위까지 좁혀 놓았다.
+why_it_matters: **16.6(SM-D 통합 시연 검증)이 이 문서를 읽는다.** 검증자가 "비로그인으로 홈이 보이나"를 확인하려 하면 로그인 화면만 보고 결함으로 등재하거나, 반대로 요구사항을 못 보고 건너뛴다 — 어느 쪽이든 "검증했다"가 사실과 달라진다. 둘 중 하나를 정해야 한다: 앱도 anon 열람을 열든지, 요구사항을 "웹 한정"으로 명시하든지.
+fix_sketch: 결정이 먼저다(사람 판단 필요). ① **요구사항을 웹 한정으로 좁힌다** — 앱은 로그인 후 진입이 전제라고 에픽 컨텍스트·PRD에 명시(변경 최소, 데모 각본도 로그인부터 시작한다). ② **앱도 anon 열람을 연다** — `redirect`에서 열람 경로(`/home`·`/search`·상세)를 화이트리스트로 통과시키고, 행동 지점마다 `requireUser` 게이트를 확인한다(그 게이트는 `require_user_test.dart`로 이미 존재). ②는 화면 여러 개의 로그인 전제를 다시 봐야 하므로 별도 스토리 크기다.
+scope_note: 선재 — 이 리다이렉트는 Story 16.1(내비 셸)이 옛 `AuthGate` 동작을 그대로 옮긴 것이고, 16.8 범위 밖이다. 어느 스토리도 "앱 비로그인 열람"을 자기 것으로 갖지 않았다([[DW-546]] 계열).
+trigger: **Epic 16-6(SM-D 통합 시연 검증) 착수 시** — 그 스토리가 "웹과 동일 디자인 언어·정보구조"를 실기기로 대조하는 자리이므로, 착수 시점에 위 ①/②를 사용자에게 물어 결론을 내고 문서를 그 결론으로 맞춘다. 늦어도 그 검증 전에 결론이 나야 한다(안 그러면 검증 결과가 요구사항과 어긋난 채 남는다).
+related: [[DW-736]](이 항목이 드러난 스토리) · [[DW-546]](어느 스토리도 자기 것으로 안 가진 자리)
+status: open
+
+### DW-739: `MyListingsScreen` → 매물 수정(`SellScreen`) push의 **셸 경계 테스트가 없다** — 같은 실패 모드를 다른 진입점에서는 이미 검사하고 있다
+origin: 2026-08-08 spec-16-8 후속 코드리뷰(adversarial 렌즈). 이번에 홈 퀵액션 3개가 사라지면서 그 진입점을 검사하던 테스트도 함께 지워졌는데, 살아있는 push 하나가 무검증으로 남은 것이 드러났다.
+location: `app/lib/features/listings/my_listings_screen.dart:158`(`Navigator.of(context, rootNavigator: true).push(... EditListingScreen ...)`) · 검사 선례 = `app/test/app_router_test.dart:557-580`(프로필 메뉴 → `MyListingsScreen` 경로는 AppBar 1개·NavigationBar 없음을 단언)
+severity: low
+summary: spec-16-1이 확정한 셸 경계 규칙은 *"셸(NavigationBar·AppBar) 위 오버레이에서 여는 화면은 `rootNavigator: true`로 push해야 셸 크롬이 그 위에 남지 않는다"*이고, 빠뜨리면 **AppBar가 2개 겹친다**(spec-16-1 P4가 실측으로 잡은 실패 모드). 이번 후속 리뷰에서 프로필 메뉴 경로에는 그 검사가 추가됐지만, `MyListingsScreen`에서 수정 화면으로 가는 push는 같은 규칙을 지고 있으면서 어떤 테스트도 밟지 않는다.
+evidence: `grep -rn 'EditListingScreen' app/test/` → `require_user_test.dart:151` 1건뿐이고, 그것은 로그인 게이트(미인증 차단)만 본다 — 셸 크롬 개수는 안 본다. `app_router_test.dart`의 셸 경계 group은 프로필 메뉴 → `MyListingsScreen`까지만 확인한다(그 다음 단계인 수정 push는 사정권 밖).
+why_it_matters: 이 규칙은 "새 진입점을 만들 때마다 까먹기 쉬운 자리"라 spec-16-1이 굳이 테스트로 박아 둔 것이다. 검사가 한 진입점에만 있으면, 다음 사람이 화면을 하나 더 열 때 무엇을 따라 해야 하는지가 코드에 안 남는다(CLAUDE.md B9 — 규칙은 어길 수 없는 자리에 박는다).
+fix_sketch: `app_router_test.dart`의 기존 셸 경계 group에 한 케이스를 더한다 — 프로필 메뉴 → `MyListingsScreen` → 수정 버튼 탭 → `SellScreen`(수정 모드)이 떴을 때 AppBar 1개·NavigationBar 0개를 단언한다. 하네스는 이미 그 경로를 띄울 수 있다(`_harness`에 본인 매물 fake를 하나 넣으면 된다).
+scope_note: 선재 — 이 push는 Story 7.4/16.1부터 있었고 spec-16-8의 Code Map 밖이다. 16.8이 만든 것이 아니라, 퀵액션 제거로 옆자리 검사가 사라지면서 드러났다.
+trigger: **`my_listings_screen.dart`나 `sell_screen.dart`의 진입·라우팅을 다음에 손대는 자리**(수정 화면을 새로 열거나 셸 경계를 다시 판단해야 할 때 이 케이스를 함께 심는다). 늦어도 **Epic 16-6(SM-D 통합 시연 검증)**에서 판매자 동선을 실기기로 훑을 때 AppBar 겹침을 눈으로 확인하고 그 자리에서 닫는다.
+related: [[DW-736]](이 항목이 드러난 스토리)
+status: open
+
+### DW-740: **앱은 `view_count`를 읽기만 하고 한 번도 쓰지 않는다** — 홈 "지금 인기"의 순위 신호를 앱 트래픽이 전혀 만들지 않는다
+origin: 2026-08-09 spec-16-8 3차 코드리뷰(adversarial·intent-alignment 두 렌즈 독립 발견). 이번 스토리가 만든 결함은 아니고, "지금 인기" 섹션을 홈 상단에 세우면서 기존 비대칭이 화면으로 드러났다.
+location: `app/lib/features/listings/listing_detail_screen.dart`(상세 진입 시 RPC 호출 없음) · 신설 소비처 = `app/lib/features/listings/listings_repository.dart`의 `fetchPopularListings`(`view_count desc`) · 웹 정본 = `web/src/app/(user)/listings/[id]/page.tsx:207`(유일한 쓰기 통로) · RPC 정의 = `supabase/migrations/0020_listings_view_count.sql`
+severity: low
+summary: `view_count`의 유일한 쓰기 통로는 `increment_listing_view` RPC이고, 그것을 부르는 곳은 **웹 상세 페이지 하나뿐**이다. 앱은 상세 화면에 들어가도 이 RPC를 부르지 않으므로 조회수를 전혀 증가시키지 않는다. 즉 이번에 홈 최상단 근처에 세운 "지금 인기" 섹션은 앱이 한 번도 기여하지 않는 카운터로 순위를 매긴다.
+evidence: 실측 — `grep -rn 'increment_listing_view' app/` → **0건**. `grep -rn '\.rpc(' app/lib` → `chat_unread_count`·`chat_unread_by_room` 2건뿐(둘 다 채팅). 웹 쪽은 호출 지점 단일성 검사(`web/src/app/(user)/listings/[id]/__tests__/viewCountCallSite.test.ts`)까지 두고 관리 중이다.
+why_it_matters: **앱만 쓰는 시연(Epic 16-6 SM-D 통합 시연 검증)에서 `view_count`가 전부 0으로 남으면 "지금 인기"가 사실상 2차 정렬키(`id desc`) 고정 목록으로 퇴화한다** — 라벨과 실제 의미가 어긋나는 상태이고, 이는 spec-16-8의 Never가 차종 칩에 대해 금지한 것과 같은 형태다(CLAUDE.md B9 "라벨과 다른 결과가 나오는 것을 만들지 않는다"). 홈 위젯테스트는 provider를 오버라이드하므로 이 사실을 영영 관측하지 못하고, 실기기 육안 확인도 아직 미실행이라 **지금 이것을 보고 있는 검사가 하나도 없다.**
+fix_sketch: 둘 중 하나를 **결정**한다(사람 판단 필요). ① **앱 상세 진입에도 RPC를 붙인다** — 웹과 같은 신호 생산자가 되게 하고, 웹이 이미 쓰는 것과 같은 방식으로 앱 쪽 호출 지점도 단일성 검사로 고정한다(호출이 두 곳으로 늘면 한 번 열람에 2가 오른다). ② **"앱은 인기 신호를 생산하지 않고 웹 트래픽 기준을 표시만 한다"를 명시적 결정으로 등재**하고, 16.6 검증자가 "인기 순서가 안 바뀐다"를 결함이 아니라 알려진 동작으로 읽게 한다.
+scope_note: 선재 — 앱 상세 화면은 Story 16.2부터 이 모양이었고, spec-16-8은 조회(읽기) 함수의 미러만 요구했다. 문언상 위반이 아니라 미러의 **절반만 존재**하는 상태다.
+trigger: **Epic 16-6(SM-D 통합 시연 검증) 착수 시** — 그 스토리가 홈을 실기기로 검증하는 자리이므로, 착수 시점에 위 ①/②를 사용자에게 물어 결론을 내고 그 결론대로 코드나 문서를 맞춘다. 그 전에라도 **앱 상세 화면의 진입 로직을 다음에 손대는 자리**에서 ①을 고른다면 같은 커밋에 넣는다.
+related: [[DW-736]](이 항목이 드러난 스토리) · [[DW-738]](같은 "앱이 웹 요구사항의 절반만 구현한 자리" 계열)
+status: open
+
+### DW-741: Follow-up review still recommended for 16-8-앱-홈-랜딩-미러 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-8-앱-홈-랜딩-미러.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260808-204638-063b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

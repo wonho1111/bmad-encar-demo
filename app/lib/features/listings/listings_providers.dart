@@ -33,6 +33,14 @@ final recentListingsProvider =
   return list.take(4).toList();
 });
 
+/// 홈 "지금 인기" 섹션(spec-16-8) — view_count desc 상위 4건(web `fetchPopularAndRecentListings`
+/// 미러). recentListingsProvider와 동형 — autoDispose로 홈을 떠나면 캐시 정리.
+final popularListingsProvider =
+    FutureProvider.autoDispose<List<ListingCardData>>((ref) async {
+  final repo = ref.watch(listingsRepositoryProvider);
+  return repo.fetchPopularListings();
+});
+
 /// 수정 진입용 본인 매물 단건(id) — 7.4. 현재 로그인 판매자 본인 매물만 조회(seller_id 필터 + RLS).
 /// 0행이면 null(타인·없음) → 수정 화면이 한국어 차단. 세션 없으면 null 로 처리(차단 화면).
 /// autoDispose: 수정 화면을 닫으면 캐시를 버려, 다음에 들어올 때 항상 최신 값을 다시 읽는다.
@@ -68,6 +76,12 @@ class SearchState {
 /// 탐색 컨트롤러. 화면이 입력을 갱신(updateInput)하고, 검색 버튼이 search() 를 부른다.
 /// 첫 진입 시 자동으로 빈 필터 검색을 한 번 돌려 전체(판매중) 목록을 보여준다.
 class SearchController extends Notifier<SearchState> {
+  // "필터 진입 경합" 방어(spec-16-8 Design Notes) — 이 provider는 앱 전역 싱글턴이라 최초
+  // 빌드 시 build()가 빈 필터 초기조회를 예약한다. 카테고리 칩으로 이번 세션 첫 진입해 그
+  // 초기조회와 겹치면, 두 호출의 **응답이 어떤 순서로 와도** 마지막으로 호출된 쪽(= 가장 큰
+  // requestId)만 화면에 반영되게 한다 — 응답 도착 순서가 아니라 **호출 순서**로 승자를 정한다.
+  int _requestId = 0;
+
   @override
   SearchState build() {
     // 빌드 직후 초기 조회를 비동기로 시작(전체 판매중 목록).
@@ -82,13 +96,19 @@ class SearchController extends Notifier<SearchState> {
 
   /// 현재 입력값을 검증·정규화해 조회. 결과를 AsyncValue 로 화면에 흘린다.
   Future<void> search() async {
+    // 이 호출이 곧 "지금까지 중 가장 나중 호출"이 되도록 증가분을 동기 구간에서 확정한다
+    // (await 전에 캡처) — 그래야 나중에 이 응답이 와도, 그 사이 더 나중 호출이 있었다면
+    // 정확히 걸러진다.
+    final requestId = ++_requestId;
     state = state.copyWith(results: const AsyncValue.loading());
     try {
       final filters = ResolvedFilters.fromInput(state.input);
       final repo = ref.read(listingsRepositoryProvider);
       final list = await repo.fetchListings(filters);
+      if (requestId != _requestId) return; // 그 사이 더 나중 호출이 있었다 — 이 응답은 낡았다.
       state = state.copyWith(results: AsyncValue.data(list));
     } catch (e, st) {
+      if (requestId != _requestId) return;
       state = state.copyWith(results: AsyncValue.error(e, st));
     }
   }

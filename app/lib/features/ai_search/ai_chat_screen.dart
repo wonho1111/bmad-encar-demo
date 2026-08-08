@@ -21,7 +21,16 @@ typedef SearchAiFn = Future<SearchResult> Function({
 });
 
 class AiChatScreen extends ConsumerStatefulWidget {
-  const AiChatScreen({super.key, @visibleForTesting this.searchAiOverride});
+  const AiChatScreen({
+    super.key,
+    this.initialQuery,
+    @visibleForTesting this.searchAiOverride,
+  });
+
+  // 히어로 제안 칩·실 입력 제출의 목적지 계약(spec-16-8 AC5) — 값이 있으면 화면이 열리자마자
+  // 그 문장으로 이미 조회를 시작한 상태다(입력창에 채우기만 하고 기다리지 않는다). 되묻기 칩
+  // 탭과 똑같은 _submit(overrideQuery:) 경로를 그대로 태운다(파이프라인 하나만 존재).
+  final String? initialQuery;
 
   // 테스트 전용 시접 — 기본은 실제 네트워크 호출(searchAi). `API_BASE_URL`은 컴파일타임
   // 상수(String.fromEnvironment)라 테스트에서 값을 채울 수 없고, flutter_test는 실제 네트워크도
@@ -43,16 +52,38 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    final q = widget.initialQuery;
+    if (q == null || q.trim().isEmpty) return;
+    // 첫 프레임이 그려진 뒤로 미룬다 — initState에서 곧장 _submit을 부르면 그 setState가
+    // 아직 마운트 중인 위젯 트리 빌드와 겹친다(_scrollToBottom과 같은 이유로 이 파일이 이미
+    // addPostFrameCallback을 쓰는 것과 동일한 원칙).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // restoreInputOnFailure: true — 히어로 자동 제출 전용(아래 _submit 시그니처 주석 참조).
+      if (mounted) _submit(overrideQuery: q, restoreInputOnFailure: true);
+    });
+  }
+
+  @override
   void dispose() {
     _input.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  // [overrideQuery]: 되묻기 칩 탭 전용(spec-16-5 Design Notes) — 칩 문자열을 그대로 다음
-  // 질의로 보낸다. 낙관적 버블·에러 롤백·로딩 잠금을 새로 만들지 않고 이 경로를 그대로 물려받는다.
-  // 반환값 = 전송 성공 여부(칩 탭이 실패 시 "선택됨" 표시를 되돌리는 데 쓴다 — review).
-  Future<bool> _submit({String? overrideQuery}) async {
+  // [overrideQuery]: 되묻기 칩 탭 *또는* 히어로 자동 제출(initState) 전용 — 칩/히어로 문자열을
+  // 그대로 다음 질의로 보낸다. 낙관적 버블·에러 롤백·로딩 잠금을 새로 만들지 않고 이 경로를
+  // 그대로 물려받는다. 반환값 = 전송 성공 여부(칩 탭이 실패 시 "선택됨" 표시를 되돌리는 데
+  // 쓴다 — review).
+  //
+  // [restoreInputOnFailure]: 두 overrideQuery 호출부를 실패 시 복원 여부로 가른다(후속
+  // 코드리뷰 spec-16-8 발견). 되묻기 칩 탭은 실패해도 문장이 그 칩 라벨에 그대로 남아있어
+  // 사용자가 다시 볼 수 있지만, 히어로 자동 제출은 이미 home_screen.dart가 `_controller.clear()`
+  // 해버린 뒤라 이 문장의 유일한 사본이 없다 — 실패하면 사용자가 처음부터 다시 타이핑해야
+  // 한다. 기본값 false(칩 탭 동작 유지, 그 draft-preservation은 의도적이고
+  // ai_chat_screen_test.dart가 고정한다) — initState의 히어로 호출부만 true로 넘긴다.
+  Future<bool> _submit({String? overrideQuery, bool restoreInputOnFailure = false}) async {
     final query = (overrideQuery ?? _input.text).trim();
     if (query.isEmpty || _loading) return false; // 빈 질의·중복 전송 차단.
 
@@ -113,7 +144,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
           _messages.removeLast();
         }
         // 위 clear()와 대칭 — 칩 탭 제출이었다면 입력창을 건드리지 않는다(사용자 초안 보존).
-        if (overrideQuery == null) _input.text = query;
+        // restoreInputOnFailure(히어로 자동 제출)는 예외로 복원한다 — 위 시그니처 주석 참조:
+        // 이 경로는 home_screen.dart가 이미 clear()해 이 문장의 다른 사본이 없다.
+        if (overrideQuery == null || restoreInputOnFailure) _input.text = query;
         _loading = false;
       });
       return false;
