@@ -3865,7 +3865,8 @@ location: `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md:
 severity: medium
 reason: 13.4는 이 불변식을 의도적으로 뒤집었다 — 서버가 `context` 길이로 `clarify_turns`를 직접 계산해 상한을 강제한다(`api/app/graph/graph.py`의 `run_search`·`_clarify_step`, DW-563 resolution). 그런데 I12 본문은 그대로라, 이 불변식을 정본으로 읽는 다음 담당자(웹 칩 렌더링 스토리 DW-587, 또는 앱 Story 16.5)가 클라이언트에도 상한을 구현하면 **서버(3턴)와 클라(2~3턴)가 각자 세는 두 개의 상한**이 생긴다. 그러면 사용자는 자기가 몇 번 더 물을 수 있는지 알 수 없는 시점에 칩이 사라지고, 어느 쪽이 끊었는지 디버깅도 어렵다. 13.4 리뷰 1차에서 "구현 위치가 I12와 어긋난다"는 지적은 "이미 재검토된 결정"으로 reject됐는데, 결정이 바뀐 사실 자체가 상위 문서에 반영되지 않은 것은 그 reject가 다루지 않은 별개 사안이다(project-context.md 규칙 1의 정신 — 어긋나면 한쪽만 정본이어야 한다).
 trigger: 웹 칩 렌더링 스토리(DW-587)나 앱 Story 16.5를 착수할 때 **그 스토리 스펙을 쓰기 전에** — 그때 I12 본문을 "서버 강제(+ 클라는 서버가 준 `clarify`가 null이면 칩을 그리지 않는다)"로 정정하고 이 항목을 닫는다. 에픽 13 회고가 먼저 오면 거기서 해도 된다.
-status: open
+status: done 2026-08-08
+resolution: Story 16.5(spec-16-5-4분기-ai-응답-되묻기-칩-앱)가 정정했다. `_bmad-output/planning-artifacts/architecture-increment-2026-07-12.md:390`의 I12 본문을 "서버가 `context` 길이로 강제(`api/app/graph/graph.py`) + 클라는 `clarify` null이면 칩 미표시"로 갱신하고 정정 이력을 남겼다. 앱(`app/lib/features/ai_search/ai_chat_screen.dart`)도 별도 클라 카운터를 두지 않고 `clarify != null`만으로 칩 렌더를 판별해 정정된 불변식대로 구현했다.
 
 ### DW-590: SM3(데모 인수) 판정이 이제 벡터 검색 장애를 못 잡고, PRD·epics의 "두 경로 시연" 문구와도 어긋난다
 
@@ -3892,8 +3893,9 @@ location: `app/lib/features/ai_search/ai_search_api.dart`(`SearchResult`에 `cla
 severity: medium
 reason: 13.4 이전에는 CLARIFY가 `doc_rag_node`로 임시 배선돼 있어서, 앱에서 "패밀리카로 무난한 거" 같은 애매한 질의를 던지면 **실제 매물 카드**가 돌아왔다. 13.4가 CLARIFY를 고정 템플릿 되묻기로 재배선하면서 그 응답은 `listings: []` + `clarify: {question, chips}`가 됐다. 그런데 앱은 `clarify`를 파싱조차 하지 않으므로(repo 전체 `*.dart`에서 `clarify` 검색 결과 0건), 사용자에게는 **질문 한 줄만 뜨고 카드도 칩도 없는 화면**이 된다 — FR46의 상한이 막으려던 바로 그 막다른 느낌이 앱에서 먼저 나타난다. 웹은 이번 스토리 리뷰에서 최소한 값을 실어 나르도록 고쳤지만(DW-587), 앱은 필드 자체가 없다. DW-587은 "앱은 Story 16.5가 맡는다"는 근거로 웹만 다뤘는데, 16.5는 `backlog`라 착수 일정이 없다. 즉 api를 운영에 반영하는 순간부터 16.5가 끝날 때까지 앱 사용자에게 이 상태가 노출된다. 지금은 api가 운영에 반영되지 않아 실피해가 없다(로컬/개발만).
 trigger: **api(`encar-ai-api` 운영)에 13.4를 반영하기 직전** — 그 배포 판단과 같은 자리에서 (a) 앱에 `clarify` 파싱+칩 렌더를 먼저 넣을지, (b) 16.5를 backlog에서 끌어올릴지, (c) 앱이 따라올 때까지 api 운영 반영을 미룰지 중 하나를 고르고 이 항목을 그 결정으로 닫는다. 16.5 착수가 먼저 오면 거기서 닫아도 된다.
-status: open
+status: done 2026-08-08
 retarget (2026-08-05 회고): 고칠 자리는 **`16-5-4분기-ai-응답-되묻기-칩-앱`**(백로그에 실재)이고, 그와 **별도로 배포 차단 조건**을 함께 건다: **에픽 13이 `main`(운영)에 병합되기 전에 16-5가 끝나 있거나, 아니면 병합을 미룬다.** 조건만 적고 스토리를 안 가리키면 `#73`이 비판한 "날짜 없는 조건"이 되므로 둘 다 적는다(B8). 2026-08-05 실측으로 **지금은 안 터진다**는 것을 확인했다: 운영 api(`encar-ai-api`)에 `가성비 좋은 차 알려줘`를 직접 호출하니 응답 키가 `['answer','listings']`뿐이고 `clarify` 키가 아예 없다(에픽 13 이전 코드). 앱 Dart 코드에 `clarify` 참조가 0건인 것도 확인 — 즉 '앱이 못 읽는다'는 사실은 맞지만, 운영이 아직 되묻기를 안 보내므로 현재 사용자 피해는 없다. **에픽 13을 운영에 올리는 순간 빈 화면이 된다.**
+resolution: Story 16.5가 (b)를 택해 해소했다. `app/lib/features/ai_search/ai_search_api.dart`가 `clarify`를 파싱(`parseClarifyPayload`)하고, `SearchResult.clarify`로 실어 `ai_chat_screen.dart`의 `ChatMessage.clarify`까지 배선한 뒤 `_ClarifyChips` 위젯이 렌더한다 — repo `*.dart` 전체 `clarify` grep이 이제 0건이 아니다. 위 retarget이 건 배포 차단 조건(에픽 13이 `main` 병합되기 전 16-5 완료)도 이 커밋으로 충족된다.
 
 ### DW-593: `/ai/search` 응답 객체 생성이 try/except **밖**이라, 응답 스키마 검증 오류는 CORS 헤더 없는 500이 된다
 
@@ -3912,7 +3914,8 @@ location: `api/app/graph/clarify_node.py`(`_CLARIFY_CHIPS = ["3천만원 이하"
 severity: low
 reason: 세 축 중 둘(예산≈가격, 연료)은 맞고 하나(인원 → 차종)가 다르다. 기능 결함은 아니다 — 칩은 눌러도 "그 문자열을 다음 질의로 보내는" 것이 전부라 어느 축이든 동작은 같고, 13.4 스펙 Tasks가 이 세 값을 명시적으로 지정했으므로 구현은 스펙대로다. 문제는 **정본이 둘로 갈렸다**는 것이다: EXPERIENCE.md의 데모 워크스루는 "7인승" 칩을 누르는 장면을 각본으로 갖고 있는데 실제 서버는 그 칩을 절대 보내지 않는다. 칩 UI를 만들 사람(웹=DW-587, 앱=Story 16.5)이 UX 문서를 읽고 인원 칩을 전제로 화면을 짜거나, 데모 시연자가 각본대로 눌러보려다 없는 칩을 찾게 된다. 어느 쪽이 옳은지는 제품 판단이라 이번 리뷰가 정하지 않았다(단위테스트도 의도적으로 칩 **내용**은 고정하지 않는다 — `test_clarify_node.py` 주석 참조).
 trigger: 데모 시연 각본을 확정할 때, 또는 칩 렌더링 스토리(DW-587 / Story 16.5)의 스펙을 쓸 때 — 둘 중 먼저 오는 쪽에서 "인원 축을 넣을지, EXPERIENCE.md를 차종으로 고칠지"를 정하고 한쪽으로 통일한 뒤 이 항목을 닫는다. DW-590(데모 판정 정합)과 같은 자리에서 처리하면 문서를 한 번만 열어도 된다.
-status: open
+status: done 2026-08-08
+resolution: Story 16.5 스펙이 이 항목을 결정으로 닫았다(Never 절): "`clarify.chips`의 값 자체(가격·차종·연료 vs EXPERIENCE.md 예시 문구 "7인승")를 검증하거나 하드코딩하지 않는다 — 서버가 보내는 문자열을 그대로 렌더할 뿐이다. 칩 축 선택은 `clarify_node.py`(Epic 13)의 제품 판단이라 범위 밖이다." 렌더링은 값의 의미와 무관하다는 원칙으로 EXPERIENCE.md/서버 어느 쪽도 고치지 않고 그대로 두기로 확정했다 — 어느 쪽이 옳은지 이번에도 정하지 않지만, "정하지 않는다"는 것 자체가 이 항목이 요구한 판단이었다.
 
 ### DW-595: 오프라인 A/B 러너의 멀티턴 항목이 되묻기 상한과 딱 1턴 차이라, 4턴짜리 항목을 추가하면 조용히 거동이 바뀐다
 
@@ -3939,6 +3942,7 @@ reason: 13.5는 서버 계약(`narrowed_by` 고정 상수 배선)까지가 범�
 trigger: `clarify.chips` 렌더링 스토리(DW-587 웹 / Story 16.5 앱)를 착수할 때 — 같은 컴포넌트(칩 배열 → 탭 가능 버튼 → 재검색)를 REJECT의 `narrowed_by`에도 재사용할 수 있는지 그 자리에서 함께 판단하고 닫는다. 두 필드가 같은 UI 패턴(문자열 배열 → 칩)을 쓰므로 한 번에 처리하면 컴포넌트를 두 번 만들지 않아도 된다.
 status: open
 retarget (2026-08-05 회고): **Epic 15(관리자 웹 UI 통일)**. DW-587·600과 한 덩어리(웹이 wire 필드를 안 그리는 문제).
+progress: **2026-08-08 Story 16.5가 앱 쪽 범위만 닫았다.** spec-16-5 Never가 명시적으로 확정한 결정이다 — "REJECT/HYBRID/SQL 세 갈래에 대해 CLARIFY와 다른 새 버블 스타일·레이아웃을 만들지 않는다"와 별개로, `narrowed_by`(REJECT 사유 술어)는 "원시 술어 문자열이라 사람이 읽을 텍스트가 아니고, 탭-재검색 UI를 만들려면 술어→라벨 번역과 별도 컴포넌트가 필요해 이 스토리 크기를 넘는다"는 이유로 파싱만 하고(`app/lib/features/ai_search/ai_search_api.dart`의 `parseNarrowedBy`) 렌더하지 않는다(`SearchResult.narrowedBy`를 화면 어디서도 소비하지 않음). 즉 앱은 `clarify.chips`(렌더함)와 `narrowed_by`(파싱만, 미렌더)를 이번 스토리에서 갈랐다 — 웹 쪽(Epic 15 retarget)은 이 progress와 무관하게 그대로 열려 있다.
 
 ### DW-598: SQL/HYBRID 0건 응답에 `narrowed_by`를 확장하는 일반화(실제 추출 SQL 조건 기반)는 범위 밖
 
@@ -5487,3 +5491,45 @@ status: open
   summary: 앱(Flutter)에는 채팅 메시지 길이(2000자) 클라이언트 가드가 어디에도 없고(`sendMessage` 검사 없음, 입력창 `maxLength` 없음), 그 결과 2000자 초과 본문이 DB CHECK에 걸려 돌아온 `23514`를 코드가 무조건 "빈 메시지는 보낼 수 없습니다."로 안내한다 — 실제 원인과 정반대인 잘못된 안내다. `docs/conventions.md` §7이 요구하는 3중 방어(DB CHECK + 입력 maxLength + sendMessage 가드) 중 앱은 DB 한 겹만 있다(web은 세 겹 다 있다).
   evidence: 이번 스토리 **이전** 리비전(`git show d9d4f9e:app/lib/features/chat/chat_repository.dart`)에서 이미 `_pgCheckViolation = '23514'`가 "본인매물 문의 / 빈 본문" 두 원인에 공용으로 쓰이고 길이 가드가 없음을 직접 확인 — 이번 변경이 만든 결함이 아니다. 스펙의 Never 절도 "이 갭은 이번 스토리 이전부터 있었고 DB CHECK가 최종 방어선이라 데이터 무결성 위험은 없다. 별도로 다룰 사안"이라며 명시적으로 범위에서 뺐다. 다만 이번 스토리가 오프라인 큐를 도입하면서 **영향 범위가 커졌다**: 2000자 초과 메시지를 끊긴 동안 제출하면 큐에 들어가고, `flushChatMessageQueue`가 첫 실패에서 멈추므로 그 뒤에 쌓인 정상 메시지까지 재연결마다 영원히 막힌다(방을 나가 큐를 통째로 버리는 것 말고는 탈출구가 없다). 코드리뷰 adversarial·edge-case-hunter 두 렌즈가 독립적으로 지적했다.
   trigger: 채팅 화면을 다음에 손대는 자리에서 web과 **같은 패스로** 고친다 — ① `docs/conventions.md` §7의 `CHAT.MESSAGE_MAX_LENGTH`(2000)를 Dart 상수로 미러링해 `sendMessage` 사전 가드 + 입력창 `maxLength` 추가, ② `23514`를 원인별로 갈라 안내(최소한 길이 초과와 빈 본문을 구분), ③ 큐 항목이 영구 실패로 판정되면 사용자가 그 항목만 버릴 수 있는 경로를 준다. 늦어도 Epic 16-6(SM-D 통합 시연 검증)에서 실기기로 채팅을 볼 때 함께 판단한다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: 스펙의 Manual checks("로컬/개발 API로 애매한 질의를 던져 실제 되묻기 칩이 뜨는지, 탭 시 다음 턴이 이어지는지 1회 실측")가 온스크린 UI 조작으로는 이 세션에서 끝내 실행되지 못했다 — 다만 화면 렌더 대신 **실제 백엔드 계약**은 curl로 4개 시나리오 전부 살아있는 서버에 대고 실측했고, 그 결과가 이번 구현의 파싱·매트릭스 가정과 정확히 일치함을 확인했다.
+  evidence: `scripts/dev-api.sh`로 로컬 FastAPI(진짜 `GEMINI_API_KEY` 사용, `api/.env`)를 로컬 Supabase(Docker, 이미 buyer@test.com 등 시드 계정 존재)에 붙여 띄우고, buyer 세션 토큰으로 `/ai/search`를 4번 직접 호출했다 — ① "패밀리카로 무난한 거 추천해줘"(모호한 질의) → `clarify:{question, chips:["3천만원 이하","SUV","전기차"]}`, `listings:[]`(스펙 I/O 매트릭스 "되묻기 응답" 행과 정확히 일치, DW-594가 기록한 가격/차종/연료 3축도 라이브로 재확인) ② 그 대화에 이어 칩 문자열 "SUV"를 `_submit(overrideQuery:)`가 실제로 보내는 것과 동일한 `context` 배열로 재요청 → `clarify:null`, 매물카드 5건("칩 탭" 행) ③ "오늘 날씨 어때?"(REJECT) → `clarify:null`, `narrowed_by:["price<=30000000","body_type=SUV","fuel=전기"]`, `listings:[]`("거절 응답" 행) ④ 6개 항목짜리(3턴) context로 4번째 되묻기 시도 → `clarify:null`이지만 매물카드 5건("되묻기 상한 초과" 행, 서버가 클라 카운터 없이 스스로 강제). 네 응답 모두 JSON 구조가 `parseSearchResult`/`parseClarifyPayload`/`parseNarrowedBy`가 기대하는 형태와 필드명까지 정확히 일치했다(별도 매핑 수정 불필요). 반면 화면 조작은 두 경로 다 막혔다 — (a) 같은 코드를 `--dart-define`으로 로컬 API를 가리키게 재빌드해 Playwright(Chromium)로 열었더니 이번엔 이전 선례(CanvasKit `CONTEXT_LOST_WEBGL`)와 **다른** 에러("Null check operator used on a null value" — Flutter 웹 부트스트랩 도중 JS 예외)로 화면이 끝까지 흰 배경으로 남았다(콘솔 에러 1건 직접 확인, 스크린샷 캡처) (b) `flutter devices`가 한 차례 실물 Android 기기(SM G991N, adb-over-network)를 보고했으나 곧이어 `adb devices -l`이 빈 목록을 반환해 실제로는 상호작용할 수 없었다(연결이 불안정/일시적이었던 것으로 보임).
+  trigger: 정상 렌더 가능한 환경(이 샌드박스 밖 — 실기기 안정 연결 또는 CanvasKit이 죽지 않는 브라우저)에서 위와 동일한 buyer 계정·질의로 실제 화면을 열어 칩이 그려지고 탭이 다음 턴을 잇는지 눈으로 1회 확인한다. 늦어도 Epic 16-6(SM-D 통합 시연 검증)에서 16.2~16.5 전체를 실기기로 볼 때 이 스토리분도 함께 확인한다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: 데모 각본(`EXPERIENCE.md`)이 시연자에게 "7인승" 되묻기 칩을 누르라고 지시하는데 서버는 그 칩을 절대 보내지 않는다(고정 3축 = 가격·차종·연료). 두 정본이 갈린 사실 자체는 DW-594가 추적하고 있었으나, 16.5가 "칩 값의 의미는 렌더링과 무관하다"는 결정으로 그 항목을 닫으면서 **불일치는 그대로인 채 추적만 사라졌다**.
+  evidence: 16.5는 앱 렌더 관점에서만 판단했고(서버 문자열을 그대로 그린다), 어느 쪽 문서도 고치지 않았다 — 16.5 스펙의 Residual risks 자신이 "어느 쪽이 제품적으로 옳은지는 여전히 미정"이라고 적는다. 서버 칩 3축은 이번 스토리의 라이브 curl 실측(위 항목 evidence)에서 `["3천만원 이하","SUV","전기차"]`로 재확인됐다. 즉 시연자가 각본대로 "7인승"을 찾으면 화면에 없다. CLAUDE.md B8("일을 끝내면 대장을 닫는다" — 뒤집으면, 안 끝난 일이 닫히면 '안 한 것'과 '했는지 모르는 것'이 구별되지 않는다)에 걸리는 형태라 신규 항목으로 다시 세운다.
+  trigger: 데모 시연 각본을 확정하는 자리(Epic 16-6 SM-D 통합 시연 검증) — 거기서 ① `EXPERIENCE.md`의 "7인승" 장면을 서버가 실제로 보내는 축으로 고치거나 ② `clarify_node.py`의 `_CLARIFY_CHIPS`에 인원 축을 넣거나 둘 중 하나를 **실제로 반영**하고 닫는다. 그 전에 Epic 13 회고가 열리면 거기서 해도 된다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: DW-592가 걸어둔 배포 차단 조건("에픽 13이 `main`(운영)에 병합되기 전에 16-5가 끝나 있을 것")이 16.5 코드 완성만으로 충족 판정돼 닫혔는데, 되묻기 칩 화면은 사람도 기계도 한 번도 렌더되는 것을 본 적이 없다. 게이트가 막으려던 실패(앱에서 빈 화면)는 정확히 렌더 단계의 실패인데, 검증된 것은 백엔드 계약뿐이다.
+  evidence: DW-592를 닫은 것과 **같은 커밋**이 "온스크린 확인은 끝내 실행되지 못했다"는 항목을 대장에 새로 추가했다(위 항목). curl 4건은 서버 JSON이 파싱 가정과 일치함을 보였을 뿐, `_ClarifyChips` 위젯이 실제 기기에서 그려지는지는 지나가지 않는다 — 위젯테스트도 위젯트리의 사각형·콜백까지만 본다(테마·폰트·플랫폼 렌더 제외). CLAUDE.md B4: "존재 확인은 작동 확인이 아니다." 참고로 이번 후속 리뷰가 소스만 읽고 D5 위반(2줄 밀림)·잠긴 칩 무신호·전송 버튼 10px 정렬 어긋남을 잡아낸 것 자체가, 렌더 단계에만 사는 결함이 실재한다는 증거다.
+  trigger: **에픽 13을 `main`(운영)에 병합하려는 바로 그 자리** — 병합 전에 실기기 또는 정상 브라우저에서 되묻기 칩이 그려지고 탭이 다음 턴을 잇는 것을 1회 눈으로 확인한다(위 항목의 확인과 같은 작업이다). 확인 전이면 병합을 미룬다. Epic 16-6이 먼저 오면 거기서 확인하고 이 항목을 닫는다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: `architecture-increment-2026-07-12.md`의 불변식 **I11**("`schemas/ai.py`에 500자 서버측 검증(422) 추가")이 실제 서버와 어긋난다 — `api/app/schemas/ai.py`의 `MAX_QUERY_LENGTH`는 **1000**이다. 500은 클라 UX 상한이지 서버 422 경계가 아니다.
+  evidence: `api/app/schemas/ai.py`에 `MAX_QUERY_LENGTH = 1000`이 정의돼 `max_length`로 적용되고 `contextualize_node.py`도 그 값을 재사용한다(verification-gap 렌즈가 직접 읽어 확인). 이번 스토리 이전부터 있던 어긋남이라 16.5가 만든 결함은 아니지만, 16.5가 **바로 아래 줄인 I12를 정정**하면서 대비가 커졌다 — I12를 정본으로 신뢰하는 다음 담당자가 한 줄 위의 I11을 의심할 이유가 없고, 16.5가 앱 코드에 "서버 하드 상한 1000" 주석을 새로 박아 문서와 코드가 정면으로 어긋난 상태다. `docs/conventions.md`에는 AI 질의 길이 규칙이 없어 중재할 정본도 없다.
+  trigger: `architecture-increment-2026-07-12.md`를 다음에 손대는 자리, 또는 Epic 16 회고 — 둘 중 먼저 오는 쪽에서 I11을 실측값("서버 422 경계는 1000자, 500자는 클라 UX 상한 — web HeroSearch·app AiChatScreen")으로 I12와 같은 ✎ 정정 형식으로 고치고 닫는다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: AI 채팅 입력 500자 상한 + 실시간 카운터 AC가 **앱과 웹 히어로에만** 반영돼 있고, 정작 사용자가 긴 대화를 하는 웹 AI 채팅 화면(`web/src/components/ai/ChatAssistant.tsx`)은 여전히 1000자에 `maxLength`도 카운터도 없다. 웹 사용자는 1000자를 붙여넣을 수 있고 전송을 누른 뒤에야 거절당한다.
+  evidence: `web/src/components/ai/ChatAssistant.tsx`가 `MAX_QUERY_LENGTH = 1000`을 쓰고 입력에 `maxLength` 속성이 없다(제출 후 에러 안내만 있음). 같은 웹의 `HeroSearch.tsx`는 이미 500 + `{query.length}/500` 카운터를 그린다. AC 원문은 `EXPERIENCE.md`와 `epics-increment-2026-07-12.md`에 있다. 16.5 스펙 Design Notes가 이 드리프트를 인지하고 "그쪽의 미해결 불일치"라며 명시적으로 범위 밖에 뒀는데(정당한 판단), **대장에는 어디에도 등재되지 않아** 고칠 자리가 지정되지 않은 채 남았다(CLAUDE.md B8).
+  trigger: 웹 AI 채팅 화면을 다음에 손대는 자리 — 늦어도 **Epic 15(관리자·웹 UI 통일)** 에서 DW-587/597/600(웹이 wire 필드를 안 그리는 문제)과 한 덩어리로 처리한다. `ChatAssistant.tsx`를 500으로 낮추고 `HeroSearch.tsx`가 이미 쓰는 카운터 표기를 그대로 옮긴 뒤 닫는다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: `searchAi`가 top-level `http.post`를 직접 불러 **주입 시접(seam)이 없다** — 그 결과 HTTP 층(상태코드 분기·헤더·`jsonDecode`)을 지나가는 검사가 앱 전체에 하나도 없다. 16.5가 wire 계약을 넓히면서(`clarify`·`narrowed_by` 두 필드 추가) 이 빈칸의 면적도 함께 커졌다.
+  evidence: `app/lib/features/ai_search/ai_search_api.dart`의 `searchAi`가 `http.post`를 직접 호출한다(클라이언트 인자 없음) — 그래서 위젯테스트는 전부 화면 쪽 `searchAiOverride` 시접으로 네트워크를 통째로 건너뛴다. 이번 패스에서 추가한 "wire JSON → 화면" 이음매 테스트도 손으로 적은 `Map`을 `parseSearchResult`에 넣는 데서 시작하므로 `jsonDecode`·상태코드·헤더는 여전히 아무도 안 본다(테스트 파일 헤더가 이 한계를 명시). 16.4에서 "전 검사 green인데 실제 경계는 죽어 있던" 사고가 정확히 이 형태였다(`docs/`의 16.4 회고 및 세션 메모리 참조). 지금 당장의 결함은 아니라 defer 하지만, 계약이 또 넓어질 때마다 위험이 누적된다.
+  trigger: `ai_search_api.dart`의 wire 계약을 **다음에 또 넓히는 자리**(필드 추가·엔드포인트 변경) — 그때 `searchAi`에 `http.Client` 주입 파라미터를 열고(`imageUrlBuilder` seam과 같은 방식) `MockClient`로 200/4xx/5xx·깨진 JSON 본문을 통과시키는 테스트를 추가한 뒤 닫는다. 그 전에 Epic 16 회고가 열리면 거기서 우선순위를 판단해도 된다.
+
+- source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+  summary: 앱 위젯테스트가 **실제 앱 테마(`buildAppTheme()`)를 씌우지 않은 채** 돈다 — `main.dart`의 `MaterialApp` 4곳은 전부 그 테마를 쓰는데 테스트는 기본 Material 표면에서 측정하므로, 폰트·`inputDecorationTheme`·버튼 테마가 좌우하는 기하/색 단언은 배포되지 않는 표면을 재고 있다.
+  evidence: `grep -rl buildAppTheme app/test/` 가 0건이었다(이번 패스에서 `ai_chat_screen_test.dart`의 기하 검사 2건에만 `theme: buildAppTheme()`를 배선했다). 다만 이번 자리에서는 **차이가 없음을 실측**했다 — 전송 버튼/입력 텍스트 세로 중심이 테마 유무 모두 543.0으로 동일했다. 즉 지금 틀린 값이 있는 게 아니라, 테마가 바뀌어도 검사가 못 느끼는 구조라는 것이 문제다. 나머지 테스트 파일(`search_screen_test.dart`·`home_screen_wishlist_test.dart`·`app_router_test.dart` 등)은 그대로 남아 있어 앱 전체로 보면 미해결이다.
+  trigger: 앱 테마(`app/lib/core/theme/app_theme.dart`)를 **다음에 손대는 자리** — 색/폰트/컴포넌트 테마를 바꾸면서 위젯테스트 하네스에 `theme: buildAppTheme()`를 일괄 배선하고(공용 `pumpApp` 헬퍼로 묶는 게 자연스럽다) 닫는다. 늦어도 Epic 16-6(SM-D 통합 시연 검증)에서 실기기 화면과 테스트가 갈리는 곳이 나오면 그 자리에서 함께 처리한다.
+
+### DW-734: Follow-up review still recommended for 16-5-4분기-ai-응답-되묻기-칩-앱 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260808-154358-5a0b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open

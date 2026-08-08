@@ -387,7 +387,7 @@ service_role 금지(규칙6) · 임베딩 768(규칙2) · 마이그 번호 무�
 - **I9 멀티턴 지속화**: 클라 멀티턴 상태를 **sessionStorage에 지속**(세션 내 새로고침 생존).
 - **I10 Realtime 페이로드**: `broadcast_changes` 엔벨로프(`{schema,table,operation,record,…}`), 클라는 **`payload.record` 파싱**. 이벤트 문자열 명시(INSERT).
 - **I11 AI 입력 상한**: `schemas/ai.py`에 **500자 서버측 검증(422)** 추가(클라 상한만으론 우회).
-- **I12 되묻기 cap**: 무상태이므로 **클라 강제** — 클라가 소유한 멀티턴 상태에서 clarify 횟수(≤2~3) 추적해 초과 시 칩 숨김/일반 검색.
+- **I12 되묻기 cap**: ✎ 2026-08-08 정정(DW-589, spec-16-5) — 원문("무상태이므로 클라 강제")은 13.4가 뒤집은 뒤로 **사실이 아니다**. 실제 강제 지점은 **서버**다: `api/app/graph/graph.py`의 `run_search`가 요청 `context` 길이(`len(context)//2`)로 되묻기 턴수를 세어 상한(3턴)을 넘으면 `clarify:null`로 결과를 강제 제시한다(DW-563 resolution). **클라는 별도 카운터를 두지 않는다** — `clarify`가 null로 오면(상한 초과 강제 폴백 포함) 칩을 안 그리는 것 자체가 상한 반영이다(web은 값만 배선·DW-587, 앱은 Story 16.5가 렌더까지 구현). ⚠️ 이 강제는 **클라가 보낸 `context`를 세는 것**이라 완전하지 않다 — 클라가 `context`를 비우거나 홀수 길이로 보내면 무력화된다(**DW-591, 열려 있음** — 알고 수용한 한계). "서버가 강제한다"를 무조건적 보장으로 읽지 말 것.
 - **I13 "스키마 불변" 문구 한정**: "broadcast를 위한 chat_messages 스키마 변경 없음(멱등 컬럼 `client_message_id`는 별개 additive)".
 - **I14 5:3 크롭**: **클라 렌더 크롭**(web `object-fit:cover`·app `BoxFit.cover`, 중앙 기준), 저장은 원본. web/app 동일 구도.
 
