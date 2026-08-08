@@ -4,7 +4,7 @@ type: 'feature'
 created: '2026-08-08'
 status: 'done'
 baseline_revision: 'd9d4f9ea531b03bd4e3f25e55a5f657c995706ef'
-final_revision: '62d029d643da7735761fb5c93a0a8cce2de21145'
+final_revision: '6f6173e04a7ca36d5330e443386f00e78af38ba3'
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
@@ -272,3 +272,32 @@ warnings: ['multiple-goals', 'oversized']
 - 앱 백그라운드/포그라운드 전환 시 갭보정을 트리거할 생명주기 훅이 없다(대장 등재, 실기기 검증 필요).
 - 최초 SUBSCRIBED 재조회 성공이 초기 로드 실패 안내를 안 지우는 특성이 web·app 양쪽에 동일하게 존재한다(대장 등재, web과 함께 고칠 자리).
 - 앱에 채팅 2000자 클라이언트 가드가 없어 초과 메시지가 오프라인 큐 머리에 박히면 뒤가 막힌다(2차 defer로 대장 등재).
+
+---
+
+### 2026-08-08 — 사람이 마감함 (루프 롤백에서 복구)
+
+이 스토리는 bmad-loop run `20260807-162721-25ed`에서 **롤백된 뒤 사람이 되살려 닫았다.**
+
+**무슨 일이 있었나:** 리뷰-2(엔진 사이클 2)가 1시간 10분 일하다 차례를 넘기면서(Stop) 스펙
+`status`를 `done`으로 되돌려놓지 못한 채 세션이 종료됐다(0.4초 뒤 SessionEnd). 엔진은 "마지막
+리뷰 사이클이 `done`으로 끝나야 스토리를 인정한다"는 규칙에 따라 `review-result status=in-review`
+→ `story-deferred` + `rollback-auto`를 실행했고, **앞선 dev 커밋(`62d029d`)과 리뷰-1 커밋
+(`6f6173e`)까지 브랜치에서 사라졌다.** 리뷰 예산(2사이클)을 이미 다 쓴 뒤라 재시도 여지가 없었다.
+⚠️ 한도(rate-limit) 소진이 **아니다** — 그 시점 5시간 한도는 44%였다. 직접 원인은 리뷰 세션이
+작업을 백그라운드 에이전트에 위임하고 차례를 넘긴 뒤 다시 깨어나지 못한 것이다(같은 밤 이 스토리의
+dev 세션은 같은 패턴에서 네 번 깨어나 살아남았다).
+
+**어떻게 되살렸나:** 엔진이 보존한 브랜치 `attempt-preserve/20260807-162721-25ed-6f6173e0`이
+`d9d4f9e`의 직계 후손이라 fast-forward로 복구했다. 미커밋으로 남아 있던 `deferred-work.md`
+변경분은 보존 커밋의 내용과 **바이트 단위로 동일**함을 확인하고 폐기했다(손실 0).
+
+**복구 후 직접 재실행해 확인한 것**(기록을 믿지 않고 실제로 돌렸다 — CLAUDE.md B4):
+- `flutter analyze` → No issues found!
+- `flutter test` → 297/297 green
+- `web npm run lint` → 0
+- `web npm test` → 38 파일 342/342 green (`roomTopicContract` 포함)
+
+**받지 못한 것:** 리뷰-2의 마지막 패스. 그 미련은 이 스펙을 출처로 하는 대장 항목 6건에 남아 있다.
+**여전히 미검증인 것:** 실제 소켓 연결·2계정 동시 송수신·진짜 네트워크 끊김→재연결은 위젯테스트의
+상태-콜백 시뮬레이션으로만 검증됐다. 실물 확인 자리는 Story 16.6이다(대장 등재됨).
