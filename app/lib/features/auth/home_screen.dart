@@ -309,24 +309,16 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
           // (아래 CustomPaint 주석 참조 — Icon으로 되돌리지 말 것). 글로우만 여전히
           // RadialGradient다. Stack의 먼저 오는 자식이라 아래 헤드라인·입력창·제안칩(뒤에 오는
           // Padding)에 항상 깔린다 — 침범하지 않는다.
-          Positioned(
-            top: -30,
-            right: -30,
-            child: Container(
-              key: const Key('hero_glow'),
-              width: 170,
-              height: 170,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    AppColors.accentAmber.withValues(alpha: 0.30),
-                    AppColors.accentAmber.withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          // ✎ 2026-08-10 사용자 결정 — **amber 글로우를 앱에서 제거했다.**
+          //   원인: 스파인은 *"petrol·amber 빛무리 + 미세 노이즈를 베이스로 **은은히**"*를
+          //   요구하는데, 구현은 반지름 170의 amber 원 하나(alpha .30)라 실기기에서
+          //   "은은한 빛무리"가 아니라 **경계가 보이는 노란 얼룩**으로 읽혔다. 게다가
+          //   밴드 위로 튀어나간 부분이 Clip.hardEdge에 잘려 **잘린 얼룩**이 된다
+          //   (사용자 스크린샷으로 확인). 웹에는 애초에 이 글로우가 없어서 제거가
+          //   웹·앱 통일 방향과도 같다.
+          //   ⚠️ 스파인 요구를 **포기한 게 아니라 미룬 것**이다 — 제대로 하려면 원 하나가
+          //   아니라 다중 레이어 메시 + 노이즈가 필요하고, 그건 이 자리에서 값 하나
+          //   바꾸는 작업이 아니다. 대장에 남겼다(DW-770).
           // spec-16-10 Always — 꽉 찬 Material 아이콘이 아니라 목업(consistency-1.html
           // `.app-hero .silhouette`, viewBox 0 0 640 220) 라인아트를 그대로 이식한다(새 패키지
           // 의존성 없이 CustomPainter로 — A2 단순함 원칙, 정적 도형 하나뿐이라 flutter_svg를

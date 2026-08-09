@@ -6059,3 +6059,15 @@ source_spec: `spec-16-10-히어로-검색창-마감.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260810-011427-dabe; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-770: 히어로 배경 글로우를 앱에서 제거했다 — 스파인이 요구한 "은은한 빛무리"를 원 하나로 구현해 **잘린 노란 얼룩**으로 보였다
+
+origin: 2026-08-09 사용자 육안 지적(실기기 스크린샷에 해당 영역을 직접 표시) — *"이 부분 어색하잖아 위에 잘려서. 이럴 거면 그냥 없애줘 모바일 앱에서"*
+location: `app/lib/features/auth/home_screen.dart`(제거된 `Key('hero_glow')` 블록 자리에 경위 주석) · 스파인 요구 = `DESIGN.md` §L132 · 검사 = `app/test/home_ai_entry_test.dart`("amber 글로우 원은 없다")
+severity: low
+reason: 스파인은 *"배경 깊이 = **H1 글로우/메시**(petrol·amber 빛무리 + 미세 노이즈)를 베이스로 **은은히**"*를 요구한다. 그런데 16.9 구현은 **반지름 170의 amber 원 하나**(`RadialGradient`, alpha 0.30)였다. 실기기에서 이것은 "빛무리"가 아니라 **경계가 보이는 노란 얼룩**으로 읽혔고, 밴드 밖으로 튀어나간 부분이 `Clip.hardEdge`에 잘려 **잘린 얼룩**이 됐다. 웹에는 이 글로우가 처음부터 없어서, 제거가 웹·앱 통일 방향과도 일치한다.
+**요구를 포기한 게 아니라 미룬 것이다** — 스파인의 "글로우/메시"를 제대로 하려면 원 하나가 아니라 **다중 레이어 그라데이션 + 미세 노이즈**가 필요하고, 그건 값 하나 바꾸는 작업이 아니다. 그래서 "없다"를 검사로 못박아 **같은 구현이 다시 들어오는 것**을 막되, 제대로 된 구현은 이 항목으로 남긴다.
+✎ 교훈(다음 사람용): 이 자리는 *"검사가 존재만 보면 품질을 못 본다"*의 사례다. 기존 검사는 `findsOneWidget`으로 **글로우가 있는지만** 봤고, 그게 어떻게 보이는지는 아무도 안 봤다 — [[DW-755]]·[[DW-760]]·[[DW-767]]과 같은 실패 계열이다.
+trigger: 히어로 배경을 다시 손대는 자리(디자인 다듬기 라운드가 또 열릴 때). 넣는다면 **다중 레이어 메시 + 노이즈**로 하고, 넣은 뒤 **실기기 육안 확인**까지 해야 닫는다(값만 넣고 검사 green으로 닫지 않는다). 안 넣기로 최종 결정하면 스파인 §L132의 해당 문장을 "앱 제외"로 정정하고 이 항목을 그 근거로 닫는다.
+related: [[DW-755]](히어로 구조) · [[DW-767]](같은 화면 타이포) · [[DW-764]](육안 확인 없이 시각 축을 닫았던 자리)
+status: open
