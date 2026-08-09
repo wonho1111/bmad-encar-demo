@@ -98,9 +98,15 @@ warnings: ['multiple-goals', 'oversized']
 **Manual checks (if no CLI):**
 - 이 스토리의 핵심은 실기기 검증이다(코드 CLI 검사는 전제조건일 뿐). USB+mobile-mcp로 실폰(`SM-G991N`, 이미 연결 확인됨) 접속 → ADBKeyBoard 설치·IME 전환 → 로그인 상태로 FR26~58 여정 재현(사진·카드·신뢰속성·찜·채팅·AI 4갈래·가입·판매자 정보·안읽음 배지) → 로그아웃 후 홈·탐색·상세 도달 + 찜/문의/AI전송 3곳 로그인 유도 확인 → 상세 열람 전/후 "지금 인기" 순서 변화 확인. 전 과정 스크린샷/녹화로 남기고 실패·회귀는 코드를 그 자리에서 고치지 말고 장부에 등재.
 
-## Auto Run Result
+## (구) dev-1 실행 기록 — 2026-08-09, PIN 잠금으로 중단 후 커밋 c836b35로 인수됨
 
-**Status:** blocked — 코드·자동테스트 층위는 완료, 이 스토리의 헤드라인 목표인 실기기 검증은 기기 PIN 잠금으로 착수 전에 막혔다.
+> ⚠️ 이 절은 **끝난 이야기**다. 아래 `Auto Run Result — 최종`이 이 스토리의 결과다.
+> 제목에서 `Auto Run Result`를 뺀 이유: 오케스트레이터가 스펙에서 **첫 번째** `Auto Run Result`의
+> `Status:`를 읽는데, 여기 남은 `blocked`를 새 세션의 결과로 오인해 **이미 끝난 스토리를 CRITICAL
+> 에스컬레이션으로 멈춰 세웠다**(2026-08-09 실측, run 20260809-193117-295e). 스펙에 낡은 실행
+> 기록을 남길 땐 제목을 반드시 바꿀 것.
+
+**(당시) Status:** blocked — 코드·자동테스트 층위는 완료, 이 스토리의 헤드라인 목표인 실기기 검증은 기기 PIN 잠금으로 착수 전에 막혔다.
 
 **Blocking condition:** 실기기(`SM-G991N`, mobile-mcp로 연결됨)가 PIN 잠금 화면 상태이고 이 세션은 PIN을 모른다. 사람이 기기 잠금을 풀거나 PIN을 알려줘야 재개할 수 있다. 빌드된 APK(`app/build/app/outputs/flutter-apk/app-debug.apk`, prod 백엔드 내장, `.env.json.prod` 기준)는 이미 기기에 설치·실행까지 끝나 있어 잠금만 풀리면 바로 이어서 진행 가능하다.
 

@@ -314,7 +314,7 @@ development_status:
   #   계획 문서(epics-increment-2026-07-12.md)의 Story 16.6 Given도 같은 날 범위를
   #   "16.1~16.5 · 16.7 · 16.8"로 정정했다 — 범위를 안 넓히면 16-8이 만든 홈을 아무도 실폰에서
   #   안 본다(결정은 있는데 인수조건에 안 심겨 조용히 빠지는 그 자리, CLAUDE.md B5).
-  16-6-sm-d-통합-시연-검증-앱: backlog
+  16-6-sm-d-통합-시연-검증-앱: done
   epic-16-retrospective: optional
 
   # --- Epic 17: 접근 제어 마무리 (backend-only) ---
