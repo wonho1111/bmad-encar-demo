@@ -2,8 +2,9 @@
 title: '16.6 SM-D 통합 시연 검증 (앱)'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-review'
+status: 'done'
 baseline_revision: 'bf8421e421635e0ab613156711adea28078c2e27'
+final_revision: '806b3a614c4fbb91e3a4f9d02d1651e019f51559'
 review_loop_iteration: 0
 followup_review_recommended: true
 context:
