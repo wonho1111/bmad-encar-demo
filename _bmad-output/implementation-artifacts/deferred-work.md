@@ -5912,3 +5912,21 @@ source_spec: `spec-16-9-앱-ui-정합성-교정.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260809-213941-2b07; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-767: 16.9 이후에도 히어로가 목업보다 밋밋하다 — **헤드라인이 절반 크기(19px vs 30~34px)** 이고 `AI 매물 검색` 라벨이 없다
+
+origin: 2026-08-09 사용자 육안 평가("퀄리티가 좀 떨어지네") → 사람 세션이 목업 CSS와 앱 코드의 **수치를 직접 대조**해 원인 특정
+location: `app/lib/features/auth/home_screen.dart:344-353`(헤드라인 `fontSize: 19`) · 목업 = `mockups/consistency-1.html:541·568`(앱 프레임 `font-size:34px`·`30px`) · `mockups/app-home-2.html`의 `.ai-eyebrow`(`✦ AI 매물 검색`, amber 11px/800)
+severity: medium
+reason: 16.9는 **구조**(한 면·폭·로고·실루엣·칩·카드)를 맞췄지만 **타이포 위계**는 손대지 않았다. 실측 대조:
+
+| 요소 | 목업(앱 프레임) | 앱 실제 | 차이 |
+|---|---|---|---|
+| 히어로 헤드라인 | **30~34px** / 800, **2줄**("원하는 차를 / 말로 찾으세요") | **19px** / 800, 1줄 | **약 1.6~1.8배 작다** |
+| eyebrow 라벨 | `● AI 매물 검색`(amber, 헤드라인 위) | **없음**(코드 검색 0건) | 누락 |
+
+히어로는 이 화면의 **유일한 몰입 구간**인데(스파인: *"밝은 본문 + 단 하나의 몰입 순간"*) 그 주인공 글씨가 절반 크기라, 배경·로고·실루엣을 다 맞춰도 **여전히 헐렁해 보인다.** 사용자가 16.9 결과물을 보고도 *"퀄리티가 떨어진다"*고 한 체감의 가장 큰 단일 원인으로 보인다(다른 축은 이미 맞음을 실기기 사진으로 확인 — `spec-16-9-evidence/`).
+왜 16.9가 못 잡았나: **인수조건에 타이포 항목이 없었다.** 스토리를 쓴 사람(이 세션)이 배경·배치·색만 나열하고 글자 크기를 빠뜨렸다 — [[DW-755]]·[[DW-759]]·[[DW-760]]이 전부 "레이아웃·색" 언어로 등재돼 있었기 때문이다. 검사도 같은 이유로 타이포를 안 본다.
+trigger: **묶음 리뷰·회고보다 먼저 도는 짧은 다듬기 작업**(사용자 판단 대기). 범위가 작다 — 헤드라인 크기·줄바꿈 + eyebrow 라벨 + 그에 딸린 여백. 고칠 때 **"헤드라인 글자 크기가 카드 차량명보다 확연히 크다"를 위젯 테스트로 단언**한다(16.9가 시각 축 검사를 넣은 것과 같은 방식 — 숫자를 박지 말고 관계로 박아야 토큰이 바뀌어도 산다).
+related: [[DW-755]](히어로 구조 — 이번은 그 위의 타이포) · [[DW-765]](남은 웹·앱 시각 편차) · [[DW-764]](육안 확인의 가치를 보여준 자리)
+status: open
