@@ -223,8 +223,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       final user = ref.read(currentUserProvider);
       if (user == null) {
-        // 미인증 → 로그인/가입 화면이 아니면 로그인으로. (기존 AuthGate와 동일 동작.)
-        return isAuthRoute ? null : '/login';
+        // 미인증 → 로그인/가입 화면이 아니면 로그인으로, 단 '/home'은 예외(FR58, DW-738 —
+        // 2026-08-09 사용자 결정 ②안: 앱도 웹처럼 비로그인 매물 열람을 연다). '/home'에서
+        // Navigator.push로 여는 상세·탐색·AI검색은 GoRoute가 아니라 이 redirect가 아예 안
+        // 보므로 그 화면들은 각자 렌더 시점에 무관하게 그려지고, 안의 행동 지점(찜·문의·AI전송)
+        // 만 개별 게이트한다(listing_detail_screen.dart·wish_button.dart·ai_chat_screen.dart).
+        // '/wishlist'·'/chat'·'/sell'은 사용자 전용 데이터·행동이라 이 화면 단위 게이트를
+        // 그대로 유지한다(Never — 화이트리스트에 넣지 않는다).
+        return isAuthRoute || loc == '/home' ? null : '/login';
       }
 
       final role = ref.read(currentRoleProvider);

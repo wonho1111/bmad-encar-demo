@@ -4,7 +4,7 @@
 // 옮기는지까지 본다).
 //
 // 매트릭스 5행 중 이 파일이 다루는 4행:
-//   1) 미인증 앱 실행 → `/login`
+//   1) 미인증 앱 실행 → 홈 셸(⚠️ 16.6 갱신 — 예전엔 `/login`이었다. 아래 참조)
 //   2) admin 로그인 → `/admin-blocked`
 //   3) role 없는 세션 → 홈 셸(차단 아님)
 //   5) 찜 탭 진입 → 플레이스홀더, 크래시 없음
@@ -12,6 +12,11 @@
 // (매트릭스 원문이 명시한 채팅 탭으로 확인한다 — review, spec-16-1 P13). 네비 스택 보존은
 // 이 앱 아키텍처에서 재현 불가능해 별도 group을 두지 않는다(파일 하단 "이 파일이 안 보는
 // 것" 참조).
+//
+// ⚠️ **1행은 spec-16-6(FR58 비로그인 열람, DW-738 2026-08-09 사용자 결정 ②안)이 뒤집었다.**
+// redirect가 `/home`을 미인증 예외로 통과시키므로, 세션 없이 앱을 켜면 이제 LoginScreen이
+// 아니라 홈 셸이 뜬다(아래 "미인증 앱 실행 → 홈 렌더" group). `/wishlist`·`/chat`·`/sell`은
+// 그대로 `/login`으로 리다이렉트된다(Never — 화이트리스트에 넣지 않는다, 별도 group).
 //
 // review_loop_iteration 1(bad_spec 루프백)이 실측한 4개 결함의 회귀도 이 파일이 고정한다:
 //   · 홈 퀵액션(상세류) push 후 AppBar 2개 공존 — "AppBar 단일성" group
@@ -279,17 +284,72 @@ void main() {
     );
   });
 
-  group('매트릭스 1행 — 미인증 앱 실행 → /login', () {
-    testWidgets('세션 없음이면 LoginScreen이 뜬다', (tester) async {
-      await tester.pumpWidget(_harness(user: null));
+  group(
+      '매트릭스 1행 — 미인증 앱 실행 → 홈 렌더(16.6 갱신: FR58 비로그인 열람, DW-738)',
+      () {
+    testWidgets('세션 없음이어도 홈 셸이 뜬다(로그인으로 튕기지 않는다)', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          user: null,
+          extraOverrides: [_recentListings(const [])],
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(
-        find.byKey(const Key('login_email')),
+        find.byType(HomeScreen),
         findsOneWidget,
-        reason: '미인증 세션은 redirect가 /login으로 보내야 한다(기존 AuthGate와 동일 동작)',
+        reason:
+            'redirect가 /home을 미인증 예외로 통과시켜야 한다(FR58, DW-738 2026-08-09 사용자 '
+            '결정 ②안 — 앱도 웹처럼 비로그인 매물 열람을 연다) — 예전엔 이 자리에서 LoginScreen'
+            '이 떴다(회귀 검사)',
       );
+      expect(find.byKey(const Key('login_email')), findsNothing);
+      // 세션 전제 코드로 인한 크래시가 없어야 한다(spec-16-6 AC3 — 빈 화면·예외 없이 정상 렌더).
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group(
+      '/wishlist·/chat·/sell — 미인증이면 여전히 /login으로 리다이렉트'
+      '(spec-16-6 Never — 화이트리스트에 넣지 않는다, 사용자 전용 데이터·행동이라 화면 단위 '
+      '게이트로도 이미 정당하다)', () {
+    testWidgets('찜 탭으로 이동하면 미인증은 로그인 화면으로 리다이렉트된다', (tester) async {
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(HomeScreen), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('login_email')), findsOneWidget);
       expect(find.byType(HomeScreen), findsNothing);
+    });
+
+    testWidgets('채팅 탭으로 이동하면 미인증은 로그인 화면으로 리다이렉트된다', (tester) async {
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('tab_chat')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('login_email')), findsOneWidget);
+    });
+
+    testWidgets('내차팔기 탭으로 이동하면 미인증은 로그인 화면으로 리다이렉트된다', (tester) async {
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('tab_sell')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('login_email')), findsOneWidget);
     });
   });
 
@@ -1627,6 +1687,13 @@ void main() {
         );
         expect(totalFetchCount, 1, reason: '셸의 내비 배지가 항상 watch하므로 로그아웃 전에도 1회 조회된다');
 
+        // 16.6부터 '/home'은 미인증도 통과하는 예외라(FR58, DW-738), '/home'에 머문 채
+        // 로그아웃해도 더 이상 자동으로 튕기지 않는다 — 그 경로로는 이 테스트가 증명하려는
+        // "reactive redirect 재평가" 자체를 더 이상 보일 수 없다. 여전히 로그인을 요구하는
+        // '/wishlist'로 먼저 이동해(Never — 화이트리스트 미포함) 그 자리에서 로그아웃한다.
+        await tester.tap(find.byKey(const Key('tab_wishlist')));
+        await tester.pumpAndSettle();
+
         await tester.tap(find.byKey(const Key('profile_avatar')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const Key('logout')));
@@ -1637,7 +1704,7 @@ void main() {
           findsOneWidget,
           reason:
               'currentUser만 null로 바꾸고 authEvents에 이벤트를 안 흘렸다면 '
-              'refreshListenable이 몰라 redirect가 재평가되지 않고 여전히 홈 셸에 '
+              'refreshListenable이 몰라 redirect가 재평가되지 않고 여전히 /wishlist에 '
               '머물렀을 것이다 — 이 단언이 통과한다는 것은 ref.listen 브리지가 실제로 '
               '작동했다는 뜻이다(스텁이 아니라 리액티브 경로 자체를 태움)',
         );
@@ -1684,19 +1751,17 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      // 시작은 미인증 — /login에 머문다.
+      // 시작은 미인증 — appRouterProvider의 initialLocation('/home')은 16.6부터 미인증도
+      // 통과하는 예외라(FR58, DW-738) 홈 셸이 먼저 뜬다. 그래서 chatUnreadTotalProvider는
+      // 아래 Consumer 없이도 셸(_ChatTabIcon)이 이미 watch한다 — 다만 Riverpod은 동일
+      // provider의 중복 watch를 한 번의 계산으로 합치므로(같은 이유로 totalFetchCount는
+      // 여전히 1로 시작한다), 로그인 **후에도** 계속 watch하는 소비자가 있어야 한다는 이
+      // 테스트의 원래 취지(로그아웃 뒤 재로그인과 같은 조건)를 아래 Consumer가 그대로 지킨다.
       container.read(_fakeUserProvider.notifier).state = null;
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          // 로그인 전엔 /login 화면이라 셸(_ChatTabIcon)이 아직 없어 chatUnreadTotalProvider를
-          // 아무도 watch하지 않는다 — non-autoDispose라도 한 번도 안 읽힌 provider를
-          // invalidate()하면 아무 일도 안 일어난다(만들 상태 자체가 없다). 그래서 이 로그인
-          // 방향 재조회를 실제로 관찰하려면 로그인 **전부터** 누군가 이 provider를 계속
-          // watch하고 있어야 한다 — 실제 앱에서는 "이미 한 번 로그인했던 세션에서 로그아웃한
-          // 뒤 다시 로그인"이 이 조건과 같다. 아래 Consumer가 그 "이미 watch 중" 상태를 흉내
-          // 낸다(chat_list_screen_test.dart의 동일 기법).
           child: Column(
             children: [
               Consumer(
@@ -1718,6 +1783,14 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+
+      // 이 테스트가 검증하려는 분기는 `redirect`의 `isAuthRoute → '/home'`(로그인 방향)이다
+      // — 그걸 태우려면 먼저 '/login'에 가 있어야 한다. '/home'은 이제 미인증 예외라 초기
+      // 위치만으론 '/login'에 닿지 않으므로, 여전히 로그인을 요구하는 '/wishlist' 탭을 눌러
+      // (Never — 화이트리스트 미포함) '/login'으로 보내진 뒤 이어간다.
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+
       expect(
         find.byKey(const Key('login_email')),
         findsOneWidget,

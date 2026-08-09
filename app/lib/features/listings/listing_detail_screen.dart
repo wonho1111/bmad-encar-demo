@@ -5,10 +5,11 @@
 import 'package:flutter/foundation.dart' show debugPrint, listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/format/number_format.dart';
-import '../../core/supabase/supabase_client.dart';
 import '../../core/theme/app_theme.dart';
+import '../auth/auth_controller.dart';
 import '../chat/chat_providers.dart';
 import '../chat/chat_repository.dart';
 import '../chat/chat_room_screen.dart';
@@ -103,11 +104,27 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
 
   ListingDetail get listing => widget.listing;
 
+  @override
+  void initState() {
+    super.initState();
+    // 조회수 +1(DW-740, Design Notes) — 이 State는 ListingDetailScreen.build()가 매물을
+    // 이미 확인한 뒤(listing != null)에만 만들어지므로, initState는 State 인스턴스 생애주기당
+    // 정확히 한 번만 실행돼 "매물 확인 후 정확히 1회" 호출 지점이 된다.
+    // listingDetailProvider(family)는 재조회 시 다시 부를 위험이 있어(Design Notes) 쓰지
+    // 않는다 — fire-and-forget(내부에서 실패를 스스로 삼킨다, listings_repository.dart 참조).
+    ref.read(listingsRepositoryProvider).incrementListingView(listing.id);
+  }
+
   // 문의하기 — 그 매물 판매자와의 방을 열고(있으면 재사용) 채팅방으로 이동. 실패는 한국어 SnackBar.
   //   seller_id 는 보내지 않는다(DB 트리거가 매물주로 강제). buyer=본인. 본인 매물이면 버튼이 애초에 안 뜬다.
   Future<void> _openChat() async {
-    final myId = supabase.auth.currentUser?.id;
-    if (myId == null || _opening) return;
+    final myId = ref.read(currentUserProvider)?.id;
+    if (myId == null) {
+      // 비로그인 문의하기(FR58 행동 게이트, DW-738) — 방 생성(서버 쓰기) 없이 로그인으로 유도.
+      context.go('/login');
+      return;
+    }
+    if (_opening) return;
     setState(() => _opening = true);
 
     final res = await ref.read(chatRepositoryProvider).openOrCreateRoom(
@@ -133,7 +150,7 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
 
   @override
   Widget build(BuildContext context) {
-    final myId = supabase.auth.currentUser?.id;
+    final myId = ref.watch(currentUserProvider)?.id;
     // 본인 매물(buyer=seller)이면 문의 버튼 숨김 — DB CHECK(23514)가 권위지만 UX상 미리 차단.
     final isOwnListing = myId != null && myId == listing.sellerId;
 
@@ -238,8 +255,10 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
           Text(listing.description!),
         ],
 
-        // 문의하기(7.5, FR19) — 본인 매물이 아니고 로그인 상태일 때만. 그 매물 판매자와 1:1 방을 연다.
-        if (!isOwnListing && myId != null) ...[
+        // 문의하기(7.5, FR19·FR58) — 본인 매물이 아니면 로그인 여부와 무관하게 렌더한다(화면
+        // 단위가 아니라 행동 단위 게이트, DW-738) — 비로그인이면 탭할 때 _openChat이 서버 호출
+        // 없이 로그인으로 보낸다. 본인 매물이면(myId!=null && myId==sellerId) 여전히 숨긴다.
+        if (!isOwnListing) ...[
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,

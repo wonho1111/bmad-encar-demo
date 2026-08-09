@@ -5592,7 +5592,8 @@ scope_note: 선재 — 이 리다이렉트는 Story 16.1(내비 셸)이 옛 `Aut
 trigger: **Epic 16-6(SM-D 통합 시연 검증) 착수 시** — 그 스토리가 "웹과 동일 디자인 언어·정보구조"를 실기기로 대조하는 자리이므로, 착수 시점에 위 ①/②를 사용자에게 물어 결론을 내고 문서를 그 결론으로 맞춘다. 늦어도 그 검증 전에 결론이 나야 한다(안 그러면 검증 결과가 요구사항과 어긋난 채 남는다).
 related: [[DW-736]](이 항목이 드러난 스토리) · [[DW-546]](어느 스토리도 자기 것으로 안 가진 자리) · [[DW-749]](이 결정이 반영된 문서 복원)
 decision: ✅ **2026-08-09 사용자 결정 = ②안(앱도 anon 열람을 연다).** 원문: *"당연히 앱도 웹이랑 똑같이 해야지 열람 열어야지 걍 요구사항 내가 말한 거 다 앱 포함이야"* — 개별 판단이 아니라 **일반 규칙**으로 못박은 것이다: 요구사항에 "웹 한정"이라고 적혀 있지 않으면 전부 앱 포함. `epic-16-context.md`의 FR58 항목에 결정과 이 일반 규칙을 함께 기록했다.
-status: open # 결정은 끝났고 **구현이 남았다.** 심은 자리 = `epics-increment-2026-07-12.md` Story 16.6 인수조건(2026-08-09 추가분) — 실폰 검증 전에 열람 경로 화이트리스트를 넣어야 "비로그인으로 홈이 보이나"를 실제로 확인할 수 있다. 16.6이 done 될 때 이 항목도 함께 닫는다.
+status: open # ⚠️ **2026-08-09 사람 세션이 실기기 실측으로 되돌림(done → open).** 아래 dev 세션 기록은 사실이지만 **요구사항이 앱에서 성립하지는 않는다** — 잠금을 푼 실기기(SM-G991N, prod APK)에서 로그아웃 상태로 홈에 들어가면 화면은 그려지지만 *"지금 인기 매물을 불러오지 못했습니다"*·*"방금 올라온 매물을 불러오지 못했습니다"*가 뜬다. 원인은 **컬럼 단위 권한**이다 — 운영 anon은 `accident_status`·`is_single_owner`·`is_non_smoker` 3컬럼에 SELECT가 없어(REST 컬럼별 실측: 그 3개만 401/42501, 나머지 14개는 200) `listingCardColumns`가 그걸 항상 포함하는 앱 조회는 **select 자체가 죽는다**. 웹은 `popularRecentColumns(authed)`+`normalizeAnonTrustColumns()`로 이미 해결해 둔 문제이므로 앱도 그 패턴을 미러링하면 된다. 남은 작업과 근거는 spec-16-6의 "인수 경위" 절에 적어 뒀다. 이 항목은 **비로그인 열람이 실기기에서 실제로 매물을 보여줄 때** 닫는다.
+# (아래는 dev-1 기록, 사실로 유지) status: done # 2026-08-09 spec-16-6 구현 — `app_router.dart`의 redirect에 `loc == '/home'` 미인증 예외 추가(FR58 ②안). `/wishlist`·`/chat`·`/sell`은 그대로 로그인 요구(Never). `Navigator.push`로 여는 상세·탐색·AI검색의 행동 지점 3곳(찜 하트·문의하기·AI 전송)도 `currentUserProvider == null`이면 서버 호출 없이 `/login`으로 보내는 게이트를 새로 배선(`wish_button.dart`·`listing_detail_screen.dart`·`ai_chat_screen.dart`). 자동 테스트로 확인(`app_router_test.dart`의 "미인증 앱 실행 → 홈 렌더" + "/wishlist·/chat·/sell 리다이렉트" 그룹, `wish_button_test.dart`·`listing_detail_screen_test.dart`·`ai_chat_screen_test.dart`의 비로그인 게이트 케이스). ⚠️ 실기기(SM-G991N) 육안 확인은 **기기 PIN 잠금으로 미실행** — [[DW-754]] 참조.
 
 ### DW-739: `MyListingsScreen` → 매물 수정(`SellScreen`) push의 **셸 경계 테스트가 없다** — 같은 실패 모드를 다른 진입점에서는 이미 검사하고 있다
 origin: 2026-08-08 spec-16-8 후속 코드리뷰(adversarial 렌즈). 이번에 홈 퀵액션 3개가 사라지면서 그 진입점을 검사하던 테스트도 함께 지워졌는데, 살아있는 push 하나가 무검증으로 남은 것이 드러났다.
@@ -5619,7 +5620,7 @@ scope_note: 선재 — 앱 상세 화면은 Story 16.2부터 이 모양이었고
 trigger: **Epic 16-6(SM-D 통합 시연 검증) 착수 시** — 그 스토리가 홈을 실기기로 검증하는 자리이므로, 착수 시점에 위 ①/②를 사용자에게 물어 결론을 내고 그 결론대로 코드나 문서를 맞춘다. 그 전에라도 **앱 상세 화면의 진입 로직을 다음에 손대는 자리**에서 ①을 고른다면 같은 커밋에 넣는다.
 decision: **2026-08-09 사용자 결정 — ①(앱 상세 진입에도 RPC를 붙인다).** ②(표시만 한다)는 기각. 근거: 데모가 앱 단독으로 돌아가는데 앱이 신호를 만들지 않으면 "지금 인기"가 라벨과 다른 것을 보여준다. 물어보기로 한 시점(16-6 착수)보다 먼저 답이 나왔으므로 **결정을 여기 못박고 Story 16.6 인수조건에 심었다**(CLAUDE.md B5 — 회고·결정 약속은 다음 스토리의 인수조건으로 심지 않으면 이행되지 않는다). 이행 자리 = `epics-increment-2026-07-12.md` Story 16.6 AC(선행 구현 항목). 16.6은 **검증** 스토리지만 이 한 줄 구현이 없으면 그 스토리가 검증할 대상 자체가 성립하지 않으므로 같은 스토리에 둔다.
 related: [[DW-736]](이 항목이 드러난 스토리) · [[DW-738]](같은 "앱이 웹 요구사항의 절반만 구현한 자리" 계열)
-status: open — 결정 완료, 구현 대기(Story 16.6)
+status: done # 2026-08-09 spec-16-6 구현 — `listings_repository.dart`에 `incrementListingView(listingId)` 신설(`chat_repository.dart`의 `_client.rpc(...)` 패턴 미러, 실패해도 렌더 안 막음). `listing_detail_screen.dart`의 `_DetailContentState.initState()`에서 매물 확인 후 정확히 1회 호출. 호출 지점 단일성은 `view_count_call_site_test.dart`(신규, web `viewCountCallSite.test.ts` 미러 — 소스텍스트 스캔으로 RPC 함수명·리포 메서드 호출 둘 다 app/lib 전체 1곳 고정)가 강제. `listing_detail_screen_test.dart`에 실제 호출 1회 카운트 테스트 추가. ⚠️ 실기기에서 상세 열람 전/후 "지금 인기" 순서가 실제로 바뀌는지는 **기기 PIN 잠금으로 미실행** — [[DW-754]] 참조.
 
 ### DW-742: 사진 업로더 카메라/갤러리 권한 요청이 실기기에서 실제로 뜨는지 미검증
 
@@ -5734,4 +5735,17 @@ location: `app/android/app/src/main/AndroidManifest.xml` 주석 · `app/lib/feat
 severity: low
 reason: `image_picker_android` 0.8.13+19의 `useAndroidPhotoPicker` 기본값은 **false**이고(패키지 소스 `image_picker_android.dart`에서 확인), 앱 코드는 이 값을 켜지 않는다. 즉 실제 갤러리 경로는 Android 시스템 포토피커가 아니라 `ACTION_GET_CONTENT`(SAF)다. 권한이 필요 없다는 **결론 자체는 SAF에서도 맞아** 지금 깨지는 것은 없지만, 근거가 틀린 주석이라 다음 사람이 그 위에 판단을 쌓을 수 있다. 특히 **DW-747**("확장자 없는 경로는 드문 경우라 low")의 전제가 이 주석에 기대고 있다 — SAF는 확장자 없는 경로를 흔하게 돌려주므로 DW-747이 드문 경우가 아닐 수 있다.
 trigger: DW-747을 다시 볼 때(실사용자 포맷 거부 리포트), 또는 16.6 실폰 검증에서 갤러리 선택을 실제로 태워볼 때 — 그 자리에서 `useAndroidPhotoPicker = true`로 켤지 정하고 두 주석을 사실에 맞게 고친다.
+status: open
+
+### DW-754: spec-16-6 실기기(SM-G991N) 육안 검증이 **기기 PIN 잠금**으로 미실행 — 코드·자동테스트만 완료된 상태
+
+origin: spec-16-6-SM-D-통합-시연-검증 구현 세션(2026-08-09). mobile-mcp로 기기 연결 자체는 확인됐다(`mobile_list_available_devices` → `SM-G991N` online) — `.env.json.prod`로 빌드한 debug APK를 `mobile_install_app`로 설치·`mobile_launch_app`로 실행까지는 성공했다.
+location: 기기 잠금화면(`com.android.systemui:id/keyguard_pin_view`) — `mobile_list_elements_on_screen`이 "PIN을 입력하세요"·숫자 키패드를 반환. PIN 값을 이 세션이 모른다(사람만 아는 값).
+severity: high
+reason: 이 스토리의 헤드라인은 "코드 완료가 아니라 실측 완료"다(spec Tasks 마지막 항목). 코드 변경 5곳(`app_router.dart`·`listings_repository.dart`·`listing_detail_screen.dart`·`wish_button.dart`·`ai_chat_screen.dart`)과 신규/보강 위젯테스트 5개는 전부 green이고 `flutter analyze`·`flutter test`(434건)·`flutter build web`·`flutter build apk --debug --dart-define-from-file=.env.json.prod`·기기 설치·앱 실행까지는 실측 확인했다. 그러나 잠금화면을 넘지 못해 다음이 전혀 미실행이다: ① 상세 열람 전/후 "지금 인기" 순서 변화(DW-740의 실제 산출물 확인) ② 로그아웃 상태로 홈·탐색·상세 도달(DW-738의 실제 산출물 확인) ③ 찜/문의/AI검색 3곳의 로그인 유도 실측 ④ ADBKeyBoard 설치·IME 전환 ⑤ FR26~58 앱 사용자 여정(한글 질의·가입·판매자 정보·안읽음 배지 등) 전체.
+evidence: `mobile_take_screenshot` 2회 모두 검정 화면(첫 실행 직후는 화면이 꺼져 있었고, `HOME` 버튼으로 깨운 뒤엔 PIN 잠금화면이 보임) · `mobile_list_elements_on_screen` 결과에 `sec_bouncer_message_area` 텍스트 "PIN을 입력하세요"·`digit_text` 0~9·`key_enter_text`("OK", "사용할 수 없음" — 4자리 미만이라 비활성)가 그대로 잡힘.
+why_it_matters: 이 스토리의 Block If는 "ADBKeyBoard.apk를 구할 수 없거나 실기기 설치가 실패해 한글 입력을 확보할 수 없으면 HALT"다. 이번엔 그보다 앞 단계(기기 자체 잠금 해제)에서 막혀, ADBKeyBoard 시도조차 못 해봤다 — 코드 구현은 CLAUDE.md B4의 요구(직접 실행·관찰)를 웹/위젯테스트 층위에서는 충족했지만, 이 스토리가 유일하게 요구하는 **실기기 층위 확인**은 사람 개입 없이는 이 세션이 더 진행할 수 없다.
+fix_sketch: 사람이 기기 PIN을 입력해 잠금을 풀거나(다음 세션에 PIN을 알려주거나 직접 풀어둔다), 잠금이 없는 상태로 화면을 켜 둔다. 그 뒤 이 스토리의 Manual checks를 그대로 이어간다 — ADBKeyBoard.apk 확보·설치·IME 전환 → 로그인 상태로 FR26~58 여정 재현 → 로그아웃 후 홈·탐색·상세 도달 + 찜/문의/AI전송 3곳 확인 → 상세 열람 전/후 "지금 인기" 순서 변화 확인. 전 과정 스크린샷/녹화로 남긴다(스토리 Always 요구).
+scope_note: 코드·자동테스트는 이 스토리 범위 안에서 이미 완료. 이 항목은 **그 코드가 실제로 잠금 해제된 실기기에서 요구사항대로 동작하는지**의 잔여 검증분이다 — "존재 확인≠작동 확인"(CLAUDE.md B4)의 마지막 층이 아직 안 닫힌 상태.
+trigger: 사람이 기기 PIN을 풀어주거나 알려주는 즉시 재시도. 그 전까지 이 항목을 열어 둔다.
 status: open

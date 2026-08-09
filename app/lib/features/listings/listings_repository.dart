@@ -334,6 +334,26 @@ class ListingsRepository {
     return detail.withImages(urls);
   }
 
+  /// 조회수 +1(DW-740 해소) — 매물 상세 진입 시 `listing_detail_screen.dart`의
+  /// `_DetailContentState.initState()` 한 곳에서만 호출한다(호출 지점 단일성은
+  /// `view_count_call_site_test.dart`가 소스텍스트 스캔으로 강제 — web
+  /// `viewCountCallSite.test.ts`(Story 11.1)의 앱 미러, CLAUDE.md B9). `increment_listing_view`
+  /// RPC(0020)가 `view_count`의 유일한 쓰기 통로다(web `page.tsx:212`와 동일 계약) — 호출마다
+  /// 항상 +1(멱등 아님, 의도된 동작). 실패해도 상세 화면 렌더를 막지 않는다(`_fetchCovers`와
+  /// 같은 "부가정보는 핵심 화면을 안 죽인다" 원칙, `chat_repository.dart`의 `fetchUnreadTotal`과
+  /// 같은 폴백 방침 — 콘솔 로그만).
+  Future<void> incrementListingView(String listingId) async {
+    try {
+      await _client.rpc(
+        'increment_listing_view',
+        params: {'p_listing_id': listingId},
+      );
+    } catch (e) {
+      // ignore: avoid_print
+      print('[listings] 조회수 증가 실패($listingId): $e');
+    }
+  }
+
   /// 매물 등록(INSERT, FR5) — 본인 명의로 listings 행 생성. **id를 반환한다**(Story 16.7) —
   /// 사진 저장 경로가 `{user_id}/{listing_id}/…`라 방금 만든 매물의 id를 받아야 사진을 올릴 수
   /// 있다(스테이징 경로 없음, web SellForm.tsx `.select('id').single()`과 동일 이유).

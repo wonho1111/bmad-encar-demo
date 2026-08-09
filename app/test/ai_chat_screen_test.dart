@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/ai_search/ai_search_api.dart';
+import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/listings/listing.dart';
 import 'package:app/features/listings/listing_card.dart';
 import 'package:app/features/wishlist/wishlist_providers.dart';
@@ -19,8 +20,23 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// app_router_test.dart·wish_button_test.dart와 동일한 최소 가짜 로그인 사용자 — 16.6이
+/// `_submit()`에 로그인 게이트를 추가하면서(currentUserProvider == null이면 서버 호출 없이
+/// /login) 이 파일의 기존 테스트(전부 "로그인 상태에서 AI 검색"을 전제)는 이 오버라이드가
+/// 없으면 첫 줄에서 게이트에 막혀버린다. 비로그인 게이트 자체를 검증하는 새 테스트만 별도로
+/// `currentUserProvider.overrideWithValue(null)`을 명시한다.
+User _fakeUser() => User(
+  id: '00000000-0000-0000-0000-000000000001',
+  appMetadata: const {},
+  userMetadata: const {},
+  aud: 'authenticated',
+  email: 'test@example.com',
+  createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
+);
 
 void main() {
   // wish_button_test.dart·search_screen_test.dart와 같은 이유 — `Supabase.instance`를
@@ -70,6 +86,7 @@ void main() {
           // 실제 카드 진입점(home/search/ai)이 전부 공유하는 단일 provider — 여기만
           // 오버라이드해도 화면이 그 값을 정말로 ListingCard.wished까지 실어 나르는지 본다.
           wishedListingIdsProvider.overrideWith((ref) async => {'wished-1'}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -114,6 +131,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -143,6 +161,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -182,6 +201,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -285,6 +305,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -334,6 +355,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -384,6 +406,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -425,6 +448,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -463,6 +487,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -528,6 +553,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -583,6 +609,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         // 실제 앱이 쓰는 테마를 씌운다(main.dart 의 MaterialApp 4곳이 전부 buildAppTheme()).
         // 기하를 재는 검사가 배포되지 않는 표면에서 재고 있으면 테마가 바뀌어도 안 걸린다
@@ -645,6 +672,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         // 위 D5 검사와 같은 이유로 실제 앱 테마를 씌운다 — 정렬은 입력 데코·버튼 테마가
         // 직접 좌우하는 값이라, 테마 없는 표면에서 재면 배포본을 안 보는 셈이 된다.
@@ -694,6 +722,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -740,6 +769,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -789,6 +819,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -828,6 +859,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
         ],
         child: MaterialApp(
           home: AiChatScreen(
@@ -851,5 +883,97 @@ void main() {
     expect(find.textContaining('price<='), findsNothing);
     expect(find.textContaining('body_type='), findsNothing);
     expect(find.textContaining('fuel='), findsNothing);
+  });
+
+  testWidgets(
+      '비로그인 상태에서 전송하면 AI 검색 호출 없이 /login으로 이동한다(FR58 행동 게이트, '
+      'DW-738, spec-16-6)', (tester) async {
+    var callCount = 0;
+    // AiChatScreen은 홈에서 Navigator.push로 도달되므로 context.go가 동작하려면 GoRouter
+    // 조상이 필요하다(wish_button_test.dart의 같은 이유 — 이 파일의 다른 테스트는 게이트를
+    // 안 타므로 평범한 MaterialApp으로 충분했다).
+    final router = GoRouter(
+      initialLocation: '/ai',
+      routes: [
+        GoRoute(
+          path: '/ai',
+          builder: (context, state) => AiChatScreen(
+            searchAiOverride: ({required query, context, required accessToken}) async {
+              callCount++;
+              return const SearchResult(answer: '호출되면 안 된다', listings: []);
+            },
+          ),
+        ),
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const Scaffold(
+            body: Text('login-probe', key: Key('login_probe')),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(null), // 비로그인 명시.
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '아반떼 찾아줘');
+    await tester.tap(find.byKey(const Key('ai_send')));
+    await tester.pumpAndSettle();
+
+    expect(callCount, 0, reason: 'AI 검색(과금 호출)이 나가면 안 된다');
+    expect(find.byKey(const Key('login_probe')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    // 낙관적 user 버블도 추가되지 않았어야 한다(서버 호출로 이어지는 어떤 부수효과도
+    // 시작하지 않는다) — 화면 자체가 /login으로 바뀌었으니 이 매칭은 그 증거를 겹으로 남긴다.
+    expect(find.text('아반떼 찾아줘'), findsNothing);
+  });
+
+  testWidgets(
+      '비로그인 + initialQuery(히어로 자동 제출)도 호출 없이 /login으로 이동한다', (tester) async {
+    var callCount = 0;
+    final router = GoRouter(
+      initialLocation: '/ai',
+      routes: [
+        GoRoute(
+          path: '/ai',
+          builder: (context, state) => AiChatScreen(
+            initialQuery: '4천만원대 전기 SUV',
+            searchAiOverride: ({required query, context, required accessToken}) async {
+              callCount++;
+              return const SearchResult(answer: '호출되면 안 된다', listings: []);
+            },
+          ),
+        ),
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const Scaffold(
+            body: Text('login-probe', key: Key('login_probe')),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(null),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(callCount, 0, reason: '히어로 자동 제출도 같은 _submit 게이트를 타야 한다');
+    expect(find.byKey(const Key('login_probe')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

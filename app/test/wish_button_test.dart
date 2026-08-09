@@ -3,14 +3,31 @@
 // 없이 — 앱은 라우터 전역이 이미 로그인 필수라 그 분기는 이식하지 않는다, spec-16-3 Boundaries).
 import 'dart:async';
 
+import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/wishlist/wish_button.dart';
 import 'package:app/features/wishlist/wishlist_providers.dart';
 import 'package:app/features/wishlist/wishlist_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// app_router_test.dart와 동일한 최소 가짜 로그인 사용자 — 16.6 전에는 이 파일의 모든 탭이
+/// (실 Supabase 세션 없이도) 그대로 toggle까지 갔지만, 16.6이 `_toggle()`에 로그인 게이트를
+/// 추가하면서(currentUserProvider == null이면 서버 호출 없이 /login) 기존 "로그인 상태"를
+/// 전제한 테스트들은 이 오버라이드가 없으면 전부 게이트에서 막혀버린다 — 그래서 `_pump`가
+/// 기본으로 이 가짜 사용자를 심는다. 비로그인 게이트 자체를 검증하는 새 테스트만 별도로
+/// `currentUserProvider.overrideWithValue(null)`을 명시한다.
+User _fakeUser() => User(
+  id: '00000000-0000-0000-0000-000000000001',
+  appMetadata: const {},
+  userMetadata: const {},
+  aud: 'authenticated',
+  email: 'test@example.com',
+  createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
+);
 
 /// 네트워크 없이 토글 결과를 제어하는 가짜 레포 — `onToggle`이 주어지면 그 Future를 기다리고
 /// (연타 차단·낙관적 반영 타이밍 테스트용), 없으면 즉시 성공한다.
@@ -38,7 +55,10 @@ Future<void> _pump(
 }) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [wishlistRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        wishlistRepositoryProvider.overrideWithValue(repo),
+        currentUserProvider.overrideWithValue(_fakeUser()), // 위 클래스 주석 참조.
+      ],
       child: MaterialApp(
         home: Scaffold(
           body: WishButton(listingId: 'listing-1', initialWished: initialWished),
@@ -140,6 +160,7 @@ void main() {
       ProviderScope(
         overrides: [
           wishlistRepositoryProvider.overrideWithValue(repo),
+          currentUserProvider.overrideWithValue(_fakeUser()),
           wishedListingIdsProvider.overrideWith((ref) async {
             idsFetchCount++;
             return <String>{};
@@ -191,6 +212,7 @@ void main() {
     Widget harness({required bool showButton}) => ProviderScope(
           overrides: [
             wishlistRepositoryProvider.overrideWithValue(repo),
+            currentUserProvider.overrideWithValue(_fakeUser()),
             wishedListingIdsProvider.overrideWith((ref) async {
               idsFetchCount++;
               return <String>{};
@@ -246,7 +268,10 @@ void main() {
     final repo = _FakeWishlistRepository(onToggle: (_, _) => gate.future);
 
     Widget harness(String listingId, bool initialWished) => ProviderScope(
-          overrides: [wishlistRepositoryProvider.overrideWithValue(repo)],
+          overrides: [
+            wishlistRepositoryProvider.overrideWithValue(repo),
+            currentUserProvider.overrideWithValue(_fakeUser()),
+          ],
           child: MaterialApp(
             home: Scaffold(
               body: WishButton(listingId: listingId, initialWished: initialWished),
@@ -352,5 +377,54 @@ void main() {
     );
 
     semanticsHandle.dispose();
+  });
+
+  testWidgets(
+      '비로그인 상태에서 탭 → 서버 호출 없이 /login으로 이동한다(FR58 행동 게이트, DW-738, '
+      'spec-16-6)', (tester) async {
+    final repo = _FakeWishlistRepository();
+    // WishButton은 이 리포의 여러 화면(홈 본문·검색·AI·상세)에서 Navigator.push로도 도달되므로,
+    // context.go가 실제로 동작하려면 GoRouter 조상이 있어야 한다 — 이 파일의 다른 테스트는
+    // 전부 게이트를 안 타므로 평범한 MaterialApp으로 충분했지만, 이 테스트만 MaterialApp.router로
+    // 바꾼다.
+    final router = GoRouter(
+      initialLocation: '/detail',
+      routes: [
+        GoRoute(
+          path: '/detail',
+          builder: (context, state) => Scaffold(
+            body: WishButton(listingId: 'listing-1', initialWished: false),
+          ),
+        ),
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const Scaffold(
+            body: Text('login-probe', key: Key('login_probe')),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          wishlistRepositoryProvider.overrideWithValue(repo),
+          currentUserProvider.overrideWithValue(null), // 비로그인 명시.
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(WishButton));
+    await tester.pumpAndSettle();
+
+    expect(
+      repo.callCount,
+      0,
+      reason: '서버 쓰기(wishlists insert/delete)가 나가면 안 된다 — 낙관적 반영도 시작하지 않는다',
+    );
+    expect(find.byKey(const Key('login_probe')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

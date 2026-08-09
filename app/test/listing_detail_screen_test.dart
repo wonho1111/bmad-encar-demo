@@ -6,15 +6,50 @@
 // 어느 쪽도 "상세 화면이 실제로 그 자리에 ListingGallery를 꽂아 쓰는지"를 안 본다.
 // app_router_test.dart의 provider-override + pump 관례를 그대로 재사용해, 사진이 있는
 // ListingDetail로 실제 화면을 pump하고 갤러리 카운터로 확인한다.
+import 'package:app/features/auth/auth_controller.dart';
+import 'package:app/features/chat/chat_providers.dart';
+import 'package:app/features/chat/chat_repository.dart';
 import 'package:app/features/listings/listing.dart';
 import 'package:app/features/listings/listing_detail_screen.dart';
 import 'package:app/features/listings/listings_providers.dart';
+import 'package:app/features/listings/listings_repository.dart';
 import 'package:app/features/wishlist/wishlist_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// initState()의 `incrementListingView` 호출(DW-740, 16.6)이 실제 네트워크(가짜 자격증명)를
+/// 타지 않도록 리포지토리 계층에서 끊는다(wish_button_test.dart·search_screen_test.dart와
+/// 같은 이유) — 대부분의 테스트는 이 호출 자체를 검증하지 않으므로 기본은 조용히 삼키는 가짜,
+/// 호출 횟수·인자를 검증하는 테스트만 카운터를 직접 읽는다.
+class _FakeListingsRepository extends ListingsRepository {
+  int incrementCalls = 0;
+  final incrementedIds = <String>[];
+
+  @override
+  Future<void> incrementListingView(String listingId) async {
+    incrementCalls++;
+    incrementedIds.add(listingId);
+  }
+}
+
+/// 비로그인 문의하기 탭(FR58, DW-738) 테스트용 — `openOrCreateRoom`이 실제로 호출되지
+/// 않아야 함을 직접 카운트로 확인한다(단순히 "화면이 안 죽었다"보다 강한 증거).
+class _FakeChatRepository extends ChatRepository {
+  int openOrCreateRoomCalls = 0;
+
+  @override
+  Future<OpenRoomResult> openOrCreateRoom({
+    required String listingId,
+    required String buyerId,
+  }) async {
+    openOrCreateRoomCalls++;
+    return const OpenRoomFailure('테스트에서는 호출되면 안 된다');
+  }
+}
 
 /// 화면이 요구하는 필수 15필드만 채운 최소 상세 데이터. 사진은 `withImages`로 붙인다
 /// (listing.dart 주석: `listings` 단일 row엔 없는 데이터라 fromMap이 안 채우고 이 메서드로
@@ -81,6 +116,8 @@ void main() {
         overrides: [
           listingDetailProvider('listing-1')
               .overrideWith((ref) async => _fakeDetail(imageUrls: urls)),
+          // 16.6 — initState()의 incrementListingView가 실 네트워크를 안 타게 끊는다(위 클래스 주석).
+          listingsRepositoryProvider.overrideWithValue(_FakeListingsRepository()),
         ],
         child: const MaterialApp(
           home: ListingDetailScreen(listingId: 'listing-1'),
@@ -118,6 +155,8 @@ void main() {
           // 카드 진입점과 같은 단일 provider — 이 매물을 찜한 상태로 만들어 상세의 인라인
           // WishButton이 initialWished=true를 실제로 받는지까지 함께 본다.
           wishedListingIdsProvider.overrideWith((ref) async => {'listing-1'}),
+          // 16.6 — initState()의 incrementListingView가 실 네트워크를 안 타게 끊는다.
+          listingsRepositoryProvider.overrideWithValue(_FakeListingsRepository()),
         ],
         child: const MaterialApp(
           home: ListingDetailScreen(listingId: 'listing-1'),
@@ -148,5 +187,93 @@ void main() {
     expect(find.text('1인소유'), findsOneWidget);
     expect(find.text('비흡연'), findsOneWidget);
     expect(find.textContaining('판매자가 직접 입력한 정보'), findsOneWidget);
+  });
+
+  testWidgets(
+      '상세 화면이 처음 빌드되면 incrementListingView가 정확히 한 번 호출된다(DW-740 해소, '
+      'spec-16-6 AC1)', (tester) async {
+    final repo = _FakeListingsRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          listingDetailProvider('listing-1')
+              .overrideWith((ref) async => _fakeDetail(imageUrls: const [])),
+          listingsRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(
+          home: ListingDetailScreen(listingId: 'listing-1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      repo.incrementCalls,
+      1,
+      reason: '_DetailContentState.initState()가 매물 확인 후 정확히 1회 호출해야 한다'
+          '(호출 지점 단일성은 view_count_call_site_test.dart가 소스 스캔으로 별도 고정)',
+    );
+    expect(repo.incrementedIds, ['listing-1']);
+  });
+
+  testWidgets(
+      '비로그인 상태에서도 문의하기 버튼이 렌더되고, 탭하면 방 생성 없이 /login으로 이동한다'
+      '(FR58 행동 게이트, DW-738)', (tester) async {
+    final listingsRepo = _FakeListingsRepository();
+    final chatRepo = _FakeChatRepository();
+    final router = GoRouter(
+      initialLocation: '/detail',
+      routes: [
+        GoRoute(
+          path: '/detail',
+          builder: (context, state) =>
+              const ListingDetailScreen(listingId: 'listing-1'),
+        ),
+        GoRoute(
+          path: '/login',
+          builder: (context, state) => const Scaffold(
+            body: Text('login-probe', key: Key('login_probe')),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          listingDetailProvider('listing-1')
+              .overrideWith((ref) async => _fakeDetail(imageUrls: const [])),
+          listingsRepositoryProvider.overrideWithValue(listingsRepo),
+          chatRepositoryProvider.overrideWithValue(chatRepo),
+          currentUserProvider.overrideWithValue(null), // 비로그인 명시.
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 문의하기 버튼은 스크롤 하단(기본 정보·신뢰속성 다음)에 있어 기본 뷰포트(800×600) 밖이다
+    // — 위 두 기존 테스트와 동일하게 스크롤해 실제로 빌드되게 한다(안 그러면 SliverList가
+    // 화면 밖 자식을 만들지 않아 findsNothing이 "안 그려짐"과 "화면 밖"을 구분 못 한다).
+    await tester.drag(find.byType(ListView), const Offset(0, -2000));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('go_chat_inquiry')),
+      findsOneWidget,
+      reason: '본인 매물이 아니면 로그인 여부와 무관하게 문의하기 버튼이 렌더돼야 한다'
+          '(화면 단위가 아니라 행동 단위 게이트)',
+    );
+
+    await tester.tap(find.byKey(const Key('go_chat_inquiry')));
+    await tester.pumpAndSettle();
+
+    expect(
+      chatRepo.openOrCreateRoomCalls,
+      0,
+      reason: '방 생성(서버 쓰기)이 나가면 안 된다',
+    );
+    expect(find.byKey(const Key('login_probe')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -4,9 +4,11 @@
 // Flutter 로 이식(단, 되묻기 칩은 web이 아직 렌더하지 않는 앱 전용 확장 — spec-16-5).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../auth/auth_controller.dart';
 import '../listings/listing_card.dart';
 import '../listings/listing_detail_screen.dart';
 import '../wishlist/wishlist_providers.dart';
@@ -86,6 +88,18 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   Future<bool> _submit({String? overrideQuery, bool restoreInputOnFailure = false}) async {
     final query = (overrideQuery ?? _input.text).trim();
     if (query.isEmpty || _loading) return false; // 빈 질의·중복 전송 차단.
+
+    if (ref.read(currentUserProvider) == null) {
+      // 비로그인 AI 검색(FR58 행동 게이트, DW-738) — 과금(Gemini) 호출 없이 로그인으로
+      // 유도한다. 아래 질의 길이 검증·낙관적 user 버블 추가보다 먼저 막는다 — 서버 호출로
+      // 이어지는 어떤 부수효과도 시작하지 않는다.
+      // `this.context`로 명시 접근한다 — 이 메서드가 몇 줄 뒤에서 `context`라는 이름의 지역
+      // 변수(대화 이력)를 선언해 그 지점부터 식별자 `context`가 이 블록 전체에서 그 지역
+      // 변수를 가리키게 된다(Dart 스코프 규칙). `this.context`는 그 그림자와 무관하게 항상
+      // State의 BuildContext를 가리킨다.
+      this.context.go('/login');
+      return false;
+    }
 
     // 질의가 UX 상한(500자)을 넘으면 422 가 떠 원인 모를 안내만 받는다 → 클라에서 먼저 알린다.
     // TextField의 maxLength가 타이핑 경로는 이미 막지만, 이 가드는 방어적으로 유지한다.

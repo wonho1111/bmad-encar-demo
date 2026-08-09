@@ -1,6 +1,15 @@
-// 찜(♡) 토글 버튼 (Story 16.3) — web WishButton.tsx의 Flutter 미러이되, 로그인 게이트·
-// `redirectedFrom` 로직은 이식하지 않는다(spec-16-3 Boundaries — 앱은 라우터 전역이 이미
-// 로그인 필수, app_router.dart:179-201).
+// 찜(♡) 토글 버튼 (Story 16.3, 로그인 게이트는 16.6 추가) — web WishButton.tsx의 Flutter
+// 미러이되, `redirectedFrom`(로그인 후 원래 화면으로 복귀시키는 쿼리) 로직은 이식하지
+// 않는다 — 그냥 `/login`으로 보낸다(go_router 스택상 뒤로가기로 복귀 가능).
+//
+// ⚠️ **이 헤더가 한때 갖고 있던 전제는 16.6에서 깨졌다.** 예전 문구: "앱은 라우터 전역이 이미
+// 로그인 필수라 게이트 이식 안 함"(app_router.dart의 redirect가 미인증을 전 경로에서 /login
+// 으로 보냈으므로 이 버튼까지 도달할 때는 이미 로그인 상태였다). 16.6이 FR58(비로그인 매물
+// 열람, DW-738)을 앱에도 열면서 `/home`이 미인증 예외가 됐고, 이 버튼도 비로그인으로 눌릴 수
+// 있는 자리가 됐다 — 그래서 아래 `_toggle()`이 탭 진입부에서 `currentUserProvider`를 직접
+// 확인해 서버 쓰기 없이 `/login`으로 보낸다(행동 단위 게이트, `requireUser`를 재사용하지
+// 않는 이유는 spec-16-6 Design Notes 참조 — 화면 전체를 막으면 비로그인도 봐야 하는 목록·
+// 상세 본문까지 가려진다).
 //
 // 책임:
 //   1) 낙관적 토글: 누르면 즉시 하트가 채워짐/비워짐 → wishlists insert/delete 확정.
@@ -13,9 +22,11 @@
 //   4) 히트영역 44×44 유지, Semantics로 "찜하기"/"찜 취소" 라벨 전환(웹 aria-pressed 미러).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import '../../core/theme/app_theme.dart';
+import '../auth/auth_controller.dart';
 import 'wishlist_providers.dart';
 
 /// 찜 버튼 히트영역(44×44) — `listing_card.dart`가 사진 하단 겹침 오프셋 계산에 같은 값을
@@ -77,6 +88,12 @@ class _WishButtonState extends ConsumerState<WishButton> {
 
   Future<void> _toggle() async {
     if (_pending) return;
+    if (ref.read(currentUserProvider) == null) {
+      // 비로그인 찜(FR58 행동 게이트, DW-738) — 서버 쓰기(wishlists insert/delete) 없이
+      // 로그인으로 유도. 낙관적 반영도 시작하지 않는다(아래 setState 전에 반환).
+      context.go('/login');
+      return;
+    }
     final next = !_wished;
     // await 전에 컨테이너를 미리 잡아둔다 — `ref`(ConsumerState)는 위젯이 disposed되면 더 못
     // 쓰지만, 이 컨테이너 참조는 계속 유효하다. 하트를 누르자마자 화면을 나가면(await 도중
