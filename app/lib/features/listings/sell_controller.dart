@@ -6,14 +6,18 @@
 // 흐름:
 //   1) validateAndBuildListing(순수 함수) → 실패면 한국어 message 를 error 로 노출(INSERT 안 함).
 //   2) 현재 세션 user 확인(없으면 "로그인이 필요합니다").
-//   3) createListing(payload, sellerId: user.id) → 성공이면 success + 폼 초기화, 실패면 한국어 변환.
-//   4) 로딩 중 재호출은 무시(중복 제출 차단).
+//   3) createListing(payload, sellerId: user.id) → 성공이면 listing_id를 받는다.
+//   4) (Story 16.7) syncListingPhotos(listing_id) — 사진 반영. 개별 사진 실패는 폼 제출 자체를
+//      막지 않는다(AC3) — listing은 이미 저장됐으므로 성공/실패 메시지를 함께 보여준다.
+//   5) 로딩 중 재호출은 무시(중복 제출 차단).
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_controller.dart';
 import 'listing_errors.dart';
 import 'listing_form.dart';
 import 'listings_providers.dart';
+import 'photo_item.dart';
+import 'photo_sync.dart';
 
 /// 등록 화면 상태 = (현재 입력) + (로딩) + (에러/성공 메시지) + (수정 모드 식별자) + (주인).
 /// 7.4에서 수정(edit) 모드 추가: editingId 가 null 이면 등록(INSERT), 값이 있으면 수정(UPDATE).
@@ -26,6 +30,7 @@ class SellState {
     this.editingId,
     this.done = false,
     this.owner,
+    this.photos,
   });
 
   final ListingFormInput input;
@@ -34,6 +39,12 @@ class SellState {
   final String? success; // 등록/수정 성공 안내(없으면 null).
   final String? editingId; // null=등록 모드, 값=수정 대상 매물 id(수정 모드).
   final bool done; // 수정 성공 후 화면 닫기 신호(등록 모드에선 사용 안 함).
+
+  /// syncListingPhotos 결과(Story 16.7) — listing 저장이 성공한 뒤에만 채워진다. 화면(sell_screen)이
+  /// owner를 확인한 뒤 이 값을 로컬 업로더 상태로 받아들인다(성공/실패 항목이 그대로 담겨 있다).
+  /// null이면 "이번 제출에서 사진 동기화가 일어나지 않았다"(검증 실패 등으로 listing 저장 전에
+  /// 끝난 경우) — 화면은 그때 로컬 사진 상태를 그대로 유지해야 한다.
+  final List<PhotoItem>? photos;
 
   /// 이 진행상태/결과를 시작한 **화면 인스턴스**의 식별자(SellScreen 이 자기 것을 넘긴다).
   ///
@@ -55,6 +66,7 @@ class SellState {
     String? editingId,
     bool? done,
     Object? owner,
+    List<PhotoItem>? photos,
   }) {
     return SellState(
       input: input ?? this.input,
@@ -65,6 +77,7 @@ class SellState {
       editingId: editingId ?? this.editingId,
       done: done ?? this.done,
       owner: owner ?? this.owner,
+      photos: photos ?? this.photos,
     );
   }
 }
@@ -102,7 +115,17 @@ class SellController extends Notifier<SellState> {
   /// owner: 호출한 **화면 인스턴스**의 식별자. 이 제출이 만드는 로딩/성공/에러에 그대로 실려,
   ///   각 화면이 `state.owner == 내 식별자`로 "내 결과인지"를 판정한다(SellState.owner 주석 참조).
   ///   생략하면 null 이 실려 어느 화면도 자기 것으로 보지 않는다(테스트가 컨트롤러만 구동할 때).
-  Future<void> submit({required String? editingId, Object? owner}) async {
+  ///
+  /// photos/baseline(Story 16.7): 화면의 현재 업로더 상태 + 저장 기준선(무엇을 지웠는지 판단하는
+  ///   근거, web SellForm.tsx의 baseline과 동일 역할). listing 저장(INSERT/UPDATE)이 성공한
+  ///   **뒤에만** syncListingPhotos를 호출한다 — 등록은 listing_id가 이 시점에야 생기고, 수정도
+  ///   "매물 정보 자체는 이미 저장됐다"를 지켜야 사진 실패가 폼 제출 전체를 막지 않는다(AC3).
+  Future<void> submit({
+    required String? editingId,
+    Object? owner,
+    List<PhotoItem> photos = const [],
+    List<PhotoItem> baseline = const [],
+  }) async {
     if (state.loading) return; // 중복 제출 차단.
 
     // 1) 클라이언트 검증(순수 함수). 실패면 쓰기 없이 한국어 오류. editingId 보존.
@@ -142,13 +165,24 @@ class SellController extends Notifier<SellState> {
       final repo = ref.read(listingsRepositoryProvider);
 
       if (editingId == null) {
-        // 3a) 등록 모드 — INSERT(on_sale 즉시 생성).
-        await repo.createListing(result.payload!, sellerId: user.id);
-        // 성공 → 폼 초기화 + 성공 안내(즉시 노출 FR7).
+        // 3a) 등록 모드 — INSERT(on_sale 즉시 생성). id를 받아야 사진을 올릴 수 있다(AC5).
+        final newListingId = await repo.createListing(result.payload!, sellerId: user.id);
+
+        // 매물은 이미 등록됐다 — 여기서부터 실패해도 등록을 되돌리지 않는다(AC3). 등록은
+        // "기존 사진이 0장인 수정"이라 baseline은 비어 있다(호출부 기본값).
+        final photoResult = await syncListingPhotos(user.id, newListingId, photos, baseline);
+        final photoNote = _photoNote(photoResult);
+
+        // 성공 → 폼 초기화 + 성공 안내(즉시 노출 FR7). 사진은 성공/실패와 무관하게 화면과 함께
+        // 초기화한다 — 다음 등록을 위한 빈 폼이 원칙이고, 실패한 사진이 남아 있어도 매물 자체는
+        // "내 매물"에서 다시 열어 수정하며 재시도할 수 있다(edit_listing_screen.dart가 그 진입점).
         state = SellState(
           input: const ListingFormInput(),
-          success: '매물이 등록되었습니다. 구매자에게 바로 노출됩니다.',
+          success: photoNote == null
+              ? '매물이 등록되었습니다. 구매자에게 바로 노출됩니다.'
+              : '매물이 등록되었습니다. 구매자에게 바로 노출됩니다. ($photoNote)',
           owner: owner,
+          photos: const [],
         );
       } else {
         // 3b) 수정 모드 — UPDATE(15필드, status·seller_id 미포함). 0행이면 RLS 차단(타인)·없음.
@@ -164,6 +198,25 @@ class SellController extends Notifier<SellState> {
           );
           return;
         }
+
+        // 매물 정보 저장은 이미 성공했다 — 사진 반영 실패가 이 성공을 되돌리지 않는다(AC3).
+        final photoResult = await syncListingPhotos(user.id, editingId, photos, baseline);
+        final photoNote = _photoNote(photoResult);
+
+        if (photoNote != null) {
+          // 사진 처리가 일부 어긋났다 — 화면에 남겨 재시도할 수 있게 한다(닫으면 실패한 사진
+          // 상태를 사용자가 다시 볼 방법이 없다). done은 false로 둔다(화면이 pop하지 않는다).
+          state = SellState(
+            input: state.input,
+            editingId: editingId,
+            success: '매물 정보가 수정되었습니다.',
+            error: '사진 처리 중 일부가 실패했어요 ($photoNote). 아래에서 다시 시도한 뒤 다시 저장해주세요.',
+            owner: owner,
+            photos: photoResult.photos,
+          );
+          return;
+        }
+
         // 성공 → 화면 닫기 신호(done) + 성공 안내. 목록은 재진입 시 새로고침된다.
         state = SellState(
           input: state.input,
@@ -171,6 +224,7 @@ class SellController extends Notifier<SellState> {
           success: '매물 정보가 수정되었습니다.',
           done: true,
           owner: owner,
+          photos: photoResult.photos,
         );
       }
     } catch (e) {
@@ -184,6 +238,16 @@ class SellController extends Notifier<SellState> {
         owner: owner,
       );
     }
+  }
+
+  /// syncListingPhotos 결과를 한 줄 한국어 사유로 요약한다. 실패·경고가 전혀 없으면 null —
+  /// 호출부가 "성공"만 말하고 이 문구를 안내에 덧붙이지 않는다.
+  String? _photoNote(PhotoSyncResult r) {
+    final reasons = <String>[
+      if (r.failedCount > 0) '사진 ${r.failedCount}장 실패',
+      ...r.warnings,
+    ];
+    return reasons.isEmpty ? null : reasons.join(' · ');
   }
 }
 

@@ -54,8 +54,21 @@ class EditListingScreen extends ConsumerWidget {
             key: 'edit_sold_blocked',
           );
         }
-        // 본인 on_sale 매물 → 등록 폼을 재사용한 수정 화면(상세를 넘겨 폼을 채움).
-        return SellScreen(editDetail: detail);
+        // 기존 사진 목록(Story 16.7) — 본인 매물임이 위에서 이미 확인된 뒤에만 조회한다.
+        // `listing_images`는 `listings`와 별도 테이블이라 위 조회에 못 담는다(§10.2).
+        final photosAsync = ref.watch(editListingPhotosProvider(listingId));
+        return photosAsync.when(
+          loading: () => const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => _message(
+            context,
+            '사진 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
+            key: 'edit_photos_load_error',
+          ),
+          // 본인 on_sale 매물 → 등록 폼을 재사용한 수정 화면(상세+기존 사진을 넘겨 폼을 채움).
+          data: (photos) => SellScreen(editDetail: detail, initialPhotos: photos),
+        );
       },
     );
   }

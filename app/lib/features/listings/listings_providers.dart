@@ -10,6 +10,7 @@ import '../../core/supabase/supabase_client.dart';
 import 'listing.dart';
 import 'listing_filters.dart';
 import 'listings_repository.dart';
+import 'photo_item.dart';
 
 /// 레포지토리 단일 인스턴스(전역 supabase 클라이언트 사용).
 final listingsRepositoryProvider = Provider<ListingsRepository>((ref) {
@@ -50,6 +51,15 @@ final editListingProvider =
   if (user == null) return null;
   final repo = ref.watch(listingsRepositoryProvider);
   return repo.fetchOwnListing(id, sellerId: user.id);
+});
+
+/// 수정 화면의 업로더 초기 목록(Story 16.7) — editListingProvider와 별도 조회다(둘 다 매물을
+/// 찾은 뒤에만 의미가 있지만, 사진은 `listing_images` 별도 테이블이라 `listings` 단일 select에
+/// 못 담는다, docs/conventions.md §10.2). autoDispose: 수정 화면을 닫으면 캐시를 버린다.
+final editListingPhotosProvider =
+    FutureProvider.autoDispose.family<List<PhotoItem>, String>((ref, id) async {
+  final repo = ref.watch(listingsRepositoryProvider);
+  return repo.fetchOwnListingPhotos(id);
 });
 
 /// 탐색 화면 상태 = (현재 입력값) + (검색 결과 목록).

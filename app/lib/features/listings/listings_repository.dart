@@ -12,6 +12,8 @@ import '../../core/supabase/supabase_client.dart';
 import 'listing.dart';
 import 'listing_filters.dart';
 import 'listing_images_bucket.dart';
+import 'photo_item.dart';
+import 'photo_sync.dart';
 
 /// 매물 상태 단일 상수(0002_listings CHECK·web LISTING_STATUS 미러 — drift 금지).
 /// on_sale=판매중(구매자 공개), sold=판매완료(구매자 비노출 FR11).
@@ -332,7 +334,9 @@ class ListingsRepository {
     return detail.withImages(urls);
   }
 
-  /// 매물 등록(INSERT, FR5) — 본인 명의로 listings 행 생성.
+  /// 매물 등록(INSERT, FR5) — 본인 명의로 listings 행 생성. **id를 반환한다**(Story 16.7) —
+  /// 사진 저장 경로가 `{user_id}/{listing_id}/…`라 방금 만든 매물의 id를 받아야 사진을 올릴 수
+  /// 있다(스테이징 경로 없음, web SellForm.tsx `.select('id').single()`과 동일 이유).
   /// 구매자 조회용 _buyerQuery(status='on_sale' 강제)를 타지 않는다(이건 "쓰기"라 별개 경로).
   ///
   /// seller_id 는 호출부가 현재 로그인 user.id 로 넘긴다(정상 경로 명시). 위조해 넘겨도
@@ -340,11 +344,16 @@ class ListingsRepository {
   /// payload 는 validateAndBuildListing 이 만든 snake_case 정수 페이로드(status='on_sale' 포함).
   ///
   /// 에러(PostgrestException 등)는 변환 없이 그대로 던진다 → 호출부(컨트롤러)가 toKoreanListingError 로 한국어화.
-  Future<void> createListing(
+  Future<String> createListing(
     Map<String, dynamic> payload, {
     required String sellerId,
   }) async {
-    await _client.from('listings').insert({...payload, 'seller_id': sellerId});
+    final row = await _client
+        .from('listings')
+        .insert({...payload, 'seller_id': sellerId})
+        .select('id')
+        .single();
+    return row['id'] as String;
   }
 
   // ──────────────────────────────────────────────────────────────────
@@ -392,6 +401,20 @@ class ListingsRepository {
     return ListingDetail.fromMap(row);
   }
 
+  /// 수정 화면 진입 시 기존 사진 목록(업로더 초기 상태, Story 16.7) — (sort_order,id) 순으로
+  /// `toPhotoItems`가 소비할 수 있는 항목으로 바꿔 반환한다. 소유권은 이 조회 자체가 아니라
+  /// listing_images의 select_own RLS(0012)가 강제한다 — 호출부(EditListingScreen)는 이미
+  /// fetchOwnListing으로 본인 매물임을 먼저 확인한 뒤에만 이 메서드를 부른다.
+  Future<List<PhotoItem>> fetchOwnListingPhotos(String listingId) async {
+    final rows = await _client
+        .from('listing_images')
+        .select('id, storage_path, sort_order')
+        .eq('listing_id', listingId)
+        .order('sort_order', ascending: true)
+        .order('id', ascending: true);
+    return toPhotoItems(rows, (p) => getPublicUrl(listingImagesBucket, p));
+  }
+
   /// 본인 매물 수정(UPDATE, FR6) — payload 는 폼이 만든 15필드(status·seller_id 미포함).
   /// .select('id') 로 갱신 행을 받아 "행 수"를 반환한다 → 0이면 RLS 차단(타인) 또는 없음.
   /// 에러는 그대로 던짐 → 컨트롤러가 toKoreanListingError 로 한국어화.
@@ -409,11 +432,24 @@ class ListingsRepository {
     return rows.length;
   }
 
-  /// 본인 매물 삭제(DELETE, FR6) — 상태 무관(정리 목적).
+  /// 본인 매물 삭제(DELETE, FR6) — 상태 무관(정리 목적). 사진 오브젝트도 함께 정리한다
+  /// (Story 16.7, docs/conventions.md §10.1 "매물 전체" 행 — ① listings 행 → ② 사진 오브젝트
+  /// 정리, 순서가 web과 반대인 이유는 photo_sync.dart의 listListingPhotoPaths 주석 참조).
   /// .select('id') 로 삭제 행 수 반환 → 0이면 RLS 차단(타인) 또는 이미 없음.
   Future<int> deleteListing(String id) async {
+    // ⚠️ 행을 지우기 **전에** 경로를 조회해 둔다 — listing_images는 listings에 on delete
+    // cascade라, 행이 먼저 사라지면 어떤 파일을 지워야 하는지 알 방법이 없어진다.
+    final paths = await listListingPhotoPaths(id, client: _client);
+
     final rows =
         await _client.from('listings').delete().eq('id', id).select('id');
+    if (rows.isEmpty) return 0; // 삭제 자체가 안 됐으면(타인·없음) 사진도 건드리지 않는다.
+
+    if (paths.ok && paths.paths.isNotEmpty) {
+      // 베스트에포트 — 정리 실패가 매물 삭제 자체를 되돌리지 않는다(§10.1, §6.1 "매물 삭제는
+      // 사진 파일도 실제로 지운다"의 실패 허용 버전).
+      await deletePhotoObjectsByPaths(paths.paths, client: _client);
+    }
     return rows.length;
   }
 

@@ -1,5 +1,7 @@
 // 매물 등록 화면(7.3, FR5 재현) — 판매자가 15필드 폼을 채워 listings 를 on_sale 로 생성한다.
-// 사진 없음(업로드 위젯 없음). 검증·INSERT 는 SellController 가 담당, 화면은 입력 수집·표시만.
+// 사진 업로더(Story 16.7, PhotoUploaderWidget) 포함. 검증·INSERT 는 SellController 가 담당,
+// 화면은 입력 수집·표시 + 사진 선택/삭제/재배치의 **로컬 상태 보관**을 맡는다(실제 업로드는
+// 제출 시점에 컨트롤러가 한다, Design Notes).
 //
 // 역할 가드(AC4): 판매자(seller)만 진입. buyer 가 어떻게든 닿으면 입력 대신 안내를 보여준다.
 //   (admin 은 core/router/app_router.dart의 GoRouter redirect가 이미 차단 — 모바일 제외 AR9.)
@@ -19,16 +21,27 @@ import '../auth/require_user.dart';
 import 'listing.dart' show ListingDetail;
 import 'listing_filters.dart' show ListingOptions;
 import 'listing_form.dart';
+import 'photo_item.dart';
+import 'photo_uploader_widget.dart';
 import 'sell_controller.dart';
 
 /// 매물 등록/수정 화면(7.3 등록 + 7.4 수정). 같은 15필드 폼을 재사용한다.
 ///   · editDetail == null → 등록 모드(INSERT).
 ///   · editDetail != null → 수정 모드(UPDATE) — 기존 값으로 폼을 채우고, 성공 시 화면을 닫는다(done).
 class SellScreen extends ConsumerStatefulWidget {
-  const SellScreen({super.key, this.editDetail, this.showAppBar = true});
+  const SellScreen({
+    super.key,
+    this.editDetail,
+    this.showAppBar = true,
+    this.initialPhotos = const [],
+  });
 
   /// 수정 대상 매물 상세(수정 모드일 때만). null 이면 등록 모드.
   final ListingDetail? editDetail;
+
+  /// 수정 모드 진입 시 이미 저장된 사진(edit_listing_screen.dart가 `listing_images`를 조회해
+  /// 넘긴다, Story 16.7). 등록 모드는 항상 빈 목록(기본값).
+  final List<PhotoItem> initialPhotos;
 
   /// 하단 4탭 셸의 '내차팔기' 브랜치 루트로 쓰일 때는 셸이 이미 공통 AppBar(제목+프로필
   /// 아바타)를 그리므로 이 화면 자신의 AppBar를 끈다(app_router.dart가 false로 넘긴다).
@@ -63,6 +76,15 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String? _region;
   bool _accidentFree = true;
 
+  /// 사진 업로더의 화면 로컬 상태(Story 16.7) — 선택·삭제·재배치는 여기서만 일어나고, 실제
+  /// 업로드/삭제/DB 반영은 폼 제출 시점에 한 번에(Design Notes). 등록 모드는 빈 목록으로 시작.
+  late List<PhotoItem> _photos;
+
+  /// 사진의 **저장 기준선** — "지금 DB에 저장돼 있는 사진이 무엇인가"(무엇을 지웠는지 판단하는
+  /// 근거, web SellForm.tsx의 baseline과 동일 역할). 제출이 끝날 때마다 "그 시점에 실제로
+  /// 저장된 것"으로 갱신한다(post-frame 콜백, 아래).
+  late List<PhotoItem> _baseline;
+
   /// 이 화면 인스턴스의 식별자. 공유 sellControllerProvider 의 상태가 "내가 시작한 것"인지
   /// 판정하는 데 쓴다 — editingId 만으로는 부족하다(후속 코드리뷰 spec-16-8 2차 리뷰 P8로
   /// 갱신: "등록 모드 화면이 동시에 둘" 뜨던 옛 경로(go_sell 퀵액션)는 spec-16-8에서 사라졌지만,
@@ -76,6 +98,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   @override
   void initState() {
     super.initState();
+    // 사진 초기 상태 — 수정 모드는 기존 저장 사진(=이 시점의 저장 기준선), 등록 모드는 빈 목록.
+    _photos = List.of(widget.initialPhotos);
+    _baseline = List.of(widget.initialPhotos);
     // 수정 모드: 기존 값으로 화면 입력 + 컨트롤러(startEdit)를 채운다.
     final detail = widget.editDetail;
     if (detail != null) {
@@ -156,7 +181,12 @@ class _SellScreenState extends ConsumerState<SellScreen> {
     // state.editingId로 폴백하지 않는다(spec-16-1). '/sell' 탭이 하단 셸에 영구 마운트되면서
     // sellControllerProvider의 autoDispose가 무력화됐고, 예전엔 submit()이 state.editingId로
     // 폴백해 직전 수정 대상 id가 다음 등록에 새어 UPDATE로 잘못 나갔다(실측된 데이터 손상 버그).
-    notifier.submit(editingId: widget.editDetail?.id, owner: _owner);
+    notifier.submit(
+      editingId: widget.editDetail?.id,
+      owner: _owner,
+      photos: _photos,
+      baseline: _baseline,
+    );
   }
 
   /// 등록 성공 시 폼 입력 위젯을 비운다(컨트롤러는 입력을 초기화했지만 화면 컨트롤러도 맞춘다).
@@ -177,6 +207,11 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       _transmission = null;
       _region = null;
       _accidentFree = true;
+      // 등록 성공은 다음 등록을 위한 빈 폼이 원칙이다 — 컨트롤러도 사진을 []로 되돌린다
+      // (sell_controller.dart 등록 분기). 실패한 사진이 있었더라도 매물 자체는 이미 저장됐으니
+      // "내 매물"에서 다시 열어 재시도할 수 있다(edit_listing_screen.dart가 그 진입점).
+      _photos = [];
+      _baseline = [];
     });
   }
 
@@ -225,10 +260,20 @@ class _SellScreenState extends ConsumerState<SellScreen> {
           // 수정 성공 → 화면을 닫고 목록으로 복귀(true 를 돌려줘 목록이 새로고침하게).
           if (current.done && Navigator.of(context).canPop()) {
             Navigator.of(context).pop(true);
+            return;
+          }
+          // done이 아니면 사진 처리 중 일부가 실패해 화면에 남아 있다(sell_controller.dart) —
+          // 실제로 저장된 상태로 로컬 업로더를 갱신해 재시도할 수 있게 한다. 기준선도 "지금
+          // 실제로 저장된 것"으로 옮긴다(저장된 항목만 — rowId가 있는 것 = DB에 행이 있는 것).
+          if (current.photos != null && mounted) {
+            setState(() {
+              _photos = current.photos!;
+              _baseline = _photos.where((p) => p.rowId != null).toList();
+            });
           }
         } else {
-          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비).
-          if (_model.text.isNotEmpty) _resetFields();
+          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비, 사진 포함).
+          if (_model.text.isNotEmpty || _photos.isNotEmpty) _resetFields();
         }
       });
     }
@@ -353,6 +398,14 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                   _description,
                   hint: '차량 상태·이력 등을 자유롭게',
                   maxLines: 3,
+                ),
+                const SizedBox(height: 16),
+
+                // 사진(선택, Story 16.7) — 대표는 순서 0번(AC1). 실제 업로드는 제출 시점.
+                PhotoUploaderWidget(
+                  items: _photos,
+                  onChanged: (next) => setState(() => _photos = next),
+                  disabled: busy,
                 ),
                 const SizedBox(height: 16),
 

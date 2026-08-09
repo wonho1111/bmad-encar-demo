@@ -43,11 +43,12 @@ class _RecordingRepo extends ListingsRepository {
   final Completer<void>? gate;
 
   @override
-  Future<void> createListing(
+  Future<String> createListing(
     Map<String, dynamic> payload, {
     required String sellerId,
   }) async {
     if (gate != null) await gate!.future;
+    return 'recorded-listing-id';
   }
 
   @override

@@ -228,10 +228,13 @@ class _GatedRepo extends ListingsRepository {
   final Completer<void> gate;
 
   @override
-  Future<void> createListing(
+  Future<String> createListing(
     Map<String, dynamic> payload, {
     required String sellerId,
-  }) async => gate.future;
+  }) async {
+    await gate.future;
+    return 'gated-listing-id';
+  }
 
   @override
   Future<int> updateListing(String id, Map<String, dynamic> payload) async {

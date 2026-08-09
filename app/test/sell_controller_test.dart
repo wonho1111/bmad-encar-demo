@@ -54,11 +54,12 @@ class _RecordingRepo extends ListingsRepository {
   final updateCalls = <String>[];
 
   @override
-  Future<void> createListing(
+  Future<String> createListing(
     Map<String, dynamic> payload, {
     required String sellerId,
   }) async {
     createCalls.add(payload);
+    return 'created-listing-id';
   }
 
   @override

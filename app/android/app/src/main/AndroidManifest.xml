@@ -2,6 +2,9 @@
     <!-- 인터넷 권한: Supabase·AI API 호출에 필수. Flutter는 이 권한을 debug/profile 매니페스트에만
          자동 주입하므로, release(운영) 빌드에서 네트워크가 막히지 않도록 메인 매니페스트에 직접 선언한다. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 카메라 권한: 매물 사진 업로더(Story 16.7)의 "카메라로 촬영" 옵션에 필요.
+         갤러리 선택은 시스템 포토피커(image_picker의 pickMultiImage)라 별도 권한이 필요 없다. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="app"
         android:name="${applicationName}"

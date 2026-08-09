@@ -548,7 +548,7 @@ location: `supabase/migrations/0012_listing_images.sql:119-150`(`listing_images_
 severity: high
 reason: sold 매물은 FR11(기능 요구사항 11번)로 구매자 경로 어디에도 노출되지 않고, web 수정 화면도 이미 sold를 막고 있어 오늘은 무해하다.
 trigger: **Epic 16.2**(앱 사진 업로더) — 그때 web과 같은 화면 방어를 또 짜지 말고 `listing_images` 쓰기 3정책에 `and l.status <> 'sold'`를 넣는다.
-status: open
+status: done 2026-08-09 — `supabase/migrations/0031_listing_images_sold_write_block.sql`이 `listing_images_insert_own`·`update_own`·`delete_own` 3정책에 `and l.status <> 'sold'`를 추가(spec-16-7, DB 레벨 강제).
 
 - **위치:** `supabase/migrations/0012_listing_images.sql:119-150`(`listing_images_insert_own`·`update_own`·`delete_own`)
 - **내용:** RLS 조건은 **테이블마다 따로 붙는다.** `0015`는 `listings`에만 `status <> 'sold'`를 넣었고, `listing_images`의 쓰기 정책 3개는 여전히 *"이 사진이 달린 매물의 주인이 나인가"* 만 본다. **원격 `pg_policies` 조회로 확인**(2026-07-21): 세 정책 어디에도 status 조건이 없다. 즉 판매완료된 매물의 사진을 추가·교체·삭제하는 것은 **DB가 막지 않는다.**
@@ -1025,7 +1025,7 @@ location: `app/lib/features/listings/sell_screen.dart` — 주석 원문 *"사�
 severity: medium
 reason: 앱은 아직 사진을 표시하지도 않아(`listing.dart:47` `imageUrl`은 예약만 됨) 웹 업로더가 생기면 앱은 9.x 소비 스토리(16-2)에서 표시부터 붙는 순서라 오늘은 무해하다.
 trigger: Epic 16 착수 시. **그 전에 `epics-increment-2026-07-12.md`의 Epic 16에 스토리를 실제로 추가해야 한다**(문서에 없으면 sprint-planning이 다시 만들어도 또 빠진다) — `correct-course` 소관.
-status: open
+status: done 2026-08-09 — spec-16-7이 `PhotoUploaderWidget`(`app/lib/features/listings/photo_uploader_widget.dart`) + 네이티브 피커(`image_picker`)를 등록/수정 폼에 배선. `sell_screen.dart`의 "사진 없음" 주석은 이 스토리로 해소.
 
 - **위치:** `app/lib/features/listings/sell_screen.dart` — 주석 원문 *"사진 없음(업로드 위젯 없음)"*. `app/pubspec.yaml`에 `image_picker`·`file_picker`·`camera` **없음**(grep 0건).
 - **내용:** Story 9.3 AC 원문(`epics-increment-2026-07-12.md:489-506`)은 "매물 등록/수정 폼"이라고만 하고 플랫폼을 한정하지 않는다. 그런데 **Epic 16(Flutter 앱 증분 반영) 6개 스토리 어디에도 사진 업로더가 없다** — 16-2는 "이미지 **카드** 재설계(앱)"로 **읽기 측**이다. 즉 현재 계획을 그대로 끝내면 **앱 판매자는 사진을 영영 못 올린다**(웹에서만 가능).
@@ -5619,6 +5619,24 @@ trigger: **Epic 16-6(SM-D 통합 시연 검증) 착수 시** — 그 스토리�
 decision: **2026-08-09 사용자 결정 — ①(앱 상세 진입에도 RPC를 붙인다).** ②(표시만 한다)는 기각. 근거: 데모가 앱 단독으로 돌아가는데 앱이 신호를 만들지 않으면 "지금 인기"가 라벨과 다른 것을 보여준다. 물어보기로 한 시점(16-6 착수)보다 먼저 답이 나왔으므로 **결정을 여기 못박고 Story 16.6 인수조건에 심었다**(CLAUDE.md B5 — 회고·결정 약속은 다음 스토리의 인수조건으로 심지 않으면 이행되지 않는다). 이행 자리 = `epics-increment-2026-07-12.md` Story 16.6 AC(선행 구현 항목). 16.6은 **검증** 스토리지만 이 한 줄 구현이 없으면 그 스토리가 검증할 대상 자체가 성립하지 않으므로 같은 스토리에 둔다.
 related: [[DW-736]](이 항목이 드러난 스토리) · [[DW-738]](같은 "앱이 웹 요구사항의 절반만 구현한 자리" 계열)
 status: open — 결정 완료, 구현 대기(Story 16.6)
+
+### DW-742: 사진 업로더 카메라/갤러리 권한 요청이 실기기에서 실제로 뜨는지 미검증
+
+origin: spec-16-7-앱-사진-업로더 Verification "Manual checks" — 샌드박스 제약으로 실행 불가
+location: `app/android/app/src/main/AndroidManifest.xml`(CAMERA 권한 선언) · `app/lib/features/listings/photo_uploader_widget.dart`(카메라/갤러리 바텀시트)
+severity: low
+reason: 이 샌드박스엔 Android SDK·에뮬레이터·실기기가 없다(선례: e2e-selftest-env-blockers 메모). `flutter analyze`·`flutter test`·`flutter build apk --debug`는 전부 green이고, `app/test/sell_screen_photo_test.dart`가 `ImagePickerPlatform.instance`를 가짜로 갈아 끼워 추가·정원·삭제·재시도 로직은 검증했지만, 그건 "권한 요청 UI 자체가 실제로 뜨는가"는 대신하지 못한다(가짜 플랫폼은 권한 다이얼로그를 아예 거치지 않는다).
+trigger: 실 안드로이드 기기(또는 에뮬레이터)를 쓸 수 있게 되는 시점 — 늦어도 **Epic 16-6(SM-D 통합 시연 검증)**에서 판매자 동선을 실기기로 훑을 때 카메라 권한 다이얼로그가 실제로 뜨는지 눈으로 확인하고 그 자리에서 닫는다.
+status: open
+
+### DW-743: 매물 삭제 시 사진 오브젝트 정리(AC5)가 실제 Storage API로는 미검증
+
+origin: spec-16-7-앱-사진-업로더 AC5 — dev 세션이 이 실측 도중 OOM으로 죽어(run 20260809-013506-d92f) 끝내지 못했고, 사람이 인수해 재시도했으나 아래 이유로 못 했다.
+location: `app/lib/features/listings/listings_repository.dart:deleteListing`(경로 선조회 → 행 삭제 → 오브젝트 정리) · `app/lib/features/listings/photo_sync.dart:listListingPhotoPaths`/`deletePhotoObjectsByPaths`
+severity: low
+reason: **SQL로는 이 AC를 측정할 수 없다(실측으로 확인).** `storage.objects`에 직접 `delete`를 쏘면 `storage.protect_delete()` 트리거가 *"Direct deletion from storage tables is not allowed. Use the Storage API instead."* 로 막는다 — 즉 오브젝트 삭제는 **Storage HTTP API를 통해서만** 관측할 수 있고, 그러려면 로컬 자격증명을 읽어야 하는데 이 세션에선 그 접근이 차단돼 있다. 대신 코드 계약은 단위테스트로 덮여 있다: `photo_sync_test.dart`의 `listListingPhotoPaths`(행 삭제 **전** 경로 확보, 조회 실패를 "사진 없음"으로 갈음하지 않음) 2건 + `deletePhotoObjectsByPaths`(하나 실패해도 나머지 계속, 빈 목록은 성공) 2건. 덮이지 **않은** 것은 "그 호출이 실제 버킷에서 파일을 없애는가" 한 가지다.
+trigger: **Epic 16-6(SM-D 통합 시연 검증)** — 실기기로 판매자 동선을 훑을 때 사진 있는 테스트 매물을 하나 삭제하고, Supabase Studio의 Storage 탭에서 그 매물 경로(`{user_id}/{listing_id}/`)가 비었는지 눈으로 확인하고 닫는다. [[DW-742]]와 같은 자리에서 함께 처리한다.
+status: open
 
 ### DW-741: Follow-up review still recommended for 16-8-앱-홈-랜딩-미러 after the review budget was exhausted
 origin: review-budget-followup
