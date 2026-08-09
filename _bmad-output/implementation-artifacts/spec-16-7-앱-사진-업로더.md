@@ -2,9 +2,9 @@
 title: '16.7 앱 사진 업로더'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-review'
+status: 'done'
 baseline_revision: '1bdd2ad61965bde6a1d9398aa0eca358e66aa388'
-final_revision: '0fef5d65d938eb3c4c1b0f5fe11bb6ecd59121aa'
+final_revision: '1f4f8ffd9388b7ad76203b0515f2c0f5ab0b391a'
 review_loop_iteration: 0
 followup_review_recommended: true
 context: ['{project-root}/docs/conventions.md']
