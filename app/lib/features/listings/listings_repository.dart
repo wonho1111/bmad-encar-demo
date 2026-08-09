@@ -29,17 +29,24 @@ const String buyerVisibleStatus = statusOnSale;
 /// `ListingDetail.fromMap`이 그 값을 null로만 받아 상세 화면의 신뢰속성 섹션 전체(AC2)가
 /// 조용히 렌더되지 않는데, 이 두 select 문자열을 직접 보는 테스트가 없었다(코드리뷰 지적) —
 /// 이 상수를 테스트가 직접 단언한다.
-/// anon(비로그인)이 이 select를 그대로 쓰면 신뢰속성 3컬럼 때문에 `42501 permission denied`로
-/// select 전체가 실패한다(§4.1 anon 단서와 동일 근거, web `/search`·`/listings/[id]`는 `user ?
-/// trustColumns : ''`로 직접 분기한다) — 이 앱은 app_router.dart의 전역 redirect가 모든 화면을
-/// 로그인 필수로 강제해 이 경로에 anon이 닿지 않는다(코드리뷰 지적 P15, 강제 지점은
-/// app_router.dart의 redirect).
+///
+/// [authed]로 신뢰속성 3컬럼을 분기한다 — anon(비로그인)이 그 3컬럼을 select하면 `42501
+/// permission denied`로 **select 전체**가 실패한다(§4.1 anon 단서와 동일 근거, web
+/// `popularRecentColumns(authed)`(listings.ts)와 같은 패턴).
+/// ⚠️ 이 파라미터가 왜 필요해졌나(spec-16-6 인수 경위) — 이 주석은 한때 "app_router.dart의
+/// 전역 redirect가 모든 화면을 로그인 필수로 강제해 이 경로에 anon이 닿지 않는다"고 적혀
+/// 있었다(코드리뷰 지적 P15). 그 전제는 16.6이 `/home`을 anon 화이트리스트에 넣으면서
+/// 깨졌다 — 실기기 실측(anon으로 홈 진입 → "지금 인기"·"방금 올라온 매물" 두 섹션이 42501로
+/// 전부 실패, REST로 컬럼 단위 이분 탐색해 원인 확인)으로 드러났다. 상세도 `/home`에서
+/// `Navigator.push`로 열리는 화면이라 같은 문제를 그대로 진다.
 @visibleForTesting
-const String listingDetailColumns =
-    'id, seller_id, manufacturer, model, body_type, year, price, mileage, '
-    'color, fuel, transmission, displacement, seats, region, accident_free, '
-    'accident_status, is_single_owner, is_non_smoker, '
-    'seller_name, options, description, status';
+String listingDetailColumns(bool authed) {
+  final trustColumns =
+      authed ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  return 'id, seller_id, manufacturer, model, body_type, year, price, mileage, '
+      'color, fuel, transmission, displacement, seats, region, accident_free, '
+      'seller_name, options, description, status$trustColumns';
+}
 
 /// 대표사진 계산 결과 하나 — 매물 1건의 (sort_order, id) 최솟값 행 경로 + 계약-검증 통과 행 수.
 class _CoverPick {
@@ -185,15 +192,28 @@ List<String> buildGalleryUrls(
 /// 있다(신뢰속성 3컬럼이 listingDetailColumns에서 빠져도 조용히 통과했던 것과 같은 실패
 /// 모드, 이미 이 리포에서 실측·해소된 패턴). 상수 하나로 합쳐 두 메서드가 실제로 참조하는지를
 /// 테스트가 직접 단언한다.
+///
+/// [authed]로 신뢰속성 3컬럼을 분기한다 — `listingDetailColumns`와 동일 이유·동일 실측 근거
+/// (spec-16-6 인수 경위: anon으로 홈 진입 시 이 컬럼들 때문에 "지금 인기"·"방금 올라온 매물"
+/// select 전체가 42501로 실패했다). 탐색 화면(`fetchListings`)도 `/home`에서 push로 열려
+/// anon이 닿을 수 있어 같은 분기가 필요하다.
 @visibleForTesting
-const String listingCardColumns =
-    'id, manufacturer, model, year, price, mileage, region, seller_name, '
-    'fuel, accident_status, is_single_owner, is_non_smoker, options';
+String listingCardColumns(bool authed) {
+  final trustColumns =
+      authed ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  return 'id, manufacturer, model, year, price, mileage, region, seller_name, '
+      'fuel, options$trustColumns';
+}
 
 class ListingsRepository {
   ListingsRepository({SupabaseClient? client}) : _client = client ?? supabase;
 
   final SupabaseClient _client;
+
+  /// 로그인 여부 — `listingCardColumns`/`listingDetailColumns`의 [authed] 분기에 쓴다.
+  /// anon(비로그인)은 신뢰속성 3컬럼을 select할 수 없다(0011 GRANT 화이트리스트 밖, 42501) —
+  /// web이 `!!user`로 판정하는 것과 동일하게, 여기서는 현재 Supabase 세션 유무로 판정한다.
+  bool get _authed => _client.auth.currentUser != null;
 
   /// 구매자 관점 조회 시작점 — from('listings').select(columns).eq('status','on_sale').
   /// 호출부가 이어서 필터·정렬·단건 조회를 체이닝한다. FR11 규칙이 여기서만 비롯된다.
@@ -207,7 +227,7 @@ class ListingsRepository {
   /// 매물 목록(요약 7필드) — 필터 적용 + created_at desc, id desc 안정 정렬.
   /// 필터는 값이 있을 때만 체이닝(web SearchPage 와 동일). 키워드는 model ilike.
   Future<List<ListingCardData>> fetchListings(ResolvedFilters f) async {
-    var query = _buyerQuery(listingCardColumns);
+    var query = _buyerQuery(listingCardColumns(_authed));
 
     if (f.keyword != null) {
       query = query.ilike('model', '%${f.keyword}%'); // 모델명 부분일치(대소문자 무시).
@@ -252,7 +272,7 @@ class ListingsRepository {
   /// (_fetchCovers/attachCoverImages 재사용) — 인기 매물도 같은 ListingCard 위젯으로 그려지므로
   /// 계약을 두 조회 경로에서 갈라 두지 않는다.
   Future<List<ListingCardData>> fetchPopularListings({int limit = 4}) async {
-    final rows = await _buyerQuery(listingCardColumns)
+    final rows = await _buyerQuery(listingCardColumns(_authed))
         .order('view_count', ascending: false)
         .order('id', ascending: false)
         .limit(limit);
@@ -297,7 +317,7 @@ class ListingsRepository {
   /// 단일 매물 상세 — 구매자 관점(판매중만) + id 일치. 0건이면 null(없음·sold·삭제).
   /// web listings/[id] 의 maybeSingle 패턴.
   Future<ListingDetail?> fetchListing(String id) async {
-    final row = await _buyerQuery(listingDetailColumns).eq('id', id).maybeSingle();
+    final row = await _buyerQuery(listingDetailColumns(_authed)).eq('id', id).maybeSingle();
 
     if (row == null) return null;
     final detail = ListingDetail.fromMap(row);
@@ -408,7 +428,7 @@ class ListingsRepository {
   }) async {
     final row = await _client
         .from('listings')
-        .select(listingDetailColumns)
+        .select(listingDetailColumns(_authed))
         .eq('id', id)
         .eq('seller_id', sellerId)
         .maybeSingle();

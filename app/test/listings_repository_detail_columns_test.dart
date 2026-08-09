@@ -11,11 +11,25 @@ import 'package:app/features/listings/listings_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('listingDetailColumns — 신뢰속성 3컬럼(accident_status·is_single_owner·is_non_smoker)을 포함한다',
+  test(
+      'listingDetailColumns(authed: true) — 신뢰속성 3컬럼(accident_status·is_single_owner·is_non_smoker)을 포함한다',
       () {
-    expect(listingDetailColumns, contains('accident_status'));
-    expect(listingDetailColumns, contains('is_single_owner'));
-    expect(listingDetailColumns, contains('is_non_smoker'));
+    expect(listingDetailColumns(true), contains('accident_status'));
+    expect(listingDetailColumns(true), contains('is_single_owner'));
+    expect(listingDetailColumns(true), contains('is_non_smoker'));
+  });
+
+  // spec-16-6 인수 경위(실기기 실측) — anon(비로그인)이 신뢰속성 3컬럼을 select하면
+  // `42501 permission denied`로 select **전체**가 실패한다(0011 GRANT 화이트리스트 밖).
+  // 상세도 `/home`에서 push로 열려 anon이 닿을 수 있으므로(spec-16-6 FR58) 같은 방어가 필요.
+  test('listingDetailColumns(authed: false) — 신뢰속성 3컬럼을 select하지 않는다(anon 42501 회피)', () {
+    final cols = listingDetailColumns(false);
+    for (final col in ['accident_status', 'is_single_owner', 'is_non_smoker']) {
+      expect(cols, isNot(contains(col)),
+          reason: 'anon 조회에 $col이 섞이면 select 전체가 42501로 실패한다');
+    }
+    // accident_free(신뢰속성과 별개, NOT NULL bool)는 anon에게도 공개된 컬럼이라 그대로 남아야 한다.
+    expect(cols, contains('accident_free'));
   });
 
   // 코드리뷰 지적(P11) — 위 테스트는 "상수 내용"만 본다. `fetchListing`·`fetchOwnListing`이
@@ -61,11 +75,15 @@ void main() {
     final fetchOwnListingBody =
         content.substring(fetchOwnListingBodyStart, fetchOwnListingEnd);
 
-    final identifierPattern = RegExp(r'\blistingDetailColumns\b');
-    expect(identifierPattern.hasMatch(fetchListingBody), isTrue,
-        reason: 'fetchListing이 listingDetailColumns 상수를 참조하지 않는다');
-    expect(identifierPattern.hasMatch(fetchOwnListingBody), isTrue,
-        reason: 'fetchOwnListing이 listingDetailColumns 상수를 참조하지 않는다');
+    // spec-16-6 후속 리뷰(verification-gap 렌즈, 실측 확인) — 식별자만 찾으면
+    // `listingDetailColumns(true)`로 하드코딩해도(이번에 고친 것과 똑같은 anon 42501 회귀) 계속
+    // 통과한다. 실제로 `(_authed)` 인자가 배선됐는지까지 소스텍스트로 단언한다.
+    final wiredPattern = RegExp(r'listingDetailColumns\(_authed\)');
+    expect(wiredPattern.hasMatch(fetchListingBody), isTrue,
+        reason: 'fetchListing이 listingDetailColumns(_authed)로 호출하지 않는다 — '
+            '리터럴 true로 하드코딩되면 anon 상세 조회가 42501로 다시 전체 실패한다');
+    expect(wiredPattern.hasMatch(fetchOwnListingBody), isTrue,
+        reason: 'fetchOwnListing이 listingDetailColumns(_authed)로 호출하지 않는다');
 
     // 파일 전체에서 'accident_free' 리터럴이 listingDetailColumns 선언 1곳에만 있어야 한다 —
     // 다른 자리(예: 위 두 메서드 중 하나가 리터럴 select 문자열로 되돌아간 경우)에 또

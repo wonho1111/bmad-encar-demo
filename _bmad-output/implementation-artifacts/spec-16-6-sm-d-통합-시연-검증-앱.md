@@ -2,10 +2,10 @@
 title: '16.6 SM-D 통합 시연 검증 (앱)'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-progress'
-baseline_revision: 'c836b35b07a03976dc74e026268c96c76c2b1728'
+status: 'in-review'
+baseline_revision: 'bf8421e421635e0ab613156711adea28078c2e27'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-16-context.md'
   - '{project-root}/docs/conventions.md'
@@ -162,13 +162,50 @@ dev-1의 구현분은 커밋으로 인수했으므로 **같은 구현을 다시 
 
 ### 남은 일
 
-- [ ] 위 3번을 앱에 반영: `listingCardColumns`를 로그인 여부로 갈라 select하고, 비로그인 결과의 신뢰속성 3필드를 `null`로 정규화.
+- [x] 위 3번을 앱에 반영: `listingCardColumns`를 로그인 여부로 갈라 select하고, 비로그인 결과의 신뢰속성 3필드를 `null`로 정규화.
       상세(`listingDetailColumns`)도 같은 축에서 **실제로 확인할 것**(추측 금지 — 비로그인 상세 진입이 이 스토리 여정에 있다).
-- [ ] 그 수정이 **실기기에서 실제로 카드를 그리는 것까지** 확인(존재 확인 ≠ 작동 확인). 지금은 두 섹션 모두 실패 문구다.
-- [ ] 그 다음에 원래의 Manual checks(FR26~58 여정, 상세 열람 전/후 "지금 인기" 순서 변화, 찜·문의·AI전송 3곳 로그인 유도)를 진행.
+- [x] 그 수정이 **실기기에서 실제로 카드를 그리는 것까지** 확인(존재 확인 ≠ 작동 확인). anon으로 두 섹션 모두 실제 카드 렌더 확인(DW-754 종결 서술).
+- [x] 그 다음에 원래의 Manual checks(FR26~58 여정, 상세 열람 전/후 "지금 인기" 순서 변화, 찜·문의·AI전송 3곳 로그인 유도)를 진행 — 후속 리뷰 세션에서 스크린샷 증거로 재확인, `spec-16-6-evidence/` 참조.
 
 ### 기기 상태 (재개 시점)
 
 - `adb connect 192.168.219.103:36959` 로 연결됨, 잠금 해제됨, **충전 중 화면 켜짐 유지**(`stay_on_while_plugged_in=15`)라 충전기가 꽂혀 있으면 다시 안 잠긴다.
 - 앱(`com.encardemo.app`)은 **prod 백엔드 APK**가 설치돼 있고 `pm clear`로 세션이 지워져 **로그아웃 상태**다.
   ⚠️ 이전 설치본의 낡은 refresh token 때문에 앱이 `AuthApiException(refresh_token_not_found)`로 **"설정 필요" 오류 화면에 갇히는 것**을 실측했다(`pm clear`로 해소). 재설치·백엔드 전환 후 같은 화면이 뜨면 이걸 의심할 것.
+
+## Review Triage Log
+
+### 2026-08-09 — Review pass
+- intent_gap: 0
+- bad_spec: 0
+- patch: 2 (medium 2, high 0, low 0)
+- defer: 1 (low 1)
+- reject: 7
+- addressed_findings:
+  - `[medium]` `[patch]` `listingCardColumns`/`listingDetailColumns` 회귀 방지 테스트가 호출부 소스텍스트에서 식별자 등장만 확인하고 실제로 `(_authed)` 인자가 배선됐는지는 확인하지 않았다(verification-gap 렌즈가 4개 호출부를 전부 `(true)`로 하드코딩해도 테스트가 green임을 실측으로 확인) — `app/test/listings_repository_card_columns_test.dart`·`app/test/listings_repository_detail_columns_test.dart`의 참조 검사를 `listingCardColumns\(_authed\)`/`listingDetailColumns\(_authed\)` 리터럴까지 좁히도록 고쳤다. 4개 호출부를 실제로 `(true)`로 되돌려 신규 단언이 red로 잡히는 것을 확인한 뒤(가드 증명) 복구해 green 재확인, `flutter test` 436/436 green.
+  - `[medium]` `[patch]` 스펙 Always 절이 요구하는 실기기 스크린샷/화면녹화가 이 세션 산출물 어디에도 저장돼 있지 않았다(파일시스템 확인 — PNG·녹화 파일 0건) — 기기(SM-G991N)가 여전히 연결·잠금해제 상태라 mobile-mcp로 재접속해 핵심 시나리오 9건의 스크린샷을 직접 캡처·저장했다: `지금 인기` 뷰 전/후 순위 변화(REST `view_count` 2→3 실측 교차확인 포함), 로그아웃 상태 홈·상세 도달, 찜 하트·문의하기·AI검색 3곳 로그인 유도. `_bmad-output/implementation-artifacts/spec-16-6-evidence/`(`README.md`가 각 파일을 AC와 매핑) 참조.
+
+## Auto Run Result — 최종 (2026-08-09, 후속 리뷰 세션 마감)
+
+**요약**: dev-1(라우터 화이트리스트·RPC 배선·행동 게이트 3곳)과 사람 세션(PIN 해제 후 anon 42501 결함 발견)의 인수분 위에서, 이 세션은 (1) `listingCardColumns`/`listingDetailColumns`를 `authed` 분기 함수로 바꿔 anon의 신뢰속성 3컬럼 select를 제거하고, (2) 4개 호출부 전체를 실기기(SM-G991N)에서 anon·authed 양쪽으로 재현 검증했으며, (3) 독립 리뷰(adversarial·edge-case-hunter·verification-gap·intent-alignment 4개 렌즈)를 거쳐 테스트 커버리지 갭 1건과 증거 누락 1건을 patch로 즉시 수정하고, 이번 변경이 노출한 별개의 pre-existing 스테일니스 결함 1건을 장부(DW-758)에 등재했다.
+
+**Files changed (이번 리뷰 패스, dev-1 인수분 제외):**
+- `app/lib/features/listings/listings_repository.dart` — `listingCardColumns`/`listingDetailColumns`를 `authed` 분기 함수로, `_authed` getter 신설, 4개 호출부(`fetchListings`·`fetchPopularListings`·`fetchListing`·`fetchOwnListing`) 배선.
+- `app/test/listings_repository_card_columns_test.dart`, `app/test/listings_repository_detail_columns_test.dart` — `authed:false` 케이스 추가 + 참조 검사를 `(_authed)` 리터럴까지 좁힘(리뷰 patch).
+- `_bmad-output/implementation-artifacts/deferred-work.md` — DW-738·DW-740·DW-754 done 종결, DW-755~758 신규 등재.
+- `_bmad-output/implementation-artifacts/spec-16-6-evidence/*.png` + `README.md` — 실기기 스크린샷 9건(리뷰 patch).
+
+**Review findings breakdown:** patch 2(medium 2) 적용·검증 완료 / defer 1(low, DW-758) 등재 / reject 7(무근거·이미 다른 자리에서 추적 중·실측 후 오탐으로 확인된 것 포함, `fetchOwnListing` 데이터유실 의심은 Explore 서브에이전트로 update payload 경로를 직접 추적해 오탐으로 확인).
+
+**Follow-up review recommendation:** `true` — 이번 패스 patch 2건 전부 medium, 점수 3×2+0=6 (≥5 기준 충족). `followup_review_recommended: true`로 기록.
+
+**Verification performed:**
+- `flutter analyze` — 0 issues
+- `flutter test` — 436/436 green(패치 반영 후 재확인)
+- `flutter build web --dart-define-from-file=.env.json` — 빌드 성공
+- 가드 증명: 4개 호출부를 `(true)`로 하드코딩 → 신규 참조 검사 2건 red 확인 → 백업본으로 원복(`git checkout` 미사용) → green 재확인
+- 실기기(SM-G991N, mobile-mcp): anon 홈 두 섹션 실제 카드 렌더, anon 상세 렌더, `지금 인기` 순위 변화(REST `view_count` 2→3 교차 확인), 찜 하트·문의하기·AI검색 3곳 전부 로그인 리다이렉트 — `spec-16-6-evidence/` 스크린샷 9건으로 증거화.
+
+**Residual risks:**
+- DW-758(로그인/로그아웃 시 `recentListingsProvider`/`popularListingsProvider` 미무효화로 인한 표시 지연·오염)은 저위험 표시 전용 결함으로 defer 처리 — 다음 `app_router.dart` 인증 리스너 작업 시 DW-756과 함께 고치는 편이 자연스럽다.
+- DW-755(AI 히어로 레이아웃 목업 불일치)·DW-757(판매자 정보 패널 미구현)은 이 스토리 범위 밖으로 남아 있다(사용자 판단 대기).

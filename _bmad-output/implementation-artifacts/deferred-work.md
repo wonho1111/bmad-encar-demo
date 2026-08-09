@@ -5748,4 +5748,57 @@ why_it_matters: 이 스토리의 Block If는 "ADBKeyBoard.apk를 구할 수 없�
 fix_sketch: 사람이 기기 PIN을 입력해 잠금을 풀거나(다음 세션에 PIN을 알려주거나 직접 풀어둔다), 잠금이 없는 상태로 화면을 켜 둔다. 그 뒤 이 스토리의 Manual checks를 그대로 이어간다 — ADBKeyBoard.apk 확보·설치·IME 전환 → 로그인 상태로 FR26~58 여정 재현 → 로그아웃 후 홈·탐색·상세 도달 + 찜/문의/AI전송 3곳 확인 → 상세 열람 전/후 "지금 인기" 순서 변화 확인. 전 과정 스크린샷/녹화로 남긴다(스토리 Always 요구).
 scope_note: 코드·자동테스트는 이 스토리 범위 안에서 이미 완료. 이 항목은 **그 코드가 실제로 잠금 해제된 실기기에서 요구사항대로 동작하는지**의 잔여 검증분이다 — "존재 확인≠작동 확인"(CLAUDE.md B4)의 마지막 층이 아직 안 닫힌 상태.
 trigger: 사람이 기기 PIN을 풀어주거나 알려주는 즉시 재시도. 그 전까지 이 항목을 열어 둔다.
+status: done # 2026-08-09 후속 dev 세션 — 사람이 잠금을 풀어준 뒤(인수 경위 절 참조) 재개. 재개 직후 실기기 실측으로 **새 결함**이 먼저 잡혔다: anon(비로그인) 홈 진입 시 "지금 인기"·"방금 올라온 매물" 두 섹션이 전부 "불러오지 못했습니다"로 실패 — `listingCardColumns`/`listingDetailColumns`(listings_repository.dart)가 신뢰속성 3컬럼(`accident_status`·`is_single_owner`·`is_non_smoker`)을 anon에도 무조건 select해 0011 GRANT 화이트리스트 밖이라 `42501 permission denied`로 select 전체가 죽었다(REST로 anon 키 직접 조회, 컬럼 이분 탐색해 원인 확정 — web `popularRecentColumns(authed)`와 같은 함정, 앱만 안 열려 있었다). 두 상수를 `authed` 파라미터로 분기하는 함수로 바꾸고(web과 동일 패턴), `ListingsRepository._authed`(`_client.auth.currentUser != null`)로 4개 호출부(`fetchListings`·`fetchPopularListings`·`fetchListing`·`fetchOwnListing`)에 배선 — anon일 때 그 3컬럼을 아예 select하지 않는다(`ListingDetail.fromMap`/`ListingCardData.fromMap`이 없는 키를 이미 null로 받으므로 별도 정규화 함수는 불필요, web `normalizeAnonTrustColumns`와 달리 Dart Map 접근이 자연히 이 계약을 만족). 회귀 방지 테스트 2건 추가(`listings_repository_card_columns_test.dart`·`listings_repository_detail_columns_test.dart`에 각각 `authed:false` 케이스) — 수정 전 코드로 되돌려 실제로 red임을 확인한 뒤(가드 증명, CLAUDE.md B4) 복구해 green 재확인. 그 다음 실기기(SM-G991N, `adb connect 192.168.219.103:36959`)에서 전 여정을 실제로 재현했다: **anon** — 홈 두 섹션 모두 실제 카드로 렌더(수정 확인) · 매물 카드 탭 → 상세 진입 정상 렌더(옵션·설명·크래시 없음) · 문의하기 버튼 렌더+탭→`/login` 이동(방 생성 없음) · 찜 하트 탭(카드·상세 인라인 둘 다)→`/login` 이동(서버 쓰기 없음) · AI 히어로는 별도 확인 안 함(비로그인 홈에 진입점 있음, 탭하면 상세와 동일하게 `/login` 게이트가 코드상 걸림, 실측은 로그인 후 별도로 함). **RPC 1회 호출 + 순서 변화** — REST로 `view_count` 직접 조회해 G70을 실기기에서 2회 열람 → 1→3으로 정확히 +2(방문당 정확히 +1), "지금 인기" 4위였던 G70이 3위 싼타페(2)를 추월해 3위로 승격하는 걸 화면·REST 양쪽에서 확인(AC1 충족). **로그인 여정(buyer@test.com)** — 신뢰속성 배지(무사고/1인소유) 렌더 확인 · 찜 토글(하트 채움+찜 목록 반영) · 실시간 채팅방에 ADBKeyBoard로 실제 한글 문장("안녕하세요 이 매물 아직 판매중인가요") 전송·렌더 확인(재연결 배너도 실측 — 논블로킹으로 계속 작성 가능, FR41과 일치) · AI 검색에 한글 질의("3천만원 이하 무사고 SUV 추천해줘") 전송 → 실제 SUV 카드 응답(신뢰뱃지 포함) 확인 · 안읽음 배지(채팅 탭 "1" → 읽으면 사라짐) 확인 · 회원가입(`spec166verify@test.com`)을 실제로 완료해 REST 로그인으로 계정 생성 확인. **ADBKeyBoard** — 이 기기엔 이미 설치돼 있었다(`com.android.adbkeyboard/.AdbIME`, 이전 세션 잔존 추정) — `ime set`으로 전환, `am broadcast -a ADB_INPUT_TEXT --es msg '<완성형 한글, 공백 포함>'`로 실제 한글 입력 성공(리포에 선례가 없어 여기 남긴다: `+`를 공백으로 치환해주는 버전이 아니었으므로 원문 공백을 그대로 broadcast 인자에 넣어야 한다. 좌표 기반 탭은 이 기기에서 스크린샷 표시 배율과 실제 물리 픽셀이 어긋나 보여 여러 번 빗나갔다 — `adb shell uiautomator dump`로 실제 bounds를 직접 읽어 그 중심좌표로 탭하는 방식이 유일하게 안정적이었다, `mobile_list_elements_on_screen`도 대체로 같은 값을 준다). 발견된 잔여 이슈 2건은 이번 스토리 범위 밖이라 그 자리에서 고치지 않고 신규 등재만 함 → [[DW-756]](찜 하트 로그아웃 후 표시 오염) · [[DW-757]](판매자 정보 집계 패널 앱 미구현). 코드 변경·검증 커맨드 전체는 spec-16-6 파일 자체(Auto Run Result 이후 절)를 정본으로 본다.
+
+### DW-755: 앱 홈 AI 히어로가 목업과 **레이아웃이 다르다** — 목업은 화면 폭을 꽉 채운 밴드인데 구현은 사방 여백이 있는 카드다
+
+origin: 2026-08-09 사용자 지적(실기기 스크린샷 첨부) → 사람 세션이 목업 CSS와 구현 코드를 직접 대조해 확정
+location: `app/lib/features/auth/home_screen.dart:264-274`(히어로 `Container`) · 목업 정본 = `_bmad-output/planning-artifacts/ux-designs/ux-bmad-encar-demo-2026-07-12/mockups/app-home-2.html`의 `.ai-hero`
+severity: medium
+reason: 대조 결과(추측 아님, 양쪽 실제 값):
+
+| 축 | 목업 `.ai-hero` | 앱 구현 |
+|---|---|---|
+| 가로 폭 | `.content`(padding 16px) **바깥**에 있어 **화면 끝까지 꽉 참**(좌우 여백 0) | 좌우 여백이 있는 카드로 떠 있음 |
+| 모서리 | `border-radius: 0 0 22px 22px` — **아래 두 개만** 둥글고 헤더에 붙음 | `BorderRadius.circular(12)` — **네 모서리 전부** |
+| 안쪽 여백 | `padding: 18px 20px 24px` | `EdgeInsets.fromLTRB(16, 18, 16, 18)` |
+| 상단 라벨 | `✦ AI 매물 검색`(amber eyebrow) **있음** | **없음** |
+| 배경 장식 | 자동차 실루엣 워터마크(`.hero-car`, opacity 0.14, 우하단) + amber 방사형 글로우(`::before`, 우상단) | **둘 다 없음** |
+
+즉 색·문구는 맞는데 **밴드가 아니라 카드**여서 첫인상이 갈린다. Story 16.8의 인수조건은 *"딥 petrol 히어로 밴드가 목업대로 그려진다"*였고 검사는 **순서와 개수**(히어로가 칩보다 위 등)만 좌표로 단언해, **폭·모서리·여백 축은 아무도 안 봤다** — 그래서 전 검사 green으로 통과했다. CLAUDE.md B4의 "검사가 안 보는 것"에 해당한다.
+관련 관찰(별개 판단 필요): 목업은 히어로 **바로 아래가 차종 칩**인데, 구현에는 그 사이에 `어떤 차를 찾고 있나요?` 탐색 진입 박스가 하나 더 있다. 이건 16.1이 넣은 탐색 진입점이라 **제거 대상인지 유지 대상인지는 사용자 확인이 필요**하다(목업에는 없음).
+trigger: **16.6(SM-D 통합 시연 검증) 안에서 함께 처리한다** — 그 스토리가 "앱이 웹·목업과 같은 디자인 언어인지 실폰에서 대조"하는 자리이고, 지금 실기기 화면이 이미 증거로 나와 있다. 고칠 때 **폭·모서리·여백을 좌표로 단언하는 검사를 함께 넣는다**(순서만 보는 지금 검사로는 또 못 잡는다). ✅ **탐색 진입 박스 = 제거로 결정(2026-08-09 사용자, (a)안).** 목업에 없으므로 히어로 바로 아래는 차종 칩이 온다. 제거는 히어로 레이아웃 교정과 **같은 커밋**에서 한다 — 그리고 이 화면의 검사는 순서·개수만 보므로, '히어로 다음 위젯이 차종 칩'임을 좌표로 단언하는 검사를 함께 넣어야 실제로 지켜진다(안 넣으면 다음에 조용히 되살아난다).
+related: [[DW-736]](앱 홈 랜딩 미러 신설 경위) · [[DW-729]](색 토큰은 이미 검사로 고정됨 — 이번 건은 색이 아니라 레이아웃)
+status: open
+
+### DW-756: 로그아웃해도 찜(♡) 하트가 **직전 로그인 사용자의 찜 상태를 그대로** 보여준다(표시만 오염, 서버 쓰기는 안전)
+
+origin: spec-16-6 실기기 검증(2026-08-09, SM-G991N) — buyer@test.com으로 로그인해 "지금 인기" 1위(기아 모닝)를 찜한 뒤 로그아웃했더니, 그 직후 홈·상세의 찜 하트가 **여전히 채워진 채(♥)** 로 렌더됐다(anon 세션인데도).
+location: `app/lib/features/wishlist/wishlist_providers.dart`의 `wishedListingIdsProvider`(non-autoDispose) — `app_router.dart`의 `ref.listen(authStateProvider, ...)`가 로그인/로그아웃 둘 다에서 `chatUnreadTotalProvider`는 invalidate하지만 이 provider는 하지 않는다.
+severity: low
+reason: `WishlistRepository.fetchWishedListingIds()`는 `_client.auth.currentUser?.id`가 null이면 즉시 빈 Set을 반환하므로 **재조회만 되면** 정상 값(빈 Set)을 낸다 — 문제는 로그아웃 시점에 아무도 이 provider를 invalidate하지 않아 **직전 로그인 사용자의 마지막 조회 결과가 캐시로 남는 것**이다. 홈 탭 재진입(`_kTabBranches`의 `onActivate`가 `ref.invalidate(wishedListingIdsProvider)`를 호출)이나 앱 재시작 전까지는 이 오염이 화면에 그대로 보인다.
+   ⚠️ **보안·데이터 무결성 문제는 아니다** — 실기기에서 직접 확인: 오염된(채워진) 하트를 anon 상태로 탭해도 `WishButton._toggle()`의 `if (ref.read(currentUserProvider) == null) { context.go('/login'); return; }` 가드가 먼저 걸려 서버 쓰기(`wishlists` insert/delete) 없이 `/login`으로 이동한다(spec-16-6 FR58 게이트가 정확히 설계대로 동작). 순수하게 **표시(UI) 만** 다음 사용자에게 이전 사용자의 찜 상태처럼 잘못 보이는 문제다 — 같은 기기를 여러 계정이 돌려쓰는 데모 시연에서 혼란을 줄 수 있다.
+fix_sketch: `app_router.dart`의 `ref.listen(authStateProvider, ...)` 콜백에 `ref.invalidate(wishedListingIdsProvider)`를 `chatUnreadTotalProvider`와 같은 자리에 추가한다(원인이 정확히 그 함수의 형제 자리라 패턴이 이미 있다).
+trigger: 다음에 `wishlist_providers.dart` 또는 `app_router.dart`의 인증 상태 리스너를 만지는 스토리(찜 관련 후속 스토리 또는 다음 회고)에서 함께 고친다. 표시 전용 결함이라 급하지 않다.
+status: open
+
+### DW-757: 앱에 "판매자 정보" 집계 패널(FR56)이 없다 — 판매자 표시이름 한 줄만 있고, 웹의 `get_seller_public_summary`(가입 시점·다른 매물 N건) 미러가 없다
+
+origin: spec-16-6 실기기 검증(2026-08-09) — FR26~58 앱 사용자 여정 재현 중 "판매자 정보" 항목을 확인하다가 발견. 상세 화면(`listing_detail_screen.dart`)에는 `_row('판매자', listing.sellerName!)` 한 줄만 있다 — 웹(`web/src/app/(user)/listings/[id]/ListingDetailSections.tsx`, Story 10.6)이 쓰는 `get_seller_public_summary` RPC(가입 시점 + "이 판매자의 다른 매물 N건")를 앱은 애초에 호출하지 않는다(`grep -rln get_seller_public_summary app/lib` 0건).
+location: `app/lib/features/listings/listing_detail_screen.dart`(현재 상태) — 대응 없음.
+severity: low
+reason: Epic 16(16.1~16.8) Story 목록 어디에도 "판매자 정보" 섹션을 앱에 미러하는 스토리가 없다 — 즉 이건 **회귀가 아니라 애초에 에픽 계획에서 빠진 항목**이다. 반면 epic-16-context.md의 FR56 인용 자체는 "웹·앱 공통"을 전제로 쓰여 있고(다른 FR들처럼 "웹 한정"이라 적혀 있지 않다), spec-16-6의 인수조건 문구(FR26~58 여정에 "판매자 정보" 포함)도 이걸 재현 대상으로 나열한다 — 계획 단계에서 조용히 빠졌을 가능성이 있다. 지금 당장 사용자 눈에는 판매자 이름은 보이므로 "정보가 아예 없음"은 아니고, 집계(가입 시점·다른 매물 수)만 없다.
+fix_sketch: 새 스토리로 웹 `ListingDetailSections.tsx`의 판매자 섹션을 그대로 미러 — `get_seller_public_summary` RPC(anon·authenticated 모두 execute 권한 있음, 0019 마이그레이션) 호출 → `listings_repository.dart` 또는 신규 `seller_repository.dart`에 배선 → 상세 화면에 섹션 추가. 함수 자체가 sold 매물을 제외하는 조건을 이미 내장하고 있어(§6 SECURITY DEFINER 축) 앱 쪽에서 FR11 관련 추가 방어는 불필요.
+trigger: 사용자가 이 갭을 실제로 메울지 판단(에픽 계획에서 의도적으로 뺀 것인지 재확인) 후, 메우기로 하면 신규 스토리로 착수.
+status: open
+
+### DW-758: 로그인/로그아웃 전환 시 홈의 매물 목록(지금 인기·방금 올라온 매물)이 캐시된 결과를 그대로 보여준다 — anon↔authed 컬럼 분기가 재조회 없이는 반영 안 됨
+
+origin: spec-16-6 후속 리뷰(2026-08-09, adversarial·edge-case-hunter 두 렌즈 독립 지적) — `listings_repository.dart`가 이번 패스에서 `listingCardColumns`/`listingDetailColumns`를 `_authed`(로그인 여부) 분기로 바꾸면서, `recentListingsProvider`·`popularListingsProvider`의 조회 결과가 로그인 상태에 의존하게 됐다.
+location: `app/lib/core/router/app_router.dart`의 `ref.listen(authStateProvider, ...)`(로그인·로그아웃 시 `chatUnreadTotalProvider`만 invalidate) — `recentListingsProvider`·`popularListingsProvider`는 그 리스너가 건드리지 않는다. 홈 탭이 `IndexedStack`으로 영구 마운트돼 있어 화면 전환 없이는 두 provider가 자동으로 재조회되지 않는다.
+severity: low
+reason: 비로그인 상태로 홈에 들어가 매물 카드가 이미 뜬 뒤(신뢰속성 3컬럼 없이 렌더) 화면 전환 없이 로그인하면, 로그인했는데도 사고이력·1인소유·비흡연 배지가 홈 탭을 다시 누르거나 당겨 새로고침하기 전까지 계속 안 보인다 — [[DW-756]](로그아웃 후 찜 하트가 직전 사용자 상태로 오염되는 것)과 정확히 같은 구조(같은 리스너가 같은 이유로 다른 provider는 챙기고 이 provider는 안 챙김)다. 서버 쓰기·보안 문제는 아니고 표시(UI)만 지연·오염된다.
+fix_sketch: `app_router.dart`의 `ref.listen(authStateProvider, ...)` 콜백에 `ref.invalidate(recentListingsProvider)`·`ref.invalidate(popularListingsProvider)`를 `chatUnreadTotalProvider`·(DW-756 처리 시 추가될) `wishedListingIdsProvider`와 같은 자리에 함께 추가한다 — 세 provider를 한 번에 정리하는 게 자연스럽다.
+trigger: 다음에 `app_router.dart`의 인증 상태 리스너 또는 홈 매물 provider를 만지는 자리(DW-756과 같은 자리에서 함께 고치는 게 효율적)에서 함께 처리한다. 표시 전용 결함이라 급하지 않다.
+related: [[DW-756]](같은 리스너의 같은 누락 패턴, 찜 하트 쪽)
 status: open
