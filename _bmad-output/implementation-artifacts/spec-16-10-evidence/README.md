@@ -54,3 +54,11 @@ width:min(58%,640px); opacity:.10`)을 적용한 결과다.
 보이지 않는다**(리뷰 세션이 두 파일을 직접 열어 확인). 곡률이 실제로 보이는 건 01이므로 그쪽으로
 옮겼고, before 이미지 없이 하던 "예전보다" 비교는 지웠다(CLAUDE.md B4 — 재보기 전엔 선언하지
 않는다).
+
+## ✎ 2026-08-10 사용자 육안 결정 반영분 (사람 세션)
+
+`04-after-headline-24-oneline.png` — 앱: 헤드라인 36px 2줄 → **24px 한 줄**, 검색창 얇게(목업 `.ai-search-pill` 기준).
+`05-web-390-before-broken-wrap.png` — 웹 390px **교정 전**: `text-display`(36px) 고정이라 *"원하는 차를 말로 찾으/세요"* 로 **어절 중간에서** 끊겼다(로컬 dev 실측).
+`06-web-390-after-oneline.png` — 웹 390px **교정 후**: `break-keep` + 640px 미만 26px으로 한 줄. `--text-display` 토큰은 안 건드렸다(다른 화면 공유).
+
+⚠️ 이 촬영의 웹은 **로컬 dev 서버**다. 운영(`bmad-encar-demo.vercel.app`)은 `main` 반영 보류로 Epic 11 이전 화면이라 비교 대상이 아니다.

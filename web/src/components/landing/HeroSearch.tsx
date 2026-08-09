@@ -119,7 +119,14 @@ export default function HeroSearch({ authed }: { authed: boolean }) {
         <circle cx="524" cy="192" r="30" />
       </svg>
       <div className="relative mx-auto flex max-w-3xl flex-col items-start gap-4">
-        <h1 className="text-display font-extrabold leading-tight text-white">
+        {/* ✎ 2026-08-10 사용자 요청("웹쪽에도 고려가 필요해") — 폰 폭에서 헤드라인이 무너지던 것 교정.
+            실측(로컬 390px): `text-display`(36px) 고정이라 "원하는 차를 말로 찾으/세요"처럼 **어절
+            중간에서** 끊겼다. 두 가지를 함께 건다 —
+            ① `break-keep`(word-break: keep-all): 한국어를 어절 단위로만 끊는다. 크기를 줄여도
+               이게 없으면 좁은 폭에서 또 어절이 갈라진다(원인 자체를 막는 쪽).
+            ② 640px 미만에서만 26px: 목업 웹 프레임도 `clamp(28px,4vw,40px)`로 좁은 폭을 줄인다.
+               `--text-display` 토큰 자체는 건드리지 않는다 — 다른 화면이 같은 토큰을 쓴다. */}
+        <h1 className="text-[26px] font-extrabold leading-tight text-white break-keep sm:text-display">
           원하는 차를 <span className="text-accent-amber">말</span>로 찾으세요
         </h1>
         <p className="max-w-xl text-body text-white/75">

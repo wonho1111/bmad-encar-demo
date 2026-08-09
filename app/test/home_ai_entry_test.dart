@@ -359,18 +359,25 @@ void main() {
     // 36을 그대로 박아도 된다(DW-767 관계 요구는 아래 별도 테스트가 진다 — 코드리뷰 지적:
     // 이 테스트에 절대값 단언까지 같이 있으면 그게 먼저 깨져서 관계 단언이 생존자로서
     // 실제로 실행되는지 확인할 길이 없어진다).
-    testWidgets('헤드라인이 36px(DESIGN.md typography.scale.display)·2줄로 렌더된다(스냅샷)',
-        (tester) async {
+    // ✎ 2026-08-10 사용자 육안 결정으로 값이 바뀌었다: 36px 2줄 → **24px 한 줄**.
+    // 이 크기는 세 번 뒤집혔다(19 → 36 → 24) — 전부 사람이 실기기를 보고 내린 판단이다.
+    // 그래서 여기서만은 절대값을 **일부러** 박는다: 다음 사람이 값을 조용히 바꾸면 red로
+    // 알리는 게 목적이고, 바꾸려면 사용자 판단이 다시 필요하다는 뜻이다. 크기의 **역할**
+    // (카드 차량명보다 크다)은 아래 별도 테스트가 관계로 지키므로 두 축이 겹치지 않는다.
+    testWidgets('헤드라인이 24px(app-home-2 목업)·하드 줄바꿈 없이 렌더된다', (tester) async {
       await tester.pumpWidget(_harness());
       await tester.pump();
 
       final headlineSpan =
           tester.renderObject<RenderParagraph>(find.byKey(const Key('hero_headline'))).text;
-      expect((headlineSpan as TextSpan).style?.fontSize, 36);
+      expect((headlineSpan as TextSpan).style?.fontSize, 24);
 
-      // 2줄 — "원하는 차를"과 "말로 찾으세요" 사이에 줄바꿈이 들어갔는지(spec Always: 목업
-      // 앱 프레임과 같은 지점에서 끊는다).
-      expect(headlineSpan.toPlainText(), '원하는 차를\n말로 찾으세요');
+      // 한 줄 — 문구 안에 **하드 줄바꿈이 없어야** 한다. 폭이 좁아 자연 줄바꿈으로 2줄이
+      // 되는 것은 결함이 아니지만(D5의 "세로로 접지 않는다"는 가로 배치 규칙이지 문장
+      // 규칙이 아니다), `\n`을 박아 넣으면 **어떤 폭에서도 무조건 2줄**이 된다.
+      expect(headlineSpan.toPlainText(), '원하는 차를 말로 찾으세요');
+      expect(headlineSpan.toPlainText().contains('\n'), isFalse,
+          reason: '하드 줄바꿈이 다시 들어가면 넓은 화면에서도 강제로 2줄이 된다');
     });
 
     // AC — 헤드라인의 실효 fontSize가 매물 카드 차량명의 실효 fontSize보다 커야 한다

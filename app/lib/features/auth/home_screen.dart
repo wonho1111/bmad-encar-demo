@@ -384,22 +384,28 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                 ),
                 const SizedBox(height: 10),
                 // 헤드라인 — "말"만 amber 강조(웹·목업 공통 마이크로카피, spec-16-8 AC1).
-                // fontSize 36 = DESIGN.md typography.scale.display(스파인, spec-16-10 Design
-                // Notes: 에픽 텍스트의 "30~34px" 인용은 웹 프레임을 잘못 가리킨 오표기였고,
-                // 진짜 앱 프레임 목업도 26px이지만 목업과 충돌하면 스파인이 우선한다는 이
-                // 프로젝트 규칙과, 검사 자체가 절대값이 아니라 관계(카드 차량명보다 크다)만
-                // 요구한다는 점에서 스파인 값을 택한다). 목업 앱 프레임과 같은 지점에서 2줄로
-                // 끊는다("원하는 차를" / "말로 찾으세요").
+                //
+                // ✎ 2026-08-10 사용자 육안 결정 — **24px 한 줄**로 되돌린다.
+                //   경위: 19px(너무 작음) → 36px 2줄(spec-16-10) → 24px 한 줄(지금).
+                //   36px 2줄은 스파인의 display 스케일을 따른 것이었지만, 실기기에서 사용자가
+                //   *"너무 크다, 한 줄로 보이게"*라고 판단했다. 앱 홈 화면의 목업(`app-home-2.html`
+                //   `.ai-hero h2`)이 정확히 **24px 한 줄**이므로 그 값으로 맞춘다 — 스파인이
+                //   목업보다 우선한다는 규칙은 **충돌할 때** 적용되는데, 스파인의 display는
+                //   "가장 큰 글자" 역할만 규정하고 픽셀을 못박지 않으므로 여기엔 충돌이 없다.
+                //   검사도 절대값이 아니라 관계(카드 차량명보다 크다)만 보므로 24px에서도 성립한다.
+                //   ⚠️ 줄바꿈 `\n`을 뺐다 — 문구가 길어지면 자연 줄바꿈으로 2줄이 될 수 있고,
+                //   그건 결함이 아니라 폭에 대한 정상 반응이다(D5: 세로로 "접지" 않는 것은
+                //   신뢰속성 행·meta·칩 같은 **가로 배치**에 대한 규칙이지 문장에 대한 규칙이 아니다).
                 RichText(
                   key: const Key('hero_headline'),
                   text: const TextSpan(
                     style: TextStyle(
                         color: AppColors.onPetrol,
-                        fontSize: 36,
+                        fontSize: 24,
                         fontWeight: FontWeight.w800,
-                        height: 1.15),
+                        height: 1.32),
                     children: [
-                      TextSpan(text: '원하는 차를\n'),
+                      TextSpan(text: '원하는 차를 '),
                       TextSpan(text: '말', style: TextStyle(color: AppColors.accentAmber)),
                       TextSpan(text: '로 찾으세요'),
                     ],
@@ -408,10 +414,12 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                 const SizedBox(height: 12),
                 // 실 입력 pill — 흰 배경 + amber 검색 버튼(spec-16-8 AC1).
                 Container(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+                  // ✎ 2026-08-10 — 목업 `.ai-search-pill`(padding 6px 6px 6px 14px, radius 14)에
+                  // 맞춰 얇게. 사용자 육안 결정("검색창 높이도 그렇고 전체적으로 크다").
+                  padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
                   decoration: BoxDecoration(
                     color: AppColors.surfaceRaised,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
                     children: [
@@ -442,6 +450,8 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
                             hintText: '예: 3천만원대 무사고 흰색 SUV',
+                            // 목업 `.ai-search-pill` font-size 13 — pill을 얇게 만든 것과 한 몸이다.
+                            hintStyle: TextStyle(fontSize: 13, color: AppColors.inkMuted),
                             // 시각적 알약 크기를 그대로 유지한다 — maxLength를 주면 Flutter가 기본
                             // 글자수 카운터를 그 아래에 그리는데, 이 좁은 pill 레이아웃은 그 자리를
                             // 계산하지 않았다(웹 HeroSearch.tsx에도 이 카운터가 없다).
@@ -456,10 +466,17 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                           backgroundColor: AppColors.accentAmber,
                           foregroundColor: AppColors.inkPrimary,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          // ✎ 2026-08-10 — 사용자 육안 결정("검색창 높이도 크다"). 목업
+                          // `app-home-2.html` `.ai-search-btn`(padding 9px 14px, font 12.5)에 맞춘다.
+                          // pill 전체 높이는 이 버튼이 결정한다(Row의 최대 높이) — 입력 글자만
+                          // 줄여선 안 낮아진다.
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
                         onPressed: () => _submit(_controller.text),
-                        child: const Text('검색', style: TextStyle(fontWeight: FontWeight.w800)),
+                        child: const Text('검색',
+                            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
                       ),
                     ],
                   ),
