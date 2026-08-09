@@ -411,6 +411,19 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                     ],
                   ),
                 ),
+                const SizedBox(height: 8),
+                // 부제 — ✎ 2026-08-10 사용자 지적("웹에는 설명이 있고 앱에는 없다, 통일 필요").
+                // 문장은 웹 `HeroSearch.tsx`의 것과 **글자 그대로 같게** 둔다(두 화면이 갈리지
+                // 않게). 크기만 앱 폭에 맞춰 줄인다.
+                Text(
+                  key: const Key('hero_subtitle'),
+                  '"3천만원대 무사고 흰색 SUV"처럼 그냥 말하듯 검색하면, AI가 조건에 맞는 직거래 매물을 바로 골라줍니다.',
+                  style: TextStyle(
+                    color: AppColors.onPetrol.withValues(alpha: 0.75),
+                    fontSize: 12.5,
+                    height: 1.45,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 // 실 입력 pill — 흰 배경 + amber 검색 버튼(spec-16-8 AC1).
                 Container(
@@ -518,17 +531,27 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
 /// 잡는다).
 @visibleForTesting
 ({double dx, double dy, double scale}) carSilhouetteOffset(Size bandSize) {
-  const widthFraction = 0.56; // width:56%
-  const rightFraction = -0.08; // right:-8%(밴드 오른쪽 경계 밖으로 흘러나감)
-  const topFraction = -0.14; // top:-14%(밴드 위 경계 밖으로 흘러나감)
+  // ✎ 2026-08-10 사용자 결정("앱은 검색창 위, 웹은 태그 밑 — 일관성이 없어") — **웹에 맞춘다.**
+  // 목업은 웹 프레임(bottom:-6%·right:-4%·width:58%)과 앱 프레임(top:-14%·right:-8%·width:56%)을
+  // 서로 다르게 그려놨고, 16.9·16.10이 각 프레임을 충실히 따르다 보니 두 화면이 갈렸다.
+  // 사용자가 "기본적으로 일관성은 있으면 좋겠다"고 해서 **웹 값 하나로 합친다** — 이 에픽의
+  // 정본이 웹이라는 원칙과도 같은 방향이다(웹 `HeroSearch.tsx`의 `-bottom-[6%] -right-[4%]
+  // w-[min(58%,640px)]`와 같은 규칙).
+  const widthFraction = 0.58; // width:58%(웹과 동일)
+  const rightFraction = -0.04; // right:-4%(밴드 오른쪽 경계 밖으로 흘러나감)
+  const bottomFraction = -0.06; // bottom:-6%(밴드 아래 경계 밖으로 흘러나감)
   const viewBoxWidth = 640.0;
+  const viewBoxHeight = 220.0;
 
   final elementWidth = bandSize.width * widthFraction;
   final scale = elementWidth / viewBoxWidth;
-  // CSS `right: -8%`는 요소 오른쪽 경계가 컨테이너 오른쪽 경계보다 밴드 폭의 8%만큼 더
-  // 오른쪽(밖)에 있다는 뜻 — 왼쪽 경계 = 컨테이너폭 - 요소폭 + 8%*컨테이너폭.
+  final elementHeight = viewBoxHeight * scale;
+  // CSS `right: -4%`는 요소 오른쪽 경계가 컨테이너 오른쪽 경계보다 밴드 폭의 4%만큼 더
+  // 오른쪽(밖)에 있다는 뜻 — 왼쪽 경계 = 컨테이너폭 - 요소폭 + 4%*컨테이너폭.
   final dx = bandSize.width - elementWidth - (rightFraction * bandSize.width);
-  final dy = topFraction * bandSize.height;
+  // CSS `bottom: -6%`는 요소 아래 경계가 컨테이너 아래보다 밴드 높이의 6%만큼 더 아래라는
+  // 뜻 — 위 경계 = 컨테이너높이 - 요소높이 + 6%*컨테이너높이.
+  final dy = bandSize.height - elementHeight - (bottomFraction * bandSize.height);
   return (dx: dx, dy: dy, scale: scale);
 }
 

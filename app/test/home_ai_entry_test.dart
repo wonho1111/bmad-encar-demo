@@ -488,23 +488,29 @@ void main() {
     // 순수 함수로 뽑아 여기서 직접 잰다. 두 가지 밴드 크기로 검증해 부호·비례(퍼센트 기반임)
     // 둘 다 확인한다 — 하나만 보면 고정 픽셀로 되돌아가도 우연히 같은 크기에서만 통과할 수
     // 있다.
-    test('carSilhouetteOffset — 목업 CSS 퍼센트(right:-8%·top:-14%·width:56%)를 부호까지 '
-        '정확히 환산한다', () {
+    // ✎ 2026-08-10 사용자 결정으로 배치가 **웹 값으로 통일**됐다(top:-14% → bottom:-6%).
+    // 웹(`HeroSearch.tsx`)과 같은 규칙인지를 이 테스트가 지킨다 — 한쪽만 바꾸면 두 화면이
+    // 또 갈린다(그게 이 변경의 발단이었다).
+    test('carSilhouetteOffset — 웹과 같은 CSS 퍼센트(right:-4%·bottom:-6%·width:58%)를 '
+        '부호까지 정확히 환산한다', () {
       final a = carSilhouetteOffset(const Size(400, 200));
-      expect(a.scale, closeTo(0.35, 1e-9)); // (400*0.56)/640
-      expect(a.dx, closeTo(208, 1e-9)); // 400 - 224 + 0.08*400
-      expect(a.dy, closeTo(-28, 1e-9)); // -0.14*200 — 음수여야 밴드 위로 흘러나간다
+      expect(a.scale, closeTo(0.3625, 1e-9)); // (400*0.58)/640
+      expect(a.dx, closeTo(184, 1e-9)); // 400 - 232 + 0.04*400
+      // 요소 높이 = 220 * 0.3625 = 79.75 → dy = 200 - 79.75 + 0.06*200 = 132.25
+      expect(a.dy, closeTo(132.25, 1e-9));
 
-      // 우측 밖으로 흘러나가는지(right:-8%) — 실루엣 우측 끝이 밴드 우측 끝을 넘어야 한다.
-      final elementWidthA = 400 * 0.56;
+      // 우측 밖으로 흘러나가는지(right:-4%) — 실루엣 우측 끝이 밴드 우측 끝을 넘어야 한다.
+      final elementWidthA = 400 * 0.58;
       expect(a.dx + elementWidthA, greaterThan(400));
 
-      // 다른 밴드 크기에서도 같은 퍼센트 규칙을 유지하는지(고정 픽셀로 되돌아가는 회귀 방지) —
-      // 밴드가 2.5배 넓어지면 scale·dx도 정확히 같은 비율로 커져야 한다.
+      // 아래로도 흘러나가는지(bottom:-6%) — 실루엣 아래 끝이 밴드 아래 끝을 넘어야 한다.
+      expect(a.dy + 220 * a.scale, greaterThan(200));
+
+      // 다른 밴드 크기에서도 같은 퍼센트 규칙을 유지하는지(고정 픽셀로 되돌아가는 회귀 방지).
       final b = carSilhouetteOffset(const Size(1000, 300));
-      expect(b.scale, closeTo(0.875, 1e-9)); // (1000*0.56)/640
-      expect(b.dx, closeTo(520, 1e-9)); // 1000 - 560 + 0.08*1000
-      expect(b.dy, closeTo(-42, 1e-9)); // -0.14*300
+      expect(b.scale, closeTo(0.90625, 1e-9)); // (1000*0.58)/640
+      expect(b.dx, closeTo(460, 1e-9)); // 1000 - 580 + 0.04*1000
+      expect(b.dy, closeTo(300 - 220 * 0.90625 + 18, 1e-9));
       expect(b.scale / a.scale, closeTo(1000 / 400, 1e-9),
           reason: '고정 픽셀이면 이 비율이 안 맞는다 — scale은 밴드 폭에 비례해야 한다');
     });

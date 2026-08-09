@@ -92,7 +92,7 @@ export default function HeroSearch({ authed }: { authed: boolean }) {
   }
 
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-brand-petrol-strong to-petrol-deepest px-6 py-14 sm:px-10 sm:py-16">
+    <section className="relative overflow-hidden bg-gradient-to-b from-brand-petrol-strong to-petrol-deepest px-6 py-14 sm:px-10 sm:py-16" /* ✎ 2026-08-10 사용자 지적("그라데이션이 웹에는 없고 모바일에만 있어") — 실제로는 웹에도 있었지만 대각선(to-br)이라 좁은 폭에서 거의 평평해 보였다. 앱과 같은 세로축(to-b)으로 맞춘다 — 앱은 앱바와의 이음매 때문에 세로여야 하므로(16.10 리뷰), 통일 방향은 세로 쪽이다. */>
       {/* 차 실루엣 배경 장식(spec-16-10 Always, 사용자 결정) — 앱 히어로(home_screen.dart
           _CarSilhouettePainter)와 **같은 path 데이터**를 쓴다. 배치는 목업이 프레임별로 다르게
           정해 둔 규칙을 각 표면이 자기 것으로 따른다: 앱은 `.app-hero .silhouette`
