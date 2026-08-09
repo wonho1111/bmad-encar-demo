@@ -7,6 +7,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 /// 저장본의 긴 변 상한(px). 정본: docs/conventions.md §10.1.
@@ -69,8 +70,12 @@ Future<EncodedPhoto> resizeImage(XFile file) async {
       autoCorrectionAngle: true,
     );
     return EncodedPhoto(bytes: webp, extension: 'webp', mimeType: 'image/webp');
-  } catch (_) {
+  } catch (e) {
     // WebP 인코딩 실패 — JPEG로 폴백한다(§10.1). 폴백도 실패하면 그 예외를 그대로 던진다.
+    // 사유를 반드시 남긴다: §10.1이 WebP를 저장 규격으로 못박고 있어서, 폴백이 **상시로**
+    // 일어나는 상황(기기·플러그인 버전 문제로 WebP가 아예 안 되는 경우)은 계약 위반 신호다.
+    // 조용히 삼키면 전 사용자의 저장본이 JPEG로 바뀌어도 아무도 모른다(review 발견, spec-16-7).
+    debugPrint('[sell] WebP 인코딩 실패 — JPEG로 폴백한다: $e');
   }
 
   final jpeg = await FlutterImageCompress.compressWithList(
@@ -87,8 +92,14 @@ Future<EncodedPhoto> resizeImage(XFile file) async {
 /// 원본 바이트를 디코딩해 픽셀 크기만 얻는다(재인코딩 전 목표 크기 계산용).
 Future<({int width, int height})> _decodeSize(Uint8List bytes) async {
   final codec = await ui.instantiateImageCodec(bytes);
-  final frame = await codec.getNextFrame();
-  final result = (width: frame.image.width, height: frame.image.height);
-  frame.image.dispose();
-  return result;
+  try {
+    final frame = await codec.getNextFrame();
+    final result = (width: frame.image.width, height: frame.image.height);
+    frame.image.dispose();
+    return result;
+  } finally {
+    // Codec은 네이티브 디코더 버퍼를 잡고 있고 GC 시점이 보장되지 않는다 — 10장을 연속
+    // 처리하면 해제 안 된 디코더가 그만큼 쌓인다(review 발견, spec-16-7 / DW-744와 같은 함수).
+    codec.dispose();
+  }
 }

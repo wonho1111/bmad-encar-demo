@@ -119,18 +119,6 @@ Future<({bool ok, int deleted})> deletePhotoObjectsByPaths(
   return (ok: ok, deleted: deleted);
 }
 
-/// 매물의 사진 파일을 정리한다(조회+삭제). **매물 행이 아직 살아 있을 때만** 의미가 있다 — 행이
-/// 사라진 뒤엔 조회가 0건이라 아무것도 못 지운다. 매물 삭제 흐름에서는 이 함수 대신
-/// listListingPhotoPaths → (매물 삭제) → deletePhotoObjectsByPaths 를 쓴다(listings_repository.dart).
-Future<({bool ok, int deleted})> deleteListingPhotoObjects(
-  String listingId, {
-  SupabaseClient? client,
-}) async {
-  final result = await listListingPhotoPaths(listingId, client: client);
-  if (!result.ok) return (ok: false, deleted: 0);
-  return deletePhotoObjectsByPaths(result.paths, client: client);
-}
-
 /// 매물 사진을 화면 상태 → DB·Storage에 반영한다.
 ///
 /// [photos]는 현재 화면 상태(추가·삭제·재배치 반영됨), [initialPhotos]는 저장 기준선(무엇을
@@ -202,19 +190,39 @@ Future<PhotoSyncResult> syncListingPhotos(
       );
       continue;
     }
+    var rowGone = true;
     try {
       final removed = await supa
           .from('listing_images')
           .delete()
           .eq('id', gone.rowId!)
           .select('id');
-      if (removed.isEmpty) {
-        warnings.add('사진 삭제 정보를 정리하지 못했어요.');
-      }
+      rowGone = removed.isNotEmpty;
     } catch (e) {
       // ignore: avoid_print
       print('[sell] listing_images 행 삭제 실패: ${gone.rowId}, $e');
-      warnings.add('사진 삭제 정보를 정리하지 못했어요.');
+      rowGone = false;
+    }
+    if (!rowGone) {
+      // 오브젝트는 지워졌는데 행이 남았다 — 예전엔 warning만 남기고 이 항목을 목록에서
+      // **완전히 빼버렸다**. 그러면 사용자는 지워진 줄 알지만 DB엔 "파일 없는 행"이 영구히
+      // 남아 10장 정원을 먹고, 대표 선정((sort_order,id) 최솟값)에까지 끼어든다 — 그리고
+      // 목록에 없으니 baseline에도 없어 다음 제출에서 재시도조차 안 된다(review 발견,
+      // spec-16-7). 오브젝트 삭제 실패와 똑같이 목록 맨 뒤로 되돌려, 삭제 버튼을 다시 눌러
+      // 재시도할 수 있게 한다(그때 오브젝트는 이미 없으므로 행 삭제만 다시 시도된다).
+      warnings.add('사진 삭제 정보를 정리하지 못했어요. 삭제 버튼을 다시 눌러주세요.');
+      failedCount += 1;
+      undeletable.add(
+        PhotoItem(
+          key: gone.key,
+          previewUrl: gone.previewUrl,
+          status: PhotoStatus.error,
+          error: '사진 삭제 정보를 정리하지 못했어요. 삭제 버튼을 다시 눌러주세요.',
+          retryable: false,
+          storagePath: gone.storagePath,
+          rowId: gone.rowId,
+        ),
+      );
     }
   }
 
@@ -333,8 +341,13 @@ Future<PhotoSyncResult> syncListingPhotos(
       continue;
     }
     // 새 행 — is_cover는 항상 false로 넣는다. 대표 지정은 4단계가 전담한다(부분 유니크 인덱스 충돌 회피).
+    //
+    // ⚠️ try는 **INSERT 한 문장만** 감싼다. 예전엔 성공 이후 코드(`next.indexOf`·`id` 캐스팅)까지
+    // 같은 try 안에 있어서, 행이 실제로 만들어진 뒤에 난 예외도 "INSERT 실패"로 간주돼 아래
+    // 보상 로직이 **살아 있는 행이 가리키는 파일을 지웠다**(review 발견, spec-16-7).
+    final Map<String, dynamic> data;
     try {
-      final data = await supa
+      data = await supa
           .from('listing_images')
           .insert({
             'listing_id': listingId,
@@ -344,22 +357,6 @@ Future<PhotoSyncResult> syncListingPhotos(
           })
           .select('id')
           .single();
-      savedCount += 1;
-      if (order == 0) coverPath = p.storagePath;
-      order += 1;
-      // INSERT 성공 시 rowId를 화면 상태에 되돌려준다 — 안 하면 재제출 때 이 항목이 "기존 행"으로
-      // 인식되지 않아 같은 storage_path로 재INSERT를 시도한다(역고아 방지).
-      final idx = next.indexOf(p);
-      if (idx >= 0) {
-        next[idx] = PhotoItem(
-          key: p.key,
-          previewUrl: p.previewUrl,
-          status: p.status,
-          storagePath: p.storagePath,
-          file: p.file,
-          rowId: data['id'] as String,
-        );
-      }
     } catch (e) {
       // 행이 없으면 그 오브젝트는 아무도 못 읽는 고아가 된다 → 즉시 정리를 시도한다.
       final cleaned = await deleteObject(p.storagePath!);
@@ -381,6 +378,27 @@ Future<PhotoSyncResult> syncListingPhotos(
       }
       failedCount += 1;
       continue; // 카운터를 올리지 않는다 — 구멍 방지.
+    }
+
+    // ── 여기부터는 INSERT가 확실히 성공한 뒤다. 무슨 일이 나도 위 보상 삭제로 내려가지 않는다.
+    savedCount += 1;
+    if (order == 0) coverPath = p.storagePath;
+    order += 1;
+    // INSERT 성공 시 rowId를 화면 상태에 되돌려준다 — 안 하면 재제출 때 이 항목이 "기존 행"으로
+    // 인식되지 않아 같은 storage_path로 재INSERT를 시도한다(역고아 방지).
+    // `as String` 강제 캐스팅을 쓰지 않는다 — 응답 형태가 예상과 달라도 여기서 예외가 나면
+    // 저장은 됐는데 제출 전체가 실패로 보고된다. 못 읽으면 rowId만 비워 둔다.
+    final newRowId = data['id'];
+    final idx = next.indexOf(p);
+    if (idx >= 0) {
+      next[idx] = PhotoItem(
+        key: p.key,
+        previewUrl: p.previewUrl,
+        status: p.status,
+        storagePath: p.storagePath,
+        file: p.file,
+        rowId: newRowId is String ? newRowId : null,
+      );
     }
   }
 

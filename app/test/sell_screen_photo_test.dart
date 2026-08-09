@@ -24,6 +24,7 @@ import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/listings/listings_providers.dart';
 import 'package:app/features/listings/listings_repository.dart';
 import 'package:app/features/listings/photo_item.dart';
+import 'package:app/features/listings/photo_uploader_widget.dart';
 import 'package:app/features/listings/sell_screen.dart';
 
 /// 쓰기 두 경로를 가로채는 가짜 레포 — 실제 네트워크로 나가지 않는다(sell_screen_test.dart 동일 패턴).
@@ -58,7 +59,10 @@ class _FakeImagePickerPlatform extends ImagePickerPlatform with MockPlatformInte
   Future<XFile?> getImageFromSource({
     required ImageSource source,
     ImagePickerOptions options = const ImagePickerOptions(),
-  }) async => singleImage;
+  }) async {
+    if (throwOnPick) throw Exception('카메라 접근 거부(테스트)');
+    return singleImage;
+  }
 }
 
 /// 실제 파일시스템 없이 만드는 XFile — 매물당 5MB 이하 JPG로 검증을 통과시킨다.
@@ -71,6 +75,21 @@ XFile _fakeImage(String name, {int bytes = 100}) => XFile.fromData(
   name: '$name.jpg',
   mimeType: 'image/jpeg',
 );
+
+/// 선택 직후 파일 핸들이 회수된 상황(콘텐츠 프로바이더 등)을 흉내낸다 — `length()`가 예외를
+/// 던져 `_addFiles`의 "못 읽은 파일" 갈래를 실제로 태운다(review 발견, spec-16-7).
+class _UnreadableXFile extends XFile {
+  _UnreadableXFile(String name)
+    : super.fromData(
+        Uint8List.fromList(List.filled(100, 0)),
+        path: '/tmp/$name.jpg',
+        name: '$name.jpg',
+        mimeType: 'image/jpeg',
+      );
+
+  @override
+  Future<int> length() async => throw Exception('파일 핸들 회수됨(테스트)');
+}
 
 User _fakeUser() => User(
   id: '00000000-0000-0000-0000-000000000001',
@@ -114,6 +133,35 @@ Future<void> _pumpSellScreen(
     ),
   );
   await tester.pumpAndSettle();
+}
+
+/// 드롭다운의 표시용 오버레이(메뉴)를 열고 항목을 탭하는 대신, `DropdownButtonFormField`가
+/// 물고 있는 `onChanged` 콜백(우리가 sell_screen.dart의 `_dropdown` 헬퍼에서 넘긴 그
+/// `(v) => setState(() => _xxx = v)`)을 직접 호출한다 — `_DropdownButtonFormFieldState.didChange`가
+/// 내부적으로 하는 일과 동일하다(Flutter SDK dropdown.dart 확인). 등록 폼 전체(15필드, 그중
+/// 드롭다운만 6개)를 매 테스트마다 실제 탭 제스처로 열고 고르면 장황하고 흔들리기 쉽다(A2).
+Future<void> _selectDropdown(WidgetTester tester, String key, String value) async {
+  final dropdown = tester.widget<DropdownButtonFormField<String?>>(find.byKey(Key(key)));
+  dropdown.onChanged!(value);
+  await tester.pump();
+}
+
+/// listing_form.dart의 validateAndBuildListing을 통과하는 최소 유효 입력 — sell_controller_test.dart·
+/// sell_screen_test.dart의 `_validInput`과 같은 값을 쓴다(그 값이 ListingOptions 목록 안에
+/// 있음이 이미 그 테스트들로 보장돼 있다).
+Future<void> _fillValidSellForm(WidgetTester tester) async {
+  await _selectDropdown(tester, 'sell_manufacturer', '현대');
+  await tester.enterText(find.byKey(const Key('sell_model')), '아반떼');
+  await _selectDropdown(tester, 'sell_body_type', '준중형차');
+  await tester.enterText(find.byKey(const Key('sell_year')), '2021');
+  await tester.enterText(find.byKey(const Key('sell_price')), '20000000');
+  await tester.enterText(find.byKey(const Key('sell_mileage')), '10000');
+  await _selectDropdown(tester, 'sell_color', '흰색');
+  await _selectDropdown(tester, 'sell_fuel', '가솔린');
+  await _selectDropdown(tester, 'sell_transmission', '자동');
+  await tester.enterText(find.byKey(const Key('sell_displacement')), '1600');
+  await tester.enterText(find.byKey(const Key('sell_seats')), '5');
+  await _selectDropdown(tester, 'sell_region', '서울');
 }
 
 void main() {
@@ -176,6 +224,47 @@ void main() {
     },
   );
 
+  testWidgets(
+    '카메라 접근이 예외를 던져도(권한 거부 등) 화면이 죽지 않고 안내만 뜬다(review 발견, spec-16-7)',
+    (tester) async {
+      fakePicker.throwOnPick = true;
+
+      await _pumpSellScreen(tester);
+      await tester.ensureVisible(find.byKey(const Key('photo_add_button')));
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('photo_pick_camera')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: '위젯 밖으로 예외가 새면 안 된다');
+      expect(find.byKey(const Key('photo_pick_error')), findsOneWidget);
+      expect(find.text('카메라를 열지 못했어요. 권한을 확인해주세요.'), findsOneWidget);
+      expect(find.text('0/10'), findsOneWidget, reason: '실패했으니 목록엔 아무것도 추가되지 않는다');
+    },
+  );
+
+  testWidgets(
+    '고른 파일 중 하나만 읽기 실패해도(핸들 회수 등) 나머지는 정상 추가되고 제외 안내가 뜬다'
+    '(review 발견, spec-16-7)',
+    (tester) async {
+      fakePicker.multiImages = [_UnreadableXFile('bad'), _fakeImage('good')];
+
+      await _pumpSellScreen(tester);
+      await tester.ensureVisible(find.byKey(const Key('photo_add_button')));
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('photo_pick_gallery')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('1/10'), findsOneWidget, reason: '읽기 실패한 1장은 빠지고 정상 1장만 들어간다');
+      expect(find.byKey(const Key('photo_pick_error')), findsOneWidget);
+      expect(find.textContaining('일부 사진을 읽지 못했어요'), findsOneWidget);
+      expect(find.textContaining('1장은 제외했어요'), findsOneWidget);
+    },
+  );
+
   testWidgets('10장이 이미 있으면 "+" 버튼이 사라진다(정원 게이트, AC 매트릭스 "10장 초과")', (
     tester,
   ) async {
@@ -219,6 +308,40 @@ void main() {
       reason: '나머지 3장은 제외됐다는 안내가 화면에 남아야 한다(AC3)',
     );
   });
+
+  testWidgets(
+    '정원 초과와 읽기 실패가 동시에 나면 두 사유를 합쳐 "N장은 제외했어요"로 알린다'
+    '(review 발견, spec-16-7 — 예전엔 정원 초과분만 세어 카운터·안내가 어긋났다)',
+    (tester) async {
+      fakePicker.multiImages = [
+        _UnreadableXFile('bad'), _fakeImage('a'), _fakeImage('b'), _fakeImage('c'), _fakeImage('d'),
+      ];
+
+      await _pumpSellScreen(tester, initialPhotos: _savedPhotos(8));
+      await tester.ensureVisible(find.byKey(const Key('photo_scroll')));
+      await tester.dragUntilVisible(
+        find.byKey(const Key('photo_add_button')),
+        find.byKey(const Key('photo_scroll')),
+        const Offset(-200, 0),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('photo_pick_gallery')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('9/10'),
+        findsOneWidget,
+        reason: '방(room)=2장인데 그중 1장은 읽기 실패라 실제로는 1장만 늘어난다',
+      );
+      expect(
+        find.textContaining('4장은 제외했어요'),
+        findsOneWidget,
+        reason: '정원 초과 3장 + 못 읽은 파일 1장 = 4장이 합쳐져야 한다(카운터와 안내가 갈리면 안 된다)',
+      );
+    },
+  );
 
   testWidgets('삭제 버튼을 누르면 그 항목이 사라지고 카운터가 줄어든다', (tester) async {
     await _pumpSellScreen(tester, initialPhotos: _savedPhotos(2));
@@ -289,28 +412,29 @@ void main() {
   });
 
   testWidgets(
-    '업로드 실패(재시도 가능)로 아직 저장되지 않은 사진은 대표 배지를 받지 않는다(review 발견 — '
-    '화면·DB 대표 불일치, spec-16-7)',
+    '영구 거부(용량초과·포맷거부, 재시도 불가)로 애초에 저장될 수 없는 사진은 대표 배지를 받지 '
+    '않는다(review 발견 — 화면·DB 대표 불일치, spec-16-7. ⚠️ 이 시나리오는 spec-16-7 후속 리뷰에서 '
+    '`retryable:true`(재시도 가능) 항목으로 바뀌었다 — syncListingPhotos가 재시도 가능한 항목은 '
+    '다시 올려 성공시키므로, 그 경우엔 오히려 배지가 **거기** 붙어야 한다(위 "재시도 가능한 업로드 '
+    '실패 항목이 0번이면…" 검사 참조). 이 검사는 재시도해도 결과가 같은 **영구** 거부 항목만 다룬다)',
     (tester) async {
-      final failed = PhotoItem(
-        key: 'k-failed',
-        previewUrl: '/tmp/failed.jpg',
+      const rejected = PhotoItem(
+        key: 'k-rejected',
         status: PhotoStatus.error,
-        error: '사진을 올리지 못했어요. 다시 시도해주세요.',
-        retryable: true,
-        file: _fakeImage('failed'),
+        error: '장당 최대 5MB까지 올릴 수 있어요.',
+        retryable: false,
       );
       final saved = _savedPhotos(1).single;
-      await _pumpSellScreen(tester, initialPhotos: [failed, saved]);
+      await _pumpSellScreen(tester, initialPhotos: [rejected, saved]);
       await tester.ensureVisible(find.byKey(Key('photo_item_${saved.key}')));
 
       expect(
         find.descendant(
-          of: find.byKey(Key('photo_item_${failed.key}')),
+          of: find.byKey(Key('photo_item_${rejected.key}')),
           matching: find.text('대표'),
         ),
         findsNothing,
-        reason: '아직 storagePath가 없는(=저장 안 된) 사진에 대표 배지가 붙으면 photo_sync.dart가 '
+        reason: '재시도해도 결코 저장될 수 없는 사진에 대표 배지가 붙으면 photo_sync.dart가 '
             '실제로 대표를 거는 사진과 화면이 갈린다',
       );
       expect(
@@ -339,4 +463,137 @@ void main() {
     // 거부된 항목은 정원 계산에서 빠진다(storagePath 없음 + retryable:false).
     expect(find.text('0/10'), findsOneWidget);
   });
+
+  testWidgets(
+    '5MB 초과 파일을 실제로 고르면 validatePickedFile이 용량초과로 거부하고 정원에서 빠진다',
+    (tester) async {
+      fakePicker.multiImages = [_fakeImage('big', bytes: 6 * 1024 * 1024)];
+
+      await _pumpSellScreen(tester);
+      await tester.ensureVisible(find.byKey(const Key('photo_add_button')));
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('photo_pick_gallery')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('장당 최대 5MB까지 올릴 수 있어요.'), findsOneWidget);
+      expect(find.text('0/10'), findsOneWidget, reason: '거부된 항목은 정원(N/10) 계산에서 빠진다');
+    },
+  );
+
+  testWidgets(
+    '허용되지 않는 확장자 파일을 실제로 고르면 validatePickedFile이 포맷거부로 표시한다',
+    (tester) async {
+      fakePicker.multiImages = [
+        XFile.fromData(
+          Uint8List.fromList(List.filled(100, 0)),
+          path: '/tmp/x.gif',
+          name: 'x.gif',
+          mimeType: 'image/gif',
+        ),
+      ];
+
+      await _pumpSellScreen(tester);
+      await tester.ensureVisible(find.byKey(const Key('photo_add_button')));
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('photo_pick_gallery')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('JPG · PNG · WebP 형식만 올릴 수 있어요.'), findsOneWidget);
+      expect(find.text('0/10'), findsOneWidget, reason: '거부된 항목은 정원(N/10) 계산에서 빠진다');
+    },
+  );
+
+  testWidgets(
+    '등록 성공 직후(아직 아무것도 타이핑하지 않았을 때) 다음 매물용 사진을 고르면 사라지지 않는다'
+    '(review 발견, spec-16-7 후속 리뷰 patch — _handledResult 가드가 없으면 사진을 고를 때마다 '
+    '일어나는 리빌드가 매번 _resetFields()를 다시 돌려 방금 고른 사진을 지운다)',
+    (tester) async {
+      await _pumpSellScreen(tester);
+      await _fillValidSellForm(tester);
+
+      await tester.ensureVisible(find.byKey(const Key('sell_submit')));
+      await tester.tap(find.byKey(const Key('sell_submit')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('매물이 등록되었습니다. 구매자에게 바로 노출됩니다.'),
+        findsOneWidget,
+        reason: '드라이빙 전제 확인 — 등록 자체가 성공했는지부터 본다',
+      );
+      expect(find.text('0/10'), findsOneWidget, reason: '등록 성공 후 폼과 함께 사진도 비워진다(정상 동작)');
+
+      // 타이핑(= updateInput 이 success 를 지우는 경로)은 하지 않은 채, 다음 매물 사진을 고른다.
+      fakePicker.multiImages = [_fakeImage('next')];
+      await tester.ensureVisible(find.byKey(const Key('photo_add_button')));
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('photo_pick_gallery')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('1/10'),
+        findsOneWidget,
+        reason:
+            '방금 고른 사진이 살아있어야 한다 — 가드가 없으면 사진을 고른 것 자체가 만드는 리빌드가 '
+            '등록 성공 결과 처리 콜백을 다시 태워 0/10으로 되돌린다',
+      );
+    },
+  );
+
+  testWidgets(
+    '재시도 가능한 업로드 실패 항목이 0번이면 대표 배지도 0번에 붙는다(review 발견, spec-16-7 '
+    '후속 리뷰 patch — syncListingPhotos는 재시도 가능한 항목을 다시 올려 성공하면 그 항목이 '
+    '실제 sort_order 0(대표)이 된다. 예전 술어(status != error)는 이런 항목을 건너뛰어 배지를 '
+    '엉뚱한 사진에 붙였다)',
+    (tester) async {
+      final retryable = PhotoItem(
+        key: 'k-retry',
+        previewUrl: '/tmp/retry.jpg',
+        status: PhotoStatus.error,
+        error: '사진을 올리지 못했어요. 다시 시도해주세요.',
+        retryable: true,
+        file: _fakeImage('retry'),
+      );
+      final uploaded = _savedPhotos(1).single;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PhotoUploaderWidget(items: [retryable, uploaded], onChanged: (_) {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(Key('photo_item_${retryable.key}')),
+          matching: find.text('대표'),
+        ),
+        findsOneWidget,
+        reason: '재시도가 성공하면 이 항목이 실제로 0번(대표)이 된다 — 화면 배지도 그래야 한다',
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('photo_item_${uploaded.key}')),
+          matching: find.text('대표'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(Key('photo_make_cover_${retryable.key}')),
+        findsNothing,
+        reason: '대표(예측되는 0번) 항목엔 [대표로] 버튼이 없다',
+      );
+      expect(
+        find.byKey(Key('photo_make_cover_${uploaded.key}')),
+        findsOneWidget,
+        reason: '대표가 아닌 항목엔 [대표로] 버튼이 있어야 한다',
+      );
+    },
+  );
 }

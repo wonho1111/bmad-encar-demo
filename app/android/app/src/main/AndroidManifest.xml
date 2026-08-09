@@ -5,6 +5,12 @@
     <!-- 카메라 권한: 매물 사진 업로더(Story 16.7)의 "카메라로 촬영" 옵션에 필요.
          갤러리 선택은 시스템 포토피커(image_picker의 pickMultiImage)라 별도 권한이 필요 없다. -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- ⚠️ CAMERA 권한을 선언하면 Android는 `android.hardware.camera`를 **required="true"** 로
+         암묵 승격한다 — 그러면 Play가 카메라 없는 기기(일부 태블릿·Chromebook)에서 이 앱을
+         설치 목록에서 걸러낸다. 사진 업로드는 갤러리만으로도 성립하므로 선택 기능으로 내린다
+         (review 발견, spec-16-7). 런타임에 카메라가 없으면 _pickFromCamera의 try/catch가 받는다. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
     <application
         android:label="app"
         android:name="${applicationName}"

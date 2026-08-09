@@ -2,7 +2,7 @@
 title: '16.7 앱 사진 업로더'
 type: 'feature'
 created: '2026-08-09'
-status: 'done'
+status: 'in-review'
 baseline_revision: '1bdd2ad61965bde6a1d9398aa0eca358e66aa388'
 final_revision: '0fef5d65d938eb3c4c1b0f5fe11bb6ecd59121aa'
 review_loop_iteration: 0
@@ -66,6 +66,10 @@ warnings: ['oversized']
 - `app/test/photo_sync_test.dart` -- 신규: syncListingPhotos 단위테스트(I/O 매트릭스)
 - `app/test/photo_resize_test.dart` -- 신규: 리사이즈 규격 단위테스트
 - `app/test/sell_screen_photo_test.dart` -- 신규: 업로더 위젯테스트(추가/삭제/재배치/정원/오류표시)
+- `app/test/storage_helper_test.dart` -- 신규(후속 리뷰): `buildStoragePath`·`uploadListingImage`·`deleteListingImageObject`를 **실제로 호출하는** 첫 테스트(경로 세그먼트 순서·x-upsert 금지·실패 시 예외 대신 사유 반환)
+- `app/test/sell_screen_edit_photos_test.dart` -- 신규(후속 리뷰): 수정 모드 제출 결과 병합의 회귀(무한 리빌드 + 복구 조작 되돌림)
+- `app/test/edit_listing_screen_photos_test.dart` -- 신규: 수정 화면 사진 로딩 정상/에러 분기
+- `app/test/listings_repository_delete_test.dart` -- 신규: `deleteListing` 오케스트레이션(순서·게이팅)
 - `_bmad-output/implementation-artifacts/deferred-work.md` -- DW-352/DW-390 상태를 `done 2026-08-09`로 갱신
 
 ## Tasks & Acceptance
@@ -128,6 +132,34 @@ AC5(매물 삭제 시 오브젝트 정리)는 SQL로 측정이 불가능해(`sto
 
 ## Review Triage Log
 
+### 2026-08-09 — Review pass (후속 2차)
+- intent_gap: 0
+- bad_spec: 0
+- patch: 6: (high 4, medium 2, low 0)
+- defer: 6: (high 0, medium 5, low 1)
+- reject: 8: (high 0, medium 0, low 8)
+- addressed_findings:
+  - `[high]` `[patch]` `buildStoragePath`가 `{listing_id}/{user_id}/{filename}` 순서로 조립하고 있었다 — 첫 세그먼트가 소유자여야 한다는 Storage RLS와 `0013` 경로 무결성 트리거에 걸려 **모든 업로드가 거부**되는 상태였다(스펙 Always 첫 줄 위반). 계약 순서로 복원. 이 패스 시작 시점에 `storage_helper_test.dart` 2건이 실제로 red였고 복원 후 green 확인.
+  - `[high]` `[patch]` `validatePickedFile`에서 확장자 검사와 5MB 상한 검사가 빠져 있었다 — I/O 매트릭스 2행("5MB 초과 파일 선택")이 성립하지 않고, `flutter analyze`도 `_extensionOf` 미사용 경고 1건을 내고 있었다. 두 검사를 복원(analyze 0 issues, `sell_screen_photo_test.dart` 2건 red→green).
+  - `[high]` `[patch]` 등록에 성공한 뒤 **다음 매물용으로 고른 사진이 다음 프레임에 사라졌다.** `sell.success`는 텍스트 입력(`updateInput`)으로만 지워지는데 사진 선택은 그 경로를 타지 않아, 사진을 고를 때마다 일어나는 리빌드가 post-frame 콜백을 다시 돌려 `_resetFields()`를 재실행했다. 결과를 한 번만 소비하는 `_handledResult` 가드로 수정, 회귀 테스트 추가(red 실측 확인).
+  - `[high]` `[patch]` 수정 화면에서 사진 처리가 일부 실패한 뒤 **에러 배너가 시킨 복구 조작(삭제·재정렬·재시도)이 한 프레임 뒤에 전부 되돌려졌다.** 기존 `!identical(incoming, _photos)` 가드는 무한루프만 막았고, 사용자가 목록을 바꾸면 비교가 다시 어긋나 컨트롤러의 옛 목록으로 덮였다 — 안내가 지시한 복구 경로에서 빠져나갈 수 없는 상태. 같은 `_handledResult` 가드로 해소, 회귀 테스트 추가(red 실측 확인, 기존 무한루프 테스트도 함께 green 유지).
+  - `[medium]` `[patch]` 대표 배지가 **재시도 가능한** 업로드 실패 항목을 건너뛰었다. `syncListingPhotos`는 그런 항목을 다시 올리므로 재시도가 성공하면 그 사진이 실제 `sort_order` 0(대표)이 되는데 배지는 뒤 사진에 붙어 있었다(지난 패스가 고친 불일치의 방향만 뒤집힌 형태). 술어를 정원 계산과 동일한 `!_isRejected`(영구 거부만 제외)로 통일하고 `[대표로]` 노출 조건도 맞춤. 옛 동작을 **다른 표기로** 다시 심어 red 확인 후 원복.
+  - `[medium]` `[patch]` `syncListingPhotos`가 예상 밖 예외를 던지면 `submit()` 바깥 catch가 이를 "매물 저장 실패"로 바꿔, 이미 등록·수정된 매물을 두고 사용자가 같은 매물을 다시 등록할 수 있었다(스펙 Always "개별 사진 실패는 폼 제출 자체를 막지 않는다" 위반). `_syncPhotosSafely`로 감싸 사진 쪽 실패로만 격리.
+  - `[medium]` `[defer]` → DW-748(`sort_order` 갱신 실패 행이 옛 번호를 유지해 중복 가능 → 대표가 엉뚱한 사진)
+  - `[medium]` `[defer]` → DW-749(`epic-16-context.md`가 인수 커밋에서 재작성되며 16.8 정정 소실 + 철회된 계약 부활 — 다음 스토리가 planning에서 읽는 문서)
+  - `[medium]` `[defer]` → DW-750(AC4 `sold` 쓰기 차단에 자동 회귀 검사 없음 — `api-db` CI 잡을 쓸 수 있는데 안 씀)
+  - `[medium]` `[defer]` → DW-751(`fetchOwnListingPhotos`·`toPhotoItems`가 전 스위트에서 미실행 — 정렬 계약이 깨져도 초록)
+  - `[medium]` `[defer]` → DW-752(`deleteListing` 사진 정리 호출의 presence 단언 0건 — AC5의 유일한 자동 방어선)
+  - `[low]` `[defer]` → DW-753(AndroidManifest "시스템 포토피커" 주석이 실제 경로(SAF)와 다름 — DW-747의 전제에 영향)
+  - `[reject]` `deleteListing` 정리 실패가 호출부에 안 알려짐 / 정리 실패 관측 수단 없음 — 의도가 "베스트에포트, 실패해도 삭제 자체는 되돌리지 않는다"로 스코프를 명시했다(지난 패스와 동일 판단).
+  - `[reject]` 삭제 실패로 DB 행이 정원을 차지한 채 업로드를 계속 진행 — 서버 트리거를 최종 방어선으로 두는 것이 스펙이 정한 구조다.
+  - `[reject]` INSERT 보상 삭제까지 실패하면 `print`만 남는다 — 관측성 개선이고 이 스토리의 계약 밖이다.
+  - `[reject]` `coverPath == null`인데 `is_cover` 리셋만 나가고 경고가 없다 — **코드를 읽어 확인한 결과 사실이 아니다.** 저장된 사진이 있는데 `coverPath`가 비는 경우는 모든 저장이 실패했을 때뿐이고, 그 실패들이 이미 각각 경고를 남긴다.
+  - `[reject]` `compressWithList`가 예외 대신 빈 바이트를 돌려줘 0바이트 오브젝트가 저장될 수 있다 — **패키지 소스로 확인한 결과 전제가 틀렸다.** `flutter_image_compress_common` 1.1.1은 네이티브 실패를 `CompressError`로 던지고 null을 돌려주지 않는다.
+  - `[reject]` `is_cover`를 읽는 코드가 없으니 그 쓰기 실패를 사용자 오류로 만들지 말라 — `docs/conventions.md` §10.1이 확정한 계약이고 웹과의 미러 유지가 이 스토리의 접근 자체다.
+  - `[reject]` `CAMERA` 권한 선언 자체를 빼라 — 카메라 촬영 옵션은 확정된 UX 범위이고, 권한 제거는 이 스토리의 의도 밖 변경이다.
+  - `[reject]` `sprint-status.yaml`과 스펙 frontmatter의 status 불일치·`review_loop_iteration` 미증가 — 오케스트레이터가 소유하는 필드다(이 실행은 건드리지 않는다).
+
 ### 2026-08-09 — Review pass
 - intent_gap: 0
 - bad_spec: 0
@@ -153,6 +185,45 @@ AC5(매물 삭제 시 오브젝트 정리)는 SQL로 측정이 불가능해(`sto
   - `[reject]` AC5가 "통과한 것처럼" 나열됐다는 지적 — Design Notes가 이미 DW-743으로 미검증을 명시하고 있어 오인 소지가 없다.
 
 ## Auto Run Result
+
+### 2026-08-09 — 후속 2차 리뷰 패스
+
+**요약:** 이 실행은 `followup_review_recommended: true`로 재개된 **후속 리뷰**다. 재구현은 하지 않았다.
+시작 시점의 워킹트리에는 커밋되지 않은 변경이 쌓여 있었고(직전 세션이 마무리를 못 한 상태),
+그 안에 **계약을 정면으로 깨는 회귀 2건**이 살아 있었다 — `flutter analyze` 1 issue,
+`flutter test` 4건 red가 그 사실을 그대로 보여줬다. 4개 리뷰 레이어(blind-hunter /
+edge-case-hunter / verification-gap / intent-alignment)를 병렬 실행한 뒤, patch 6건을 직접
+수정하고 회귀 테스트를 붙였으며 defer 6건을 장부(DW-748~753)에 등재했다.
+
+> ⚠️ 4개 레이어 중 3개가 위 회귀 2건을 "옆에서 도는 리뷰어의 red 프로브"로 판정했다.
+> 그러나 그 변경들은 **리뷰어를 띄우기 전부터 워킹트리에 있었고**(실행 전 `git diff`로 확인),
+> 리뷰어 종료 후 파일 해시가 변하지 않았다. 즉 프로브가 아니라 **원복되지 않은 채 남은 회귀**였다.
+> 이번 실행의 테스트 작성 서브에이전트도 같은 실수를 했다 — `_handledResult = current;` 한 줄을
+> red 증명용으로 지우고 복원하지 않은 채 끝났고, 전체 스위트를 직접 돌려서야 잡혔다.
+
+**파일 변경(이번 실행분만):**
+- `app/lib/core/supabase/storage_helper.dart` — `buildStoragePath` 세그먼트 순서를 계약(`{user_id}/{listing_id}/{filename}`)으로 복원
+- `app/lib/features/listings/photo_item.dart` — `validatePickedFile`의 확장자·5MB 검사 복원
+- `app/lib/features/listings/sell_screen.dart` — 제출 결과를 한 번만 소비하는 `_handledResult` 가드 추가(등록 후 사진 소실 + 수정 복구 조작 되돌림 동시 해소)
+- `app/lib/features/listings/photo_uploader_widget.dart` — 대표 배지·`[대표로]` 술어를 정원 계산과 같은 `!_isRejected`로 통일
+- `app/lib/features/listings/sell_controller.dart` — `_syncPhotosSafely` 추가(사진 반영 예외가 "매물 저장 실패"로 새지 않게)
+- `app/test/sell_screen_photo_test.dart` — 등록 후 사진 소실 회귀 + 대표 배지(재시도 가능 항목) 회귀 테스트
+- `app/test/sell_screen_edit_photos_test.dart` — 수정 부분실패 후 복구 조작이 유지되는지 회귀 테스트
+- `_bmad-output/implementation-artifacts/deferred-work.md` — DW-748~753 신설(기존 항목은 건드리지 않음)
+
+**리뷰 결과:** intent_gap 0 · bad_spec 0 · patch 6(high 4, medium 2 — 전부 이번 패스에서 수정·검증) · defer 6(DW-748~753) · reject 8. Follow-up review 권고: **true**(high 패치가 있어 자동 true).
+
+**검증(전부 이번 실행에서 직접 돌려 관찰):**
+- `flutter analyze` → **No issues found!** (시작 시점: 1 issue)
+- `flutter test` → **422 passed, 0 failed** (시작 시점: 415 passed / 4 failed)
+- `flutter build apk --debug --dart-define-from-file=.env.json` → **빌드 성공.** 이번엔 생략하지 않았다 — 워킹트리가 `AndroidManifest.xml`을 바꿨는데(`uses-feature ... required="false"` 2줄) **매니페스트 병합 오류는 analyze·test가 구조적으로 못 잡는 유일한 종류**라서다.
+- red→green 실측: 대표 배지 술어는 옛 동작을 **다른 표기로** 다시 심어 red를 확인한 뒤 백업본으로 원복했다(`git checkout`은 쓰지 않았다 — 커밋 안 된 변경을 날린다).
+
+**이 검사들이 보지 않는 것:** 실제 기기·실제 Supabase. 모든 앱 테스트는 가짜 http 클라이언트로 "나가는 요청의 모양과 순서"까지만 본다(DW-751·DW-752가 그중 구멍 2개를 지목한다). AC5(매물 삭제 시 오브젝트 실제 정리)는 여전히 DW-743, 실기기 카메라 권한은 DW-742로 열려 있다.
+
+**잔존 리스크:** DW-749(에픽 컨텍스트 문서에 철회된 계약이 되살아나 있음 — 다음 스토리가 planning에서 먼저 읽는 문서라 **16.6 착수 전에** 봐야 한다), DW-750(sold 차단 회귀가 CI에 안 잡힘), DW-748(부분 실패 시 대표가 엉뚱한 사진이 될 수 있음).
+
+### 2026-08-09 — 1차 리뷰 패스
 
 **요약:** 이 스토리(앱 사진 업로더)는 이전 dev 세션이 OOM으로 끊긴 뒤 사람이 인수·커밋한 상태(`6620529`, `2860ab3`)로 이번 실행을 시작했다. 재구현은 하지 않고 Design Notes의 지시대로 검증·리뷰만 수행했다 — Matrix Test Audit에서 실측 갭 1건을 직접 메우고, 4개 리뷰 레이어(blind-hunter/edge-case-hunter/verification-gap/intent-alignment) 병렬 실행 후 patch 7건을 직접 수정·회귀테스트 추가, defer 4건을 장부(DW-744~747)에 등재했다.
 

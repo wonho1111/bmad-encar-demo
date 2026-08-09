@@ -61,10 +61,15 @@ class EditListingScreen extends ConsumerWidget {
           loading: () => const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           ),
+          // 사진 조회 실패는 여기서 화면을 막는다(빈 목록으로 넘기면 "기존 사진 0장"으로
+          // 오인해 재제출 때 sort_order·대표를 실제 DB와 어긋나게 다시 매긴다). 다만
+          // 되돌아가는 것 말고 **다시 시도할 길**은 준다 — 일시적 네트워크 오류 하나로
+          // 매물 수정 자체가 막히는데 재시도 수단이 없었다(review 발견, spec-16-7).
           error: (e, _) => _message(
             context,
             '사진 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
             key: 'edit_photos_load_error',
+            onRetry: () => ref.invalidate(editListingPhotosProvider(listingId)),
           ),
           // 본인 on_sale 매물 → 등록 폼을 재사용한 수정 화면(상세+기존 사진을 넘겨 폼을 채움).
           data: (photos) => SellScreen(editDetail: detail, initialPhotos: photos),
@@ -73,7 +78,14 @@ class EditListingScreen extends ConsumerWidget {
     );
   }
 
-  Widget _message(BuildContext context, String text, {required String key}) {
+  /// [onRetry]가 있으면 "다시 시도" 버튼을 함께 그린다(일시적 실패에만 준다 — 권한 없음·
+  /// 없는 매물처럼 다시 눌러도 결과가 같은 경우엔 주지 않는다).
+  Widget _message(
+    BuildContext context,
+    String text, {
+    required String key,
+    VoidCallback? onRetry,
+  }) {
     return Scaffold(
       appBar: AppBar(title: const Text('매물 수정')),
       body: Center(
@@ -84,6 +96,14 @@ class EditListingScreen extends ConsumerWidget {
             children: [
               Text(text, key: Key(key), textAlign: TextAlign.center),
               const SizedBox(height: 16),
+              if (onRetry != null) ...[
+                FilledButton(
+                  key: const Key('edit_photos_retry'),
+                  onPressed: onRetry,
+                  child: const Text('다시 시도'),
+                ),
+                const SizedBox(height: 8),
+              ],
               OutlinedButton(
                 onPressed: () => Navigator.of(context).pop(),
                 child: const Text('내 매물 목록으로'),

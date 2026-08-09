@@ -95,6 +95,13 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   /// 명시 구분한다. SellState.owner 주석 참조).
   final Object _owner = Object();
 
+  /// 이미 **소비한** 제출 결과(SellState 인스턴스). 아래 post-frame 콜백은 `success != null`인
+  /// 동안 매 build마다 다시 예약되므로, "이 결과를 처리했는가"를 기억하지 않으면 사용자가
+  /// 사진을 만들 때마다(=리빌드) 결과 처리가 다시 돌아 사용자의 조작을 덮어쓴다.
+  /// SellController는 상태를 바꿀 때마다 새 SellState를 만들므로 인스턴스 동일성으로 충분하다
+  /// (review 발견, spec-16-7 후속 리뷰).
+  SellState? _handledResult;
+
   @override
   void initState() {
     super.initState();
@@ -256,6 +263,13 @@ class _SellScreenState extends ConsumerState<SellScreen> {
         if (current.success == null) return; // 이미 다른 화면이 소비/초기화했다.
         final currentMine = current.owner != null && current.owner == _owner;
         if (!currentMine) return;
+        // 이 결과는 **한 번만** 소비한다. 안 그러면 리빌드마다 콜백이 다시 돌아
+        // (a) 수정 분기는 사용자의 사진 조작을 컨트롤러 목록으로 되돌리고,
+        // (b) 등록 분기는 다음 매물용으로 방금 고른 사진을 _resetFields()로 지운다.
+        // 둘 다 "사진을 만지면 리빌드된다"는 사실 때문에 생기며, 사용자에겐 조작이
+        // 그냥 사라지는 것으로 보인다(review 발견, spec-16-7 후속 리뷰).
+        if (identical(current, _handledResult)) return;
+        _handledResult = current;
         if (isEdit) {
           // 수정 성공 → 화면을 닫고 목록으로 복귀(true 를 돌려줘 목록이 새로고침하게).
           if (current.done && Navigator.of(context).canPop()) {
@@ -265,15 +279,20 @@ class _SellScreenState extends ConsumerState<SellScreen> {
           // done이 아니면 사진 처리 중 일부가 실패해 화면에 남아 있다(sell_controller.dart) —
           // 실제로 저장된 상태로 로컬 업로더를 갱신해 재시도할 수 있게 한다. 기준선도 "지금
           // 실제로 저장된 것"으로 옮긴다(저장된 항목만 — rowId가 있는 것 = DB에 행이 있는 것).
-          if (current.photos != null && mounted) {
+          // 위 `_handledResult` 가드가 이 병합을 결과당 한 번으로 묶는다 — 그 뒤 사용자가
+          // 삭제·재정렬·재시도를 하면 그 조작이 화면에 그대로 남는다(안 그러면 안내가 시킨
+          // 복구 동작이 다음 프레임에 되돌려져 빠져나갈 수 없다).
+          final incoming = current.photos;
+          if (incoming != null && mounted) {
             setState(() {
-              _photos = current.photos!;
+              _photos = incoming;
               _baseline = _photos.where((p) => p.rowId != null).toList();
             });
           }
         } else {
-          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비, 사진 포함).
-          if (_model.text.isNotEmpty || _photos.isNotEmpty) _resetFields();
+          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비, 사진 포함). 결과당 한 번만 돈다
+          // (위 가드) — 안 그러면 다음 매물용으로 고른 사진이 다음 프레임에 지워진다.
+          _resetFields();
         }
       });
     }

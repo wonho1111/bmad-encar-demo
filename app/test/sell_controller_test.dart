@@ -225,16 +225,73 @@ void main() {
       expect(repo.updateCalls, ['listing-EDIT']);
       expect(
         fakeHttp.requests.any(
-          (r) => r.method == 'PATCH' && r.url.path.contains('listing_images'),
+          (r) =>
+              r.method == 'PATCH' &&
+              r.url.path.contains('listing_images') &&
+              r.url.queryParameters['listing_id'] == 'eq.listing-EDIT',
         ),
         isTrue,
-        reason: 'syncListingPhotos가 실제로 호출돼 listing_images에 요청이 나갔어야 한다',
+        reason:
+            'syncListingPhotos가 실제로 호출돼 listing_images에 요청이 나갔어야 하고, '
+            '그 listing_id가 수정 대상(listing-EDIT)과 같아야 한다',
       );
 
       final state = container.read(sellControllerProvider);
       expect(state.photos, isNotNull, reason: 'PhotoSyncResult.photos가 state로 병합돼야 한다');
       expect(state.photos!.single.key, 'k-kept');
       expect(state.error, isNull, reason: '실패 없이 끝났으면 에러가 남으면 안 된다');
+    },
+  );
+
+  test(
+    'submit()이 등록(신규) 모드로 사진과 함께 호출되면 createListing이 돌려준 id로 '
+    'syncListingPhotos가 호출된다(review 발견 — 등록 분기를 태우는 배선 테스트가 0건이었다. '
+    'syncListingPhotos(userId, listingId, ...)는 앞 두 인자가 둘 다 String이라 뒤바꿔도 '
+    '컴파일되므로, 실제 요청에 실린 listing_id로 확인한다)',
+    () async {
+      fakeHttp.requests.clear();
+      final repo = _RecordingRepo();
+      addTearDown(repo.client.dispose);
+      final container = _container(repo);
+      addTearDown(container.dispose);
+
+      final notifier = container.read(sellControllerProvider.notifier);
+      notifier.updateInput(_validInput);
+
+      // uploadFn/resizeFn 없이(파일피커·플랫폼 채널 없이) 배선만 보려면, sell_controller_test.dart의
+      // 다른 테스트와 같이 "이미 저장된 사진"으로 취급되는 항목을 넘긴다 — 그러면 syncListingPhotos는
+      // 업로드를 건너뛰고 sort_order 갱신 + 대표(is_cover) 재계산 단계로 가는데, 대표 재계산 단계가
+      // `.eq('listing_id', listingId)`로 쏘는 요청이 있어 그 쿼리파라미터로 인자 배선을 확인할 수 있다.
+      final kept = PhotoItem(
+        key: 'k-kept',
+        previewUrl: 'https://cdn.test/kept',
+        status: PhotoStatus.uploaded,
+        storagePath: '${_fakeUser().id}/created-listing-id/kept.webp',
+        rowId: 'row-kept',
+      );
+
+      await notifier.submit(editingId: null, photos: [kept], baseline: const []);
+
+      expect(repo.createCalls, hasLength(1), reason: '등록 모드이므로 INSERT가 일어나야 한다');
+      expect(repo.updateCalls, isEmpty);
+
+      expect(
+        fakeHttp.requests.any(
+          (r) =>
+              r.method == 'PATCH' &&
+              r.url.path.contains('listing_images') &&
+              r.url.queryParameters['listing_id'] == 'eq.created-listing-id',
+        ),
+        isTrue,
+        reason:
+            'syncListingPhotos가 createListing이 돌려준 id(created-listing-id)로 불렸어야 한다 — '
+            'userId/listingId 인자가 뒤바뀌면(둘 다 String이라 컴파일은 통과) 여기 listing_id가 '
+            'user id로 새어 나온다',
+      );
+
+      final state = container.read(sellControllerProvider);
+      expect(state.error, isNull, reason: '실패 없이 끝났으면 에러가 남으면 안 된다');
+      expect(state.success, contains('매물이 등록되었습니다'));
     },
   );
 }

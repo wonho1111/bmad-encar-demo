@@ -261,7 +261,15 @@ void main() {
           req.method == 'DELETE' ? (status: 400, body: {'message': 'boom'}) : null;
 
       final r = await sync(const [], [gone]);
-      expect(r.warnings, contains('사진 삭제 정보를 정리하지 못했어요.'));
+      expect(r.warnings, contains('사진 삭제 정보를 정리하지 못했어요. 삭제 버튼을 다시 눌러주세요.'));
+      // 회귀(review 발견, spec-16-7): 예전엔 warning만 남기고 이 항목을 목록에서 빼버려,
+      // 파일 없는 행이 DB에 영구히 남는데 화면에도 baseline에도 없어 재시도가 불가능했다.
+      expect(
+        r.photos.map((p) => p.rowId),
+        [gone.rowId],
+        reason: '행이 안 지워졌으면 그 항목은 목록에 남아 다시 삭제를 시도할 수 있어야 한다',
+      );
+      expect(r.photos.single.status, PhotoStatus.error);
     });
 
     test('행 삭제가 0행(에러 아님)이면 성공으로 치지 않는다', () async {
@@ -269,7 +277,12 @@ void main() {
       fakeHttp.responder = (req) => req.method == 'DELETE' ? (status: 200, body: <dynamic>[]) : null;
 
       final r = await sync(const [], [gone]);
-      expect(r.warnings, contains('사진 삭제 정보를 정리하지 못했어요.'));
+      expect(r.warnings, contains('사진 삭제 정보를 정리하지 못했어요. 삭제 버튼을 다시 눌러주세요.'));
+      expect(
+        r.photos.map((p) => p.rowId),
+        [gone.rowId],
+        reason: '0행도 "행이 남았다"는 뜻이므로 항목을 목록에서 지우면 안 된다',
+      );
     });
 
     test('오브젝트 삭제 실패 항목은 다른 유지 사진 뒤로 밀려난다(I/O 매트릭스 "목록 맨 뒤로 이동")', () async {

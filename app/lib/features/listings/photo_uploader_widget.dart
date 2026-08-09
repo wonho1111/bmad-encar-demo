@@ -82,10 +82,16 @@ class _PhotoUploaderWidgetState extends State<PhotoUploaderWidget> {
 
     if (!mounted) return;
     setState(() {
-      _pickError = files.length > accepted.length
-          ? '사진은 최대 $maxPhotos장까지 올릴 수 있어요. ${files.length - accepted.length}장은 제외했어요.'
-          : unreadable > 0
-          ? '사진을 읽지 못했어요. 다시 선택해주세요.'
+      // 제외된 장수는 **두 사유를 합쳐** 센다 — 예전엔 정원 초과분만 세고 못 읽은 파일은
+      // 빼먹어서, 8장+5장 선택 중 1장이 안 읽히면 "3장 제외"라 말하고 실제로는 4장이
+      // 빠졌다(카운터와 안내가 어긋남, review 발견 spec-16-7). 두 사유가 동시에 나면 둘 다 알린다.
+      final trimmed = files.length - accepted.length;
+      _pickError = (trimmed > 0 || unreadable > 0)
+          ? [
+              if (trimmed > 0) '사진은 최대 $maxPhotos장까지 올릴 수 있어요.',
+              if (unreadable > 0) '일부 사진을 읽지 못했어요.',
+              '${trimmed + unreadable}장은 제외했어요.',
+            ].join(' ')
           : null;
     });
     widget.onChanged([...widget.items, ...next]);
@@ -175,12 +181,13 @@ class _PhotoUploaderWidgetState extends State<PhotoUploaderWidget> {
     final items = widget.items;
     final count = _acceptedCount();
     final full = count >= maxPhotos;
-    // 대표 배지·[대표로]가 가리켜야 할 실제 위치 — photo_sync.dart가 실제 대표를 거는 대상
-    // (storagePath!=null, 즉 저장에 성공한 사진)과 같은 기준으로 골라야 화면과 DB가 갈리지
-    // 않는다. `_isRejected`(정원 계산용)와는 다른 기준이다 — 업로드 실패(재시도 가능) 항목은
-    // 정원은 차지하지만 아직 저장되지 않았으므로 대표가 될 수 없다(review 발견, spec-16-7:
-    // 첫 사진이 업로드 실패·둘째가 성공하면 이전 술어는 실패한 첫 사진에 배지를 붙였다).
-    final firstSavableIndex = items.indexWhere((p) => p.status != PhotoStatus.error);
+    // 대표 배지·[대표로]가 가리켜야 할 위치. 제출 **전**이라 어떤 업로드가 성공할지는 알 수
+    // 없으므로 이건 예측이고, 예측의 기준은 "다음 제출에서 photo_sync가 저장을 시도할 대상"이다
+    // — 즉 영구 거부(용량초과·포맷거부)가 아닌 첫 항목. 정원 계산(`_acceptedCount`)과 같은
+    // 술어를 쓴다(review 발견, spec-16-7 후속 리뷰: 이전 술어 `status != error`는 재시도 가능한
+    // 업로드 실패 항목까지 건너뛰었는데, syncListingPhotos는 그 항목을 **다시 올려** sort_order 0을
+    // 준다 — 재시도가 성공하는 흔한 경우에 배지와 실제 대표가 갈렸다).
+    final firstSavableIndex = items.indexWhere((p) => !_isRejected(p));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -217,7 +224,7 @@ class _PhotoUploaderWidgetState extends State<PhotoUploaderWidget> {
                     onRemove: widget.disabled ? null : () => _remove(i),
                     onRetry: (!widget.disabled && items[i].retryable) ? () => _retry(i) : null,
                     onMakeCover:
-                        (!widget.disabled && i != firstSavableIndex && items[i].status != PhotoStatus.error)
+                        (!widget.disabled && i != firstSavableIndex && !_isRejected(items[i]))
                         ? () => _makeCover(i)
                         : null,
                   ),

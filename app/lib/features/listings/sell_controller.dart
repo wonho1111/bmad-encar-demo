@@ -170,7 +170,7 @@ class SellController extends Notifier<SellState> {
 
         // 매물은 이미 등록됐다 — 여기서부터 실패해도 등록을 되돌리지 않는다(AC3). 등록은
         // "기존 사진이 0장인 수정"이라 baseline은 비어 있다(호출부 기본값).
-        final photoResult = await syncListingPhotos(user.id, newListingId, photos, baseline);
+        final photoResult = await _syncPhotosSafely(user.id, newListingId, photos, baseline);
         final photoNote = _photoNote(photoResult);
 
         // 성공 → 폼 초기화 + 성공 안내(즉시 노출 FR7). 사진은 성공/실패와 무관하게 화면과 함께
@@ -180,7 +180,11 @@ class SellController extends Notifier<SellState> {
           input: const ListingFormInput(),
           success: photoNote == null
               ? '매물이 등록되었습니다. 구매자에게 바로 노출됩니다.'
-              : '매물이 등록되었습니다. 구매자에게 바로 노출됩니다. ($photoNote)',
+              // 실패한 사진은 어디서 복구하는지까지 말한다 — 등록 분기는 폼(사진 목록 포함)을
+              // 비우므로, 여기서 안내하지 않으면 사용자는 "무엇을 어떻게 다시 하라는 건지"
+              // 알 수 없다(수정 분기와 달리 화면에 재시도 대상이 남지 않는다, review 발견 spec-16-7).
+              : '매물이 등록되었습니다. 구매자에게 바로 노출됩니다. '
+                    '($photoNote — "내 매물 > 수정"에서 사진을 다시 올릴 수 있어요)',
           owner: owner,
           photos: const [],
         );
@@ -200,7 +204,7 @@ class SellController extends Notifier<SellState> {
         }
 
         // 매물 정보 저장은 이미 성공했다 — 사진 반영 실패가 이 성공을 되돌리지 않는다(AC3).
-        final photoResult = await syncListingPhotos(user.id, editingId, photos, baseline);
+        final photoResult = await _syncPhotosSafely(user.id, editingId, photos, baseline);
         final photoNote = _photoNote(photoResult);
 
         if (photoNote != null) {
@@ -236,6 +240,34 @@ class SellController extends Notifier<SellState> {
         editingId: editingId,
         error: toKoreanListingError(e),
         owner: owner,
+      );
+    }
+  }
+
+  /// syncListingPhotos 를 감싸 **예상 못 한 예외가 밖으로 새지 않게** 한다.
+  ///
+  /// 이 호출은 listings INSERT/UPDATE 가 이미 성공한 뒤에 일어난다. 예외가 그대로 올라가면
+  /// submit() 바깥 catch 가 이걸 "매물 저장 실패"로 바꿔버려, 실제로는 등록된 매물을 두고
+  /// 사용자가 같은 매물을 다시 등록하게 된다. 스펙 Always("개별 사진 업로드/삭제 실패는 폼
+  /// 제출 자체를 막지 않는다", AC3)에 맞춰 사진 쪽 실패로만 격리한다(review 발견, spec-16-7
+  /// 후속 리뷰). syncListingPhotos 내부는 이미 단계별로 방어돼 있어 여기까지 오는 건 예상
+  /// 밖의 경우뿐이다 — 그래서 사유를 뭉뚱그리되 로그에는 원본을 남긴다.
+  Future<PhotoSyncResult> _syncPhotosSafely(
+    String userId,
+    String listingId,
+    List<PhotoItem> photos,
+    List<PhotoItem> baseline,
+  ) async {
+    try {
+      return await syncListingPhotos(userId, listingId, photos, baseline);
+    } catch (e) {
+      // ignore: avoid_print
+      print('[sell] 사진 반영 중 예상 못 한 예외(listingId=$listingId): $e');
+      return PhotoSyncResult(
+        photos: photos,
+        savedCount: 0,
+        failedCount: photos.length,
+        warnings: const ['사진을 반영하지 못했어요.'],
       );
     }
   }

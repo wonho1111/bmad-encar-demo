@@ -5680,3 +5680,57 @@ severity: low
 reason: 이 검증은 스스로 "UX 층의 1차 방어일 뿐, 실제 강제는 서버(버킷 file_size_limit·allowed_mime_types)"라고 명시한다(over-rejection이 데이터 무결성 문제는 아니다). 다만 일부 콘텐츠 프로바이더(SAF 등)가 확장자 없는 경로를 돌려주면 유효한 이미지도 앱 단계에서 거부된다 — Android `image_picker`의 표준 경로(카메라 캡처·일반 갤러리)에서는 재현되지 않는 드문 경우다.
 trigger: 실사용자 리포트로 "사진을 선택했는데 형식 거부됨" 문의가 들어오면 그때 `mimeType` 기반 폴백(피커가 함께 주는 MIME 타입으로 판정)을 추가한다.
 status: open
+
+### DW-748: sort_order 갱신이 실패한 행은 DB에 옛 번호를 그대로 들고 남아, 새로 매긴 번호와 중복될 수 있다
+
+origin: spec-16-7-앱-사진-업로더 후속 review(edge-case-hunter) — `photo_sync.dart` 3단계
+location: `app/lib/features/listings/photo_sync.dart`(기존 행 `sort_order` UPDATE 실패 시 `continue` — 카운터 `order`를 올리지 않아 다음 항목이 같은 번호를 받는다)
+severity: medium
+reason: "구멍을 만들지 않는다"는 규칙(스펙 Always: 실제 저장 성공 개수 기준 연속 정수)을 지키느라 실패한 자리를 다음 항목이 메우는데, **실패한 행은 DB에서 지워지지 않고 옛 sort_order를 그대로 유지**한다. 그래서 옛 값과 새 값이 겹칠 수 있고, 대표는 `is_cover`가 아니라 `(sort_order, id)` 최솟값으로 읽히므로(웹·앱 공통) 중복이 생기면 id 타이브레이크로 **사용자가 아래로 내린 사진이 대표가 될 수 있다**. 사용자에게는 "사진 순서를 저장하지 못한 항목이 있어요" 경고만 뜬다(대표가 바뀐다는 말은 없다). 부분 실패 경로라 일상적으로 재현되지는 않는다.
+trigger: 대표 사진이 의도와 다르게 잡힌다는 리포트가 들어오거나, 사진 순서 계약을 실 DB 통합테스트로 덮는 작업을 할 때(→ DW-751과 같은 자리에서 함께 본다).
+status: open
+
+### DW-749: `epic-16-context.md`가 16.7 인수 커밋에서 재작성되며 16.8의 정정이 사라지고 **이미 철회된 계약**이 되살아났다
+
+origin: spec-16-7-앱-사진-업로더 후속 review(adversarial + intent-alignment 두 레이어가 독립 지적)
+location: `_bmad-output/implementation-artifacts/epic-16-context.md`(HEAD 기준 사진 업로드 계약 줄) — 커밋 `6620529`가 29줄 추가/33줄 삭제로 재작성
+severity: medium
+reason: 지금 이 문서는 "파일명은 (매물+순번)로 **결정론적**이라 재시도가 덮어씀"과 "삭제는 ①Storage 오브젝트→②DB 행 순서 **고정**"이라고 단정한다. 둘 다 spec-16-7이 Design Notes에서 명시적으로 **낡은 서술**이라고 선언하고 폐기한 내용이다(정본 `docs/conventions.md` §10.1 = uuid 파일명·upsert 금지 / 매물 **전체** 삭제는 ①`listings` 행 → ②오브젝트 정리로 순서가 반대다). 또 이전 판(`dc1f50c`)에 있던 `✎` 정정 표시 2개가 0개로 사라졌다(16.8이 남긴 제안 칩·차종 칩·DW-738 비로그인 열람 정정, Non-goals). 코드는 정본을 따랐으므로 지금 당장 깨지는 것은 없지만, **에픽 컨텍스트는 다음 스토리가 planning 단계에서 먼저 읽는 문서**라 16.6(실폰 검증)이 존재하지 않는 계약을 기준으로 검증할 수 있다. CLAUDE.md B8("상위 문서의 제약을 하위로 흘린다 — 문서를 새로 쓰는 순간이 가장 위험하다")에 정면으로 해당한다.
+trigger: Epic 16의 다음 스토리(16.6) 착수 시 **planning 전에** 이 파일을 `dc1f50c` 판과 대조해 사라진 정정·Non-goals를 복원하고, 사진 계약 줄을 §10.1로 맞춘다.
+status: open
+
+### DW-750: AC4(`sold` 매물 사진 쓰기 차단)에 자동 회귀 검사가 없다 — 쓸 수 있는 CI 잡이 이미 있는데 안 썼다
+
+origin: spec-16-7-앱-사진-업로더 후속 review(verification-gap)
+location: `supabase/migrations/0031_listing_images_sold_write_block.sql` / `api/tests/integration/`(해당 테스트 없음)
+severity: medium
+reason: 이 리포엔 `supabase/migrations/**` 변경에 반응해 **전 마이그레이션을 실제 Postgres에 적용한 뒤 `api/tests/integration`을 돌리는 `api-db` CI 잡**이 이미 있고, `test_chat_unread_real_db.py`에 필요한 관용구(`set local role authenticated` + `request.jwt.claim.sub`)까지 이미 쓰이고 있다. 그런데 AC4의 증거는 사람이 한 번 손으로 돌린 psql 5케이스를 스펙 산문에 옮겨 적은 것이 전부다. 뒤 번호 마이그레이션이 `listing_images_insert_own`을 `sold` 조건 없이 재생성하면 — 그건 **0031 자신이 0012 정책에 한 바로 그 drop/recreate 관행**이다 — DW-390이 조용히 다시 열리고 CI는 초록으로 남는다. CLAUDE.md B9의 앞쪽 절반(못 어기는 자리에 박기)은 지켜졌고 뒤쪽 절반(실행되는 검사로 바꾸기)이 비어 있다.
+trigger: `listing_images` 쓰기 정책을 건드리는 다음 마이그레이션을 쓸 때, 또는 Epic 16 마감 정리 시. 스펙 Verification에 이미 적힌 그 5케이스(대조군 포함)를 `api/tests/integration/test_listing_images_sold_write_block_real_db.py`로 그대로 옮긴다.
+status: open
+
+### DW-751: 수정 화면의 기존 사진 조회 경로(`fetchOwnListingPhotos` → `toPhotoItems`)가 전 테스트 스위트에서 한 번도 실행되지 않는다
+
+origin: spec-16-7-앱-사진-업로더 후속 review(verification-gap)
+location: `app/lib/features/listings/listings_repository.dart:fetchOwnListingPhotos` · `app/lib/features/listings/photo_item.dart:toPhotoItems`(유일한 테스트 `test/edit_listing_screen_photos_test.dart`가 리포지토리 메서드 자체를 가짜로 갈아 끼운다 — `toPhotoItems`는 주석에만 등장)
+severity: medium
+reason: `.order('sort_order')`나 `id` 타이브레이크가 빠져도 어떤 테스트도 실패하지 않는다. 그런데 수정 화면이 기존 사진을 **임의 순서로** 실으면, 판매자가 사진을 건드리지 않고 저장만 해도 `syncListingPhotos`가 화면 목록 위치대로 `sort_order`를 다시 매겨 **대표 사진이 조용히 다른 장으로 바뀐다**(AC1·AC2 위반). 같은 성격의 순수 함수는 이 리포에서 이미 원행으로 직접 단언하는 관행이 있다(`test/listings_repository_image_order_test.dart`의 `pickCoverImages`·`sortGalleryPaths`) — 16.7의 미러 함수만 그 관행에서 빠졌다.
+trigger: 사진 정렬·대표 계약을 건드리는 다음 작업, 또는 16.6 실폰 검증에서 "수정 화면 사진 순서"를 확인할 때. `toPhotoItems`는 원행 map으로 직접 단언하고, `fetchOwnListingPhotos`는 가짜 http로 나간 쿼리에 `order=sort_order.asc,id.asc`가 실렸는지 본다.
+status: open
+
+### DW-752: `deleteListing`의 사진 정리 호출이 **실제로 나갔는지**를 아무도 단언하지 않는다 — AC5의 유일한 기계적 방어선인데 비어 있다
+
+origin: spec-16-7-앱-사진-업로더 후속 review(verification-gap)
+location: `app/test/listings_repository_delete_test.dart`(`/storage/` 관련 단언이 전부 "안 나갔다"(`isFalse`) 쪽 2건뿐 — 행복 경로는 GET이 DELETE보다 먼저인지만 본다). 대상 코드는 `listings_repository.dart:deleteListing`의 정리 블록.
+severity: medium
+reason: 정리 블록을 통째로 지워도 그 파일의 테스트 3건이 모두 초록이다. 파일 헤더는 *"정리 시도 자체가 나갔는지(로그에 `/storage/` 경로가 찍혔는지)만 본다"*고 선언해 놓고 실제로는 presence 단언이 0건이다 — 문서와 검사가 갈렸다. DW-743이 "실 Storage API로는 측정 불가"라고 이미 등재해 둔 상태라 **이 인-리포 단언이 남은 유일한 자동 방어선**이다.
+trigger: DW-743(AC5 실기기 검증)을 16.6에서 볼 때 함께 닫는다 — 행복 경로 테스트에 "`/storage/` 요청이 나갔고 그 경로에 선조회로 얻은 `storage_path`가 실려 있다"를 추가한다.
+status: open
+
+### DW-753: AndroidManifest 주석의 "갤러리는 시스템 포토피커라 권한이 필요 없다"가 실제 코드 경로와 다르다
+
+origin: spec-16-7-앱-사진-업로더 후속 review(adversarial) — 패키지 소스로 실측 확인
+location: `app/android/app/src/main/AndroidManifest.xml` 주석 · `app/lib/features/listings/photo_uploader_widget.dart:_pickFromGallery`(같은 취지 주석)
+severity: low
+reason: `image_picker_android` 0.8.13+19의 `useAndroidPhotoPicker` 기본값은 **false**이고(패키지 소스 `image_picker_android.dart`에서 확인), 앱 코드는 이 값을 켜지 않는다. 즉 실제 갤러리 경로는 Android 시스템 포토피커가 아니라 `ACTION_GET_CONTENT`(SAF)다. 권한이 필요 없다는 **결론 자체는 SAF에서도 맞아** 지금 깨지는 것은 없지만, 근거가 틀린 주석이라 다음 사람이 그 위에 판단을 쌓을 수 있다. 특히 **DW-747**("확장자 없는 경로는 드문 경우라 low")의 전제가 이 주석에 기대고 있다 — SAF는 확장자 없는 경로를 흔하게 돌려주므로 DW-747이 드문 경우가 아닐 수 있다.
+trigger: DW-747을 다시 볼 때(실사용자 포맷 거부 리포트), 또는 16.6 실폰 검증에서 갤러리 선택을 실제로 태워볼 때 — 그 자리에서 `useAndroidPhotoPicker = true`로 켤지 정하고 두 주석을 사실에 맞게 고친다.
+status: open
