@@ -217,8 +217,9 @@ void main() {
   });
 
   testWidgets(
-      '비로그인 상태에서도 문의하기 버튼이 렌더되고, 탭하면 방 생성 없이 /login으로 이동한다'
-      '(FR58 행동 게이트, DW-738)', (tester) async {
+      '비로그인 상태에서도 sticky 문의 바가 스크롤 없이 바로 보이고, 탭하면 방 생성 없이 '
+      '/login으로 이동한다(FR58 행동 게이트, DW-738, spec-16-9로 sticky 바 이관)',
+      (tester) async {
     final listingsRepo = _FakeListingsRepository();
     final chatRepo = _FakeChatRepository();
     final router = GoRouter(
@@ -252,18 +253,31 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 문의하기 버튼은 스크롤 하단(기본 정보·신뢰속성 다음)에 있어 기본 뷰포트(800×600) 밖이다
-    // — 위 두 기존 테스트와 동일하게 스크롤해 실제로 빌드되게 한다(안 그러면 SliverList가
-    // 화면 밖 자식을 만들지 않아 findsNothing이 "안 그려짐"과 "화면 밖"을 구분 못 한다).
-    await tester.drag(find.byType(ListView), const Offset(0, -2000));
-    await tester.pumpAndSettle();
-
+    // spec-16-9(DW-735 해소) — 문의하기가 이제 Scaffold.bottomNavigationBar(sticky 바)라
+    // 본문을 스크롤하지 않아도 첫 프레임에 바로 보인다(예전엔 본문 인라인 버튼이라 스크롤이
+    // 필요했다 — 이 테스트가 바로 그 차이를 고정한다, 스크롤 코드를 지운 것 자체가 회귀 검사).
+    expect(
+      find.byKey(const Key('detail_sticky_bar')),
+      findsOneWidget,
+      reason: '스크롤하지 않은 첫 프레임에서 sticky 바가 바로 보여야 한다(AC⑦)',
+    );
     expect(
       find.byKey(const Key('go_chat_inquiry')),
       findsOneWidget,
       reason: '본인 매물이 아니면 로그인 여부와 무관하게 문의하기 버튼이 렌더돼야 한다'
           '(화면 단위가 아니라 행동 단위 게이트)',
     );
+
+    // 코드리뷰 지적(P8) — sticky 바 가격도 D5 anti-wrap 대상인데(카드 가격과 같은 원칙) 어떤
+    // 테스트도 이 바 안의 가격 Text에 maxLines/overflow를 단언하지 않았다.
+    final stickyPriceText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const Key('detail_sticky_bar')),
+        matching: find.text('20,000,000원'),
+      ),
+    );
+    expect(stickyPriceText.maxLines, 1);
+    expect(stickyPriceText.overflow, TextOverflow.ellipsis);
 
     await tester.tap(find.byKey(const Key('go_chat_inquiry')));
     await tester.pumpAndSettle();
@@ -275,5 +289,142 @@ void main() {
     );
     expect(find.byKey(const Key('login_probe')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      '로그인·타인 매물이면 sticky 바가 스크롤 없이 바로 보이고, 탭하면 문의 요청(openOrCreateRoom)'
+      '이 나간다(spec-16-9, DW-735 해소)', (tester) async {
+    final listingsRepo = _FakeListingsRepository();
+    final chatRepo = _FakeChatRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          listingDetailProvider('listing-1')
+              .overrideWith((ref) async => _fakeDetail(imageUrls: const [])),
+          listingsRepositoryProvider.overrideWithValue(listingsRepo),
+          chatRepositoryProvider.overrideWithValue(chatRepo),
+          // _fakeDetail의 sellerId='seller-1'과 다른 id — 타인 매물.
+          currentUserProvider.overrideWithValue(
+            User(
+              id: 'buyer-1',
+              appMetadata: const {},
+              userMetadata: const {},
+              aud: 'authenticated',
+              email: 'buyer@test.com',
+              createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ListingDetailScreen(listingId: 'listing-1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('detail_sticky_bar')),
+      findsOneWidget,
+      reason: '스크롤하지 않은 첫 프레임에서 sticky 바가 바로 보여야 한다(AC⑦)',
+    );
+
+    await tester.tap(find.byKey(const Key('go_chat_inquiry')));
+    await tester.pumpAndSettle();
+
+    expect(
+      chatRepo.openOrCreateRoomCalls,
+      1,
+      reason: '로그인·타인 매물이면 실제로 문의 요청이 나가야 한다(openOrCreateRoom)',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  // 코드리뷰 지적(P7) — 이 커밋이 수동 하단 패딩(`20 + viewPadding.bottom`)을 SafeArea(top:
+  // false) 두 겹(본문·sticky 바)으로 바꿨는데, `app/test/`의 기본 테스트 뷰는 인셋이 전부
+  // 0이라(어떤 테스트도 tester.view.padding을 건드리지 않는다) 이 SafeArea들이 실제로
+  // 뭔가를 밀어내는지 아무도 관찰한 적이 없다 — 둘 중 하나를 지워도 스위트는 green이고,
+  // 실기기(Android 제스처 바)에서만 문의하기 버튼이 그 아래 깔린다.
+  testWidgets(
+      '하단 시스템 인셋(제스처 바 48)이 있어도 문의하기 버튼이 그 위에 온전히 보인다(P7)',
+      (tester) async {
+    tester.view.padding = const FakeViewPadding(bottom: 48);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final listingsRepo = _FakeListingsRepository();
+    final chatRepo = _FakeChatRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          listingDetailProvider('listing-1')
+              .overrideWith((ref) async => _fakeDetail(imageUrls: const [])),
+          listingsRepositoryProvider.overrideWithValue(listingsRepo),
+          chatRepositoryProvider.overrideWithValue(chatRepo),
+          // 타인 매물(위 "로그인·타인 매물" 케이스와 동일 조건) — sticky 바가 실제로 뜬다.
+          currentUserProvider.overrideWithValue(
+            User(
+              id: 'buyer-1',
+              appMetadata: const {},
+              userMetadata: const {},
+              aud: 'authenticated',
+              email: 'buyer@test.com',
+              createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ListingDetailScreen(listingId: 'listing-1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final screenHeight = tester.getSize(find.byType(MaterialApp)).height;
+    final buttonBottom =
+        tester.getRect(find.byKey(const Key('go_chat_inquiry'))).bottom;
+
+    expect(
+      buttonBottom,
+      lessThanOrEqualTo(screenHeight - 48),
+      reason: 'SafeArea(top: false) 하나(본문 또는 sticky 바)라도 빠지면 문의하기 버튼이 '
+          '48px 인셋(실기기 제스처 바) 아래로 내려간다 — 기본 테스트 뷰(인셋 0)만 보는 다른 '
+          '테스트들은 이 회귀를 못 잡는다',
+    );
+  });
+
+  testWidgets('본인 매물이면 sticky 바(bottomNavigationBar) 자체가 없다(spec-16-9, 기존 3분기 유지)',
+      (tester) async {
+    final listingsRepo = _FakeListingsRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          listingDetailProvider('listing-1')
+              .overrideWith((ref) async => _fakeDetail(imageUrls: const [])),
+          listingsRepositoryProvider.overrideWithValue(listingsRepo),
+          // _fakeDetail의 sellerId와 같은 id — 본인 매물.
+          currentUserProvider.overrideWithValue(
+            User(
+              id: 'seller-1',
+              appMetadata: const {},
+              userMetadata: const {},
+              aud: 'authenticated',
+              email: 'seller@test.com',
+              createdAt: DateTime.utc(2026, 1, 1).toIso8601String(),
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ListingDetailScreen(listingId: 'listing-1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('detail_sticky_bar')),
+      findsNothing,
+      reason: '본인 매물은 문의 CTA 자체가 없다(AC⑦ — 본인 매물 제외, 기존 3분기 그대로)',
+    );
+    expect(find.byKey(const Key('go_chat_inquiry')), findsNothing);
   });
 }

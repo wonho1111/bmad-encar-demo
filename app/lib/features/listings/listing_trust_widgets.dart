@@ -1,16 +1,19 @@
-// 신뢰속성 판정 + 렌더 위젯 (Story 16.3) — web TrustAttributes.tsx의 Flutter 미러.
+// 신뢰속성 판정 + 렌더 위젯 (Story 16.3, spec-16-9로 카드 배치 교정) — web TrustAttributes.tsx의
+// Flutter 미러.
 //
 // 판정 순수함수(getTrustBadges)는 web getTrustBadges와 동일 규칙:
 //   accident_status가 {'무사고','단순교환','사고'} 밖(빈 문자열 포함)이면 null과 동일 취급(미표시).
 //   '무사고'만 초록, 나머지 2값은 중립(amber 금지). is_single_owner/is_non_smoker는 true일 때만
 //   초록 칩 — null·false는 "아님"으로 단정하지 않고 미표시(docs/conventions.md §4 계약-외 값 정규화).
 //
-// 면책-뱃지 결속(B9, 상세 한정): TrustAttributesDetailSection은 뱃지가 하나라도 있으면 반드시
-// 면책 문구를 같은 위젯 안에서 함께 반환한다 — 호출부(listing_detail_screen.dart)가 뱃지만
-// 뽑아 쓰고 면책을 빼는 경로가 코드상 없다(web TrustAttributes.tsx 상단 주석과 동일 원칙).
-// 카드는 이 결속 대상이 아니다(웹 2026-08-05 결정 — 사진 위 좁은 오버레이 공간이라 면책 제외).
-import 'dart:ui' show ImageFilter;
-
+// 면책-뱃지 결속(B9): TrustAttributesDetailSection·TrustAttributesCardRow 둘 다 뱃지가
+// 하나라도 있으면 면책을 같은 위젯 안에서 함께 반환한다 — 호출부(listing_detail_screen.dart·
+// listing_card.dart)가 뱃지만 뽑아 쓰고 면책을 빼는 경로가 코드상 없다(web TrustAttributes.tsx
+// 상단 주석과 동일 원칙). ⚠️ 2026-08-09(spec-16-9, DW-760 해소) — 예전엔 카드가 이 결속 대상이
+// 아니었다(사진 위 좁은 오버레이라 면책 제외, 웹 2026-08-05 결정). 이제 카드가 사진 오버레이가
+// 아니라 사진 **아래 전용 행**(DESIGN.md 레이아웃 B)이 되면서 그 좁은 공간 제약이 사라졌고,
+// 스파인이 짧은 "판매자 제공 정보" 면책을 명시해 카드도 이 결속에 들어온다(상세의 긴 UX-DR19
+// 문구와는 다른 축약판).
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -57,34 +60,27 @@ List<TrustBadge> getTrustBadges({
 }
 
 /// 뱃지 하나 — 톤별 배경(초록/중립). 초록은 비색 신호 중복(접근성)으로 ✓ 아이콘도 함께 표시.
+/// ⚠️ spec-16-9(DW-760 해소) — 예전엔 카드(사진 위 겹침, 반투명+블러)와 상세(문서 흐름 안,
+/// 불투명)가 서로 다른 스타일을 썼다(`onCard` 분기). 카드가 더 이상 사진 위 오버레이가 아니라
+/// 사진 아래 전용 행이 되면서(TrustAttributesCardRow) 두 자리 모두 같은 불투명 스타일을
+/// 쓰게 됐다 — 이제 아무도 참조하지 않는 반투명+블러 분기(과 그 전용 `dart:ui` 의존)는
+/// 이 변경이 만든 고아라 함께 제거한다(A3).
 class _TrustChip extends StatelessWidget {
-  const _TrustChip({required this.badge, required this.onCard});
+  const _TrustChip({required this.badge});
 
   final TrustBadge badge;
-  // card=사진 위 겹침(반투명 배경), detail=문서 흐름 안(불투명 디자인 토큰) — web badgeClassName variant 미러.
-  final bool onCard;
 
   @override
   Widget build(BuildContext context) {
     final green = badge.tone == TrustTone.green;
-    final Color bg;
-    final Color fg;
-    if (onCard) {
-      // 사진 위 오버레이 — 테마 토큰 대신 고정 반투명 hex(web과 동일 이유: 사진은 테마를
-      // 따라 바뀌지 않으므로 trust-green 토큰을 배경으로 쓰면 다크 대비가 무너진다).
-      bg = green ? const Color(0x731B6E3D) : const Color(0x59000000); // 45%/35%
-      fg = Colors.white;
-    } else {
-      bg = green ? AppColors.trustGreenBg : Colors.transparent;
-      fg = green ? AppColors.trustGreenInk : AppColors.inkSecondary;
-    }
-    final chipRadius = BorderRadius.circular(11);
-    final content = Container(
+    final bg = green ? AppColors.trustGreenBg : Colors.transparent;
+    final fg = green ? AppColors.trustGreenInk : AppColors.inkSecondary;
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: chipRadius,
-        border: (!onCard && !green) ? Border.all(color: AppColors.borderHairline) : null,
+        borderRadius: BorderRadius.circular(11),
+        border: !green ? Border.all(color: AppColors.borderHairline) : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -95,47 +91,25 @@ class _TrustChip extends StatelessWidget {
           ],
           Text(
             badge.label,
-            style: TextStyle(
-              color: fg,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              // 카드 오버레이 전용 텍스트 그림자 — 반투명 배경(45%/35%)만으로는 밝은 사진 위에서
-              // 대비가 약해질 수 있어, 웹이 "최저선"으로 못박은 그림자를 유지한다(spec-16-3,
-              // web badgeClassName('card') text-shadow 미러). 상세(불투명 배경)는 불필요.
-              shadows: onCard
-                  ? const [
-                      Shadow(offset: Offset(0, 1), blurRadius: 2, color: Color(0x8C000000)),
-                    ]
-                  : null,
-            ),
+            style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ],
-      ),
-    );
-    if (!onCard) return content;
-    // 카드 오버레이는 "반투명 배경+블러"다(spec-16-3 Boundaries, web backdrop-blur 미러) —
-    // 사진 위에 겹치므로 배경색만으로는 사진이 그대로 비쳐 보여 글자 대비가 약하다.
-    // ClipRRect로 칩 모양 밖으로 블러가 새지 않게 가둔다(다른 칩·주변 사진까지 흐려지면 안 됨).
-    return ClipRRect(
-      borderRadius: chipRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: content,
       ),
     );
   }
 }
 
-/// 카드용 — 사진 좌상단에 겹치는 뱃지 콘텐츠, 면책 없음(웹 2026-08-05 결정). 뱃지가 0개면
-/// 아무것도 그리지 않는다(값 유무와 무관하게 카드 높이가 항상 같게, AC1). `PhotoCountBadge`와
-/// 같은 구조 원칙(listing_photo_widgets.dart) — 이 위젯 자체는 위치를 정하지 않는다(build()가
-/// 직접 Positioned를 반환하면 Stack 밖에서 쓸 때 런타임에 죽는다, listing_photo_widgets.dart의
-/// PhotoCountBadge 주석과 동일 근거). 호출부(`listing_card.dart`)가
-/// `Positioned(... child: IgnorePointer(child: TrustAttributesCardOverlay(...)))`로 감싼다 —
-/// IgnorePointer는 사진 위 오버레이가 카드 탭(InkWell)을 가로채지 않게 한다(코드리뷰 지적:
-/// 뱃지 라벨을 탭해도 상세로 안 들어가던 문제, web `pointer-events-none` 미러).
-class TrustAttributesCardOverlay extends StatelessWidget {
-  const TrustAttributesCardOverlay({
+/// 카드용 — 사진 바로 아래 전용 행(오버레이 아님, spec-16-9 DW-760 해소). `TrustAttributesCardOverlay`
+/// (구 버전, 사진 좌상단 겹침)를 대체한다 — DESIGN.md 레이아웃 B가 신뢰속성을 "사진 바로 아래"
+/// 일반 블록으로 요구하고, 짧은 면책("판매자 제공 정보")까지 포함하도록 명시한다(상세의 긴
+/// UX-DR19 문구와 다른 축약판 — B9 결속은 지키되 카드는 좁은 자리라 문구만 줄인다).
+/// 뱃지가 0개면 아무것도(면책도) 그리지 않는다(값 유무와 무관하게 카드 높이가 항상 같게, AC).
+/// ⚠️ 코드리뷰 패치(spec-16-9) — 뱃지 3개(무사고·1인소유·비흡연)가 다 있으면 찜 버튼 여백(52px)
+/// 때문에 좁아진 1열 카드에서 `Wrap`이 2줄로 접힐 수 있었다. D5가 "신뢰속성 행"을 명시적으로
+/// 지목한 금기(가로 배치를 세로로 접지 않는다)라, 옵션 칩 행(`_OptionChipsRow`)과 같은 기법으로
+/// 가로 스크롤로 바꿨다 — 넘치면 잘리기만 하고 2줄로 안 밀린다.
+class TrustAttributesCardRow extends StatelessWidget {
+  const TrustAttributesCardRow({
     super.key,
     required this.accidentStatus,
     required this.isSingleOwner,
@@ -154,10 +128,29 @@ class TrustAttributesCardOverlay extends StatelessWidget {
       isNonSmoker: isNonSmoker,
     );
     if (badges.isEmpty) return const SizedBox.shrink();
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [for (final b in badges) _TrustChip(badge: b, onCard: true)],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < badges.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 6),
+                  _TrustChip(badge: badges[i]),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 3),
+          const Text(
+            '판매자 제공 정보',
+            style: TextStyle(color: AppColors.inkMuted, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -192,7 +185,7 @@ class TrustAttributesDetailSection extends StatelessWidget {
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: [for (final b in badges) _TrustChip(badge: b, onCard: false)],
+            children: [for (final b in badges) _TrustChip(badge: b)],
           ),
           const SizedBox(height: 8),
           const Text(

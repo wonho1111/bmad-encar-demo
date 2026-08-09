@@ -5551,7 +5551,7 @@ scope_note: 16.2가 만든 결함이 아니다(선재 — 앱 상세는 Epic 7�
 trigger: **Story 16.6(SM-D 통합 시연 검증) 착수 시** — 그 스토리가 상세 화면을 실폰에서 웹과 대조하는 자리이므로 여기서 함께 처리하고 닫는다. 16.8(앱 홈 랜딩 미러)이 신설되면 그쪽이 더 자연스럽다(둘 다 "웹에 있는데 앱에 안 옮겨진 레이아웃"으로 같은 계열).
 related: [[DW-736]](같은 눈 확인에서 나온 홈 쪽 같은 계열) · [[DW-546]](어느 스토리도 자기 것으로 안 가진 화면들)
 decision: **2026-08-08 사용자 결정 — Story 16.8(앱 홈 랜딩 미러)을 신설했다.** 이 항목의 trigger를 그쪽으로 확정한다: 16.8이 앱 홈을, **16.6이 이 상세 하단 바를** 맡는다(16.6은 실행 순서상 Epic 16의 마지막이며 상세 화면을 실폰에서 웹과 대조하는 자리다). 계획 문서의 Story 16.6 Given 범위를 `16.1~16.5 · 16.7 · 16.8`로 정정해 이 항목이 그 검증 안에 들어오게 했다.
-status: open
+status: done 2026-08-09 — spec-16-9(Story 16.9) 구현으로 해소. `app/lib/features/listings/listing_detail_screen.dart`가 문의하기를 `Scaffold.bottomNavigationBar`(sticky 바, 가격+문의하기)로 이관하고 본문 인라인 버튼을 같은 커밋에서 제거했다 — 3분기(본인 매물=바 자체 없음/비로그인=탭 시 `/login`/타인 매물=`openOrCreateRoom`)는 그대로 유지. `app/test/listing_detail_screen_test.dart`가 `Key('detail_sticky_bar')` 존재(비로그인·타인 매물)·부재(본인 매물)·스크롤 없이 첫 프레임에 보임을 단언한다.
 
 ### DW-736: 앱 홈이 **웹 랜딩(Epic 11) 구조를 안 물려받았고**, 하단 4탭과 중복되는 Epic 7 잔재 버튼 3개가 남아 있다 — 목업(app-home-2.html)에 정답이 이미 있다
 origin: 2026-08-08 사용자 지적("홈화면이 웹과 너무 다르다 — 색상 같은 거 말고 그냥 전체적으로. 수정 계획 있는 거지?"). 계획 문서를 전수 확인한 결과 **수정 계획이 없음**을 확인했고, 같은 날 사용자 지시로 등재.
@@ -5771,7 +5771,7 @@ trigger: ⚠️ **재지정 2026-08-09 — 원래 지정처(16.6)가 이 항목�
 ✎ 2026-08-09 근거 격상 — **정본은 목업이 아니라 `DESIGN.md`(시각 스파인)다.** 그 문서 스스로 *"이 스파인이 목업과 충돌하면 스파인이 우선한다. 목업은 시각 참고이지 구속 스펙이 아니다"*(§L59)라고 못박는다. 그리고 히어로 배경을 **명시적으로 요구한다**(§L132): *"배경 깊이 = H1 글로우/메시(petrol·amber 빛무리 + 미세 노이즈)를 베이스로 은은히 + 그 위 **H2 대형 차 실루엣 라인아트**(오른쪽 가장자리로 흐릿하게 흘러나감) → **'허전함' 해소** + 자동차 정체성"*. 즉 **차 실루엣·글로우는 '할지 말지' 선택지가 아니라 스파인이 지정한 필수 요소**이고, 그 목적이 사용자가 말한 "완성도가 떨어지는 느낌"과 정확히 같은 문제다. 이 작업에 포함한다.
 로고는 같은 문서 §L133이 **방향 A "차 배지"**(petrol 라운드-스퀘어 배지 + Pretendard 800 "차" + "차장님" 워드마크)로 확정하되 *"실제 아트워크는 추후 제작 — 현재 lockup으로 임시 사용"*이라고 적었다 — **지금 할 일은 이 lockup을 앱에 넣는 것까지**이고, 아트워크 제작은 별도 결정 사항이다([[DW-759]]).
 related: [[DW-736]](앱 홈 랜딩 미러 신설 경위) · [[DW-729]](색 토큰은 이미 검사로 고정됨 — 이번 건은 색이 아니라 레이아웃) · [[DW-759]] · [[DW-760]]
-status: open
+status: done 2026-08-09 — spec-16-9(Story 16.9) 구현으로 해소. `app/lib/features/auth/home_screen.dart`의 히어로(`_AiSearchCta`)가 Center+ConstrainedBox(480)+Padding **바깥**으로 나와 화면 폭을 꽉 채우는 밴드가 됐다(좌우 여백 0, 아래 두 모서리만 22px 라운드, 위는 각져 홈 탭 AppBar와 맞닿음). 배경에 amber 글로우(`Key('hero_glow')`)+petrol 톤 차 실루엣(`Key('hero_car_silhouette')`, 저투명도 `Icon`)을 추가했다. 히어로 바로 아래의 `_SearchCta`(`Key('go_search')`)를 같은 커밋에서 제거했고, 그 자리를 차종 칩이 대신한다("전체" 칩은 petrol 채움 정적 표시). `app/test/home_ai_entry_test.dart`가 히어로 폭=화면 폭·go_search 부재·히어로>차종칩 순서를 단언한다.
 
 ### DW-756: 로그아웃해도 찜(♡) 하트가 **직전 로그인 사용자의 찜 상태를 그대로** 보여준다(표시만 오염, 서버 쓰기는 안전)
 
@@ -5824,7 +5824,7 @@ reason: 3자 대조 결과(추측 아님):
 `main.dart`의 `title:` 3곳은 `MaterialApp`/화면 제목이라 로고 위젯을 넣으려면 AppBar `title`을 위젯으로 바꿔야 한다(문자열 교체가 아니다).
 trigger: **DW-755(히어로 레이아웃)와 같은 작업·같은 커밋에서 처리한다** — 둘 다 홈 최상단 한 덩어리이고, 히어로를 밴드로 바꾸면 상단바와 히어로의 경계를 어차피 다시 잡아야 한다. 그때 로고 lockup을 앱에 미러링하고, "상단바에 로고 위젯이 있다"를 위젯 테스트로 단언한다.
 related: [[DW-755]](같은 화면·같은 커밋) · [[DW-736]](앱 홈 랜딩 미러 경위)
-status: open
+status: done 2026-08-09 — spec-16-9(Story 16.9) 구현으로 해소. `app/lib/core/router/app_router.dart`의 `_AppShell`이 홈 탭(`currentIndex == 0`)일 때만 AppBar를 petrol(`brandPetrolStrong`, 히어로 그라데이션 시작색과 동일)로 바꾸고 로고 lockup(`_HomeLogoLockup` — petrol 라운드-스퀘어 배지 + "차" + "차장님" 워드마크)을 title에 놓는다 — 실제 아트워크는 만들지 않았다(Never, lockup으로 충분). 우측은 아바타 하나만(벨 없음), 테마의 하단 헤어라인 보더는 이 인스턴스에서만 제거했다. 다른 3탭 AppBar는 값 자체를 건드리지 않아(조건부 null) 그대로다. `app/test/app_router_test.dart`의 "AppBar — 홈 탭만 petrol + 로고 lockup" group이 배경색 일치·로고 존재·벨 부재·다른 탭 불변을 단언한다.
 
 ### DW-760: 앱 매물 카드가 **웹 카드(정본)와 4가지가 다르다** — 가격 강조·옵션 칩·신뢰속성 위치·정보 순서
 
@@ -5849,4 +5849,66 @@ trigger: **DW-755·DW-759와 같은 작업에서 함께 처리한다**(홈 화�
 ✎ 2026-08-09 보강 — `mockups/consistency-1.html` PART 3의 **네이티브 앱 프레임**이 위 표를 독립적으로 뒷받침한다: 카드가 사진 → **신뢰속성 칩 행 + 하트** → "판매자 제공 정보" → 차량명 → meta → **amber 굵은 가격** → 옵션 칩 2개 순서다. 즉 `card-final-1.html`·웹 구현·이 일관성 문서 **셋이 같은 구조**를 말하고 앱만 다르다. (`app-home-2.html`의 가로형 리스트 카드는 이 셋과 어긋나는 **구버전**이므로 근거로 쓰지 않는다.)
 같은 프레임에서 함께 확인 — 상세 화면의 **하단 고정 바(판매가 + 문의하기)** 는 [[DW-735]]로 이미 등재돼 있고 아직 open이다. 이 UI 정리 작업에서 함께 볼 것.
 related: [[DW-755]] · [[DW-759]] · [[DW-735]](상세 하단 고정 바) · [[DW-732]](16-2 후속 리뷰 미실시 — 이 편차가 그 리뷰에서 걸렸을 수 있다)
+status: done 2026-08-09 — spec-16-9(Story 16.9) 구현으로 해소. `app/lib/features/listings/listing_card.dart`가 4축 전부 고쳤다: ①가격을 26px/800/`priceEmphasis`로 카드에서 가장 큰 텍스트로 ②`app/lib/features/listings/options.dart`(신규, `docs/conventions.md` §11 미러)의 `topOptions`로 희소옵션 칩(petrol 아웃라인, 최대 3개+"외 N개", 0개면 플레이스홀더로 슬롯 예약)을 추가 ③신뢰속성을 사진 위 오버레이(`TrustAttributesCardOverlay`, 제거됨)에서 사진 아래 전용 행(`TrustAttributesCardRow`, `listing_trust_widgets.dart` 신설, 짧은 "판매자 제공 정보" 면책 포함)으로 이동 ④meta 줄에 판매자를 합쳐 사진→신뢰속성→차량명→meta→가격→옵션칩 순서로 재정렬(카드 크기·열 수는 안 바꿈, Never). `app/test/listing_card_test.dart`·`app/test/listing_options_test.dart`(신규)가 각 축을 단언한다.
+
+### DW-761: DW-760의 근거 문장이 사실과 다르다 — 웹은 지금 신뢰속성을 "일반 블록"이 아니라 카드 오버레이로 그린다(2026-08-05 이미 그렇게 바뀜), 그래서 spec-16-9 이후 웹·앱이 이 축에서 갈린다
+
+origin: spec-16-9 코드리뷰(2026-08-09, adversarial 렌즈) — diff가 신뢰속성을 사진 아래 전용 행으로 옮긴 근거로 DW-760의 "웹 정본: 사진과 차량명 사이의 일반 블록" 문장을 인용했는데, 실제 웹 소스를 열어보니 그 문장 자체가 낡았다.
+location: 근거 오류 = `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-760(위) "신뢰속성" 행. 실제 웹 = `web/src/components/listings/ListingCard.tsx:154`(`<TrustAttributes variant="card" listing={listing}/>`, `<Link>` 밖 절대배치) · `web/src/components/listings/TrustAttributes.tsx:13-17`("카드는 더 이상 이 결속 대상이 아니다(사용자 승인, 2026-08-05)") · `:143-157`(`variant==='card'`이면 `absolute inset-x-0 top-0` 오버레이를 반환 — 지금 앱이 spec-16-9 이전에 쓰던 것과 같은 방식).
+severity: medium
+reason: DW-760이 "일반 블록"이라 적은 시점 이후 웹이 2026-08-05에 오버레이로 바뀌었는데(카드 높이가 옵션 유무로 들쭉날쭉해지는 걸 막으려는 웹 자신의 결정) 그 갱신이 DW-760에 반영되지 않았다. spec-16-9는 `DESIGN.md`(스파인)가 목업보다 우선한다는 원칙으로 신뢰속성을 사진 아래 전용 행으로 옮겼고, 이 AC 자체는 명확해 구현이 잘못된 것은 아니다 — 다만 그 결과 **웹=사진 위 오버레이, 앱=사진 아래 전용 행**으로 두 플랫폼이 이 축에서 오히려 갈렸고, 이는 Epic 16의 "웹·앱이 같은 제품으로 보인다" 목표와 반대 방향이다. 코드 결함이 아니라 상위 계획 문서(DW-760)의 근거 오류이자, 웹을 스파인에 맞춰 다시 바꿀지 이 편차를 그대로 둘지에 대한 별도 판단이 필요한 사안이다.
+fix_sketch: 우선 DW-760의 "웹 정본: 사진과 차량명 사이의 일반 블록" 문장을 위 실제 웹 소스대로 정정한다(오버레이임을 명시). 그다음 판단 필요: (a) 앱을 스파인대로 유지하고 웹도 같은 방향(사진 아래 전용 행)으로 다시 바꾸거나, (b) 앱만 예외로 다르게 두기로 명시적으로 확정하거나. 어느 쪽이든 `docs/conventions.md`나 `DESIGN.md`에 "웹·앱이 이 축에서 의도적으로 다르다"는 근거를 남겨야 다음 코드리뷰가 같은 편차를 또 결함으로 재발견하지 않는다.
+trigger: 웹 `ListingCard.tsx`/`TrustAttributes.tsx` 또는 앱 `listing_trust_widgets.dart`를 다음에 만지는 스토리, 또는 Epic 16 회고 시.
+related: [[DW-760]](이 오류의 근거가 된 원본 항목)
+status: open
+
+### DW-762: 옵션 칩도 웹·앱이 갈렸다 — 색(회색 vs petrol 아웃라인)·오버플로 표기(`+N` vs "외 N개")·오버플로 계수 기준(원본 길이 vs dedup 후)이 서로 다르다
+
+origin: spec-16-9 후속 코드리뷰(2026-08-09, adversarial 렌즈). DW-761이 신뢰속성 축의 웹·앱 편차만 등재하고 같은 스토리가 만든 **옵션 칩 축의 편차**는 빠뜨린 것이 드러났다 — spec-16-9의 Design Notes가 이 편차를 스스로 인정하면서도 대장에는 안 올렸다.
+location: 웹 = `web/src/components/listings/ListingCard.tsx:120-137`(칩 `border-border-hairline`+`text-ink-secondary` 회색, 오버플로 `+{hiddenOptionCount}`) · `:60`(`hiddenOptionCount = (listing.options?.length ?? 0) - cardOptions.length`, **원본 배열 길이** 기준). 앱 = `app/lib/features/listings/listing_card.dart`의 `_OptionChip`(petrol 아웃라인, 오버플로만 회색) · `_OptionChipsRow`(`overflowCount = all.toSet().length - top.length`, **중복 제거 후** 기준).
+severity: low
+reason: spec-16-9는 이 축에서 `DESIGN.md`(스파인)가 현재 웹 코드보다 우선한다고 명시적으로 정하고 앱을 스파인(petrol 아웃라인 + "외 N개")대로 구현했다 — 그 판단 자체는 스토리가 인수조건으로 확정한 것이라 구현 결함이 아니다. 다만 결과는 DW-761과 같은 모양이다: **Epic 16의 "웹·앱이 같은 제품으로 보인다" 목표와 반대로 두 플랫폼이 이 축에서 갈렸다.** 여기에 더해 **오버플로 숫자 자체가 서로 다르게 나올 수 있다** — 같은 매물의 `options`에 중복 값이 섞이면 웹은 그 중복까지 세어 `+N`을 키우고 앱은 중복을 지운 뒤 센다. 이건 스타일 선택이 아니라 계산 규칙의 불일치라 어느 쪽이 정본인지 정해야 한다.
+fix_sketch: (a) 색·오버플로 표기는 DW-761과 **같은 결정에 묶어** 처리한다 — 웹을 스파인에 맞추거나, 앱만 다르게 두기로 명시 확정하고 그 근거를 `docs/conventions.md`나 `DESIGN.md`에 남긴다(안 남기면 다음 코드리뷰가 같은 편차를 또 결함으로 재발견한다). (b) 오버플로 계수 기준은 그와 별개로 한쪽으로 통일한다 — `conventions.md` §11에 "오버플로 수 = 중복 제거 후 남은 개수" 식으로 계산 규칙을 한 줄 못박고 양쪽을 맞추는 편이 값싸다.
+trigger: DW-761과 **함께** 본다 — 웹 `ListingCard.tsx` 또는 앱 `listing_card.dart`를 다음에 만지는 스토리, 또는 Epic 16 회고 시. 둘은 같은 결정(웹·앱 시각 편차를 어느 쪽으로 수렴시킬지)의 두 축이라 따로 결정하면 또 갈린다.
+related: [[DW-761]](같은 스토리가 만든 신뢰속성 축의 쌍둥이 항목) · [[DW-760]](두 축의 출처 스토리)
+status: open
+
+### DW-763: DW-738의 `status:` 주석이 낡았다 — 거기 적힌 원인(anon 신뢰속성 3컬럼 42501)은 커밋 `806b3a6`에서 이미 고쳐졌고, 실제로 남은 것은 "수정 이후의 실기기 재확인"이다
+
+origin: spec-16-9 후속 코드리뷰 3패스(2026-08-10, adversarial 렌즈 발견 → 이 세션이 커밋 계보·코드로 직접 확정). 2패스가 `epic-16-context.md`의 FR58에서 "16.6 완료" 허위 주장을 걷어내면서 그 자리를 DW-738의 status 주석으로 대체했는데, **그 주석 자체가 이미 낡은 서술**이었다.
+location: 대장 = 이 파일의 DW-738 `status:` 줄(*"anon이 `accident_status`·`is_single_owner`·`is_non_smoker` 3컬럼에 SELECT 권한이 없어 … select 자체가 죽는다"*, 현재시제). 실제 코드 = `app/lib/features/listings/listings_repository.dart:201-206`(`listingCardColumns(bool authed)` — anon이면 그 3컬럼을 빼고 조회) · 수정 커밋 = `806b3a6`("anon 42501 결함 수정", 4개 호출부 전체를 실기기 SM-G991N에서 anon·authed 양쪽 검증).
+severity: medium
+reason: `806b3a6`은 spec-16-9의 baseline(`d86f6a9`)의 **조상**이다(`git merge-base --is-ancestor` 실측 확인) — 즉 원인은 이 스토리가 시작되기 전에 이미 제거돼 있었다. 그런데 대장의 status 주석은 그 원인을 현재시제로 서술하고 있어, 이 주석을 읽는 쪽(다음 스토리·회고·에픽 컨텍스트 재컴파일)이 **이미 고쳐진 결함을 다시 고치러 간다.** 실제로 2패스가 그 함정에 정확히 빠져 `epic-16-context.md`에 낡은 원인을 새로 심었고, 3패스가 그것을 걷어냈다(그 문서 쪽은 이번에 정정 완료). DW-738이 `open`인 것 자체는 옳다 — 다만 사유가 "원인 미해결"이 아니라 **"수정 이후 잠금 해제된 실기기에서 로그아웃 상태로 매물이 실제로 보이는지 재확인 안 함"** 이다. 이 항목은 대장 항목을 고칠 권한이 없는 리뷰 세션이 그 사실을 남겨 두기 위한 자리다(기존 항목 무수정 원칙).
+fix_sketch: 사람 세션이 DW-738의 `status:` 주석을 위 사실대로 정정한다(원인은 `806b3a6`에서 해소, 남은 것은 실기기 재확인). 그다음 잠금 해제된 SM-G991N에 prod APK를 깔고 **로그아웃 상태로 홈에 들어가 "지금 인기"·"방금 올라온 매물"이 실제로 그려지는지** 확인하면 DW-738을 닫을 수 있다. 함께 볼 것: [[DW-758]](로그인/로그아웃 전환 시 홈 목록이 캐시된 채 남아 anon↔authed 컬럼 분기가 반영 안 되는 결함 — 재확인 시 이 경로도 같이 밟힌다).
+trigger: **DW-738을 다음에 손댈 때 즉시**(그 항목을 읽는 사람이 이 정정을 못 보면 같은 오해가 반복된다), 늦어도 **다음 실기기 세션** 또는 Epic 16 회고 시.
+related: [[DW-738]](정정 대상 항목) · [[DW-758]](같은 재확인 경로에서 함께 볼 것) · [[DW-764]](같은 스토리가 남긴 다른 "실기기 미확인" 항목)
+status: open
+
+### DW-764: 16.9가 닫은 시각 4축(DW-755·759·760·735)은 **육안 확인 없이** 위젯 테스트만으로 닫혔다 — 스펙이 요구한 "대장 등재"가 실제로는 안 됐다
+
+origin: spec-16-9 후속 코드리뷰 3패스(2026-08-10, adversarial 렌즈). 리뷰가 스펙의 Verification 절과 실제 수행 기록을 대조해 발견.
+location: 스펙 = `_bmad-output/implementation-artifacts/spec-16-9-앱-ui-정합성-교정.md`의 `## Verification` → "Manual checks (if no CLI)" (*"…CanvasKit `CONTEXT_LOST_WEBGL`로 렌더를 못 띄우면 **대장에 등재하고** 위젯테스트로 대체 확인한 사실을 명시한다"*) · 실제 수행 = 같은 파일 1패스 Verification (*"Manual check … 미실행 … 대장에 등재된 사실 없음"*) · 닫힌 항목 = 이 파일의 [[DW-755]]·[[DW-759]]·[[DW-760]]·[[DW-735]] `status: done 2026-08-09`.
+severity: medium
+reason: 이 네 항목은 **전부 "실기기 화면이 목업과 눈에 띄게 다르다"는 육안 관찰에서 출발**했다. 그런데 닫는 근거는 위젯 테스트다 — `appBar.backgroundColor == brandPetrolStrong`이 참이라는 사실은 **SM-G991N에서 이음매가 안 보이는지를 말해 주지 않는다**(CLAUDE.md B4: "존재 확인은 작동 확인이 아니다"). 스펙 자신이 이 한계를 예상하고 "대장에 등재하라"는 처방까지 적어 뒀는데 그 처방만 실행되지 않았고, 그 결과 **"지금 뭐가 열려 있나"를 답하는 유일한 장부가 이 시각 편차를 해소됐다고 말한다**(B8). 3패스가 실제로 그 사각지대에서 결함 하나를 더 찾았다는 사실이 위험을 뒷받침한다 — 히어로 그라데이션 축이 대각선(`topLeft→bottomRight`)이라 앱바와 같은 색인 지점은 좌상단 한 점뿐이었고, 오른쪽 절반에서는 색 단차가 보일 상태였다(3패스에서 세로축으로 교정). 즉 "테스트 green"과 "사람 눈에 이어져 보임"은 이 스토리 안에서 실제로 갈렸다.
+fix_sketch: 잠금 해제된 실기기(SM-G991N)에 앱을 올리고 네 축을 육안 대조한다 — ①상태바~앱바~히어로가 색 경계 없이 한 면으로 이어지는가(특히 **화면 오른쪽 절반**) ②히어로가 좌우 여백 없이 폭을 꽉 채우고 글로우·차 실루엣이 은은히 보이는가 ③카드에서 가격이 가장 먼저 눈에 들어오고 옵션 칩·신뢰속성 행이 의도한 자리에 있는가 ④상세에서 스크롤 없이 하단 고정 바가 보이는가. 어긋나면 **DW-755/759/760/735를 다시 열지 말고 새 항목으로 등재**한다(닫힌 경위를 지우지 않기 위해). 이 세션이 육안 확인을 못 한 이유는 선행 스토리들과 같은 환경 한계다(헤드리스 샌드박스의 CanvasKit `CONTEXT_LOST_WEBGL`).
+trigger: **다음 실기기 세션**(DW-763의 비로그인 열람 재확인과 같은 자리에서 함께 본다 — 앱을 한 번 올리면 둘 다 확인된다), 늦어도 Epic 16 회고 전.
+related: [[DW-755]] · [[DW-759]] · [[DW-760]] · [[DW-735]](육안 없이 닫힌 네 항목) · [[DW-763]](같은 실기기 세션에서 함께 볼 것) · [[DW-754]](실기기 확인이 기기 잠금으로 밀린 선례)
+status: open
+
+### DW-765: 16.9가 만든 웹·앱 시각 편차가 DW-761·762 말고 **두 축 더** 있다 — 카드의 "판매자 제공 정보" 면책 문구, 차종 칩의 선택 상태
+
+origin: spec-16-9 후속 코드리뷰 3패스(2026-08-10, adversarial 렌즈가 웹 소스 직접 대조로 발견). DW-761(신뢰속성 위치)·DW-762(옵션 칩)가 같은 스토리의 편차를 축별로 등재했는데 이 두 축이 빠져 있었다.
+location: **면책 문구** — 앱 = `app/lib/features/listings/listing_trust_widgets.dart`의 `TrustAttributesCardRow`(짧은 "판매자 제공 정보" 면책 포함, 16.9가 신설) · 웹 = `web/src/components/listings/TrustAttributes.tsx:13-17`(*"카드는 더 이상 이 결속 대상이 아니다(사용자 승인, 2026-08-05) — '판매자 제공 정보' 면책을 카드에서 뺐다 … 같은 면책은 상세 페이지(`TrustInfoSection`)에 이미 있다"*). **차종 칩 선택 상태** — 앱 = `app/lib/features/auth/home_screen.dart`("전체" 칩이 항상 petrol 채움, 정적 표시) · 웹 = 선택 상태 표시 없음(`epic-16-context.md`의 Non-goals(16.9)가 "웹의 차종 칩 선택 상태 불일치"로 이 편차를 언급만 하고 대장에는 안 올렸다).
+severity: low
+reason: 두 축 다 16.9가 인수조건으로 명시 확정한 것이라 **구현 결함이 아니다** — 면책은 스펙 Code Map이 "짧은 '판매자 제공 정보' 면책 포함"으로 지시했고, 칩 선택 상태는 Always가 "정적 표시일 뿐, 실제 필터 상태와 무관"으로 못박았다. 문제는 결과가 DW-761·762와 **같은 모양**이라는 것이다: Epic 16의 "웹·앱이 같은 제품으로 보인다" 목표에 대해 네 축이 갈렸는데 장부에는 두 축만 올라와 있다. 특히 면책 축은 웹이 **사용자 승인을 받아 일부러 뺀 것**을 앱이 다시 넣은 형태라, DW-761의 결정을 내릴 때 이 사실을 모르면 불완전한 목록 위에서 결정하게 된다. 차종 칩 축은 지금 **Non-goals(제외 목록)에만 적혀 있는데, 제외 목록은 열린 일을 추적하는 자리가 아니다**(CLAUDE.md B8: 대장은 하나다).
+fix_sketch: DW-761·DW-762와 **한 결정으로 묶어** 처리한다 — 웹·앱 카드 시각을 어느 쪽으로 수렴시킬지 정한 뒤 네 축(신뢰속성 위치·옵션 칩 색/표기·면책 문구·칩 선택 상태)에 같은 방향을 적용한다. 축마다 따로 정하면 또 갈린다. 면책 축은 웹의 2026-08-05 결정 근거(같은 면책이 상세에 이미 있어 카드에서 중복)를 먼저 검토할 것 — 그 근거가 앱에도 성립하면 앱에서 빼는 쪽이 맞다.
+trigger: [[DW-761]]·[[DW-762]]와 **함께** 본다 — 웹 `ListingCard.tsx`/`TrustAttributes.tsx` 또는 앱 `listing_card.dart`/`listing_trust_widgets.dart`를 다음에 만지는 스토리, 또는 Epic 16 회고 시.
+related: [[DW-761]] · [[DW-762]](같은 스토리가 만든 앞 두 축) · [[DW-760]](네 축 전부의 출처 스토리)
+status: open
+
+### DW-766: Follow-up review still recommended for 16-9-앱-ui-정합성-교정 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-9-앱-ui-정합성-교정.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260809-213941-2b07; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

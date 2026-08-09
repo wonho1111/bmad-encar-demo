@@ -354,10 +354,26 @@ class _AppShell extends ConsumerWidget {
       },
       child: Scaffold(
         backgroundColor: AppColors.surfaceBase,
-        appBar: AppBar(
-          title: Text(_kTabBranches[navigationShell.currentIndex].title),
-          actions: const [_ProfileAvatarButton(), SizedBox(width: 8)],
-        ),
+        // 홈 탭(인덱스 0)만 petrol 배경+로고 lockup(spec-16-9, DW-759 해소) — 목업
+        // `consistency-1.html` PART 3이 "상태바→앱바→AI 히어로가 이음새 없이 하나의 petrol
+        // 면"으로 규정한다. 다른 3탭(찜·채팅·내차팔기)은 조건이 false라 모든 값이 null로
+        // 떨어져 테마의 기존 흰 배경+탭 제목을 그대로 쓴다(불변).
+        appBar: navigationShell.currentIndex == 0
+            ? AppBar(
+                backgroundColor: AppColors.brandPetrolStrong,
+                foregroundColor: AppColors.onPetrol,
+                elevation: 0,
+                // 테마의 하단 헤어라인 보더를 이 인스턴스에서만 제거한다(petrol 면이 앱바
+                // 아래에서 끊기면 안 되므로) — 다른 값 없는 RoundedRectangleBorder는 보더가
+                // 없다는 뜻이다.
+                shape: const RoundedRectangleBorder(),
+                title: const _HomeLogoLockup(),
+                actions: const [_ProfileAvatarButton(), SizedBox(width: 8)],
+              )
+            : AppBar(
+                title: Text(_kTabBranches[navigationShell.currentIndex].title),
+                actions: const [_ProfileAvatarButton(), SizedBox(width: 8)],
+              ),
         body: navigationShell,
         bottomNavigationBar: NavigationBar(
           selectedIndex: navigationShell.currentIndex,
@@ -383,6 +399,46 @@ class _AppShell extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 홈 탭 전용 로고 lockup(spec-16-9, DW-759 해소) — DESIGN.md "로고 — 방향 A '차 배지'":
+/// petrol 라운드-스퀘어 배지 안에 굵은 "차" + "차장님" 워드마크. 실제 아트워크는 추후 제작이라
+/// (스파인에 이미 명시) lockup(배지+텍스트)만으로 충분하다(Never — 아트워크를 새로 만들지
+/// 않는다). 배지 배경은 새 색 토큰을 추가하지 않고 기존 `onPetrol`을 옅게 얹는다 — 이 AppBar
+/// 자체가 이미 petrol(brandPetrolStrong)이라, 배지가 그 위에서 구분되려면 순수 petrol이 아니라
+/// 밝은 톤이 필요하다(`_SuggestionChip`이 petrol 배경 위에서 쓰는 것과 같은 기법,
+/// home_screen.dart 참조 — 새 토큰 없이 기존 토큰의 alpha만 바꾼다).
+class _HomeLogoLockup extends StatelessWidget {
+  const _HomeLogoLockup();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          key: const Key('home_logo_badge'),
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.onPetrol.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(8), // 라운드-스퀘어(DESIGN.md Shapes).
+          ),
+          child: const Text(
+            '차',
+            style: TextStyle(
+                color: AppColors.onPetrol, fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+        ),
+        const SizedBox(width: 8),
+        const Text(
+          '차장님',
+          style: TextStyle(color: AppColors.onPetrol, fontSize: 18, fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 }

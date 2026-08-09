@@ -198,6 +198,17 @@ void main() {
       );
       expect(cards.map((c) => c.id), ['L1']);
     });
+
+    // 코드리뷰 패치(spec-16-9) — 카드 옵션 칩(_OptionChipsRow)의 데이터 출처인 `options` 필드가
+    // 행 조립 경로(attachCoverImages)를 거쳐도 살아남는지 보는 테스트가 0건이었다.
+    test('options 필드가 카드 조립 경로를 거쳐도 그대로 남는다', () {
+      final cards = attachCoverImages(
+        [_listingRow(id: 'L1', options: const ['선루프', '통풍시트'])],
+        {'L1': (path: 'u/L1/a.webp', count: 1)},
+        (p) => 'https://cdn.test/$p',
+      );
+      expect(cards.single.options, ['선루프', '통풍시트']);
+    });
   });
 
   group('buildGalleryUrls', () {
@@ -234,7 +245,8 @@ void main() {
 
 /// `listings` 원행 하나(카드 필수 7필드 충족). 사진 관련 키는 일부러 넣지 않는다 —
 /// `attachCoverImages`가 붙이는 것만 검증하기 위해서다.
-Map<String, dynamic> _listingRow({required String id}) => <String, dynamic>{
+Map<String, dynamic> _listingRow({required String id, List<String>? options}) =>
+    <String, dynamic>{
       'id': id,
       'manufacturer': '현대',
       'model': '아반떼',
@@ -242,4 +254,5 @@ Map<String, dynamic> _listingRow({required String id}) => <String, dynamic>{
       'price': 15000000,
       'mileage': 30000,
       'region': '서울',
+      'options': ?options,
     };

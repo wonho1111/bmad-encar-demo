@@ -33,8 +33,9 @@
 //     sell_controller_test.dart가 본다 — 15필드 폼을 위젯 테스트로 채우는 것보다
 //     컨트롤러를 직접 구동하는 쪽이 더 빠르고 안정적이다(A2 단순함).
 //   · AC7("go_ai·go_search·go_chat·go_sell·go_my_listings·최근매물카드 중 어느 것이든")의
-//     모든 진입점을 낱낱이 돌리지는 않는다 — go_ai·go_search·최근매물카드·채팅방
-//     (chat_list_screen.dart 방 탭)까지 "브랜치 안에서 시작하는 push 포함, 전부
+//     모든 진입점을 낱낱이 돌리지는 않는다 — go_ai·차종칩(spec-16-9로 go_search를 대체,
+//     아래 참조)·최근매물카드·채팅방(chat_list_screen.dart 방 탭)까지 "브랜치 안에서
+//     시작하는 push 포함, 전부
 //     rootNavigator: true 메커니즘을 쓴다"는 사실을 대표 검증한다(review, spec-16-1 P4 —
 //     브랜치 **안에서** 시작하는 push가 특히 회귀 위험이 크다: 셸 경계 코드가 화면
 //     자신이 아니라 그 화면을 여는 쪽에 있어서, 새 진입점을 추가할 때 빠뜨리기 쉽다).
@@ -68,6 +69,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:app/core/router/app_router.dart';
+import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/auth/home_screen.dart';
@@ -203,7 +205,8 @@ class _FakeChatRepo extends ChatRepository {
   Future<ChatRoomSummary?> fetchRoom(String roomId) async => null;
 }
 
-/// go_search 테스트용 — SearchController.build()의 `Future.microtask(search)`가 실제
+/// 필터 없이 SearchScreen을 여는 테스트용("전체보기" 링크 등, 구 go_search — spec-16-9로
+/// 제거됨) — SearchController.build()의 `Future.microtask(search)`가 실제
 /// listingsRepositoryProvider(전역 supabase)로 네트워크를 타지 않도록 즉시 빈 결과로 고정한다.
 class _FakeSearchController extends SearchController {
   @override
@@ -615,7 +618,7 @@ void main() {
       // spec-16-8이 새로 만든 또 다른 in-branch push 지점 — 차종 칩 탭도 SearchScreen을
       // rootNavigator push로 연다(AC2). listingsRepositoryProvider를 직접 오버라이드한다 —
       // SearchScreen(initialBodyType:)의 즉시조회는 searchControllerProvider의 실제
-      // search()를 그대로 타므로(go_search 테스트의 _FakeSearchController와 달리 build()를
+      // search()를 그대로 타므로("전체보기" 테스트의 _FakeSearchController와 달리 build()를
       // 우회할 수 없다), 레포 층에서 네트워크를 끊어야 한다.
       testWidgets('차종 칩(spec-16-8) — 셸이 사라지고 SearchScreen만 남는다, SUV 필터가 '
           '실제로 레포에 전달된다(T3)', (
@@ -763,31 +766,39 @@ void main() {
       // 스위트가 그대로 green). 그중에서도 브랜치 **안**(홈 탭 본문의 카드·채팅 탭의 방
       // 목록)에서 시작하는 push가 가장 위험하다 — 셸 경계를 지키는 코드가 그 화면 자신이
       // 아니라 "그 화면을 여는 지점"에 있어서, 새 진입점을 추가할 때 특히 빠뜨리기 쉽다.
-      testWidgets('go_search(매물 탐색 CTA) — 셸이 사라지고 SearchScreen만 남는다', (
-        tester,
-      ) async {
+      // ⚠️ spec-16-9(DW-755 해소)가 이 진입점 자체를 없앴다 — `_SearchCta`(`Key('go_search')`)는
+      // 히어로 바로 아래에 있던 별도 매물 탐색 CTA였는데, 같은 커밋에서 제거됐다(Always: 히어로
+      // 다음 위젯은 차종 칩). 그 목적지(무필터 SearchScreen 조회)는 차종 칩 "전체"가 대신한다 —
+      // 그래서 이 테스트도 "전체" 칩 탭으로 같은 셸-경계·무필터 계약을 확인하도록 대체한다
+      // (SUV·전기 칩 테스트와 같은 `_RecordingSearchRepo` 패턴 — 실제로 무필터 조회가 나가는지도
+      // 함께 본다, 구 go_search 테스트는 이 확인이 없었다).
+      testWidgets(
+          '차종 칩 "전체"(spec-16-9, 구 go_search 대체) — 셸이 사라지고 SearchScreen만 남는다, '
+          '무필터로 실제 조회된다', (tester) async {
+        final repo = _RecordingSearchRepo();
         await tester.pumpWidget(
           _harness(
             user: _fakeUser(role: null),
             extraOverrides: [
               _recentListings(const []),
-              // SearchController.build()가 진입 즉시 검색을 시도한다 — 실제 네트워크를 타지
-              // 않도록 즉시 빈 결과를 돌려주는 가짜로 대체한다(그렇지 않으면 실제 DNS/네트워크
-              // 타임아웃을 기다리게 돼 테스트가 느려지거나 흔들린다).
-              searchControllerProvider.overrideWith(
-                () => _FakeSearchController(),
-              ),
+              listingsRepositoryProvider.overrideWithValue(repo),
             ],
           ),
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const Key('go_search')));
+        await tester.tap(find.byKey(const ValueKey('category_chip_전체')));
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
         expect(find.byType(AppBar), findsOneWidget);
         expect(find.byType(NavigationBar), findsNothing);
+        expect(
+          repo.calls.any((f) => f.bodyType == null && f.fuel == null),
+          isTrue,
+          reason: '"전체" 칩을 탭하면 무필터로 실제 조회해야 한다(제거된 _SearchCta/go_search와 '
+              '같은 목적지·같은 무필터 의미)',
+        );
       });
 
       // T6(spec-16-8 검증 갭) — `grep -rn '전체보기' app/test/`가 지금까지 아무것도 못 찾았다.
@@ -1472,6 +1483,10 @@ void main() {
     // 자료구조인데, 정작 그 안의 제목·라벨을 단언하는 곳이 없었다(뮤테이션 생존: 제목을
     // 'XXBROKENXX'로 바꿔도 전부 초록). 탭을 다루는 다음 스토리(16.2·16.3)가 항목을
     // 재배열·복사할 때 조용히 어긋나는 것을 막는다.
+    // ⚠️ spec-16-9(DW-759 해소) — 홈 탭의 AppBar `title`은 더 이상 이 `Text(branch.title)`
+    // 문자열을 그리지 않는다(`_HomeLogoLockup`로 대체, app_router.dart). `_kTabBranches[0].title`
+    // 값('중고차 직거래') 자체는 자료구조 일관성을 위해 남아 있지만 홈 탭에서는 안 쓰인다 —
+    // 그 축은 아래 "AppBar — 홈 탭만 petrol + 로고 lockup" group이 대신 확인한다.
     const expected = <String, List<String>>{
       'tab_home': ['중고차 직거래', '홈'],
       'tab_wishlist': ['찜한 매물', '찜'],
@@ -1480,9 +1495,10 @@ void main() {
     };
 
     for (final entry in expected.entries) {
-      testWidgets('${entry.key} — AppBar 제목 "${entry.value[0]}" · 라벨 "${entry.value[1]}"', (
-        tester,
-      ) async {
+      final isHomeTab = entry.key == 'tab_home';
+      testWidgets(
+          '${entry.key} — ${isHomeTab ? 'AppBar는 로고 lockup(별도 group)' : 'AppBar 제목 "${entry.value[0]}"'}'
+          ' · 라벨 "${entry.value[1]}"', (tester) async {
         await tester.pumpWidget(
           _harness(
             user: _fakeUser(role: null),
@@ -1499,14 +1515,16 @@ void main() {
         await tester.tap(find.byKey(Key(entry.key)));
         await tester.pumpAndSettle();
 
-        expect(
-          find.descendant(
-            of: find.byType(AppBar),
-            matching: find.text(entry.value[0]),
-          ),
-          findsOneWidget,
-          reason: '탭 인덱스와 제목이 어긋나면 다른 탭의 제목이 뜬다',
-        );
+        if (!isHomeTab) {
+          expect(
+            find.descendant(
+              of: find.byType(AppBar),
+              matching: find.text(entry.value[0]),
+            ),
+            findsOneWidget,
+            reason: '탭 인덱스와 제목이 어긋나면 다른 탭의 제목이 뜬다',
+          );
+        }
         expect(
           find.descendant(
             of: find.byKey(Key(entry.key)),
@@ -1517,6 +1535,87 @@ void main() {
         );
       });
     }
+  });
+
+  group('AppBar — 홈 탭만 petrol + 로고 lockup, 다른 탭은 불변(spec-16-9, DW-759 해소)', () {
+    // 채택 전 이 배경색을 실제로 흰색(테마 기본값)으로 되돌려(뮤테이션) red를 확인하고
+    // 되돌려 green을 재확인했다(CLAUDE.md B4).
+    testWidgets(
+        '홈 탭 AppBar 배경이 히어로 배경(brandPetrolStrong)과 같고, 로고 lockup·아바타만 있다'
+        '(벨 없음, AC①·AC③)', (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          extraOverrides: [_recentListings(const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(
+        appBar.backgroundColor,
+        AppColors.brandPetrolStrong,
+        reason:
+            '홈 탭 AppBar는 히어로 그라데이션 시작색과 같은 petrol이어야 상태바~앱바~히어로가 '
+            '끊김 없이 이어진다(AC①)',
+      );
+
+      final heroContainer = tester.widget<Container>(find.byKey(const Key('go_ai')));
+      final gradient = (heroContainer.decoration as BoxDecoration).gradient as LinearGradient;
+      expect(
+        gradient.colors.first,
+        appBar.backgroundColor,
+        reason: '앱바와 히어로가 같은 petrol 톤이어야 이음새가 안 보인다(AC①)',
+      );
+
+      expect(find.byKey(const Key('home_logo_badge')), findsOneWidget,
+          reason: '로고 lockup(배지+워드마크)이 있어야 한다(DW-759)');
+      expect(find.text('차장님'), findsOneWidget);
+      expect(find.byIcon(Icons.notifications), findsNothing,
+          reason: '알림 벨은 추가하지 않는다(Never — 푸시가 Non-goal이라 누를 곳이 없다)');
+      expect(find.byIcon(Icons.notifications_none), findsNothing);
+      expect(find.byKey(const Key('profile_avatar')), findsOneWidget,
+          reason: '우측엔 아바타 하나만 있어야 한다');
+
+      // 코드리뷰 패치(spec-16-9) — 배경색이 같아도 테마 기본 하단 헤어라인 보더가 남아 있으면
+      // 그 자체가 이음새로 보인다. 앱바-히어로를 잇는 유일한 장치인 이 보더 제거를 지금까지
+      // 아무 테스트도 안 봐서, 실수로 되돌아가도 잡히지 않았다.
+      expect(
+        appBar.shape,
+        isA<RoundedRectangleBorder>().having(
+          (s) => s.side,
+          'side',
+          BorderSide.none,
+        ),
+        reason:
+            '테마 기본 하단 헤어라인 보더가 남아 있으면 앱바-히어로 사이에 선이 보인다(AC①)',
+      );
+    });
+
+    testWidgets('다른 탭(찜) AppBar는 이전과 동일 — petrol로 바뀌지 않고 로고 lockup도 없다', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          extraOverrides: [_recentListings(const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+
+      final appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(
+        appBar.backgroundColor,
+        isNull,
+        reason: '홈 탭 외에는 배경색을 직접 지정하지 않는다 — 테마 기본값(흰 배경) 그대로다',
+      );
+      expect(find.text('찜한 매물'), findsOneWidget);
+      expect(find.text('차장님'), findsNothing, reason: '로고 lockup은 홈 탭 전용이다');
+      expect(find.byKey(const Key('home_logo_badge')), findsNothing);
+    });
   });
 
   group('PopScope — 비홈 탭에서 시스템 back은 앱을 종료하지 않고 홈 탭으로 복귀한다', () {

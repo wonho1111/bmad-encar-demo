@@ -154,11 +154,17 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
     // 본인 매물(buyer=seller)이면 문의 버튼 숨김 — DB CHECK(23514)가 권위지만 UX상 미리 차단.
     final isOwnListing = myId != null && myId == listing.sellerId;
 
-    return ListView(
-      // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 문의하기 버튼이 가리지 않게.
-      padding: EdgeInsets.fromLTRB(
-          20, 20, 20, 20 + MediaQuery.of(context).viewPadding.bottom),
-      children: [
+    return Scaffold(
+      // spec-16-9(DW-735 해소) — 가격+문의하기를 본문 인라인 버튼 대신 sticky 바로 옮긴다.
+      // 본인 매물이면 CTA 자체가 없다(기존 3분기 그대로 유지, 색·라벨도 새로 정하지 않는다).
+      // Scaffold가 body 레이아웃에서 이 바의 높이를 자동으로 빼주므로, 옛 수동 하단 패딩
+      // (`20 + viewPadding.bottom`, 문의하기 버튼이 시스템 내비바에 안 가리게 하려던 보정)은
+      // 목적을 잃어 단순화한다 — 본인 매물(바 없음)은 SafeArea가 대신 그 자리를 보호한다.
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
         // 제목 = 제조사·모델 + 상태 배지(on_sale 만 도달하므로 "판매중").
         Row(
           children: [
@@ -255,28 +261,65 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
           Text(listing.description!),
         ],
 
-        // 문의하기(7.5, FR19·FR58) — 본인 매물이 아니면 로그인 여부와 무관하게 렌더한다(화면
-        // 단위가 아니라 행동 단위 게이트, DW-738) — 비로그인이면 탭할 때 _openChat이 서버 호출
-        // 없이 로그인으로 보낸다. 본인 매물이면(myId!=null && myId==sellerId) 여전히 숨긴다.
-        if (!isOwnListing) ...[
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              key: const Key('go_chat_inquiry'),
-              onPressed: _opening ? null : _openChat,
-              icon: _opening
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.chat_bubble_outline),
-              label: Text(_opening ? '여는 중…' : '문의하기'),
+          ],
+        ),
+      ),
+      // 문의하기(7.5, FR19·FR58, spec-16-9로 sticky 바 이관) — 본인 매물이 아니면 로그인
+      // 여부와 무관하게 렌더한다(화면 단위가 아니라 행동 단위 게이트, DW-738) — 비로그인이면
+      // 탭할 때 _openChat이 서버 호출 없이 로그인으로 보낸다. 본인 매물이면
+      // (myId!=null && myId==sellerId) 여전히 바 자체가 없다(기존 3분기 그대로 유지).
+      bottomNavigationBar: isOwnListing
+          ? null
+          : SafeArea(
+              // 시스템 제스처 바 영역을 이 바 스스로 흡수한다(spec-16-9 Design Notes) — Scaffold가
+              // body에는 이미 이 바의 높이를 자동으로 빼줬으니, 여기서는 안전영역만 처리한다.
+              top: false,
+              child: Container(
+                key: const Key('detail_sticky_bar'),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.surfaceRaised,
+                  border: Border(top: BorderSide(color: AppColors.borderHairline)),
+                  boxShadow: [
+                    // 떠 있는 요소(DESIGN.md Elevation & Depth) — sticky 바는 더 강한 -12px 계열
+                    // 겹 그림자를 쓴다.
+                    BoxShadow(color: Color(0x1F000000), blurRadius: 20, offset: Offset(0, -12)),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        wonText(listing.price),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.priceEmphasis,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // 색·라벨은 새로 정하지 않는다(Never) — 위치만 옮긴다. 분기 3개(본인 매물=
+                    // 이 자리 자체가 없음/비로그인=탭 시 /login/타인 매물=openOrCreateRoom)도
+                    // _openChat 하나에 그대로 유지한다.
+                    FilledButton.icon(
+                      key: const Key('go_chat_inquiry'),
+                      onPressed: _opening ? null : _openChat,
+                      icon: _opening
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.chat_bubble_outline),
+                      label: Text(_opening ? '여는 중…' : '문의하기'),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
-      ],
     );
   }
 

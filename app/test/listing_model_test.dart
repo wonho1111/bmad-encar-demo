@@ -109,6 +109,24 @@ void main() {
       expect(c.isNonSmoker, isNull);
       expect(c.fuel, isNull);
     });
+
+    // 코드리뷰 패치(spec-16-9) — 카드 옵션 칩(_OptionChipsRow)이 이 필드를 소비하는데, DB→모델
+    // 배선 경로를 보는 테스트가 0건이었다(위젯 테스트는 전부 ListingCardData(options: ...)를
+    // 손으로 넣어 화면만 봤다). 컬럼명이 바뀌거나 파싱이 빠지면 카드 전체가 "등록된 옵션 없음"
+    // 플레이스홀더만 조용히 계속 보여줄 수 있다.
+    test('options 필드가 파싱된다(카드 옵션 칩의 유일한 데이터 출처)', () {
+      final c = ListingCardData.fromMap({
+        'id': 'a',
+        'manufacturer': '현대',
+        'model': '아반떼',
+        'year': 2021,
+        'price': 18000000,
+        'mileage': 20000,
+        'region': '부산',
+        'options': ['선루프', '통풍시트'],
+      });
+      expect(c!.options, ['선루프', '통풍시트']);
+    });
   });
 
   group('ListingDetail.fromMap', () {

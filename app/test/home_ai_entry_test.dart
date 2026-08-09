@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/ai_search/chat_message.dart' show maxQueryLength;
 import 'package:app/features/auth/auth_controller.dart';
@@ -62,21 +63,103 @@ void main() {
       expect(find.byKey(const Key('ai_fab')), findsNothing);
     });
 
-    testWidgets('AI 진입이 홈에 있고, 매물 탐색 CTA보다 위에 있다', (tester) async {
+    testWidgets('AI 진입이 홈 최상단에 있다', (tester) async {
       await tester.pumpWidget(_harness());
       await tester.pump();
 
-      final ai = find.byKey(const Key('go_ai'));
-      final search = find.byKey(const Key('go_search'));
-      expect(ai, findsOneWidget, reason: 'AI 진입이 사라지면 FAB을 뗀 의미가 없다');
-      expect(search, findsOneWidget);
+      expect(find.byKey(const Key('go_ai')), findsOneWidget,
+          reason: 'AI 진입이 사라지면 FAB을 뗀 의미가 없다');
+    });
 
-      // "최상단"은 위치로 정해진 것이라(D12: AI가 제품의 얼굴) 순서까지 고정한다 —
-      // 있기만 하면 통과시키면 맨 아래로 밀려나도 초록이 된다.
-      final aiY = tester.getTopLeft(ai).dy;
-      final searchY = tester.getTopLeft(search).dy;
-      expect(aiY, lessThan(searchY),
-          reason: 'AI 진입이 매물 탐색 CTA보다 위에 있어야 한다');
+    // spec-16-9(DW-755 해소) — 히어로 바로 아래의 별도 매물 탐색 CTA(`_SearchCta`,
+    // `Key('go_search')`)를 같은 커밋에서 제거했다. 채택 전 이 키를 실제로 되살려(뮤테이션)
+    // red를 확인하고 되돌려 green을 재확인했다(CLAUDE.md B4).
+    testWidgets('go_search는 더 이상 없다 — 히어로 다음 위젯은 차종 칩이다(AC②)', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      expect(find.byKey(const Key('go_search')), findsNothing);
+
+      final ai = find.byKey(const Key('go_ai'));
+      final chips = find.byKey(const Key('category_chips'));
+      expect(ai, findsOneWidget);
+      expect(chips, findsOneWidget);
+      expect(tester.getTopLeft(ai).dy, lessThan(tester.getTopLeft(chips).dy),
+          reason: '히어로가 차종 칩보다 위에 있어야 한다');
+    });
+
+    // spec-16-9(DW-755 해소, AC①) — 히어로가 화면 폭을 꽉 채우는 밴드인지(좌우 여백 0).
+    // 예전엔 Center+ConstrainedBox(480)+Padding(16) **안**에 있어 양옆에 여백이 있었다.
+    testWidgets('히어로가 화면 폭을 꽉 채운다(좌우 여백 0)', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final heroWidth = tester.getSize(find.byKey(const Key('go_ai'))).width;
+      final screenWidth = tester.getSize(find.byType(MaterialApp)).width;
+      expect(
+        heroWidth,
+        screenWidth,
+        reason: '히어로 좌우에 여백이 남으면(예전 카드형 레이아웃) 화면 폭과 같지 않게 된다',
+      );
+    });
+
+    // 코드리뷰 패치(spec-16-9) — 히어로 배경 장식(글로우·차 실루엣)이 스파인이 명시적으로
+    // 요구한 요소(DW-755)인데 이걸 보는 테스트가 0건이었다. 존재를 단언한다 — 나중에 누가
+    // 실수로 지워도 이 테스트가 잡는다.
+    testWidgets('히어로 배경에 글로우·차 실루엣 장식이 있다(DW-755)', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      expect(find.byKey(const Key('hero_glow')), findsOneWidget);
+      expect(find.byKey(const Key('hero_car_silhouette')), findsOneWidget);
+
+      // 코드리뷰 지적(P8) — 키 존재만 보면 위치는 안 잡힌다. 이 장식은 우하단(bottom-right)
+      // 오버레이였다가 우상단(top-right)으로 옮겨진 패치라(코드 주석 참조), 그 자리가 되돌아가도
+      // 이 검사가 아니면 아무도 못 잡는다.
+      final positioned = tester.widget<Positioned>(
+        find.ancestor(
+          of: find.byKey(const Key('hero_car_silhouette')),
+          matching: find.byType(Positioned),
+        ),
+      );
+      expect(positioned.top, isNotNull, reason: '우상단이면 top이 있어야 한다');
+      expect(positioned.right, isNotNull, reason: '우상단이면 right가 있어야 한다');
+      expect(positioned.bottom, isNull,
+          reason: 'bottom이 있으면 우하단으로 되돌아간 것이다(예전 배치)');
+    });
+
+    // 코드리뷰 패치(spec-16-9 P1) — 기존 검사는 그라데이션의 colors.first만 AppColors.
+    // brandPetrolStrong(홈 탭 AppBar의 단색)과 같은지만 봤다. 그런데 이음매가 실제로 안 보이려면
+    // "시작색이 같다"뿐 아니라 "축(begin/end)이 세로"여야 한다 — 대각선(topLeft→bottomRight)
+    // 이면 히어로 윗변의 오른쪽으로 갈수록 이미 petrolDeepest 쪽으로 섞여 AppBar와 만나는 경계
+    // 오른쪽 절반에서 색이 꺾인다(코드 주석 실측치 참조). 이 검사가 axis를 직접 보지 않으면
+    // 대각선으로 되돌리는 리팩터도 green으로 통과한다.
+    testWidgets('히어로 그라데이션 축이 topCenter→bottomCenter다(AppBar 이음매가 안 보이려면 '
+        '대각선이 아니라 세로축이어야 한다, AC①)', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final container =
+          tester.widget<Container>(find.byKey(const Key('go_ai')));
+      final gradient = (container.decoration as BoxDecoration).gradient as LinearGradient;
+      expect(gradient.begin, Alignment.topCenter);
+      expect(gradient.end, Alignment.bottomCenter);
+    });
+
+    // 코드리뷰 패치(spec-16-9 P2) — hero_glow(top:-30/right:-30)·hero_car_silhouette(top:-6/
+    // right:-36)는 일부러 밴드 바깥으로 튀어나가게 배치돼 있다. 그걸 밴드 안으로 가둬주는 건
+    // 오직 이 Container의 clipBehavior뿐인데, 지금까지 아무 테스트도 그 값을 보지 않았다 —
+    // Stack은 자식이 부모 밖으로 나가도 오버플로 에러를 던지지 않으므로(clip이 없어도 조용히
+    // 통과), clipBehavior를 지워도 전체 스위트가 green으로 남는다. amber 글로우가 petrol
+    // AppBar 위로 번져 보이는 회귀를 잡을 유일한 장치라 직접 단언한다.
+    testWidgets('히어로 Container가 Clip.hardEdge다(밴드 밖 장식이 새어나가지 않게, P2)',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final container =
+          tester.widget<Container>(find.byKey(const Key('go_ai')));
+      expect(container.clipBehavior, Clip.hardEdge);
     });
 
     // spec-16-8 Review Triage Log #8 — 빈/공백만 입력해도 조용히 아무 일도 안 하는 기존 관례
@@ -148,6 +231,33 @@ void main() {
           reason: '매물 등록 퀵액션은 하단 "내차팔기" 탭과 목적지가 겹쳐 제거 대상이었다');
       expect(find.byKey(const Key('go_my_listings')), findsNothing,
           reason: '내 매물 관리 퀵액션도 같은 이유로 제거 대상이었다');
+    });
+
+    // spec-16-9 Always — 차종 칩 "전체"는 항상 petrol 채움(선택) 상태로 보인다(정적 표시일
+    // 뿐, 이 화면엔 실제 필터 선택 추적이 없다). 나머지 5개는 기존 아웃라인 스타일 그대로.
+    testWidgets('차종 칩 "전체"는 petrol 채움, 나머지는 아웃라인 스타일이다', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final allChip = tester.widget<Container>(
+        find.descendant(
+          of: find.byKey(const ValueKey('category_chip_전체')),
+          matching: find.byType(Container),
+        ),
+      );
+      final allDecoration = allChip.decoration as BoxDecoration;
+      expect(allDecoration.color, AppColors.brandPetrol);
+      expect(allDecoration.border, isNull);
+
+      final suvChip = tester.widget<Container>(
+        find.descendant(
+          of: find.byKey(const ValueKey('category_chip_SUV')),
+          matching: find.byType(Container),
+        ),
+      );
+      final suvDecoration = suvChip.decoration as BoxDecoration;
+      expect(suvDecoration.color, AppColors.surfaceRaised);
+      expect(suvDecoration.border, isNotNull);
     });
 
     // I/O 매트릭스(spec-16-8) "인기 조회 실패" 행 — popularListingsProvider 가 에러여도

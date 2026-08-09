@@ -1,7 +1,10 @@
-// 인증 후 홈 — AI 히어로(①, 최상단) + 매물 탐색 진입(②) + 차종 칩(③) + "지금 인기"·
-// "방금 올라온 매물" 2섹션(④, spec-16-8) — 웹 랜딩(Epic 11: HeroSearch·CategoryChips·
+// 인증 후 홈 — AI 히어로(①, 최상단, 전체폭 밴드) + 차종 칩(②) + "지금 인기"·
+// "방금 올라온 매물" 2섹션(③, spec-16-8) — 웹 랜딩(Epic 11: HeroSearch·CategoryChips·
 // PopularRecentGrid)의 정보구조 미러.
 // nav-ia-rules §1·§2: 구매자/판매자 공통 홈(R1 상위집합), 1순위 과업=매물 탐색(R2).
+// ⚠️ spec-16-9(DW-755 해소) — 히어로 바로 아래에 있던 별도 매물 탐색 CTA(`_SearchCta`,
+//   `Key('go_search')`)를 제거했다. 그 목적지(SearchScreen 무필터 조회)는 차종 칩의 "전체"
+//   (petrol 채움 정적 표시)가 대신한다 — 히어로 다음 위젯은 이제 차종 칩 줄이다.
 //
 // ⚠️ **AI 진입은 2026-08-07에 FAB → 홈 최상단 검색부로 옮겼다.** 원래는 nav-ia-rules R3
 //   (*"Flutter에서는 FAB 또는 상시 탭으로"*)를 근거로 FAB였는데, 2026-07-12 UX 확정 D12가
@@ -85,79 +88,80 @@ class HomeScreen extends ConsumerWidget {
           child: SingleChildScrollView(
             // 내용이 짧아도 당겨서 새로고침이 되도록 항상 스크롤 가능.
             physics: const AlwaysScrollableScrollPhysics(),
-            // 하단 패딩: 시스템 내비바 가림 방지. `viewPadding.bottom`이 아니라
-            // `MediaQuery.paddingOf(context).bottom`을 쓴다 — 셸의 `NavigationBar`가
-            // 이미 그 시스템 인셋을 흡수해 Scaffold가 `padding`에서 걷어내므로,
-            // 원본 `viewPadding`을 또 더하면 하단 여백이 이중으로 커진다(spec-16-1 Task).
-            padding: EdgeInsets.fromLTRB(
-                16, 16, 16, 24 + MediaQuery.paddingOf(context).bottom),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // AI 히어로 — **홈 최상단**(D12). "AI가 제품의 얼굴"이라는 위계를 위치로
-                  // 표현한다: 매물 탐색 CTA(R2)보다 위에 둔다. 웹 홈도 히어로가 최상단이다.
-                  // 제출(입력 전송·제안 칩 탭 공통)은 그 문장으로 AiChatScreen을 이미 조회를
-                  // 시작한 상태로 연다(spec-16-8 AC5, 직접 타이핑과 칩 탭이 같은 파이프라인).
-                  _AiSearchCta(
-                    onSubmitQuery: (query) => Navigator.of(context, rootNavigator: true)
-                        .push(MaterialPageRoute(
-                            builder: (_) => AiChatScreen(initialQuery: query))),
-                  ),
-                  const SizedBox(height: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // AI 히어로 — **홈 최상단**(D12), 화면 폭을 꽉 채우는 밴드(spec-16-9 DW-755
+                // 해소, Always: 좌우 여백 0). 아래 Center+ConstrainedBox+Padding **바깥**에
+                // 둬야 한다 — 그 안에 있으면 히어로도 480 컨텐츠 폭에 갇혀 양옆에 여백이
+                // 남는다(예전 결함). "AI가 제품의 얼굴"이라는 위계를 위치로도 표현한다.
+                // 제출(입력 전송·제안 칩 탭 공통)은 그 문장으로 AiChatScreen을 이미 조회를
+                // 시작한 상태로 연다(spec-16-8 AC5, 직접 타이핑과 칩 탭이 같은 파이프라인).
+                _AiSearchCta(
+                  onSubmitQuery: (query) => Navigator.of(context, rootNavigator: true)
+                      .push(MaterialPageRoute(
+                          builder: (_) => AiChatScreen(initialQuery: query))),
+                ),
+                Padding(
+                  // 하단 패딩: 시스템 내비바 가림 방지. `viewPadding.bottom`이 아니라
+                  // `MediaQuery.paddingOf(context).bottom`을 쓴다 — 셸의 `NavigationBar`가
+                  // 이미 그 시스템 인셋을 흡수해 Scaffold가 `padding`에서 걷어내므로,
+                  // 원본 `viewPadding`을 또 더하면 하단 여백이 이중으로 커진다(spec-16-1 Task).
+                  // 상단 패딩(16)이 히어로와 아래 콘텐츠 사이 간격을 겸한다 — _SearchCta 제거
+                  // (spec-16-9 Always: 히어로 바로 다음 위젯은 차종 칩) 이후 이 패딩만으로 충분.
+                  padding: EdgeInsets.fromLTRB(
+                      16, 16, 16, 24 + MediaQuery.paddingOf(context).bottom),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // 차종 칩 줄(spec-16-8 AC2) — 웹 CategoryChips.tsx의 CATEGORY_CHIPS와
+                          // 값·순서 바이트 일치. 탭하면 그 필터로 SearchScreen이 즉시 조회한다.
+                          _CategoryChipsRow(
+                            onTapChip: (chip) => Navigator.of(context, rootNavigator: true)
+                                .push(
+                              MaterialPageRoute(
+                                builder: (_) => SearchScreen(
+                                  initialBodyType: chip.bodyType,
+                                  initialFuel: chip.fuel,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
 
-                  // 검색 CTA(R2) — 1순위 과업으로 크게. spec-16-8 Design Notes: 하단 4탭
-                  // 어디와도 목적지가 겹치지 않아 손대지 않는다(제거 대상 3개에 없음).
-                  _SearchCta(
-                    onTap: () => Navigator.of(context, rootNavigator: true).push(
-                      MaterialPageRoute(builder: (_) => const SearchScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+                          // "지금 인기" 섹션(spec-16-8 AC3) — popularListingsProvider(view_count
+                          // desc 4건). 조회 실패는 이 섹션에만 격리된다(웹 fetchSection 미러).
+                          _SectionHeader(
+                            title: '지금 인기',
+                            onMore: () => Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute(builder: (_) => const SearchScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const _PopularListings(),
+                          const SizedBox(height: 20),
 
-                  // 차종 칩 줄(spec-16-8 AC2) — 웹 CategoryChips.tsx의 CATEGORY_CHIPS와
-                  // 값·순서 바이트 일치. 탭하면 그 필터로 SearchScreen이 즉시 조회한다.
-                  _CategoryChipsRow(
-                    onTapChip: (chip) => Navigator.of(context, rootNavigator: true).push(
-                      MaterialPageRoute(
-                        builder: (_) => SearchScreen(
-                          initialBodyType: chip.bodyType,
-                          initialFuel: chip.fuel,
-                        ),
+                          // "방금 올라온 매물" 섹션(구 "최근 매물" 헤더 개칭, recentListingsProvider
+                          // 재사용) — created_at desc 4건.
+                          _SectionHeader(
+                            title: '방금 올라온 매물',
+                            onMore: () => Navigator.of(context, rootNavigator: true).push(
+                              MaterialPageRoute(builder: (_) => const SearchScreen()),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const _RecentListings(),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
-
-                  // "지금 인기" 섹션(spec-16-8 AC3) — popularListingsProvider(view_count desc
-                  // 4건). 조회 실패는 이 섹션에만 격리된다(웹 fetchSection 미러).
-                  _SectionHeader(
-                    title: '지금 인기',
-                    onMore: () => Navigator.of(context, rootNavigator: true).push(
-                      MaterialPageRoute(builder: (_) => const SearchScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const _PopularListings(),
-                  const SizedBox(height: 20),
-
-                  // "방금 올라온 매물" 섹션(구 "최근 매물" 헤더 개칭, recentListingsProvider
-                  // 재사용) — created_at desc 4건.
-                  _SectionHeader(
-                    title: '방금 올라온 매물',
-                    onMore: () => Navigator.of(context, rootNavigator: true).push(
-                      MaterialPageRoute(builder: (_) => const SearchScreen()),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const _RecentListings(),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ),
         ),
       ),
     );
@@ -212,8 +216,11 @@ const List<String> heroSuggestions = [
 
 /// AI 히어로 — 웹 HeroSearch.tsx의 앱 번역판(D12, spec-16-8로 실 입력+제안칩까지 확장).
 /// petrol 그라데이션(brand-petrol-strong → petrol-deepest, DESIGN.md AI 히어로 밴드 규칙)으로
-/// `_SearchCta`(매물 탐색)와 위계를 가른다(D12의 "AI가 제품의 얼굴" 위계). 글로우/메시/차량
-/// 실루엣 아트는 재현하지 않는다(spec-16-1 Never — 데모 범위의 과잉 크래프트 방지).
+/// "AI가 제품의 얼굴"이라는 위계를 나타낸다(D12).
+/// ⚠️ spec-16-9(DW-755 해소) — 화면 폭을 꽉 채우는 밴드로 바뀌었다(좌우 여백 0, 아래 두 모서리만
+/// 둥글게 — 위는 각져 홈 탭 AppBar와 맞닿는다). 배경에 amber/petrol 글로우 + 차 실루엣 라인아트도
+/// 추가한다(spec-16-1 시절의 "재현하지 않는다"는 결정을 이 스토리가 뒤집는다 — Design Notes:
+/// 정밀 아트가 아니라 존재 자체가 요구사항이라 RadialGradient+저투명도 Icon으로 충분하다).
 /// amber는 검색 버튼 하나에만 쓴다(DESIGN.md "화면당 amber는 손에 꼽을 정도로") — amber 위
 /// 글자는 규칙대로 어두운 잉크(`inkPrimary`), 흰색 금지.
 class _AiSearchCta extends StatefulWidget {
@@ -268,88 +275,144 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
       // 눌러도 onTap이 없어 아무 반응이 없으므로 `tester.tap(find.byKey(Key('go_ai')))`를
       // 쓰는 테스트를 새로 만들지 않는다(조용히 아무 일도 안 하고 통과해 버린다).
       key: const Key('go_ai'),
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+      width: double.infinity,
+      // 화면 폭을 꽉 채우는 밴드(spec-16-9 DW-755 해소, Always: 좌우 여백 0) — 좌우 패딩을
+      // 없애고 위쪽은 각지게(홈 탭 AppBar와 맞닿음), 아래 두 모서리만 둥글게 한다.
+      clipBehavior: Clip.hardEdge,
+      decoration: const BoxDecoration(
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(22),
+          bottomRight: Radius.circular(22),
+        ),
+        // 코드리뷰 패치(spec-16-9 P1) — 축(begin/end)이 대각선(topLeft→bottomRight)이면 히어로
+        // 상단 우측 모서리가 이미 petrolDeepest 쪽으로 상당히 이동해(390x220 밴드 기준 ~76%),
+        // 홈 탭 AppBar(단색 brandPetrolStrong = 이 그라데이션의 시작색과만 같다)와 만나는 경계
+        // 오른쪽 절반에서 색이 눈에 띄게 꺾인다(AC①: "AppBar와 같은 배경색으로 이어져 경계가
+        // 안 보인다" 위반). topCenter→bottomCenter로 바꾸면 히어로의 윗변 전체가 시작색과
+        // 같아져 AppBar와 만나는 가로선 전체가 이어진다 — 시작색만 맞추는 게 아니라 축 자체가
+        // 이 이음매를 만든다는 점이 핵심이라, 나중에 리팩터가 "그냥 대각선이 예뻐서" 되돌리지
+        // 않도록 여기 남긴다.
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [AppColors.brandPetrolStrong, AppColors.petrolDeepest],
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
         children: [
-          // 헤드라인 — "말"만 amber 강조(웹·목업 공통 마이크로카피, spec-16-8 AC1).
-          RichText(
-            text: const TextSpan(
-              style: TextStyle(
-                  color: AppColors.onPetrol, fontSize: 19, fontWeight: FontWeight.w800),
-              children: [
-                TextSpan(text: '원하는 차를 '),
-                TextSpan(text: '말', style: TextStyle(color: AppColors.accentAmber)),
-                TextSpan(text: '로 찾으세요'),
-              ],
+          // 배경 장식 — 우상단 amber/petrol 글로우 + 우측 차 실루엣 라인아트(spec-16-9 Always,
+          // DW-755 해소). 정밀 벡터 재현이 아니라 "존재 자체"가 요구사항이라(Design Notes)
+          // RadialGradient + 저투명도 Icon으로 충분하다. Stack의 먼저 오는 자식이라 아래 헤드라인·
+          // 입력창·제안칩(뒤에 오는 Padding)에 항상 깔린다 — 침범하지 않는다.
+          Positioned(
+            top: -30,
+            right: -30,
+            child: Container(
+              key: const Key('hero_glow'),
+              width: 170,
+              height: 170,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppColors.accentAmber.withValues(alpha: 0.30),
+                    AppColors.accentAmber.withValues(alpha: 0),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          // 실 입력 pill — 흰 배경 + amber 검색 버튼(spec-16-8 AC1).
-          Container(
-            padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceRaised,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    key: const Key('hero_query_input'),
-                    controller: _controller,
-                    // 500자 상한(후속 코드리뷰 spec-16-8 2차 리뷰 P9) — web HeroSearch.tsx의
-                    // `maxLength={MAX_QUERY_LENGTH}`와 동일 방어. 타이핑 경로는 이 한 줄로
-                    // 막히고, 제안 칩 경로는 위 _submit의 방어적 자르기가 대신 막는다.
-                    maxLength: maxQueryLength,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      border: InputBorder.none,
-                      hintText: '예: 3천만원대 무사고 흰색 SUV',
-                      // 시각적 알약 크기를 그대로 유지한다 — maxLength를 주면 Flutter가 기본
-                      // 글자수 카운터를 그 아래에 그리는데, 이 좁은 pill 레이아웃은 그 자리를
-                      // 계산하지 않았다(웹 HeroSearch.tsx에도 이 카운터가 없다).
-                      counterText: '',
-                    ),
-                    onSubmitted: _submit,
-                  ),
-                ),
-                FilledButton(
-                  key: const Key('hero_search_button'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.accentAmber,
-                    foregroundColor: AppColors.inkPrimary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  onPressed: () => _submit(_controller.text),
-                  child: const Text('검색', style: TextStyle(fontWeight: FontWeight.w800)),
-                ),
-              ],
+          // 코드리뷰 패치(spec-16-9) — AC 문구("우상단")·목업(consistency-1.html `.silhouette`,
+          // right:-8%·top:-14%)과 달리 우하단에 있었다. 우상단(글로우와 같은 모서리, 칩·검색창을
+          // 침범하지 않는 자리)으로 옮긴다.
+          Positioned(
+            top: -6,
+            right: -36,
+            child: Icon(
+              Icons.directions_car_filled,
+              key: const Key('hero_car_silhouette'),
+              size: 150,
+              color: AppColors.onPetrol.withValues(alpha: 0.12),
             ),
           ),
-          const SizedBox(height: 10),
-          // 제안 칩 행 — 가로 스크롤(D5, 2줄로 밀리는 버튼 금지, ai_chat_screen.dart의
-          // _ClarifyChips와 같은 원칙).
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < heroSuggestions.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 7),
-                  _SuggestionChip(
-                    label: heroSuggestions[i],
-                    onTap: () => _submit(heroSuggestions[i], fromChip: true),
+                // 헤드라인 — "말"만 amber 강조(웹·목업 공통 마이크로카피, spec-16-8 AC1).
+                RichText(
+                  text: const TextSpan(
+                    style: TextStyle(
+                        color: AppColors.onPetrol, fontSize: 19, fontWeight: FontWeight.w800),
+                    children: [
+                      TextSpan(text: '원하는 차를 '),
+                      TextSpan(text: '말', style: TextStyle(color: AppColors.accentAmber)),
+                      TextSpan(text: '로 찾으세요'),
+                    ],
                   ),
-                ],
+                ),
+                const SizedBox(height: 12),
+                // 실 입력 pill — 흰 배경 + amber 검색 버튼(spec-16-8 AC1).
+                Container(
+                  padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceRaised,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          key: const Key('hero_query_input'),
+                          controller: _controller,
+                          // 500자 상한(후속 코드리뷰 spec-16-8 2차 리뷰 P9) — web HeroSearch.tsx의
+                          // `maxLength={MAX_QUERY_LENGTH}`와 동일 방어. 타이핑 경로는 이 한 줄로
+                          // 막히고, 제안 칩 경로는 위 _submit의 방어적 자르기가 대신 막는다.
+                          maxLength: maxQueryLength,
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            hintText: '예: 3천만원대 무사고 흰색 SUV',
+                            // 시각적 알약 크기를 그대로 유지한다 — maxLength를 주면 Flutter가 기본
+                            // 글자수 카운터를 그 아래에 그리는데, 이 좁은 pill 레이아웃은 그 자리를
+                            // 계산하지 않았다(웹 HeroSearch.tsx에도 이 카운터가 없다).
+                            counterText: '',
+                          ),
+                          onSubmitted: _submit,
+                        ),
+                      ),
+                      FilledButton(
+                        key: const Key('hero_search_button'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.accentAmber,
+                          foregroundColor: AppColors.inkPrimary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        ),
+                        onPressed: () => _submit(_controller.text),
+                        child: const Text('검색', style: TextStyle(fontWeight: FontWeight.w800)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // 제안 칩 행 — 가로 스크롤(D5, 2줄로 밀리는 버튼 금지, ai_chat_screen.dart의
+                // _ClarifyChips와 같은 원칙).
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < heroSuggestions.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 7),
+                        _SuggestionChip(
+                          label: heroSuggestions[i],
+                          onTap: () => _submit(heroSuggestions[i], fromChip: true),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -391,40 +454,6 @@ class _SuggestionChip extends StatelessWidget {
           child: Text(label,
               style: const TextStyle(
                   color: AppColors.onPetrol, fontSize: 11.5, fontWeight: FontWeight.w600)),
-        ),
-      ),
-    );
-  }
-}
-
-class _SearchCta extends StatelessWidget {
-  const _SearchCta({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      key: const Key('go_search'),
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceRaised,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderHairline),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.search, color: AppColors.inkMuted, size: 22),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text('어떤 차를 찾고 있나요?',
-                  style: TextStyle(color: AppColors.inkMuted, fontSize: 15)),
-            ),
-            Icon(Icons.chevron_right, color: AppColors.inkMuted),
-          ],
         ),
       ),
     );
@@ -479,6 +508,11 @@ class _CategoryChipsRow extends StatelessWidget {
         separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, i) {
           final chip = categoryChips[i];
+          // "전체"는 항상 petrol 채움(선택) 상태로 정적 표시한다(spec-16-9 Always) — 이 화면엔
+          // 실제 필터 선택 추적이 없다(어느 칩을 눌러도 화면을 그대로 두고 SearchScreen을 새로
+          // 연다), 그래서 이건 진짜 "선택 상태"가 아니라 "전체"가 기본값임을 알리는 장식이다.
+          // 나머지 5개는 기존 아웃라인 스타일 그대로.
+          final selected = chip.label == '전체';
           return InkWell(
             key: ValueKey('category_chip_${chip.label}'),
             borderRadius: BorderRadius.circular(999),
@@ -490,14 +524,15 @@ class _CategoryChipsRow extends StatelessWidget {
                 height: 36,
                 padding: const EdgeInsets.symmetric(horizontal: 13),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceRaised,
-                  border: Border.all(color: AppColors.borderHairline),
+                  color: selected ? AppColors.brandPetrol : AppColors.surfaceRaised,
+                  border:
+                      selected ? null : Border.all(color: AppColors.borderHairline),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 alignment: Alignment.center,
                 child: Text(chip.label,
-                    style: const TextStyle(
-                        color: AppColors.inkSecondary,
+                    style: TextStyle(
+                        color: selected ? AppColors.onPetrol : AppColors.inkSecondary,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600)),
               ),
