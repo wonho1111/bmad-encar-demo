@@ -466,5 +466,22 @@ void main() {
         );
       });
     });
+
+    // spec-16-10(Always) — 카드 radius를 웹 토큰(web/src/app/globals.css
+    // `--radius-card: 16px`, DESIGN.md `rounded.card`)과 맞춰 10→16으로 올렸다. 채택 전
+    // 16을 10으로 되돌려(측정된 뮤테이션) red를 확인하고 되돌려 green을 재확인했다(CLAUDE.md
+    // B4). 카드 `shape`와 사진 상단 `ClipRRect` 둘 다 본다 — 하나만 보면 다른 하나가 어긋나도
+    // (예: 사진 모서리만 10으로 되돌아가도) green으로 남는다.
+    testWidgets('카드 shape·사진 상단 클립 radius가 16이다(웹 --radius-card 토큰과 일치)',
+        (tester) async {
+      await _pump(tester, _card(imageUrl: 'https://example.com/photo.jpg'));
+
+      final card = tester.widget<Card>(find.byType(Card));
+      final shape = card.shape as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(16));
+
+      final clipRRect = tester.widget<ClipRRect>(find.byType(ClipRRect));
+      expect(clipRRect.borderRadius, const BorderRadius.vertical(top: Radius.circular(16)));
+    });
   });
 }

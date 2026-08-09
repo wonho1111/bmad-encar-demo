@@ -5929,4 +5929,133 @@ reason: 16.9는 **구조**(한 면·폭·로고·실루엣·칩·카드)를 맞�
 왜 16.9가 못 잡았나: **인수조건에 타이포 항목이 없었다.** 스토리를 쓴 사람(이 세션)이 배경·배치·색만 나열하고 글자 크기를 빠뜨렸다 — [[DW-755]]·[[DW-759]]·[[DW-760]]이 전부 "레이아웃·색" 언어로 등재돼 있었기 때문이다. 검사도 같은 이유로 타이포를 안 본다.
 trigger: **묶음 리뷰·회고보다 먼저 도는 짧은 다듬기 작업**(사용자 판단 대기). 범위가 작다 — 헤드라인 크기·줄바꿈 + eyebrow 라벨 + 그에 딸린 여백. 고칠 때 **"헤드라인 글자 크기가 카드 차량명보다 확연히 크다"를 위젯 테스트로 단언**한다(16.9가 시각 축 검사를 넣은 것과 같은 방식 — 숫자를 박지 말고 관계로 박아야 토큰이 바뀌어도 산다).
 related: [[DW-755]](히어로 구조 — 이번은 그 위의 타이포) · [[DW-765]](남은 웹·앱 시각 편차) · [[DW-764]](육안 확인의 가치를 보여준 자리)
+status: done # 2026-08-10 spec-16-10이 해소. 헤드라인 fontSize 19→36(DESIGN.md typography.scale.display), "원하는 차를"/"말로 찾으세요" 2줄, eyebrow "AI 매물 검색"(점 인디케이터+pill, 새 색 토큰 없이 onPetrolMuted·accentAmber로 구성) 신설. "헤드라인이 카드 차량명보다 크다"는 관계 단언(절대값 아님, 이 항목의 trigger가 요구한 그대로) + eyebrow 위치 단언을 app/test/home_ai_entry_test.dart에 추가, 채택 전 뮤테이션으로 red 확인 후 되돌려 green 재확인(CLAUDE.md B4). mobile MCP로 연결된 SM-G991N(기기 리스트가 `type: emulator`로 보고 — 물리 기기로 과장하지 않는다)에서도 육안으로 확인 — spec-16-10-evidence/01-hero-headline-eyebrow-search.png.
+
+### DW-768: spec-16-10이 앱 히어로에 eyebrow·강제 2줄 헤드라인을 넣었지만 웹 히어로는 그대로다 — 웹·앱 잔여 편차
+
+origin: spec-16-10 Verification("로컬 web을 390px 뷰포트로 앱과 대조하고 잔여 편차를 대장에 등재") 이행 중 이 세션이 직접 코드 대조로 확인.
+location: 앱 = `app/lib/features/auth/home_screen.dart`(eyebrow `Key('hero_eyebrow')` + `RichText(key: Key('hero_headline'))` 2줄 고정) · 웹 = `web/src/components/landing/HeroSearch.tsx:112-115`(`<h1 className="text-display ...">` 한 줄 — eyebrow 마크업 자체가 없다, `grep -n eyebrow web/src/components/landing/HeroSearch.tsx` → 0건)
+severity: low
+reason: spec-16-10의 Never가 "웹 히어로의 실루엣 배경 요소 외 다른 어떤 것도 바꾸지 않는다"로 웹 변경을 실루엣 svg 하나로 명시적으로 한정했다(사용자 결정, 에픽 Non-goals "웹 랜딩 재작업"과 정합) — 그래서 이번 스토리가 의도적으로 웹의 eyebrow·헤드라인 줄바꿈은 그대로 뒀다. 결과적으로 지금은 **앱에만** eyebrow가 있고 웹에는 없는 상태다(DW-765가 이미 등재한 "판매자 제공 정보" 면책·차종 칩 선택 상태 편차와 같은 종류 — 같은 스토리가 한쪽만 고치고 반대쪽은 범위 밖으로 남긴 결과).
+fix_sketch: 웹 히어로에도 같은 eyebrow(`AI 매물 검색`, 점 인디케이터)를 추가할지는 **웹 랜딩 재작업 여부에 대한 별도 사용자 결정**이 필요하다(이 스토리 범위 밖). 추가하기로 하면 `web/src/components/landing/HeroSearch.tsx`의 `<h1>` 바로 위에 pill 하나만 넣으면 되는 작은 변경이라 별도 스토리로 쪼갤 필요 없이 다음에 웹 히어로를 만질 때 같이 본다.
+trigger: 다음에 웹 랜딩(`HeroSearch.tsx` 또는 `page.tsx`)을 만지는 스토리에서 DW-765와 함께 처리한다. 급하지 않다(웹·앱 톤은 이미 petrol·amber·타이포 스케일로 일치하고, eyebrow는 장식 라벨이라 기능 차이가 아니다).
+related: [[DW-765]](같은 성격의 웹·앱 편차 목록) · [[DW-767]](이번에 앱에만 eyebrow를 넣은 스토리)
+status: open
+
+### DW-769: spec-16-10 로컬 web 390px Playwright 스크린샷 대조가 브라우저 프로필 락으로 미실행
+
+origin: spec-16-10 Verification("로컬 web을 390px 뷰포트로 Playwright로 스크린샷") 실행 중 이 세션이 직접 겪음.
+location: n/a(도구 환경) — `mcp__playwright__browser_navigate`/`mcp__plugin_playwright_playwright__browser_navigate` 둘 다 `Browser is already in use for /home/whlee/.cache/ms-playwright-mcp/mcp-chrome-for-testing-18cda99` 에러.
+severity: low
+reason: 같은 머신에 이미 실행 중인 다른 playwright-mcp 프로세스(들)가 같은 크롬 프로필 디렉터리를 점유하고 있어(`ps aux`로 여러 `playwright-mcp --browser chromium` 프로세스 확인, 그중 일부는 다른 세션이 이 태스크 진행 중에도 살아 있었다) 이 세션이 새로 브라우저를 열 수 없었다. 다른 세션이 쓰고 있을 가능성이 있는 프로세스라 임의로 kill하지 않았다(`parallel-reviewers-see-each-others-mutations` 메모의 교훈과 같은 이유 — 남의 리소스를 함부로 건드리지 않는다).
+fix_sketch: 대신 ①`curl localhost:3000/`으로 서버 렌더 HTML에 새 실루엣 `<svg viewBox="0 0 640 220">`·path 데이터가 그대로 나오는지 확인(확인됨) ②`npm run lint`·`npm run build` 0에러로 컴파일·타입 정합 확인 ③앱 쪽은 mobile MCP 실기기로 같은 자산(같은 path)이 실제로 렌더되는 것을 육안 확인(`spec-16-10-evidence/`) — 이 세 가지가 "웹 svg가 문법적으로 유효하고 앱과 같은 자산"이라는 사실은 증명하지만, **웹 390px 뷰포트에서 실제 픽셀로 어떻게 잘려 보이는지(overflow-hidden 클리핑·다른 배경 장식과의 겹침)는 육안으로 확인되지 않았다**.
+trigger: 브라우저 프로필이 비었을 때(다른 세션이 없을 때) 재시도 — 다음 세션이 아무 web 관련 작업을 할 때 `npm run dev` + Playwright 390px 스크린샷으로 이 항목과 DW-768을 같이 확인한다.
+related: [[DW-768]](같은 대조 작업에서 발견한 실제 편차) · `guard-proof-must-vary-shape`(검증은 실측이어야 한다는 같은 원칙)
+status: open
+
+### DW-770: `ListingCard`만 radius 16으로 올랐고, 다른 화면의 같은 스타일 카드는 여전히 10이다
+
+origin: spec-16-10 코드리뷰(adversarial 렌즈)가 diff 범위 밖 코드를 훑다가 발견 — 오케스트레이터가 직접 확인.
+location: `app/lib/features/listings/listing_card.dart:74`(이번에 10→16으로 올림) vs `app/lib/features/wishlist/wishlist_screen.dart:108`·`app/lib/features/chat/chat_list_screen.dart`·`app/lib/features/listings/listing_detail_screen.dart:384`(전부 여전히 `BorderRadius.circular(10)` 계열) — 전부 흰 배경+`borderHairline` 테두리인 같은 스타일의 카드/타일이다.
+severity: low
+reason: spec-16-10은 웹 토큰(`--radius-card: 16px`, `DESIGN.md rounded.card`)과 맞추려고 `ListingCard`만 16으로 올렸다(AC가 그 카드 하나만 지목했다) — 다른 화면들은 스토리 범위 밖이라 손대지 않았다. 결과적으로 지금은 화면마다 카드 모서리 곡률이 다르다(매물목록·홈=16, 찜·채팅·상세갤러리=10) — 이번 스토리가 "카드 radius를 웹과 통일"하려던 취지와 부분적으로만 맞는 상태다.
+fix_sketch: 세 곳 모두 같은 상수(16)로 올리는 기계적 변경 — 위험은 낮지만 여러 화면에 걸치므로 한 스토리로 묶어 위젯테스트와 함께 처리하는 편이 낫다.
+trigger: 다음에 찜·채팅·매물상세 화면 중 하나를 만지는 스토리에서 같이 처리하거나, 별도 "카드 radius 통일" 정리 스토리로 뺀다.
+related: [[DW-768]]·[[DW-769]](같은 스토리가 남긴 잔여 편차들)
+status: open
+
+### DW-771: 히어로 검색창 테두리 수정이 `enabledBorder`·`focusedBorder`만 껐다 — `disabledBorder`·`errorBorder`는 그대로
+
+origin: spec-16-10 코드리뷰(edge-case-hunter 렌즈)가 발견 — 오케스트레이터가 직접 확인.
+location: `app/lib/features/auth/home_screen.dart`(히어로 검색창 `InputDecoration`) — `app_theme.dart`의 `InputDecorationTheme`은 `enabledBorder`·`focusedBorder`만 정의하지만, Flutter `InputDecoration`엔 `disabledBorder`·`errorBorder`·`focusedErrorBorder`도 같은 계열로 존재한다.
+severity: low
+reason: 지금은 문제가 아니다 — 이 검색창은 항상 활성 상태이고(로그인 여부와 무관하게 disabled 안 됨, Always 규칙) 입력 검증(에러 표시)도 없다. 하지만 이번 스토리가 고친 버그(`InputDecoration.applyDefaults`가 로컬에서 null인 필드를 테마 값으로 채운다)는 **같은 모양으로** disabledBorder·errorBorder에도 그대로 적용된다 — 나중에 이 필드에 로딩 중 비활성화나 입력 검증이 추가되면 테마의 테두리가 그 상태에서만 다시 새어 나올 수 있다.
+fix_sketch: 지금 코드를 미리 고치지 않는다(CLAUDE.md A2 — 존재하지 않는 상태를 방어하지 않는다). 이 필드에 disabled/error 상태가 실제로 추가되는 시점에 이 항목을 같이 본다.
+trigger: 히어로 검색창에 비활성화 상태나 입력 검증(에러 표시)이 추가되는 스토리에서 함께 확인한다.
+related: [[DW-767]](이번에 같은 필드에서 고친 원본 버그)
+status: open
+
+### DW-772: 차 실루엣 path 데이터가 앱·웹 두 사본으로 살고 있는데 둘을 비교하는 검사가 없다
+
+origin: spec-16-10 코드리뷰 2패스(verification-gap 렌즈) 발견 — 오케스트레이터가 리포의 기존 드리프트 가드 3종을 직접 읽어 확인.
+location: 앱 = `app/lib/features/auth/home_screen.dart` `_CarSilhouettePainter._carPath()`(20개 좌표를 Dart 호출로 손으로 옮겨 적음) · 웹 = `web/src/components/landing/HeroSearch.tsx`의 인라인 `<svg>` `d` 문자열 · 원본 = `consistency-1.html` `.silhouette`. 세 벌이다.
+severity: low
+reason: 이 리포엔 앱↔웹 값 드리프트를 잡는 가드가 이미 3개 있다(`app/test/app_theme_color_drift_test.dart`가 웹 `globals.css`를 직접 읽고, `listing_options_drift_test.dart`·`home_chips_contract_test.dart`가 웹 `options.ts`를 읽는다) — 그런데 spec-16-10이 새로 만든 이 사본 관계에는 같은 가드가 붙지 않았다. 2패스에서 양쪽에 각각 검사를 붙이긴 했다(앱=`paints`로 실제 드로잉 명령, 웹=`HeroSearch.test.ts`가 `d` 문자열 전체를 고정) — 그래서 "한쪽이 조용히 사라지는" 건 이제 잡힌다. 남은 구멍은 **두 사본이 서로 다른 값으로 갈라지는 것**이다: 한쪽 좌표를 고치고 그쪽 검사도 같이 고치면 반대쪽은 여전히 green이다.
+fix_sketch: `app_theme_color_drift_test.dart`와 같은 패턴으로 Dart 테스트가 `../web/src/components/landing/HeroSearch.tsx`를 읽어 `d` 속성과 `<circle>` 좌표를 파싱하고, `_carPath()`의 좌표와 대조한다(읽기 실패는 폴백이 아니라 테스트 실패로 처리하는 그 파일의 규칙도 그대로 따른다).
+trigger: 다음에 실루엣 도형 자체를 손대는 스토리, 또는 앱↔웹 드리프트 가드를 한 번에 정리하는 작업에서 함께 처리한다. 급하지 않다 — 지금은 양쪽 모두 검사가 붙어 있어 "사라짐"은 막히고 "갈라짐"만 열려 있다.
+related: [[DW-770]]·[[DW-771]](같은 스토리가 남긴 잔여) · [[DW-773]](같은 성격 — 웹 토큰을 읽지 않고 숫자를 박은 검사)
+status: open
+
+### DW-773: 카드·히어로 radius 검사가 웹 토큰(`--radius-card`)을 읽지 않고 `16`을 하드코딩했다
+
+origin: spec-16-10 코드리뷰 2패스(verification-gap 렌즈) 발견 — 오케스트레이터가 `grep -rn radius-card web/src app`으로 직접 확인.
+location: `app/test/listing_card_test.dart`(카드 `shape`·사진 상단 클립 `Radius.circular(16)`) · `app/test/home_ai_entry_test.dart`(히어로 하단 `Radius.circular(16)`) vs 정본 `web/src/app/globals.css`의 `--radius-card: 16px`(웹은 `ListingCard.tsx`가 `rounded-card`로 실제 소비).
+severity: low
+reason: spec-16-10이 radius를 10→16으로 올린 **이유 자체가** "웹 토큰과 맞춘다"인데, 그 맞물림을 지키는 검사가 없다. 웹에서 `--radius-card`를 20px로 바꾸면 웹 카드는 즉시 바뀌고 `flutter test`·`npm run test`는 둘 다 green인 채로 앱만 16에 남는다 — 이 스토리가 닫으려던 바로 그 편차가 소리 없이 되돌아온다. 색 토큰은 이미 `app_theme_color_drift_test.dart`가 웹 `globals.css`를 읽어 이 함정을 막고 있는데, radius 토큰만 그 보호를 못 받는다.
+fix_sketch: `app_theme_color_drift_test.dart`가 이미 `globals.css`를 열고 있으므로 거기서 `--radius-card` 값을 함께 파싱해 공용 헬퍼로 노출하고, 두 radius 테스트가 리터럴 `16` 대신 그 값을 쓰게 한다.
+trigger: 다음에 `app_theme_color_drift_test.dart`를 만지거나 디자인 토큰(radius·간격)을 바꾸는 스토리에서 함께 처리한다.
+related: [[DW-772]](같은 종류의 미적용 드리프트 가드) · [[DW-770]](앱 내부의 radius 불일치)
+status: open
+
+### DW-774: spec-16-10이 추가한 시각 축 위젯 테스트가 전부 기본 800x600에서 돈다 — 정작 문제가 난 390px가 아니다
+
+origin: spec-16-10 코드리뷰 2패스(adversarial 렌즈) 발견 — 오케스트레이터가 `grep -n 'physicalSize' app/test/`로 직접 확인.
+location: `app/test/home_ai_entry_test.dart`의 spec-16-10 신설 테스트 전부(헤드라인 스냅샷·관계 비교, eyebrow 위치·색, 검색창 유효 테두리, 히어로 곡률, 실루엣 그리기) — 어느 것도 뷰포트를 지정하지 않는다. 선례는 이미 있다: `app/test/listing_card_test.dart:350`·`:438`이 `tester.view.physicalSize = const Size(390, 844)`로 폰 폭을 고정한다.
+severity: low
+reason: 이 스토리가 존재하는 이유가 "테스트는 green인데 실기기 화면이 이상했다"인데, 새 테스트들이 한 단계 위에서 같은 구조를 반복한다 — 아무 사용자도 쓰지 않는 800px 폭에서 green이다. 지금 단언하는 값들(선언 fontSize·radius·색)은 대부분 폭과 무관해서 당장 틀린 결과를 내지는 않지만, 폭에 의존하는 축(2줄 헤드라인이 실제로 2줄로 떨어지는지, eyebrow pill이 안 잘리는지, 실루엣이 밴드 안에서 어느 만큼 보이는지)은 지금 아무도 안 본다. 실루엣 그리기 테스트는 밴드 크기를 코드에서 읽어 계산하므로 폭이 바뀌어도 통과하지만, 그래서 더더욱 "390px에서 실제로 얼마나 보이나"를 증명하지 못한다.
+fix_sketch: spec-16-10 그룹의 `setUp`에서 `tester.view.physicalSize = const Size(390, 844)`·`devicePixelRatio = 1.0`을 설정하고 `addTearDown(tester.view.reset)`으로 되돌린다(`listing_card_test.dart:350` 그대로). 폭이 바뀌면서 깨지는 단언이 나오면 그게 곧 이 항목이 잡으려던 갭이다.
+trigger: 다음에 `home_ai_entry_test.dart`의 시각 축 테스트를 손대는 스토리, 또는 앱 UI 정합성 교정이 한 번 더 도는 자리에서 함께 처리한다.
+related: [[DW-772]]·[[DW-773]](같은 2패스가 남긴 검사 강화 항목)
+status: open
+
+### DW-775: 히어로 검색 **버튼** radius가 10이라 스파인의 "히어로 검색바·버튼 12~14" 밖이다
+
+origin: spec-16-10 코드리뷰 2패스(adversarial 렌즈) 발견 — 오케스트레이터가 코드와 `DESIGN.md`를 직접 대조.
+location: `app/lib/features/auth/home_screen.dart`의 `Key('hero_search_button')` `FilledButton`(`BorderRadius.circular(10)`). 같은 `Row` 두 줄 위의 검색 pill은 12로 구간 안이다. 정본은 `DESIGN.md`의 `rounded` 토큰 항목("카드 16 · 칩 9 · 배지 11 · **히어로 검색바·버튼은 카드와 조화되는 12~14 계열**")이며 `web/src/app/globals.css`가 같은 값을 미러링한다.
+severity: low
+reason: 선재 값이다(spec-16-10이 만든 회귀가 아니다 — 이 버튼은 원래 10이었고 이 스토리의 AC는 히어로 밴드 하단·`ListingCard` 두 곳만 지목했다). 다만 **이 스토리가 "모서리 곡률"을 축으로 삼아 바로 그 `Row`를 편집했는데도 놓친 자리**라 기록해 둔다. 기존 [[DW-770]]은 화면 간 **카드** radius 불일치만 다루므로 이 자리는 거기 안 들어 있다(오케스트레이터 지시상 기존 항목은 수정하지 않고 새로 등재한다). 참고로 같은 grep(`circular(10)`)에 `chat_list_screen.dart`가 두 군데 걸리는데 DW-770 본문엔 한 군데만 적혀 있다 — DW-770을 실제로 처리할 때 목록을 grep으로 다시 뽑을 것.
+fix_sketch: 10 → 12(pill과 같은 값)로 올린다. 한 줄 변경이고 위젯 테스트로 단언하기도 쉽다.
+trigger: [[DW-770]](카드 radius 통일)을 처리하는 그 스토리에서 같이 본다 — 둘 다 "곡률 토큰이 스파인과 어긋난 자리"라 한 덩어리로 도는 게 맞다.
+related: [[DW-770]](카드 radius 불일치) · [[DW-773]](radius 토큰을 검사가 안 읽는 문제)
+status: open
+
+### DW-776: 앱 히어로 실루엣이 실기기에서 차체의 대부분이 잘려 지붕선과 바퀴만 남는다
+
+origin: spec-16-10 코드리뷰 2패스 — 오케스트레이터가 `spec-16-10-evidence/01-hero-headline-eyebrow-search.png`를 직접 열어 확인했고, 같은 원인이 웹에서도 재현되는 것을 실제 브라우저로 실측했다.
+location: `app/lib/features/auth/home_screen.dart`의 `carSilhouetteOffset`(`topFraction = -0.14`) — 목업 `consistency-1.html` `.app-hero .silhouette`의 `top:-14%`를 그대로 옮긴 값.
+severity: low
+reason: 목업의 `top:-14%`는 **높이 220px에 폭 390px인 고정 밴드**(가로세로비 0.56)를 전제로 한 값인데, 실제 앱 히어로 밴드는 그보다 세로로 길다(실측 ≈0.83) — 퍼센트가 높이 기준이라 밴드가 세로로 길수록 실루엣이 위로 더 밀려난다. 그 결과 기기 화면에서는 차로 읽히지 않고 "가로선 하나 + 원 두 개"로 보인다. 코드 자체는 스펙 Always가 지시한 환산을 정확히 수행했고(값 오류가 아니다), 사용자도 이 스크린샷 상태를 이미 확인했다. 같은 원인이 웹에서는 훨씬 심하게 나타나 2패스에서 고쳤는데(웹은 목업이 프레임별로 다른 규칙을 줬고 웹 프레임 규칙은 `bottom` 기준이라 **정답이 하나뿐**이었다), 앱은 목업이 준 규칙이 하나뿐이라 "목업을 벗어날지"가 사람 판단이 필요한 자리다 — 그래서 고치지 않고 등재한다.
+fix_sketch: 밴드 가로세로비가 목업과 다를 때 실루엣이 화면 밖으로 밀리는 양에 하한을 두거나(예: 잉크 높이의 일정 비율은 반드시 밴드 안에 남게 clamp), 앱도 웹처럼 하단 기준으로 바꾼다. 어느 쪽이든 목업 수치에서 의도적으로 벗어나는 결정이라 **사용자 육안 판단이 먼저**다.
+trigger: 다음에 히어로 배경 장식을 손대는 스토리에서, 사용자에게 현재 스크린샷을 보여주고 "이대로 둘지 / 차가 더 보이게 내릴지"를 물어 결론을 낸 뒤 처리한다.
+related: [[DW-774]](390px에서 실제로 어떻게 보이는지 검사가 안 본다는 같은 뿌리) · [[DW-769]](웹 쪽 육안 확인 — 이 2패스에서 실제로 수행했다)
+status: open
+
+### DW-777: 앱 히어로 검색 pill이 목업·웹과 달리 그림자가 없고 모서리도 더 각지다
+
+origin: spec-16-10 코드리뷰 2패스(adversarial 렌즈) 발견 — 오케스트레이터가 앱 코드·목업 CSS·웹 코드 셋을 직접 대조.
+location: 앱 = `app/lib/features/auth/home_screen.dart` 히어로 입력 pill `Container`(`borderRadius: circular(12)`, `boxShadow` 없음) · 목업 = `consistency-1.html:317-319` `.app-search`(`border-radius:15px` + `box-shadow:0 18px 34px -16px rgba(0,0,0,.55)`) · 웹 = `web/src/components/landing/HeroSearch.tsx:133`(`rounded-full` + `shadow-float`).
+severity: low
+reason: spec-16-10이 이 필드를 손댄 근거로 든 문장이 "웹 `HeroSearch.tsx`는 애초 테두리 없이 `rounded-full`+그림자만 쓰므로 **웹에 맞춘다**"(`epic-16-context.md`)였는데, 실제로 맞춘 건 "테두리 제거" 한 축뿐이다. 목업·웹 둘 다 이 pill을 **떠 있는 알약**으로 그리는데(그림자가 그 인상을 만드는 요소다) 앱만 평평한 사각에 가깝다. 사용자가 애초에 "퀄리티가 떨어진다"고 지목한 바로 그 요소라 기록해 둔다. 기존 [[DW-768]]은 웹·앱 편차 중 eyebrow·헤드라인 줄바꿈만 담고 있어 이 자리는 거기 없다(오케스트레이터 지시상 기존 항목은 수정하지 않고 새로 등재한다).
+fix_sketch: `BoxDecoration`에 `boxShadow`를 더하고 radius를 목업 값(15)이나 웹처럼 완전 알약(`999`)으로 올린다 — 어느 쪽으로 갈지는 "앱은 목업 앱 프레임(15)을 따를지, 웹과 똑같이(알약) 갈지"라 한 줄 결정이 먼저 필요하다. 위젯 테스트로 `boxShadow != null`까지 단언하면 다시 사라지지 않는다.
+trigger: 다음에 히어로 검색 pill을 만지는 스토리, 또는 [[DW-768]](웹·앱 편차)을 처리하는 자리에서 함께 본다.
+related: [[DW-768]](같은 성격의 웹·앱 편차) · [[DW-775]](같은 Row 안의 버튼 곡률) · [[DW-767]](이 pill의 테두리를 고친 원본 항목)
+status: open
+
+### DW-778: 홈 화면이 시스템 글자 크기 2.0배에서 실제로 오버플로한다(RenderFlex 97px)
+
+origin: spec-16-10 코드리뷰 3패스(edge-case-hunter 렌즈) 발견 — 오케스트레이터가 **직접 프로브 테스트를 만들어 실측 재확인**한 뒤 등재했다(서브에이전트 보고를 그대로 받지 않았다). 프로브는 확인 후 삭제했다.
+location: `app/lib/features/auth/home_screen.dart` 홈 화면의 `Row` 한 곳(edge-case 렌즈는 `_SectionHeader`(`:182` 부근, `Text` + `Spacer` + "전체보기 ›")로 지목했으나 **이 세션은 오버플로 발생 사실만 확인했고 위젯 귀속까지는 확인하지 않았다**).
+severity: low
+reason: 이 리포는 textScaler(시스템 글자 크기 배율) 대응을 어디서도 하지 않는 게 현재 관례이고(`grep -rn textScaler app/lib app/test` = 0건), spec-16-9·16-10 리뷰가 "글자가 안 커진다" 계열 지적을 같은 근거로 세 번 reject했다. **다만 이번 건은 그 계열과 다르다** — "커지지 않는다"(시각 위계 문제)가 아니라 **실제 렌더 에러**(`RenderFlex overflowed by 97 pixels on the right`, 노란/검정 줄무늬가 화면에 그려진다)이고, 스톡 안드로이드가 지원하는 배율 범위(최대 2.0) 안에서 도달한다. spec-16-10이 만든 회귀는 아니다(선재, diff 범위 밖).
+evidence: 실측 — `390x844`(`devicePixelRatio 1.0`) + `MediaQuery.textScaler = TextScaler.linear(s)`로 `HomeScreen`을 pump하고 `FlutterError.onError`로 오버플로를 셌다. `s=1.0` → 0건, `s=1.5` → 0건, `s=2.0` → **1건(`A RenderFlex overflowed by 97 pixels on the right.`)**. 즉 1.5까지는 안전하고 2.0에서 처음 터진다.
+fix_sketch: 지목된 `Row`의 제목 `Text`를 `Expanded`(또는 `Flexible`)로 감싸고 `overflow: TextOverflow.ellipsis`를 준다 — "전체보기 ›"는 고정 폭이므로 제목만 줄어들면 된다. 검사는 위 프로브와 같은 방식(오버플로 카운트 == 0)을 `s=2.0`에 대해 걸면 red→green이 그대로 증명된다. ⚠️ 이 앱 전체가 textScaler 대응을 안 한다는 관례를 바꾸는 결정은 아니다 — **렌더 에러가 나는 곳만** 막는 최소 수정이다.
+trigger: 접근성(글자 크기) 축을 처음 다루는 스토리에서, 또는 다음에 홈 화면 섹션 헤더를 손대는 자리에서 함께 처리한다. 그 전이라도 사용자가 실기기에서 큰 글자 설정을 쓴다는 게 확인되면 즉시 올린다.
+related: [[DW-774]](시각 축 테스트가 390px 같은 실제 조건에서 안 도는 문제 — 이 결함도 기본 800x600에서는 안 나타난다)
+status: open
+
+### DW-779: Follow-up review still recommended for 16-10-히어로-검색창-마감 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-10-히어로-검색창-마감.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260810-011427-dabe; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

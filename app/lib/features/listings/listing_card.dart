@@ -69,8 +69,10 @@ class ListingCard extends StatelessWidget {
       // 온전히 들어온다(실측: 카드 높이 ≈ photoHeight+88, 버튼 하단 = photoHeight+48) —
       // 그래서 카드 자체를 다시 자른다(잉크 스플래시가 둥근 모서리 밖으로 번지는 것도 막는다).
       clipBehavior: Clip.antiAlias,
+      // 10→16(spec-16-10 Always) — 웹 토큰(web/src/app/globals.css `--radius-card: 16px`,
+      // DESIGN.md `rounded.card`)과 맞춘다.
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: AppColors.borderHairline),
       ),
       child: LayoutBuilder(
@@ -82,7 +84,8 @@ class ListingCard extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                // 10→16(spec-16-10 Always) — 카드 전체 radius(위)와 사진 상단 클립을 맞춘다.
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 child: InkWell(
                   onTap: onTap,
                   child: Column(

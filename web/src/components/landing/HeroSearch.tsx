@@ -93,6 +93,31 @@ export default function HeroSearch({ authed }: { authed: boolean }) {
 
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-brand-petrol-strong to-petrol-deepest px-6 py-14 sm:px-10 sm:py-16">
+      {/* 차 실루엣 배경 장식(spec-16-10 Always, 사용자 결정) — 앱 히어로(home_screen.dart
+          _CarSilhouettePainter)와 **같은 path 데이터**를 쓴다. 배치는 목업이 프레임별로 다르게
+          정해 둔 규칙을 각 표면이 자기 것으로 따른다: 앱은 `.app-hero .silhouette`
+          (right:-8%·top:-14%·width:56%·opacity:.09), 웹 히어로는 그 대응물인 `.hero`가 쓰는
+          기본 `.silhouette` 규칙(consistency-1.html:170 — right:-4%·bottom:-6%·
+          width:min(58%,640px)·opacity:.10). 목업의 웹 프레임은 데스크톱·태블릿·모바일이
+          전부 bottom 기준이고 top 기준은 앱 프레임 하나뿐이다.
+          ⚠️ 처음엔 앱 규칙(top:-14%)을 그대로 웹에 복사했는데, `top`의 퍼센트는 컨테이너
+          **높이** 기준이라 220px 고정 밴드인 목업과 달리 높이가 유동적인 웹 <section>에서는
+          결과가 무너진다 — 코드리뷰 때 실제 브라우저로 실측: 390px에서 그려지는 잉크 60.4px 중
+          15.3px(25%)만 보여 바퀴 밑동만 남았고, 1440px에서는 폭이 806px까지 커져(목업 상한
+          640px 초과) 검색창 위로 올라탔다.
+          DOM 순서상 아래 콘텐츠 div보다 먼저 와야 한다 — 둘 다 z-index:auto라 이후 스택
+          순서를 트리 순서가 정하므로, 먼저 오는 이 svg가 뒤에 오는 콘텐츠 아래에 깔린다
+          (마크업만으로 배경화). */}
+      <svg
+        viewBox="0 0 640 220"
+        preserveAspectRatio="xMaxYMid meet"
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-[6%] -right-[4%] w-[min(58%,640px)] fill-white opacity-[.10]"
+      >
+        <path d="M6,150 C30,120 74,112 122,110 L168,72 C188,54 224,45 276,45 L398,47 C452,49 496,71 528,110 L590,122 C618,128 634,144 634,168 L634,192 L566,192 A42,42 0 0 0 482,192 L246,192 A42,42 0 0 0 162,192 L26,192 C14,192 6,183 6,170 Z" />
+        <circle cx="204" cy="192" r="30" />
+        <circle cx="524" cy="192" r="30" />
+      </svg>
       <div className="relative mx-auto flex max-w-3xl flex-col items-start gap-4">
         <h1 className="text-display font-extrabold leading-tight text-white">
           원하는 차를 <span className="text-accent-amber">말</span>로 찾으세요

@@ -280,9 +280,12 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
       // 없애고 위쪽은 각지게(홈 탭 AppBar와 맞닿음), 아래 두 모서리만 둥글게 한다.
       clipBehavior: Clip.hardEdge,
       decoration: const BoxDecoration(
+        // 22→16(spec-16-10 Always) — 사용자가 실기기 육안으로 곡률이 과하다고 판단했다(Design
+        // Notes). 아래 ListingCard radius(16, listing_card.dart)와 같은 값이라 두 마감이
+        // 서로 어긋나지 않는다.
         borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(22),
-          bottomRight: Radius.circular(22),
+          bottomLeft: Radius.circular(16),
+          bottomRight: Radius.circular(16),
         ),
         // 코드리뷰 패치(spec-16-9 P1) — 축(begin/end)이 대각선(topLeft→bottomRight)이면 히어로
         // 상단 우측 모서리가 이미 petrolDeepest 쪽으로 상당히 이동해(390x220 밴드 기준 ~76%),
@@ -300,10 +303,12 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
       ),
       child: Stack(
         children: [
-          // 배경 장식 — 우상단 amber/petrol 글로우 + 우측 차 실루엣 라인아트(spec-16-9 Always,
-          // DW-755 해소). 정밀 벡터 재현이 아니라 "존재 자체"가 요구사항이라(Design Notes)
-          // RadialGradient + 저투명도 Icon으로 충분하다. Stack의 먼저 오는 자식이라 아래 헤드라인·
-          // 입력창·제안칩(뒤에 오는 Padding)에 항상 깔린다 — 침범하지 않는다.
+          // 배경 장식 — 우상단 amber/petrol 글로우 + 차 실루엣(spec-16-9 Always, DW-755 해소).
+          // ⚠️ spec-16-10에서 실루엣 요구사항이 바뀌었다: 예전엔 "존재 자체"만 요구라 저투명도
+          // Material Icon으로 충분했지만, 지금은 목업 path를 그대로 옮긴 정밀 재현이 요구사항이다
+          // (아래 CustomPaint 주석 참조 — Icon으로 되돌리지 말 것). 글로우만 여전히
+          // RadialGradient다. Stack의 먼저 오는 자식이라 아래 헤드라인·입력창·제안칩(뒤에 오는
+          // Padding)에 항상 깔린다 — 침범하지 않는다.
           Positioned(
             top: -30,
             right: -30,
@@ -322,17 +327,20 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
               ),
             ),
           ),
-          // 코드리뷰 패치(spec-16-9) — AC 문구("우상단")·목업(consistency-1.html `.silhouette`,
-          // right:-8%·top:-14%)과 달리 우하단에 있었다. 우상단(글로우와 같은 모서리, 칩·검색창을
-          // 침범하지 않는 자리)으로 옮긴다.
-          Positioned(
-            top: -6,
-            right: -36,
-            child: Icon(
-              Icons.directions_car_filled,
-              key: const Key('hero_car_silhouette'),
-              size: 150,
-              color: AppColors.onPetrol.withValues(alpha: 0.12),
+          // spec-16-10 Always — 꽉 찬 Material 아이콘이 아니라 목업(consistency-1.html
+          // `.app-hero .silhouette`, viewBox 0 0 640 220) 라인아트를 그대로 이식한다(새 패키지
+          // 의존성 없이 CustomPainter로 — A2 단순함 원칙, 정적 도형 하나뿐이라 flutter_svg를
+          // 새로 들일 근거가 없다). 배치도 목업의 CSS 퍼센트 규칙(right:-8%·top:-14%·width:56%)을
+          // 그대로 따르되, 고정 픽셀(이전의 top:-6,right:-36,size:150)이 아니라 이 밴드 자체
+          // 크기의 비율로 계산한다 — Positioned.fill이 Stack의 최종 크기(유일한 비-Positioned
+          // 자식인 아래 Padding이 정한다)를 tight 제약으로 그대로 CustomPaint에 넘겨주므로,
+          // paint()가 받는 `size`가 곧 밴드 크기다.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                key: const Key('hero_car_silhouette'),
+                painter: _CarSilhouettePainter(),
+              ),
             ),
           ),
           Padding(
@@ -340,13 +348,58 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Eyebrow 라벨 — 헤드라인 위, 이 화면의 유일한 몰입 구간(DESIGN.md)이 무엇인지
+                // 먼저 알린다(spec-16-10 Always, DW-767 해소). consistency-1.html `.eyebrow`
+                // 스타일(반투명 흰 pill·얇은 테두리·점 인디케이터·자간 넓힌 12px)을 새 색 토큰
+                // 없이 기존 AppColors로 구성한다 — 텍스트·테두리=onPetrolMuted, 점=accentAmber.
+                Container(
+                  key: const Key('hero_eyebrow'),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.onPetrol.withValues(alpha: 0.08),
+                    border:
+                        Border.all(color: AppColors.onPetrolMuted.withValues(alpha: 0.35)),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                            shape: BoxShape.circle, color: AppColors.accentAmber),
+                      ),
+                      const SizedBox(width: 7),
+                      const Text(
+                        'AI 매물 검색',
+                        style: TextStyle(
+                            color: AppColors.onPetrolMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
                 // 헤드라인 — "말"만 amber 강조(웹·목업 공통 마이크로카피, spec-16-8 AC1).
+                // fontSize 36 = DESIGN.md typography.scale.display(스파인, spec-16-10 Design
+                // Notes: 에픽 텍스트의 "30~34px" 인용은 웹 프레임을 잘못 가리킨 오표기였고,
+                // 진짜 앱 프레임 목업도 26px이지만 목업과 충돌하면 스파인이 우선한다는 이
+                // 프로젝트 규칙과, 검사 자체가 절대값이 아니라 관계(카드 차량명보다 크다)만
+                // 요구한다는 점에서 스파인 값을 택한다). 목업 앱 프레임과 같은 지점에서 2줄로
+                // 끊는다("원하는 차를" / "말로 찾으세요").
                 RichText(
+                  key: const Key('hero_headline'),
                   text: const TextSpan(
                     style: TextStyle(
-                        color: AppColors.onPetrol, fontSize: 19, fontWeight: FontWeight.w800),
+                        color: AppColors.onPetrol,
+                        fontSize: 36,
+                        fontWeight: FontWeight.w800,
+                        height: 1.15),
                     children: [
-                      TextSpan(text: '원하는 차를 '),
+                      TextSpan(text: '원하는 차를\n'),
                       TextSpan(text: '말', style: TextStyle(color: AppColors.accentAmber)),
                       TextSpan(text: '로 찾으세요'),
                     ],
@@ -373,6 +426,21 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                           decoration: const InputDecoration(
                             isDense: true,
                             border: InputBorder.none,
+                            // spec-16-10 Design Notes — `border: InputBorder.none`만으로는
+                            // 테두리가 사라지지 않는다. `InputDecoration.applyDefaults`가 로컬
+                            // enabledBorder/focusedBorder가 null이면 테마의 OutlineInputBorder
+                            // (app_theme.dart)로 채우고, 실제 테두리 선택 로직은 enabled/focused
+                            // 상태에서 그 둘을 border보다 먼저 쓴다(Flutter SDK
+                            // input_decorator.dart 직접 확인) — 이 필드에서만 명시적으로 꺼야
+                            // 한다. app_theme.dart의 전역 테마는 건드리지 않는다(로그인·등록
+                            // 폼이 공유, Never).
+                            // ⚠️ 위의 `border: InputBorder.none`은 남겨 둔다 — 죽은 코드가 아니라
+                            // disabled·error 상태의 **실제 폴백**이다(SDK: 상태별 border가 없으면
+                            // `decoration.border ?? UnderlineInputBorder()`로 떨어진다). 테마엔
+                            // 그 두 상태가 정의돼 있지 않으므로 이 줄을 지우면 그 상태에서 머티리얼
+                            // 밑줄이 다시 생긴다([[DW-771]]).
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
                             hintText: '예: 3천만원대 무사고 흰색 SUV',
                             // 시각적 알약 크기를 그대로 유지한다 — maxLength를 주면 Flutter가 기본
                             // 글자수 카운터를 그 아래에 그리는데, 이 좁은 pill 레이아웃은 그 자리를
@@ -420,6 +488,78 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
       ),
     );
   }
+}
+
+/// 히어로 차 실루엣의 배치 계산 — 목업 CSS 퍼센트 규칙(consistency-1.html
+/// `.app-hero .silhouette`: right:-8%·top:-14%·width:56%)을 밴드 크기(`bandSize`)의
+/// 좌상단 원점 기준 (이동량 dx/dy, 축소 배율 scale)로 환산한다. `_CarSilhouettePainter.paint`
+/// 안에서만 쓰이면 위젯 트리에 안 남아(`CustomPaint`의 `key`는 이 계산 결과를 노출하지 않는다)
+/// 위젯 테스트로는 배치가 맞는지 볼 수 없다 — listing_card.dart의 `safeCardPhotoHeight`와
+/// 같은 이유로 순수 함수로 뽑아 단위 테스트로 직접 잰다(코드리뷰 지적: spec-16-9가 이 실루엣이
+/// 우하단으로 표류한 걸 Positioned 필드로 잡은 적이 있다 — CustomPainter로 옮긴 뒤 그 자리를
+/// 대신 지키는 검사가 없으면 부호 하나(`_rightFraction`/`_topFraction`)가 뒤집혀도 아무도 못
+/// 잡는다).
+@visibleForTesting
+({double dx, double dy, double scale}) carSilhouetteOffset(Size bandSize) {
+  const widthFraction = 0.56; // width:56%
+  const rightFraction = -0.08; // right:-8%(밴드 오른쪽 경계 밖으로 흘러나감)
+  const topFraction = -0.14; // top:-14%(밴드 위 경계 밖으로 흘러나감)
+  const viewBoxWidth = 640.0;
+
+  final elementWidth = bandSize.width * widthFraction;
+  final scale = elementWidth / viewBoxWidth;
+  // CSS `right: -8%`는 요소 오른쪽 경계가 컨테이너 오른쪽 경계보다 밴드 폭의 8%만큼 더
+  // 오른쪽(밖)에 있다는 뜻 — 왼쪽 경계 = 컨테이너폭 - 요소폭 + 8%*컨테이너폭.
+  final dx = bandSize.width - elementWidth - (rightFraction * bandSize.width);
+  final dy = topFraction * bandSize.height;
+  return (dx: dx, dy: dy, scale: scale);
+}
+
+/// 히어로 배경의 차 실루엣 라인아트(spec-16-10 Always) — consistency-1.html
+/// `.app-hero .silhouette`(viewBox 0 0 640 220)와 정확히 같은 path + 바퀴 원 2개를 그린다.
+/// 배치는 [carSilhouetteOffset]이 계산한다(`paint()`가 받는 `size`가 곧 밴드 자체 크기 —
+/// Positioned.fill 덕분에 항상 최종 렌더 크기).
+class _CarSilhouettePainter extends CustomPainter {
+  const _CarSilhouettePainter();
+
+  static const double _opacity = 0.09; // opacity:.09(목업 값 그대로)
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final offset = carSilhouetteOffset(size);
+    final paint = Paint()..color = AppColors.onPetrol.withValues(alpha: _opacity);
+
+    canvas.save();
+    canvas.translate(offset.dx, offset.dy);
+    canvas.scale(offset.scale);
+    canvas.drawPath(_carPath(), paint);
+    canvas.drawCircle(const Offset(204, 192), 30, paint);
+    canvas.drawCircle(const Offset(524, 192), 30, paint);
+    canvas.restore();
+  }
+
+  // consistency-1.html `.app-hero .silhouette` path 그대로(값 일치, Always). SVG sweep-flag=0
+  // 두 아크 모두 → Flutter arcToPoint의 clockwise: false(SDK 기본값은 true라 명시가 필요하다).
+  Path _carPath() => Path()
+    ..moveTo(6, 150)
+    ..cubicTo(30, 120, 74, 112, 122, 110)
+    ..lineTo(168, 72)
+    ..cubicTo(188, 54, 224, 45, 276, 45)
+    ..lineTo(398, 47)
+    ..cubicTo(452, 49, 496, 71, 528, 110)
+    ..lineTo(590, 122)
+    ..cubicTo(618, 128, 634, 144, 634, 168)
+    ..lineTo(634, 192)
+    ..lineTo(566, 192)
+    ..arcToPoint(const Offset(482, 192), radius: const Radius.circular(42), clockwise: false)
+    ..lineTo(246, 192)
+    ..arcToPoint(const Offset(162, 192), radius: const Radius.circular(42), clockwise: false)
+    ..lineTo(26, 192)
+    ..cubicTo(14, 192, 6, 183, 6, 170)
+    ..close();
+
+  @override
+  bool shouldRepaint(covariant _CarSilhouettePainter oldDelegate) => false;
 }
 
 /// 히어로 제안 칩 한 개 — 반투명 petrol 알약(웹 HeroSearch.tsx 제안칩 스타일 미러).

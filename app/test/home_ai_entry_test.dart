@@ -16,6 +16,7 @@
 //   · 디자인 토큰(웹 petrol 히어로 밴드 미러링)과 하단 4탭 — 둘 다 Story 16.1 몫이라 아직 없다.
 //   · 최근 매물 목록 본문 — 아래 harness는 매물 조회를 빈 목록으로 대체한다.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -112,20 +113,84 @@ void main() {
 
       expect(find.byKey(const Key('hero_glow')), findsOneWidget);
       expect(find.byKey(const Key('hero_car_silhouette')), findsOneWidget);
+    });
 
-      // 코드리뷰 지적(P8) — 키 존재만 보면 위치는 안 잡힌다. 이 장식은 우하단(bottom-right)
-      // 오버레이였다가 우상단(top-right)으로 옮겨진 패치라(코드 주석 참조), 그 자리가 되돌아가도
-      // 이 검사가 아니면 아무도 못 잡는다.
-      final positioned = tester.widget<Positioned>(
-        find.ancestor(
-          of: find.byKey(const Key('hero_car_silhouette')),
-          matching: find.byType(Positioned),
-        ),
+    // spec-16-10(Always, AC④) — 꽉 찬 Material 아이콘이 아니라 목업과 같은 path의
+    // CustomPaint(라인아트)여야 한다. 배치는 이제 Positioned가 아니라 CustomPainter 내부에서
+    // 밴드 크기의 비율로 계산되므로(Positioned.fill), 위치 단언은 더 이상 Positioned의
+    // top/right/bottom 필드로 볼 수 없다 — "더 이상 Icon이 아니다"를 직접 단언한다. 채택 전
+    // 이 위젯을 다시 Icon(Icons.directions_car_filled)으로 되돌려(측정된 뮤테이션) red를
+    // 확인하고 되돌려 green을 재확인했다(CLAUDE.md B4).
+    testWidgets('hero_car_silhouette가 더 이상 Icon이 아니라 CustomPaint 라인아트다(AC④)',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final silhouette = find.byKey(const Key('hero_car_silhouette'));
+      expect(silhouette, findsOneWidget);
+      expect(tester.widget(silhouette), isA<CustomPaint>(),
+          reason: '목업(consistency-1.html .silhouette) 라인아트를 이식한 CustomPainter여야 '
+              '한다 — 꽉 찬 Material 아이콘이면 이 단언이 실패한다');
+      expect((tester.widget<CustomPaint>(silhouette)).painter, isNotNull,
+          reason: 'painter가 null이면 위젯 타입은 그대로 CustomPaint인데 아무것도 안 그려진다');
+    });
+
+    // 코드리뷰 지적(이 패스) — 위 테스트는 **위젯 타입**만 본다. 그래서 `painter`가 그리는 내용이
+    // 통째로 사라져도(paint() 본문을 비우거나, _carPath()가 빈 Path를 돌려주거나, translate/scale을
+    // 서로 바꿔 넣어도) 전 스위트가 green으로 남았다 — spec-16-9에서 이 실루엣이 실제로 표류한
+    // 전례가 있는 축인데, CustomPainter로 옮기면서 "무엇이 그려지는가"를 보는 검사가 하나도 없었다.
+    // flutter_test의 `paints`(기록 캔버스)로 **실제 드로잉 명령**을 직접 단언한다:
+    //   · translate/scale = carSilhouetteOffset이 계산한 값 그대로 캔버스에 적용됐는가
+    //     (순수함수 단위테스트는 계산만 보고, 그 결과가 실제로 쓰였는지는 안 본다)
+    //   · path = 차체 안쪽 점을 포함하고 바깥(지붕 위·앞범퍼 밖) 점은 제외하는가
+    //     — 빈 Path면 includes에서 실패한다. 바퀴 아치 안쪽 점(524,170)을 제외로 두어
+    //       SVG sweep-flag→clockwise 매핑이 뒤집히면(아치가 아래로 볼록) 잡히게 한다.
+    //   · circle 2개 = 목업 좌표(204/524, 192, r30) 그대로인가
+    // 이 세션이 직접 red를 실측 확인했다(뒤 Review Triage Log 참조).
+    testWidgets('hero_car_silhouette가 실제로 목업 도형을 그린다(그리기 명령 직접 단언)',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final silhouette = find.byKey(const Key('hero_car_silhouette'));
+
+      // 코드리뷰 3패스 지적(verification-gap 렌즈, 실측) — 아래 `paints` 단언은 위젯이 **어떤
+      // 크기의 상자를 받았든** 그 크기로 기대값을 다시 계산하므로 항상 자기 자신과 일치한다.
+      // 즉 `Positioned.fill`을 spec-16-10 이전의 고정 픽셀 상자(`Positioned(top:-6, right:-36,
+      // width:150, height:150)`)로 되돌려도 전 스위트가 green이었다 — 이 스토리가 없앤 바로 그
+      // 회귀 형태다. 기대값 계산에 쓰이는 그 크기 자체를 먼저 밴드에 못박아야 단언이 공허해지지
+      // 않는다: `Positioned.fill`이면 실루엣 상자 = 히어로 밴드(`go_ai`) 상자다.
+      final bandSize = tester.getSize(find.byKey(const Key('go_ai')));
+      expect(tester.getSize(silhouette), bandSize,
+          reason: '실루엣이 밴드 전체를 덮는 Positioned.fill이 아니면(예: 고정 픽셀 상자로 '
+              '되돌아가면) paint()가 받는 size가 밴드 크기가 아니게 되고, 아래 단언들은 '
+              '그 잘못된 크기와 자기 자신을 비교하며 통과한다');
+      expect(tester.getTopLeft(silhouette), tester.getTopLeft(find.byKey(const Key('go_ai'))),
+          reason: '크기만 같고 원점이 어긋나도 배치는 틀어진다');
+
+      final offset = carSilhouetteOffset(bandSize);
+
+      expect(
+        silhouette,
+        paints
+          ..translate(x: offset.dx, y: offset.dy)
+          // canvas.scale(s)는 sy를 안 넘기므로 기록에도 y가 null로 남는다(실측: `scale(0.7, null)`)
+          // — x만 단언한다.
+          ..scale(x: offset.scale)
+          ..path(
+            includes: const [Offset(320, 150), Offset(100, 160)],
+            excludes: const [Offset(320, 10), Offset(20, 40), Offset(524, 170)],
+            // 코드리뷰 3패스 지적(adversarial, 실측) — 색·투명도를 아무도 안 봐서 `_opacity`를
+            // 0.09→0.85로 바꿔도 전 스위트가 green이었다. 스파인이 이 장식에 요구한 건
+            // "옅게, 칩·검색창 비침범"이라 투명도가 곧 요구사항이다(짙어지면 CustomPaint가
+            // 글로우 위에 그려져 밴드를 흰색으로 덮는다).
+            // 기대값의 `0.09`는 이 테스트가 박는 상수다 — 소스의 `_opacity`는 private이라
+            // 여기서 읽어올 수 없고, 읽어오면 그게 곧 자기 자신과의 비교가 된다.
+            color: AppColors.onPetrol.withValues(alpha: 0.09),
+          )
+          ..circle(x: 204, y: 192, radius: 30)
+          ..circle(x: 524, y: 192, radius: 30),
       );
-      expect(positioned.top, isNotNull, reason: '우상단이면 top이 있어야 한다');
-      expect(positioned.right, isNotNull, reason: '우상단이면 right가 있어야 한다');
-      expect(positioned.bottom, isNull,
-          reason: 'bottom이 있으면 우하단으로 되돌아간 것이다(예전 배치)');
     });
 
     // 코드리뷰 패치(spec-16-9 P1) — 기존 검사는 그라데이션의 colors.first만 AppColors.
@@ -146,8 +211,9 @@ void main() {
       expect(gradient.end, Alignment.bottomCenter);
     });
 
-    // 코드리뷰 패치(spec-16-9 P2) — hero_glow(top:-30/right:-30)·hero_car_silhouette(top:-6/
-    // right:-36)는 일부러 밴드 바깥으로 튀어나가게 배치돼 있다. 그걸 밴드 안으로 가둬주는 건
+    // 코드리뷰 패치(spec-16-9 P2) — hero_glow(top:-30/right:-30)는 일부러 밴드 바깥으로
+    // 튀어나가게 배치돼 있다(spec-16-10부터 hero_car_silhouette도 CustomPainter 내부에서
+    // 밴드 밖으로 그려진다 — 둘 다 이 clip이 없으면 새어나간다). 그걸 밴드 안으로 가둬주는 건
     // 오직 이 Container의 clipBehavior뿐인데, 지금까지 아무 테스트도 그 값을 보지 않았다 —
     // Stack은 자식이 부모 밖으로 나가도 오버플로 에러를 던지지 않으므로(clip이 없어도 조용히
     // 통과), clipBehavior를 지워도 전체 스위트가 green으로 남는다. amber 글로우가 petrol
@@ -160,6 +226,27 @@ void main() {
       final container =
           tester.widget<Container>(find.byKey(const Key('go_ai')));
       expect(container.clipBehavior, Clip.hardEdge);
+    });
+
+    // spec-16-10(Always) — 히어로 하단 곡률 22→16(사용자가 실기기 육안으로 과하다고 판단,
+    // Design Notes). 코드리뷰 지적 — 카드 radius(listing_card_test.dart)만 테스트가 있고
+    // 이 축은 아무 테스트도 안 봤다. 채택 전 16을 22로 되돌려(측정된 뮤테이션) red를 확인하고
+    // 되돌려 green을 재확인했다(CLAUDE.md B4).
+    testWidgets('히어로 밴드 하단 곡률이 16이다(spec-16-10, 22에서 낮춤)', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final container =
+          tester.widget<Container>(find.byKey(const Key('go_ai')));
+      final decoration = container.decoration as BoxDecoration;
+      final radius = decoration.borderRadius as BorderRadius;
+      expect(radius.bottomLeft, const Radius.circular(16));
+      expect(radius.bottomRight, const Radius.circular(16));
+      // 코드리뷰 지적(이 패스) — 아래 두 줄이 없으면 `BorderRadius.circular(16)`(네 모서리 전부)로
+      // 바꿔도 이 테스트가 통과한다. 그런데 위쪽 모서리가 둥글어지는 순간 spec-16-9 AC①이 요구한
+      // "앱바~히어로가 색 경계 없이 한 면"이 깨진다(위 코드 주석: 위쪽은 각지게 유지).
+      expect(radius.topLeft, Radius.zero, reason: '히어로 상단은 AppBar와 맞닿으므로 각져야 한다');
+      expect(radius.topRight, Radius.zero, reason: '히어로 상단은 AppBar와 맞닿으므로 각져야 한다');
     });
 
     // spec-16-8 Review Triage Log #8 — 빈/공백만 입력해도 조용히 아무 일도 안 하는 기존 관례
@@ -182,6 +269,237 @@ void main() {
       );
       expect(find.byKey(const Key('go_ai')), findsOneWidget,
           reason: '제출이 무시됐다면 홈 히어로가 그대로 남아 있어야 한다');
+    });
+  });
+
+  // spec-16-10(DW-767 해소) — 히어로 마감 4축(타이포·eyebrow·검색창 테두리·실루엣) 중 실루엣은
+  // 위 그룹에 이미 있다. 여기는 나머지 축 — 헤드라인 관계 크기·eyebrow 위치·검색창 유효 테두리.
+  group('히어로 마감(spec-16-10, DW-767 해소) — 타이포·테두리', () {
+    // AC — 헤드라인 위에 eyebrow가 먼저(더 위에) 렌더돼야 한다. 채택 전 eyebrow의
+    // SizedBox(height: 10)를 지워 헤드라인 앞으로 옮기지 않고 그대로 뒀다가(순서 자체를
+    // 바꾸는 뮤테이션으로) red를 확인하고 되돌려 green을 재확인했다(CLAUDE.md B4).
+    testWidgets('eyebrow 라벨 "AI 매물 검색"이 헤드라인보다 위에 있다', (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final eyebrow = find.byKey(const Key('hero_eyebrow'));
+      final headline = find.byKey(const Key('hero_headline'));
+      expect(eyebrow, findsOneWidget);
+      expect(headline, findsOneWidget);
+      expect(find.text('AI 매물 검색'), findsOneWidget);
+
+      expect(tester.getTopLeft(eyebrow).dy, lessThan(tester.getTopLeft(headline).dy),
+          reason: 'eyebrow가 헤드라인 아래로 밀리면 "먼저 알린다"는 의도가 깨진다');
+    });
+
+    // AC — 새 색 토큰 없이 기존 AppColors만 쓴다(Always). 텍스트·테두리=onPetrolMuted,
+    // 점 인디케이터=accentAmber(Design Notes의 예시 배정을 그대로 코드로 고정). 코드리뷰
+    // 지적 — 처음엔 텍스트·점 색만 보고 pill 테두리(Border.all(onPetrolMuted))는 빠져 있었다
+    // (AC의 "테두리=onPetrolMuted" 절반이 검사 없이 통과할 수 있었다).
+    testWidgets('eyebrow는 새 색 토큰 없이 기존 AppColors(onPetrolMuted·accentAmber)로만 그려진다',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final text = tester.widget<Text>(find.text('AI 매물 검색'));
+      expect(text.style?.color, AppColors.onPetrolMuted);
+
+      final pill = tester.widget<Container>(find.byKey(const Key('hero_eyebrow')));
+      final pillBorder = (pill.decoration as BoxDecoration).border as Border;
+      // 코드리뷰 지적(이 패스) — 여기서 alpha까지 못박으면(예전엔 `withValues(alpha: 0.35)`로
+      // 단언했다) 스펙 Always가 "검사도 색을 단언하지 않는다"고 한 이유(목업 간 색조가 갈린다)를
+      // 정면으로 어긴다. 투명도를 조금 조정하는 정당한 변경에도 red가 난다. AC가 실제로 요구하는
+      // 건 "새 색 토큰 없이 기존 팔레트에서 골랐다"는 **출처**뿐이므로, alpha를 빼고 밑색만 본다.
+      expect(pillBorder.top.color.withValues(alpha: 1), AppColors.onPetrolMuted.withValues(alpha: 1),
+          reason: '테두리 색이 기존 AppColors(onPetrolMuted) 계열에서 나와야 한다(농도는 자유)');
+
+      final dot = tester.widget<Container>(
+        find.descendant(
+          of: find.byKey(const Key('hero_eyebrow')),
+          matching: find.byWidgetPredicate((w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).shape == BoxShape.circle),
+        ),
+      );
+      expect((dot.decoration as BoxDecoration).color, AppColors.accentAmber);
+    });
+
+    // AC — eyebrow는 "자간 넓힌 12px"(스펙 Always가 `DESIGN.md typography.scale.caption`과
+    // 크기가 일치한다고 명시한 값)여야 한다. 코드리뷰 3패스 지적(adversarial, 실측) — 위
+    // 두 테스트는 색과 세로 순서만 봐서 `fontSize: 12 → 26`, `letterSpacing: 1.4 → 0`을
+    // 동시에 넣어도 전 스위트가 green이었다. 즉 이 스토리가 고치려던 바로 그 결함(타이포가
+    // 검사되지 않아 조용히 어긋나는 것)이 새로 만든 요소에 그대로 남아 있었다.
+    //
+    // 크기는 DW-767이 세운 원칙대로 **관계**로 단언한다(eyebrow < 헤드라인) — 스파인의
+    // caption(12)과 display(36)이 나중에 함께 조정돼도 위계는 유지돼야 한다. 자간만 절대값
+    // 방향으로 본다(0보다 크다 = "넓혔다"가 곧 요구사항 자체라 관계로 바꿀 대상이 없다).
+    testWidgets('eyebrow가 헤드라인보다 작고 자간이 넓다(typography.scale.caption 위계)',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final eyebrowStyle = tester.widget<Text>(find.text('AI 매물 검색')).style!;
+      final headlineSize = (tester
+              .renderObject<RenderParagraph>(find.byKey(const Key('hero_headline')))
+              .text as TextSpan)
+          .style!
+          .fontSize!;
+
+      expect(eyebrowStyle.fontSize, isNotNull);
+      expect(eyebrowStyle.fontSize!, lessThan(headlineSize),
+          reason: 'eyebrow가 헤드라인만큼 커지면 "먼저 작게 알리고 헤드라인이 주인공"이라는 '
+              '위계가 사라진다 — 목업 .eyebrow는 12px, 헤드라인은 display 스케일이다');
+      expect(eyebrowStyle.letterSpacing, isNotNull);
+      expect(eyebrowStyle.letterSpacing!, greaterThan(0),
+          reason: '스펙 Always가 요구한 "자간 넓힌" 라벨 — 0이면 목업의 pill 라벨 느낌이 사라진다');
+    });
+
+    // AC — 헤드라인이 "원하는 차를" / "말로 찾으세요" 2줄로 나타난다. 이건 **스냅샷**이라
+    // 36을 그대로 박아도 된다(DW-767 관계 요구는 아래 별도 테스트가 진다 — 코드리뷰 지적:
+    // 이 테스트에 절대값 단언까지 같이 있으면 그게 먼저 깨져서 관계 단언이 생존자로서
+    // 실제로 실행되는지 확인할 길이 없어진다).
+    testWidgets('헤드라인이 36px(DESIGN.md typography.scale.display)·2줄로 렌더된다(스냅샷)',
+        (tester) async {
+      await tester.pumpWidget(_harness());
+      await tester.pump();
+
+      final headlineSpan =
+          tester.renderObject<RenderParagraph>(find.byKey(const Key('hero_headline'))).text;
+      expect((headlineSpan as TextSpan).style?.fontSize, 36);
+
+      // 2줄 — "원하는 차를"과 "말로 찾으세요" 사이에 줄바꿈이 들어갔는지(spec Always: 목업
+      // 앱 프레임과 같은 지점에서 끊는다).
+      expect(headlineSpan.toPlainText(), '원하는 차를\n말로 찾으세요');
+    });
+
+    // AC — 헤드라인의 실효 fontSize가 매물 카드 차량명의 실효 fontSize보다 커야 한다
+    // (DW-767 — "숫자를 박지 말고 관계로 박아야 토큰이 바뀌어도 산다"는 그 항목 자신의
+    // trigger 문구 그대로: 이 테스트는 양쪽 크기를 변수로만 읽고 비교할 뿐, 어느 쪽도
+    // 하드코딩하지 않는다 — 36이 나중에 32나 40으로 바뀌어도 이 테스트는 안 깨져야 한다).
+    // `buildAppTheme()`를 명시해 실제 앱 테마로 pump한다(themeless `MaterialApp`은 카드
+    // 차량명의 앰비언트 기본 텍스트 스타일이 실제 앱과 우연히 같을 뿐 보장되지 않는다 —
+    // 위 검색창 테두리 테스트와 같은 이유). 채택 전 헤드라인 fontSize를 12로 낮춰(측정된
+    // 뮤테이션) red를 확인하고 36으로 되돌려 green을 재확인했다(CLAUDE.md B4).
+    testWidgets('헤드라인 실효 fontSize가 매물 카드 차량명의 실효 fontSize보다 크다(DW-767, 관계만)',
+        (tester) async {
+      const listing = ListingCardData(
+        id: 'l1',
+        manufacturer: '현대',
+        model: '아반떼',
+        year: 2021,
+        price: 18000000,
+        mileage: 20000,
+        region: '서울',
+      );
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          currentUserProvider.overrideWithValue(_fakeUser()),
+          recentListingsProvider.overrideWith((ref) async => const <ListingCardData>[]),
+          popularListingsProvider.overrideWith((ref) async => const [listing]),
+        ],
+        child: MaterialApp(theme: buildAppTheme(), home: const HomeScreen()),
+      ));
+      await tester.pumpAndSettle();
+
+      final headlineSize = tester
+          .renderObject<RenderParagraph>(find.byKey(const Key('hero_headline')))
+          .text
+          .style
+          ?.fontSize;
+
+      final cardNameFinder = find.text('[현대] 아반떼 · 2021년');
+      expect(cardNameFinder, findsOneWidget);
+      // 이 값을 하드코딩하지 않는다 — `listing_card.dart`의 차량명 `Text`엔 fontSize가 없어
+      // buildAppTheme()의 앰비언트 기본 텍스트 스타일(Material 3 bodyMedium 상당, 실측
+      // 14px — DESIGN.md의 card-title 토큰(16px)이 아니다, 그 토큰은 아직 이 Text에 배선돼
+      // 있지 않다)을 그대로 상속한다. 이 테스트는 "지금 몇 px인가"가 아니라 "헤드라인보다
+      // 작은가"만 본다.
+      final cardNameSize =
+          tester.renderObject<RenderParagraph>(cardNameFinder).text.style?.fontSize;
+
+      expect(headlineSize, isNotNull);
+      expect(cardNameSize, isNotNull);
+      expect(headlineSize!, greaterThan(cardNameSize!),
+          reason: '헤드라인이 카드 차량명보다 커야 한다 — 예전엔 19px로 카드 차량명과 비슷하거나 '
+              '작았다(DW-767 원인)');
+    });
+
+    // AC — 히어로 검색창은 활성·포커스 상태 모두 "실제로 그려지는 테두리"가 없어야 한다.
+    // Design Notes: 로컬 `InputDecoration.border`만 보면 이미 InputBorder.none이라
+    // vacuous(공허)해진다 — `applyDefaults` 이후의 유효 enabledBorder/focusedBorder를 봐야
+    // 테마의 OutlineInputBorder가 새어 나오는지 실제로 잡힌다.
+    //
+    // 이 테스트는 반드시 `buildAppTheme()`(실제 앱이 main.dart에서 쓰는 그 테마)로 pump해야
+    // 한다 — `_harness()`는 테마 없는 기본 `MaterialApp`이라 `Theme.of(context)
+    // .inputDecorationTheme`가 app_theme.dart의 OutlineInputBorder를 아예 안 갖고 있다. 이
+    // 세션이 직접 재검증하며 실측한 사실: `_harness()`로 이 검사를 돌리면 enabledBorder를
+    // 지워도(뮤테이션) `effective.enabledBorder`가 `null`이 될 뿐 앱의 실제 테마가 새는지는
+    // 전혀 증명하지 못한다(테마 자체가 로드되지 않으니 항상 null) — 이 버그의 원인이었던
+    // "테마가 새어나온다"는 시나리오를 검사가 실제로는 보지 못하는 vacuous 상태였다. 그래서
+    // 이 테스트만 실제 테마로 pump하도록 고쳤다.
+    //
+    // 채택 전 enabledBorder·focusedBorder 두 줄을 지워(측정된 뮤테이션, border:
+    // InputBorder.none만 남김) red를 확인하고(`Expected: null, Actual: OutlineInputBorder`로
+    // 테마의 실제 OutlineInputBorder가 새어나오는 것까지 확인) 되돌려 green을 재확인했다
+    // (CLAUDE.md B4).
+    testWidgets(
+        '히어로 검색창은 activation·focus 상태 모두 유효 enabledBorder/focusedBorder가 '
+        'InputBorder.none이다(실제 app_theme로 pump)', (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          currentUserProvider.overrideWithValue(_fakeUser()),
+          recentListingsProvider.overrideWith((ref) async => const <ListingCardData>[]),
+          popularListingsProvider.overrideWith((ref) async => const <ListingCardData>[]),
+        ],
+        child: MaterialApp(theme: buildAppTheme(), home: const HomeScreen()),
+      ));
+      await tester.pump();
+
+      final field = tester.widget<TextField>(find.byKey(const Key('hero_query_input')));
+      final context = tester.element(find.byKey(const Key('hero_query_input')));
+      final theme = Theme.of(context).inputDecorationTheme;
+      // 테마가 실제로 로드됐는지부터 확인한다 — 그러지 않으면 아래 단언이 다시 vacuous해진다.
+      expect(theme.enabledBorder, isA<OutlineInputBorder>(),
+          reason: '이 pump가 app_theme.dart를 실제로 쓰고 있는지 확인하는 카나리아 — 여기서부터 '
+              'null이면 아래 단언은 아무것도 증명하지 못한다');
+      final effective = field.decoration!.applyDefaults(theme);
+
+      expect(effective.enabledBorder, InputBorder.none,
+          reason: '로컬 enabledBorder가 없으면 applyDefaults가 테마의 OutlineInputBorder로 '
+              '채운다(app_theme.dart) — 실제로 그려지는 테두리가 생긴다');
+      expect(effective.focusedBorder, InputBorder.none,
+          reason: '로컬 focusedBorder가 없으면 포커스 시 테마의 petrol OutlineInputBorder가 뜬다');
+    });
+
+    // 코드리뷰 지적 — `hero_car_silhouette`가 더 이상 Icon이 아니라는 위젯 테스트(위 그룹)는
+    // "라인아트로 바뀌었다"만 보고 **어디에 그려지는지는 안 본다**. spec-16-9는 이 실루엣이
+    // 우하단으로 표류한 실제 회귀를 `Positioned` 필드로 잡은 적이 있는데, CustomPainter로
+    // 옮긴 뒤(spec-16-10) 그 자리를 대신 지키는 검사가 없었다 — `carSilhouetteOffset`의
+    // 부호(`rightFraction`/`topFraction`) 하나가 뒤집혀도 잡을 도리가 없었다. `paint()` 내부
+    // 계산이라 위젯 트리로는 안 보이므로(listing_card.dart `safeCardPhotoHeight`와 같은 이유)
+    // 순수 함수로 뽑아 여기서 직접 잰다. 두 가지 밴드 크기로 검증해 부호·비례(퍼센트 기반임)
+    // 둘 다 확인한다 — 하나만 보면 고정 픽셀로 되돌아가도 우연히 같은 크기에서만 통과할 수
+    // 있다.
+    test('carSilhouetteOffset — 목업 CSS 퍼센트(right:-8%·top:-14%·width:56%)를 부호까지 '
+        '정확히 환산한다', () {
+      final a = carSilhouetteOffset(const Size(400, 200));
+      expect(a.scale, closeTo(0.35, 1e-9)); // (400*0.56)/640
+      expect(a.dx, closeTo(208, 1e-9)); // 400 - 224 + 0.08*400
+      expect(a.dy, closeTo(-28, 1e-9)); // -0.14*200 — 음수여야 밴드 위로 흘러나간다
+
+      // 우측 밖으로 흘러나가는지(right:-8%) — 실루엣 우측 끝이 밴드 우측 끝을 넘어야 한다.
+      final elementWidthA = 400 * 0.56;
+      expect(a.dx + elementWidthA, greaterThan(400));
+
+      // 다른 밴드 크기에서도 같은 퍼센트 규칙을 유지하는지(고정 픽셀로 되돌아가는 회귀 방지) —
+      // 밴드가 2.5배 넓어지면 scale·dx도 정확히 같은 비율로 커져야 한다.
+      final b = carSilhouetteOffset(const Size(1000, 300));
+      expect(b.scale, closeTo(0.875, 1e-9)); // (1000*0.56)/640
+      expect(b.dx, closeTo(520, 1e-9)); // 1000 - 560 + 0.08*1000
+      expect(b.dy, closeTo(-42, 1e-9)); // -0.14*300
+      expect(b.scale / a.scale, closeTo(1000 / 400, 1e-9),
+          reason: '고정 픽셀이면 이 비율이 안 맞는다 — scale은 밴드 폭에 비례해야 한다');
     });
   });
 
