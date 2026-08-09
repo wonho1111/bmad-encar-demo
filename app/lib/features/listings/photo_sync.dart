@@ -183,14 +183,18 @@ Future<PhotoSyncResult> syncListingPhotos(
     // ⚠️ 순서 ① — 오브젝트 먼저. 반대로 하면 고아가 된다(§10.1).
     final objectGone = gone.storagePath != null ? await deleteObject(gone.storagePath!) : true;
     if (!objectGone) {
-      warnings.add('사진을 삭제하지 못했어요. 다시 시도해주세요.');
+      // retryable:false다 — 재시도 버튼이 없다(위젯이 retryable에서만 그린다). 문구도 그에
+      // 맞춘다: "다시 시도해주세요"는 존재하지 않는 버튼을 가리켜 사용자를 헷갈리게 한다(review
+      // 발견, spec-16-7). 실제 복구 동작은 삭제(X) 버튼을 다시 눌러 이 항목을 다시 제거 대상으로
+      // 표시하는 것이다.
+      warnings.add('사진을 삭제하지 못했어요. 삭제 버튼을 다시 눌러주세요.');
       failedCount += 1;
       undeletable.add(
         PhotoItem(
           key: gone.key,
           previewUrl: gone.previewUrl,
           status: PhotoStatus.error,
-          error: '사진을 삭제하지 못했어요. 다시 시도해주세요.',
+          error: '사진을 삭제하지 못했어요. 삭제 버튼을 다시 눌러주세요.',
           retryable: false,
           storagePath: gone.storagePath,
           rowId: gone.rowId,

@@ -2,10 +2,10 @@
 title: '16.7 앱 사진 업로더'
 type: 'feature'
 created: '2026-08-09'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '1bdd2ad61965bde6a1d9398aa0eca358e66aa388'
 review_loop_iteration: 0
-followup_review_recommended: false
+followup_review_recommended: true
 context: ['{project-root}/docs/conventions.md']
 warnings: ['oversized']
 ---
@@ -113,3 +113,63 @@ AC5(매물 삭제 시 오브젝트 정리)는 SQL로 측정이 불가능해(`sto
 **Manual checks (if no CLI):**
 - 로컬 Supabase(도커)에 마이그레이션 적용 후, 시드 판매자 JWT로 sold 매물의 `listing_images`에 직접 insert/delete curl 시도 → 거부(0행/정책 위반) 확인, on_sale 매물은 여전히 허용되는지 대조.
 - 실제 안드로이드 기기(또는 에뮬레이터+모의 카메라)에서 카메라/갤러리 권한 요청이 실제로 뜨는지 확인. 불가능하면(샌드박스 제약) `deferred-work.md`에 등재하고 위젯테스트로 대체 확인한 사실을 명시한다.
+
+**✎ 2026-08-09 AC4 재현 기록 (review 발견 — 이전엔 커밋 `6620529` 메시지에만 있어 이 diff만으로는
+재현 불가능했다).** 로컬 Supabase(도커) DB에 마이그레이션 `0031` 적용 후, 실제 판매자 JWT로
+`authenticated` 세션에서 롤백되는 트랜잭션 안에 대조군 포함 5케이스 실행:
+- sold 매물 `listing_images` INSERT → 거부(RLS violation)
+- sold 매물 `listing_images` UPDATE → 0행
+- sold 매물 `listing_images` DELETE → 0행
+- (대조군) on_sale 매물 INSERT → 허용(1행)
+- (대조군) on_sale 매물 UPDATE → 허용(3행)
+
+전부 트랜잭션 롤백으로 실행 — 사후 행 수 확인으로 부작용이 남지 않았음을 확인했다.
+
+## Review Triage Log
+
+### 2026-08-09 — Review pass
+- intent_gap: 0
+- bad_spec: 0
+- patch: 7: (high 0, medium 5, low 2)
+- defer: 4: (high 0, medium 1, low 3)
+- reject: 5: (high 0, medium 0, low 5)
+- addressed_findings:
+  - `[medium]` `[patch]` 사진 업로더의 "대표" 배지가 업로드 실패(재시도 가능)로 아직 저장되지 않은 사진에 붙을 수 있었다(첫 사진 실패·둘째 성공 시 화면과 DB의 대표가 갈림) — `photo_uploader_widget.dart`의 `firstSavableIndex` 판정을 `photo_sync.dart`가 실제 대표를 거는 기준(storagePath!=null)과 맞춤. 회귀 테스트 추가(red→green 확인).
+  - `[medium]` `[patch]` `ListingsRepository.deleteListing`의 오케스트레이션(경로 선조회→행 삭제→정리 게이팅)이 통째로 미검증이었다 — `test/listings_repository_delete_test.dart` 신설(순서·0행 게이트·paths.ok==false 게이트 3건). red→green 확인.
+  - `[medium]` `[patch]` `SellController.submit()`이 실제 사진과 함께 호출되는 경로(부품은 테스트됐지만 배선은 미검증)를 검증하는 테스트가 없었다 — `sell_controller_test.dart`에 전역 Supabase 싱글턴 + 가짜 httpClient를 세팅해 배선 테스트 추가. red→green 확인.
+  - `[medium]` `[patch]` `EditListingScreen`의 기존 사진 로딩 경로(provider·매핑·로딩/에러 UI)가 통째로 미검증이었다 — `test/edit_listing_screen_photos_test.dart` 신설(정상 로드·사진 조회 실패 2건). red→green 확인.
+  - `[medium]` `[patch]` 카메라/갤러리 피커 호출과 `file.length()`가 예외를 unguarded로 둬, 권한 거부 등에서 미처리 예외가 날 수 있었다 — `photo_uploader_widget.dart`에 try/catch + 안내 문구 추가, 회귀 테스트(가짜 피커가 throw) 추가. red→green 확인.
+  - `[low]` `[patch]` 삭제 실패(재시도 불가) 항목의 안내 문구가 "다시 시도해주세요"라 존재하지 않는 재시도 버튼을 가리켰다 — 실제 복구 동작(삭제 버튼 재클릭)에 맞게 문구 수정.
+  - `[low]` `[patch]` AC4(sold 쓰기 차단) 증거가 다른 커밋의 메시지에만 있어 이 diff·spec만으로는 재현 불가능했다 — 오늘 독립 재실행한 대조군 포함 5케이스 결과를 스펙 Verification에 재수록.
+  - `[medium]` `[defer]` → DW-744(리사이즈 전 원본 풀 디코딩 — 고화소 사진 OOM 위험)
+  - `[low]` `[defer]` → DW-745(저장본 규격 실기기 미검증)
+  - `[low]` `[defer]` → DW-746(매물 삭제 중 동시 사진 추가 레이스)
+  - `[low]` `[defer]` → DW-747(확장자 없는 선택 파일 오거부)
+  - `[reject]` deleteListing 정리 실패가 호출부에 안 알려짐 — Always 규칙이 명시적으로 "베스트에포트, 실패해도 삭제 자체는 되돌리지 않는다"고 스코프를 정했다.
+  - `[reject]` `toPhotoItems`가 계약 위반 행을 조용히 스킵 — DB 트리거(0013)가 그런 행 자체를 이미 막는다(스펙이 명시).
+  - `[reject]` `uploadListingImage`가 실패 사유를 세분화하지 않고 항상 retryable — 스펙이 요구한 유일한 구분(검증실패 vs 네트워크실패)은 이미 지켜지고 있다.
+  - `[reject]` `warnings.toSet()`이 중복 실패 메시지를 합침 — 개별 사진 오류는 이미 항목별 인라인 배지로 표시되므로 집계 문구의 정보 손실은 실질적 영향이 없다.
+  - `[reject]` AC5가 "통과한 것처럼" 나열됐다는 지적 — Design Notes가 이미 DW-743으로 미검증을 명시하고 있어 오인 소지가 없다.
+
+## Auto Run Result
+
+**요약:** 이 스토리(앱 사진 업로더)는 이전 dev 세션이 OOM으로 끊긴 뒤 사람이 인수·커밋한 상태(`6620529`, `2860ab3`)로 이번 실행을 시작했다. 재구현은 하지 않고 Design Notes의 지시대로 검증·리뷰만 수행했다 — Matrix Test Audit에서 실측 갭 1건을 직접 메우고, 4개 리뷰 레이어(blind-hunter/edge-case-hunter/verification-gap/intent-alignment) 병렬 실행 후 patch 7건을 직접 수정·회귀테스트 추가, defer 4건을 장부(DW-744~747)에 등재했다.
+
+**파일 변경(이번 실행분만):**
+- `app/lib/features/listings/photo_uploader_widget.dart` — 대표 배지 판정 수정(`firstSavableIndex`) + 카메라/갤러리 피커·`file.length()` 예외 처리 추가
+- `app/lib/features/listings/photo_sync.dart` — 삭제 실패 안내 문구를 실제 복구 동작에 맞게 수정
+- `app/test/photo_sync_test.dart` — Matrix 5번째 행("목록 맨 뒤로 이동") 커버 테스트 추가 + 문구 변경 반영
+- `app/test/sell_screen_photo_test.dart` — 대표 배지 불일치 회귀 테스트, 피커 예외 회귀 테스트 추가
+- `app/test/sell_controller_test.dart` — `submit()` 실사진 배선 회귀 테스트 추가(전역 Supabase + 가짜 httpClient 세팅 포함)
+- `app/test/listings_repository_delete_test.dart` — 신규: `deleteListing` 오케스트레이션(순서·게이팅) 3건
+- `app/test/edit_listing_screen_photos_test.dart` — 신규: 수정 화면 사진 로딩 정상/에러 분기 2건
+- `_bmad-output/implementation-artifacts/deferred-work.md` — DW-744~747 신설
+- `_bmad-output/implementation-artifacts/spec-16-7-앱-사진-업로더.md` — AC4 재현 기록 추가, Review Triage Log 신설, `followup_review_recommended: true`
+
+**리뷰 결과:** intent_gap 0 · bad_spec 0 · patch 7(medium 5, low 2, 전부 이번 패스에서 수정·검증) · defer 4(DW-744~747) · reject 5. Follow-up review 권고: **true**(3×medium5 + 1×low2 = 17 ≥ 5).
+
+**검증:** `flutter analyze`(0 issues) · `flutter test`(407 passed, 기존 398 + 이번 실행에서 추가한 9건) · 로컬 Supabase DB로 AC4(sold 쓰기 차단) 5케이스 재실측(대조군 포함, 전부 롤백) · `flutter build apk --debug`(이전 인수 세션에서 빌드 성공 확인, 이번 실행은 코드 변경이 소규모라 재빌드 생략 — analyze+test가 green이고 변경이 위젯/텍스트/로직 수준이라 빌드 자체가 깨질 변경이 아님).
+
+**완료 못 한 것:** AC5(매물 삭제 시 Storage 오브젝트 실제 정리)는 여전히 SQL로 측정 불가능해 DW-743으로 남아 있다(이번 실행에서 다시 시도하지 않음, 스펙 지시 준수). 실기기 카메라 권한 확인(DW-742)도 동일하게 샌드박스 제약으로 미완.
+
+**잔존 리스크:** DW-744(고화소 사진 리사이즈 시 메모리 스파이크 가능성 — 실기기 실측 전까지 이론적 위험), DW-746(매물 삭제 도중 동시 편집 레이스, 발생 빈도 극히 낮음).

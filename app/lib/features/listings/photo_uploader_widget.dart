@@ -54,8 +54,17 @@ class _PhotoUploaderWidgetState extends State<PhotoUploaderWidget> {
     final accepted = files.take(room < 0 ? 0 : room).toList();
 
     final next = <PhotoItem>[];
+    // 선택 직후 파일에 접근할 수 없는 드문 경우(콘텐츠 프로바이더가 임시 핸들을 회수하는 등) —
+    // 그 파일만 건너뛰고 나머지는 계속 처리한다(review 발견, spec-16-7).
+    var unreadable = 0;
     for (final file in accepted) {
-      final size = await file.length();
+      int size;
+      try {
+        size = await file.length();
+      } catch (_) {
+        unreadable += 1;
+        continue;
+      }
       final verdict = validatePickedFile(path: file.path, size: size);
       next.add(
         verdict.ok
@@ -75,23 +84,36 @@ class _PhotoUploaderWidgetState extends State<PhotoUploaderWidget> {
     setState(() {
       _pickError = files.length > accepted.length
           ? '사진은 최대 $maxPhotos장까지 올릴 수 있어요. ${files.length - accepted.length}장은 제외했어요.'
+          : unreadable > 0
+          ? '사진을 읽지 못했어요. 다시 선택해주세요.'
           : null;
     });
     widget.onChanged([...widget.items, ...next]);
   }
 
   Future<void> _pickFromCamera() async {
-    final file = await _picker.pickImage(source: ImageSource.camera);
-    if (file != null) await _addFiles([file]);
+    try {
+      final file = await _picker.pickImage(source: ImageSource.camera);
+      if (file != null) await _addFiles([file]);
+    } catch (_) {
+      // 카메라 권한 거부 등 — 플러그인이 예외로 던지는 기기가 있다(review 발견, spec-16-7).
+      if (!mounted) return;
+      setState(() => _pickError = '카메라를 열지 못했어요. 권한을 확인해주세요.');
+    }
   }
 
   Future<void> _pickFromGallery() async {
     final room = maxPhotos - _acceptedCount();
     if (room <= 0) return;
-    // 시스템 포토피커라 별도 권한이 필요 없다(AndroidManifest.xml 주석). limit보다 더 고르면
-    // 시스템 피커가 알아서 자르지 않는 기기도 있어, 넉넉히 받고 _addFiles가 정원으로 다시 자른다.
-    final files = await _picker.pickMultiImage();
-    await _addFiles(files);
+    try {
+      // 시스템 포토피커라 별도 권한이 필요 없다(AndroidManifest.xml 주석). limit보다 더 고르면
+      // 시스템 피커가 알아서 자르지 않는 기기도 있어, 넉넉히 받고 _addFiles가 정원으로 다시 자른다.
+      final files = await _picker.pickMultiImage();
+      await _addFiles(files);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _pickError = '갤러리를 열지 못했어요. 다시 시도해주세요.');
+    }
   }
 
   void _openPickerSheet() {
@@ -153,9 +175,12 @@ class _PhotoUploaderWidgetState extends State<PhotoUploaderWidget> {
     final items = widget.items;
     final count = _acceptedCount();
     final full = count >= maxPhotos;
-    // 대표 배지·[대표로]가 가리켜야 할 실제 위치 — photo_sync.dart가 대표를 거는 대상과 같은
-    // 술어(거부되지 않은 첫 항목)로 골라야 화면과 DB가 갈리지 않는다.
-    final firstSavableIndex = items.indexWhere((p) => !_isRejected(p));
+    // 대표 배지·[대표로]가 가리켜야 할 실제 위치 — photo_sync.dart가 실제 대표를 거는 대상
+    // (storagePath!=null, 즉 저장에 성공한 사진)과 같은 기준으로 골라야 화면과 DB가 갈리지
+    // 않는다. `_isRejected`(정원 계산용)와는 다른 기준이다 — 업로드 실패(재시도 가능) 항목은
+    // 정원은 차지하지만 아직 저장되지 않았으므로 대표가 될 수 없다(review 발견, spec-16-7:
+    // 첫 사진이 업로드 실패·둘째가 성공하면 이전 술어는 실패한 첫 사진에 배지를 붙였다).
+    final firstSavableIndex = items.indexWhere((p) => p.status != PhotoStatus.error);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

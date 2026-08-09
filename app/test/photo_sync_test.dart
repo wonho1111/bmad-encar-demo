@@ -252,7 +252,7 @@ void main() {
         reason: '행 삭제 HTTP 요청이 아예 나가면 안 된다',
       );
       expect(r.failedCount, 1);
-      expect(r.warnings, contains('사진을 삭제하지 못했어요. 다시 시도해주세요.'));
+      expect(r.warnings, contains('사진을 삭제하지 못했어요. 삭제 버튼을 다시 눌러주세요.'));
     });
 
     test('행 삭제가 실패(에러 응답)하면 조용히 넘기지 않고 warning으로 알린다', () async {
@@ -270,6 +270,18 @@ void main() {
 
       final r = await sync(const [], [gone]);
       expect(r.warnings, contains('사진 삭제 정보를 정리하지 못했어요.'));
+    });
+
+    test('오브젝트 삭제 실패 항목은 다른 유지 사진 뒤로 밀려난다(I/O 매트릭스 "목록 맨 뒤로 이동")', () async {
+      final kept = _savedPhoto('kept');
+      final gone = _savedPhoto('gone');
+      deleteObjectFailFor.add(gone.storagePath!);
+
+      final r = await sync([kept], [kept, gone]);
+
+      expect(r.photos.map((p) => p.key), ['k-kept', 'k-gone'], reason: '못 지운 사진이 맨 앞이 아니라 맨 뒤에 와야 한다');
+      expect(r.photos.last.status, PhotoStatus.error, reason: '오류 상태로 표시돼야 한다');
+      expect(r.photos.last.rowId, gone.rowId, reason: '행은 지워지지 않았으므로 rowId가 살아 있어야 한다');
     });
   });
 

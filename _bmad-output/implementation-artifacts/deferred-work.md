@@ -5644,3 +5644,39 @@ source_spec: `spec-16-8-앱-홈-랜딩-미러.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260808-204638-063b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-744: 사진 리사이즈가 원본을 축소 없이 통째로 디코딩한 뒤에야 목표 크기를 계산한다 — 고화소 사진에서 메모리 스파이크 위험
+
+origin: spec-16-7-앱-사진-업로더 review(adversarial) — `photo_resize.dart`
+location: `app/lib/features/listings/photo_resize.dart:_decodeSize`(`ui.instantiateImageCodec(bytes)`를 targetWidth/targetHeight 없이 호출)
+severity: medium
+reason: `_decodeSize`는 목표 크기 계산을 위해 원본 바이트를 **축소 없이** 풀 해상도로 디코딩한다(`FlutterImageCompress.compressWithList`가 실제 리사이즈를 위해 다시 한 번 디코딩하므로 이중 디코딩이기도 하다). 5MB 이하로 이미 걸러진 JPEG라도 고화소 카메라(12~108MP)는 압축률이 높아 디코딩 후 비트맵이 수백MB에 달할 수 있다 — 저사양 기기에서 크래시(OOM) 가능성. 실측(실기기·큰 원본 사진)은 하지 않았다 — 코드 검토로 확인한 구조적 위험이다.
+trigger: 실 안드로이드 기기로 카메라 권한을 검증하는 시점([[DW-742]])에 고화소(12MP 이상) 사진 한 장을 실제로 골라 업로드해 메모리 사용량·크래시 여부를 함께 확인한다. 문제가 재현되면 `ui.instantiateImageCodec`에 `targetWidth`/`targetHeight`를 넘겨 축소 디코딩하거나 `FlutterImageCompress`의 자체 스케일링에 맡기는 방향으로 고친다.
+status: open
+
+### DW-745: 저장본이 실제로 "긴 변 ≤1600px·WebP q0.82"를 지키는지 실기기에서 눈으로 확인한 적이 없다
+
+origin: spec-16-7-앱-사진-업로더 review(adversarial) — `photo_resize.dart`
+location: `app/lib/features/listings/photo_resize.dart:resizeImage`(`FlutterImageCompress.compressWithList` 실 호출)
+severity: low
+reason: 순수 함수 `computeTargetSize`(목표 크기 계산)만 단위테스트(`photo_resize_test.dart`)돼 있고, `flutter_image_compress` 플랫폼 채널이 그 목표를 실제로 지키는지는 위젯테스트·단위테스트 어느 쪽도 닿지 않는다(라이브러리 동작에 대한 가정일 뿐). 파라미터 의미를 오해했다면 저장본이 계약보다 크거나 작게 나가도 어떤 자동 검사도 못 잡는다.
+trigger: [[DW-742]]와 같은 실기기 검증 자리에서, 업로드된 사진 하나의 실제 저장 결과(Supabase Storage에서 다운로드해 픽셀 크기·포맷 확인)를 눈으로 대조한다.
+status: open
+
+### DW-746: 매물 삭제 도중(경로 조회 이후~행 삭제 이전) 다른 세션이 사진을 추가하면 그 사진의 Storage 오브젝트가 영구 고아가 된다
+
+origin: spec-16-7-앱-사진-업로더 review(adversarial·edge-case-hunter, 중복 지적) — `deleteListing`
+location: `app/lib/features/listings/listings_repository.dart:deleteListing`(`listListingPhotoPaths` 조회와 `listings` DELETE 사이에 트랜잭션·잠금 없음)
+severity: low
+reason: 스펙이 명시한 순서(행 삭제 **전** 경로 선조회 → 행 삭제 → 정리)는 그 자체로 의도된 설계(cascade가 행을 먼저 지우면 어떤 파일을 지울지 알 방법이 없어지는 더 나쁜 상황을 피한다, docs/conventions.md §10.1)이지만, 이 두 단계 사이에 같은 매물에 사진이 추가되면(동시 편집) 그 새 사진의 행은 cascade로 함께 사라지고 경로는 애초에 `paths` 목록에 없었으므로 오브젝트가 조용히 고아로 남는다. 발생 빈도가 매우 낮은(같은 매물을 동시에 편집·삭제) 레이스라 지금 당장 트랜잭션화하지 않는다.
+trigger: 여러 세션·기기 동시 편집 시나리오를 다루게 될 때(예: 공유 계정·팀 판매 기능이 생기는 시점) 재검토. 그 전까지는 이 주석 자체가 다음 사람이 우연히 재발견하지 않도록 하는 문서화다.
+status: open
+
+### DW-747: 확장자 없는 경로로 들어온 선택 파일은 유효한 사진이어도 "포맷 거부"로 잘못 걸러진다
+
+origin: spec-16-7-앱-사진-업로더 review(edge-case-hunter) — `photo_item.dart`
+location: `app/lib/features/listings/photo_item.dart:_extensionOf`/`validatePickedFile`(경로에 `.`이 없으면 빈 문자열 → `allowedImageExtensions`에 없어 즉시 거부)
+severity: low
+reason: 이 검증은 스스로 "UX 층의 1차 방어일 뿐, 실제 강제는 서버(버킷 file_size_limit·allowed_mime_types)"라고 명시한다(over-rejection이 데이터 무결성 문제는 아니다). 다만 일부 콘텐츠 프로바이더(SAF 등)가 확장자 없는 경로를 돌려주면 유효한 이미지도 앱 단계에서 거부된다 — Android `image_picker`의 표준 경로(카메라 캡처·일반 갤러리)에서는 재현되지 않는 드문 경우다.
+trigger: 실사용자 리포트로 "사진을 선택했는데 형식 거부됨" 문의가 들어오면 그때 `mimeType` 기반 폴백(피커가 함께 주는 MIME 타입으로 판정)을 추가한다.
+status: open

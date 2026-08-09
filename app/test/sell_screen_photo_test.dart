@@ -43,10 +43,16 @@ class _FakeImagePickerPlatform extends ImagePickerPlatform with MockPlatformInte
   List<XFile> multiImages = [];
   XFile? singleImage;
 
+  /// 카메라 권한 거부 등으로 플러그인이 예외를 던지는 상황을 흉내낸다(review 발견, spec-16-7).
+  bool throwOnPick = false;
+
   @override
   Future<List<XFile>> getMultiImageWithOptions({
     MultiImagePickerOptions options = const MultiImagePickerOptions(),
-  }) async => multiImages;
+  }) async {
+    if (throwOnPick) throw Exception('갤러리 접근 거부(테스트)');
+    return multiImages;
+  }
 
   @override
   Future<XFile?> getImageFromSource({
@@ -149,6 +155,26 @@ void main() {
 
     expect(find.text('2/10'), findsOneWidget);
   });
+
+  testWidgets(
+    '갤러리 접근이 예외를 던져도(권한 거부 등) 화면이 죽지 않고 안내만 뜬다(review 발견, spec-16-7)',
+    (tester) async {
+      fakePicker.throwOnPick = true;
+
+      await _pumpSellScreen(tester);
+      await tester.ensureVisible(find.byKey(const Key('photo_add_button')));
+      await tester.tap(find.byKey(const Key('photo_add_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('photo_pick_gallery')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: '위젯 밖으로 예외가 새면 안 된다');
+      expect(find.byKey(const Key('photo_pick_error')), findsOneWidget);
+      expect(find.text('갤러리를 열지 못했어요. 다시 시도해주세요.'), findsOneWidget);
+      expect(find.text('0/10'), findsOneWidget, reason: '실패했으니 목록엔 아무것도 추가되지 않는다');
+    },
+  );
 
   testWidgets('10장이 이미 있으면 "+" 버튼이 사라진다(정원 게이트, AC 매트릭스 "10장 초과")', (
     tester,
@@ -261,6 +287,42 @@ void main() {
     expect(find.byKey(const Key('photo_error_k-fail')), findsNothing);
     expect(find.byKey(const Key('photo_retry_k-fail')), findsNothing);
   });
+
+  testWidgets(
+    '업로드 실패(재시도 가능)로 아직 저장되지 않은 사진은 대표 배지를 받지 않는다(review 발견 — '
+    '화면·DB 대표 불일치, spec-16-7)',
+    (tester) async {
+      final failed = PhotoItem(
+        key: 'k-failed',
+        previewUrl: '/tmp/failed.jpg',
+        status: PhotoStatus.error,
+        error: '사진을 올리지 못했어요. 다시 시도해주세요.',
+        retryable: true,
+        file: _fakeImage('failed'),
+      );
+      final saved = _savedPhotos(1).single;
+      await _pumpSellScreen(tester, initialPhotos: [failed, saved]);
+      await tester.ensureVisible(find.byKey(Key('photo_item_${saved.key}')));
+
+      expect(
+        find.descendant(
+          of: find.byKey(Key('photo_item_${failed.key}')),
+          matching: find.text('대표'),
+        ),
+        findsNothing,
+        reason: '아직 storagePath가 없는(=저장 안 된) 사진에 대표 배지가 붙으면 photo_sync.dart가 '
+            '실제로 대표를 거는 사진과 화면이 갈린다',
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(Key('photo_item_${saved.key}')),
+          matching: find.text('대표'),
+        ),
+        findsOneWidget,
+        reason: '실제로 저장된(storagePath 있는) 사진이 대표여야 한다',
+      );
+    },
+  );
 
   testWidgets('용량초과·포맷거부(재시도 불가) 항목은 재시도 버튼이 없다', (tester) async {
     const rejected = PhotoItem(

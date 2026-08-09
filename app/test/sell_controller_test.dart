@@ -19,15 +19,45 @@
 // 고치는 방향은 provider 수명을 되살리는 게 아니라(브랜치 영구 마운트는 유지해야 탭 상태
 // 보존이 되므로), submit()이 state.editingId 폴백을 아예 안 하게(호출부 명시만 신뢰) 만드는
 // 쪽이다 — 이 검사가 그 계약을 고정한다.
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/listings/listing_form.dart';
 import 'package:app/features/listings/listings_providers.dart';
 import 'package:app/features/listings/listings_repository.dart';
+import 'package:app/features/listings/photo_item.dart';
 import 'package:app/features/listings/sell_controller.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// submit()이 내부에서 부르는 syncListingPhotos는 client를 명시하지 않고 전역 `supabase`
+/// 싱글턴을 쓴다(sell_controller.dart 미주입) — 이 파일이 원래 Supabase.initialize를 피했던
+/// 이유(파일 상단 주석)와 같은 자리다. "submit()이 실제 사진과 함께 호출됐을 때 배선이
+/// 맞는지"(review 발견, verification-gap)를 보려면 그 전역 싱글턴에 가짜 http를 물려야 한다 —
+/// sell_screen_photo_test.dart와 같은 패턴을 여기 최소한으로 들여온다.
+class _FakeHttpClient extends http.BaseClient {
+  final List<http.BaseRequest> requests = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    requests.add(request);
+    final bytes = utf8.encode(
+      jsonEncode([
+        {'id': 'row-x'},
+      ]),
+    );
+    return http.StreamedResponse(
+      Stream.value(bytes),
+      200,
+      request: request,
+      headers: {'content-type': 'application/json', 'content-length': '${bytes.length}'},
+    );
+  }
+}
 
 /// createListing/updateListing 호출을 기록하는 가짜 레포 — 네트워크 없이 동작.
 ///
@@ -104,6 +134,20 @@ ProviderContainer _container(_RecordingRepo repo) {
 }
 
 void main() {
+  late _FakeHttpClient fakeHttp;
+
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
+    fakeHttp = _FakeHttpClient();
+    await Supabase.initialize(
+      url: 'https://example.supabase.co',
+      // ignore: deprecated_member_use
+      anonKey: 'test-anon-key-not-real',
+      httpClient: fakeHttp,
+    );
+  });
+
   test('submit()은 state.editingId로 폴백하지 않는다 — 브랜치 영구 마운트로 남은 leftover '
       'state가 다음 등록에 새지 않는다(회귀: 직전엔 새 등록이 UPDATE로 샜다)', () async {
     final repo = _RecordingRepo();
@@ -150,4 +194,47 @@ void main() {
     expect(repo.updateCalls, ['listing-EDIT']);
     expect(repo.createCalls, isEmpty);
   });
+
+  test(
+    'submit()이 실제 사진과 함께 호출되면 syncListingPhotos로 올바로 배선되고 결과가 '
+    'state.photos에 병합된다(review 발견 — 부품은 테스트됐지만 이 배선 자체는 미검증이었다)',
+    () async {
+      fakeHttp.requests.clear();
+      final repo = _RecordingRepo();
+      addTearDown(repo.client.dispose);
+      final container = _container(repo);
+      addTearDown(container.dispose);
+
+      final notifier = container.read(sellControllerProvider.notifier);
+      notifier.updateInput(_validInput);
+
+      // storagePath가 이미 있는(=저장된) 사진이라 실제 업로드/리사이즈(플랫폼 채널) 없이
+      // sort_order 갱신 경로만 거친다 — 이 테스트가 보려는 건 배선(누구의 id로, 어느
+      // listing_images에 요청이 나가는지)이지 리사이즈/업로드 자체(그건 photo_resize_test.dart·
+      // photo_sync_test.dart가 이미 담당)가 아니다.
+      final kept = PhotoItem(
+        key: 'k-kept',
+        previewUrl: 'https://cdn.test/kept',
+        status: PhotoStatus.uploaded,
+        storagePath: '${_fakeUser().id}/listing-EDIT/kept.webp',
+        rowId: 'row-kept',
+      );
+
+      await notifier.submit(editingId: 'listing-EDIT', photos: [kept], baseline: [kept]);
+
+      expect(repo.updateCalls, ['listing-EDIT']);
+      expect(
+        fakeHttp.requests.any(
+          (r) => r.method == 'PATCH' && r.url.path.contains('listing_images'),
+        ),
+        isTrue,
+        reason: 'syncListingPhotos가 실제로 호출돼 listing_images에 요청이 나갔어야 한다',
+      );
+
+      final state = container.read(sellControllerProvider);
+      expect(state.photos, isNotNull, reason: 'PhotoSyncResult.photos가 state로 병합돼야 한다');
+      expect(state.photos!.single.key, 'k-kept');
+      expect(state.error, isNull, reason: '실패 없이 끝났으면 에러가 남으면 안 된다');
+    },
+  );
 }
