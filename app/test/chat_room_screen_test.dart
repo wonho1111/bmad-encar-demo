@@ -855,4 +855,42 @@ void main() {
       );
     });
   });
+
+  // 2026-08-10 Epic 16 묶음 코드리뷰(verification-gap) — **구독 해제를 아무도 안 봤다.**
+  // `dispose()`가 `(unsubscribeOverride ?? _defaultChatUnsubscribe)(handle)`로 채널을 정리하는데,
+  // 이 파일의 `unsubscribeOverride`는 두 자리 모두 아무것도 기록하지 않는 no-op 람다였다.
+  // 그래서 해제 호출이 통째로 사라지거나 **엉뚱한 handle**을 넘겨도 전 스위트가 green이었다.
+  // "몇 번, 어떤 handle로 불렸나"를 실제로 기록해 단언한다 — 소켓 채널 누수는 화면에 안 보인다.
+  group('실시간 구독 해제(코드리뷰 2026-08-10)', () {
+    testWidgets('화면이 사라지면 subscribe가 돌려준 바로 그 handle로 정확히 1회 해제한다',
+        (tester) async {
+      final handle = Object(); // 이 인스턴스가 그대로 되돌아와야 한다.
+      final unsubscribed = <Object>[];
+
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          currentUserProvider.overrideWithValue(_fakeUser(_buyerId)),
+          chatRepositoryProvider.overrideWithValue(_FakeChatRepository()),
+        ],
+        child: MaterialApp(
+          home: ChatRoomScreen(
+            roomId: 'room-1',
+            subscribeOverride: ({required roomId, required onInsert, required onStatus}) => handle,
+            unsubscribeOverride: unsubscribed.add,
+          ),
+        ),
+      ));
+      await tester.pump();
+
+      expect(unsubscribed, isEmpty, reason: '화면이 살아 있는 동안엔 해제하면 안 된다');
+
+      await tester.pumpWidget(const SizedBox.shrink()); // 트리 교체 = dispose
+      await tester.pump();
+
+      expect(unsubscribed.length, 1,
+          reason: 'dispose가 정확히 1회 해제해야 한다 — 0이면 채널이 등록된 채 남아 누수된다');
+      expect(identical(unsubscribed.single, handle), isTrue,
+          reason: 'subscribe가 돌려준 그 handle이어야 한다 — 다른 값을 넘기면 실제 채널은 안 지워진다');
+    });
+  });
 }

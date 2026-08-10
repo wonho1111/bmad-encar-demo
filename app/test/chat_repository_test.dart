@@ -82,6 +82,39 @@ Future<void> _signIn(SupabaseClient client, String userId) => client.auth.recove
   }),
 );
 
+/// 멱등 재전송(23505) 경로 전용 fake — 요청 순서에 따라 다른 응답을 돌려줘야 해서
+/// 위 `_FakeHttpClient`(201 고정)와 별도로 둔다. 기존 것을 매개변수화하면 그 단순함에
+/// 기대는 두 테스트까지 함께 흔들린다.
+class _ScriptedHttpClient extends http.BaseClient {
+  _ScriptedHttpClient(this.script);
+
+  /// (상태코드, 본문) — 요청 순서대로 하나씩 소비한다.
+  final List<({int status, String body})> script;
+  final List<_CapturedRequest> requests = [];
+  int _i = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    var body = '';
+    if (request is http.Request) body = request.body;
+    requests.add(_CapturedRequest(
+      method: request.method,
+      url: request.url,
+      headers: Map<String, String>.from(request.headers),
+      body: body,
+    ));
+    final step = _i < script.length ? script[_i] : (status: 200, body: '[]');
+    _i += 1;
+    final bytes = utf8.encode(step.body);
+    return http.StreamedResponse(
+      Stream.value(bytes),
+      step.status,
+      request: request,
+      headers: {'content-type': 'application/json', 'content-length': '${bytes.length}'},
+    );
+  }
+}
+
 void main() {
   group('markRoomRead — 실제 upsert 배선(FR57/§12.6, 코드리뷰 patch 12)', () {
     // markRoomRead()는 실 네트워크 호출 메서드라 위젯테스트가 지금까지 ChatRepository를 통째로
@@ -388,6 +421,102 @@ void main() {
       expect(calls, 0);
       expect(result.remaining, isEmpty);
       expect(result.sent, isEmpty);
+    });
+  });
+
+  // 2026-08-10 Epic 16 묶음 코드리뷰(verification-gap) — **멱등 재전송 경로가 통째로 미실행이었다.**
+  // §12.4의 헤드라인 계약("재전송은 항상 성공하고 chat_messages엔 정확히 1행만 남는다")을
+  // 구현하는 코드는 `sendMessage`의 `23505` catch 블록인데,
+  //   · `chat_repository_test.dart`는 순수 판정 함수 `isIdempotentResendMatch`만 손으로 만든
+  //     문자열로 검증했고("sendMessage() 자체는 실 Supabase 호출이라 여기서 다루지 않는다"),
+  //   · `chat_room_screen_test.dart`의 `_FakeChatRepository.sendMessage()`는 실제 구현을 통째로
+  //     덮어써서 이 블록을 절대 태우지 않는다.
+  // 그래서 재조회 필터가 빠지거나 인자 순서가 뒤바뀌어도 전 스위트가 green이었다.
+  // 같은 파일이 `markRoomRead`에 이미 쓰는 `SupabaseClient(httpClient:)` 기법을 그대로 쓴다.
+  group('멱등 재전송(23505) 실제 경로 — 코드리뷰 2026-08-10', () {
+    test('INSERT가 23505로 거절되면 그 키의 기존 행을 재조회해 성공으로 확정한다', () async {
+      const roomId = 'room-1';
+      const senderId = 'user-1';
+      const cid = 'client-msg-1';
+      final existingRow = {
+        'id': 'msg-1',
+        'room_id': roomId,
+        'sender_id': senderId,
+        'body': '안녕하세요',
+        'created_at': '2026-08-10T00:00:00+00:00',
+        'client_message_id': cid,
+      };
+
+      final fakeHttp = _ScriptedHttpClient([
+        // 1) INSERT → UNIQUE(room_id, client_message_id) 위반
+        (status: 409, body: jsonEncode({'code': '23505', 'message': 'duplicate key'})),
+        // 2) 재조회 → 이미 저장돼 있던 그 행
+        (status: 200, body: jsonEncode(existingRow)),
+      ]);
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-anon-key-not-real',
+        httpClient: fakeHttp,
+      );
+      addTearDown(client.dispose);
+      await _signIn(client, senderId);
+
+      final result = await ChatRepository(client: client).sendMessage(
+        roomId: roomId,
+        senderId: senderId,
+        body: '안녕하세요',
+        clientMessageId: cid,
+      );
+
+      expect(result, isA<SendMessageSuccess>(),
+          reason: '§12.4: 재전송은 에러가 아니라 그 행으로 수렴한다 — 실패로 보이면 사용자는 '
+              '이미 보낸 메시지를 못 보냈다고 오해한다');
+      expect((result as SendMessageSuccess).message.id, 'msg-1');
+
+      // 재조회가 **두 필터를 모두** 실었는지 본다 — client_message_id를 빠뜨리면 같은 방의
+      // 엉뚱한 메시지를 자기 전송으로 오인해 표시한다.
+      expect(fakeHttp.requests, hasLength(2),
+          reason: 'INSERT 1회 + 재조회 1회여야 한다. 실제: ${fakeHttp.requests.map((r) => r.method).toList()}');
+      final refetch = fakeHttp.requests[1];
+      expect(refetch.method, 'GET');
+      expect(refetch.url.queryParameters['room_id'], 'eq.$roomId');
+      expect(refetch.url.queryParameters['client_message_id'], 'eq.$cid',
+          reason: '멱등키 필터가 빠지면 그 방의 아무 행이나 집어올 수 있다');
+    });
+
+    test('재조회한 행이 내 것이 아니면(보낸 사람이 다름) 성공으로 위장하지 않는다', () async {
+      const cid = 'client-msg-2';
+      final othersRow = {
+        'id': 'msg-9',
+        'room_id': 'room-1',
+        'sender_id': 'someone-else', // 같은 키인데 다른 사람이 보낸 행
+        'body': '안녕하세요',
+        'created_at': '2026-08-10T00:00:00+00:00',
+        'client_message_id': cid,
+      };
+
+      final fakeHttp = _ScriptedHttpClient([
+        (status: 409, body: jsonEncode({'code': '23505', 'message': 'duplicate key'})),
+        (status: 200, body: jsonEncode(othersRow)),
+      ]);
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-anon-key-not-real',
+        httpClient: fakeHttp,
+      );
+      addTearDown(client.dispose);
+      await _signIn(client, 'user-1');
+
+      final result = await ChatRepository(client: client).sendMessage(
+        roomId: 'room-1',
+        senderId: 'user-1',
+        body: '안녕하세요',
+        clientMessageId: cid,
+      );
+
+      expect(result, isA<SendMessageFailure>(),
+          reason: '멱등 수렴은 "같은 사람이 같은 내용을 다시 보낸 경우"에만 성립한다 — '
+              '남의 행을 내 전송으로 확정하면 화면에 남의 메시지가 내 것으로 뜬다');
     });
   });
 }

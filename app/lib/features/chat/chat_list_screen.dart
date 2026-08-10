@@ -88,7 +88,6 @@ class ChatListScreen extends ConsumerWidget {
               itemBuilder: (context, i) => _RoomTile(
                 room: rooms[i],
                 myId: myId,
-                ref: ref,
                 unread: unreadByRoom[rooms[i].id] ?? 0,
               ),
             ),
@@ -103,15 +102,15 @@ class _RoomTile extends StatelessWidget {
   const _RoomTile({
     required this.room,
     required this.myId,
-    required this.ref,
     required this.unread,
   });
 
   final ChatRoomSummary room;
   final String? myId;
 
-  /// 방을 닫고 돌아왔을 때 chatRoomsProvider를 무효화하는 데만 쓴다(review, spec-16-1 P2).
-  final WidgetRef ref;
+  // ✎ 2026-08-10 — `final WidgetRef ref;` 필드를 제거했다. 방을 닫고 돌아왔을 때 무효화하는
+  //   용도였는데, 폐기된 ref를 비동기 콜백에서 쓰는 것이 바로 아래 onTap 주석의 결함이었다.
+  //   이제 `ProviderScope.containerOf`로 그 자리에서 잡으므로 이 필드는 쓰이지 않는다.
 
   /// 이 방의 안읽음 메시지 수(DW-548) — 0이면 배지를 그리지 않는다.
   final int unread;
@@ -152,17 +151,31 @@ class _RoomTile extends StatelessWidget {
         // 다시 그 버그 클래스를 물려받았다: 방에서 markRoomRead가 끝나고 돌아와도 이미 채팅
         // 탭에 있으므로 app_router.dart의 탭 onActivate(재진입 트리거)가 다시 안 불려 배지가
         // 그대로 남는다(§12.6 "다음 진입 시점에 그만큼 줄어든다" 위반).
-        onTap: () => Navigator.of(context, rootNavigator: true)
-            .push(
-              MaterialPageRoute(
-                builder: (_) => ChatRoomScreen(roomId: room.id),
-              ),
-            )
-            .then((_) {
-              ref.invalidate(chatRoomsProvider);
-              ref.invalidate(chatUnreadByRoomProvider);
-              ref.invalidate(chatUnreadTotalProvider);
-            }),
+        //
+        // ⚠️ **`.then()` 안에서 `ref`를 쓰지 않는다 — push 전에 컨테이너를 미리 잡는다.**
+        // (2026-08-10 Epic 16 묶음 코드리뷰, 리뷰어 2명이 독립 발견)
+        // 방을 열어 둔 채 로그아웃되거나 세션이 만료되면 라우터 redirect가 `_AppShell`을
+        // 통째로 갈아치우고, 그 뒤 도착한 pop이 **이미 폐기된** `ref`로 invalidate를 부른다.
+        // 그러면 flutter_riverpod 3.3.2의 `_assertNotDisposed()`가 unmounted element에 대해
+        // 진짜 `StateError`를 던진다 — assert가 아니라 **모든 빌드 모드에서**.
+        // `_RoomTile`은 `StatelessWidget`이라 `if (!mounted) return` 가드를 쓸 수도 없다.
+        // 이 리포는 같은 실패를 `app_router.dart`의 `_ProfileAvatarButton`(내 매물 관리 push)
+        // 에서 이미 겪고 `ProviderScope.containerOf`로 고쳤는데, 이 자리만 그 교훈을 안
+        // 물려받고 있었다. 같은 해법을 그대로 쓴다 — 컨테이너는 위젯 생명주기와 무관하다.
+        onTap: () {
+          final container = ProviderScope.containerOf(context, listen: false);
+          Navigator.of(context, rootNavigator: true)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => ChatRoomScreen(roomId: room.id),
+                ),
+              )
+              .then((_) {
+                container.invalidate(chatRoomsProvider);
+                container.invalidate(chatUnreadByRoomProvider);
+                container.invalidate(chatUnreadTotalProvider);
+              });
+        },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(

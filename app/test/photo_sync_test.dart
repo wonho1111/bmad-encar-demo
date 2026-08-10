@@ -410,6 +410,33 @@ void main() {
       expect(r.failedCount, 1);
     });
 
+    // 2026-08-10 Epic 16 묶음 코드리뷰(verification-gap) — **보상 삭제를 아무도 안 봤다.**
+    // 위 테스트들은 sort_order·savedCount·failedCount만 본다. 그런데 INSERT가 실패하면
+    // 이미 올라간 Storage 오브젝트는 **아무 행도 가리키지 않는 고아**가 되므로 코드가
+    // `deleteObject(p.storagePath!)`로 즉시 정리를 시도한다(photo_sync.dart, "행이 없으면
+    // 그 오브젝트는 아무도 못 읽는 고아가 된다"). 그 호출이 사라지거나 엉뚱한 경로를 넘겨도
+    // 전 스위트가 green이었다 — 고아 파일은 화면에 안 보여서 아무도 눈치채지 못한다.
+    // 파일 헤더의 "이 검사가 안 보는 것" 목록에도 이 항목은 없었다(저자도 몰랐다는 뜻).
+    test('INSERT가 실패하면 그 사진의 Storage 오브젝트를 즉시 정리한다(고아 방지)', () async {
+      var n = 0;
+      fakeHttp.responder = (req) {
+        if (req.method != 'POST') return null;
+        n += 1;
+        return n == 2 ? (status: 400, body: {'message': 'boom'}) : null;
+      };
+
+      final r = await sync([_newPhoto('a'), _newPhoto('b'), _newPhoto('c')], const []);
+      expect(r.failedCount, 1, reason: '전제: 두 번째 INSERT가 실제로 실패해야 이 검사가 의미 있다');
+
+      final cleanups = log.where((l) => l.startsWith('object:delete:')).toList();
+      expect(cleanups.length, 1,
+          reason: '실패한 1건만 정리해야 한다 — 0이면 고아 파일이 Storage에 영구히 쌓이고, '
+              '2건 이상이면 성공한 사진까지 지운 것이다. 실제: $cleanups');
+      expect(cleanups.single, contains(_newPhoto('b').file!.name),
+          reason: 'INSERT가 실패한 바로 그 사진(b)의 경로를 지워야 한다 — 다른 경로를 넘기면 '
+              '고아는 그대로 남고 멀쩡한 파일이 지워진다. 실제: ${cleanups.single}');
+    });
+
     test('첫 INSERT가 실패하면 대표는 실제로 sort_order=0을 받은 사진에 붙는다', () async {
       var n = 0;
       fakeHttp.responder = (req) {

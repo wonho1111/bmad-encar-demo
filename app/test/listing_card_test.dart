@@ -412,6 +412,30 @@ void main() {
         expect(find.text('라디오'), findsNothing);
       });
 
+      // 2026-08-10 Epic 16 묶음 코드리뷰(verification-gap) — **실제 옵션 칩의 색을 아무도 안 봤다.**
+      // 바로 위 "플레이스홀더 칩" 테스트는 muted(회색 아웃라인)를 색까지 단언하는데, 진짜 옵션이
+      // 있을 때 뜨는 칩이 요구사항대로 petrol 아웃라인인지는 `find.text()` 존재 확인뿐이었다.
+      // 그래서 `_OptionChip`의 색 분기(`muted ? borderHairline : brandPetrol`)를 반대로 뒤집어도
+      // 전 스위트가 green이었다(아래 실측). 같은 카드의 신뢰속성 칩은 이미 이 축을 검사한다.
+      testWidgets('진짜 옵션 칩은 petrol 아웃라인 — 플레이스홀더(muted)와 색으로 구분된다',
+          (tester) async {
+        await _pump(tester, _card(options: const ['선루프']));
+
+        final labelFinder = find.text('선루프');
+        expect(labelFinder, findsOneWidget);
+
+        final chipContainer = tester.widget<Container>(
+          find.ancestor(of: labelFinder, matching: find.byType(Container)).first,
+        );
+        final decoration = chipContainer.decoration as BoxDecoration;
+        expect((decoration.border as Border).top.color, AppColors.brandPetrol,
+            reason: '희소옵션 칩은 petrol 아웃라인이다 — muted 회색이면 플레이스홀더와 구분이 안 된다');
+
+        final chipText = tester.widget<Text>(labelFinder);
+        expect(chipText.style?.color, AppColors.brandPetrol,
+            reason: '칩 라벨 색도 petrol이다(테두리만 맞고 글자가 muted면 반쪽이다)');
+      });
+
       // 코드리뷰 지적(P5) — 예전엔 emptiness 판정만 trim하고 원본(공백 포함) 값을 그대로
       // 우선순위 조회·dedup에 넘겼다. ' 선루프'는 통제어휘 조회 실패로 최하위로 강등되고,
       // '선루프'와 dedup되지 않아 칩이 두 번 뜬다.

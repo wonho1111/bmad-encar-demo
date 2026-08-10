@@ -108,9 +108,9 @@ void main() {
     // 요구한 요소(DW-755)인데 이걸 보는 테스트가 0건이었다. 존재를 단언한다 — 나중에 누가
     // 실수로 지워도 이 테스트가 잡는다.
     // ✎ 2026-08-10 — amber 글로우는 사용자 결정으로 **제거**됐다(잘린 노란 얼룩으로 읽혔다,
-    // DW-770). 그래서 "글로우가 있다"가 아니라 **"없다"**를 단언한다 — 누가 같은 구현을 다시
+    // DW-787). 그래서 "글로우가 있다"가 아니라 **"없다"**를 단언한다 — 누가 같은 구현을 다시
     // 넣으면 이 테스트가 잡는다. 차 실루엣은 그대로 요구사항이다.
-    testWidgets('히어로 배경에 차 실루엣이 있고, amber 글로우 원은 없다(DW-755·DW-770)',
+    testWidgets('히어로 배경에 차 실루엣이 있고, amber 글로우 원은 없다(DW-755·DW-787)',
         (tester) async {
       await tester.pumpWidget(_harness());
       await tester.pump();
@@ -118,7 +118,7 @@ void main() {
       expect(find.byKey(const Key('hero_car_silhouette')), findsOneWidget);
       expect(find.byKey(const Key('hero_glow')), findsNothing,
           reason: '단일 amber 원 글로우는 실기기에서 잘린 얼룩으로 보여 제거했다 — '
-              '다시 넣으려면 다중 레이어 메시로(DW-770), 값 하나 되돌리는 식이 아니다');
+              '다시 넣으려면 다중 레이어 메시로(DW-787), 값 하나 되돌리는 식이 아니다');
     });
 
     // spec-16-10(Always, AC④) — 꽉 찬 Material 아이콘이 아니라 목업과 같은 path의

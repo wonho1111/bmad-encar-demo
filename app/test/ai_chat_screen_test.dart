@@ -154,6 +154,46 @@ void main() {
     expect(find.text('조건에 맞는 매물을 찾았어요.'), findsOneWidget);
   });
 
+  // 2026-08-10 Epic 16 묶음 코드리뷰(verification-gap) — **실패 쪽 분기를 아무도 안 봤다.**
+  // 위 테스트는 자동 제출 **성공**만 본다. 그런데 이 스토리가 새로 만든 파라미터
+  // `restoreInputOnFailure`의 존재 이유는 정확히 **실패**다: 히어로에서 넘어온 경로는
+  // `home_screen.dart`가 이미 입력창을 비운 뒤라 이 문장의 사본이 앱 어디에도 없고,
+  // 실패했는데 복원까지 안 하면 사용자는 처음부터 다시 타이핑해야 한다.
+  // 그 복원 분기(`if (overrideQuery == null || restoreInputOnFailure)`)를 실행하는 테스트가
+  // 하나도 없어서, `restoreInputOnFailure` 조건을 지우거나 호출부가 기본값(false)으로
+  // 회귀해도 전 스위트가 green이었다.
+  //
+  // ⚠️ 이 검사가 안 보는 것: 복원된 문장을 사용자가 **다시 눌러 재제출**하는 흐름은 안 본다
+  //   (그건 별개 계약이고, §8의 "복원까지만 하고 자동 실행하지 않는다"는 웹 한정이다 —
+  //    2026-08-10 결정, docs/conventions.md §8).
+  testWidgets('히어로 자동 제출이 실패하면 그 문장을 입력창에 되돌려 놓는다(다시 타이핑하지 않게)',
+      (tester) async {
+    const q = '4천만원대 전기 SUV';
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          currentUserProvider.overrideWithValue(_fakeUser()),
+        ],
+        child: MaterialApp(
+          home: AiChatScreen(
+            initialQuery: q,
+            searchAiOverride: ({required query, context, required accessToken}) async {
+              throw Exception('network down');
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller?.text, q,
+        reason: '히어로에서 넘어온 문장은 실패 시 입력창에 복원돼야 한다 — 비어 있으면 '
+            '사용자가 그 문장을 다시 칠 방법이 없다(홈 검색창도 이미 비워졌다)');
+  });
+
   testWidgets('initialQuery가 없으면(null) 자동 제출하지 않는다(기존 동작 무파괴)',
       (tester) async {
     var callCount = 0;

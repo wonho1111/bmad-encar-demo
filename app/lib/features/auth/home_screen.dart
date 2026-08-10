@@ -318,7 +318,8 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
           //   웹·앱 통일 방향과도 같다.
           //   ⚠️ 스파인 요구를 **포기한 게 아니라 미룬 것**이다 — 제대로 하려면 원 하나가
           //   아니라 다중 레이어 메시 + 노이즈가 필요하고, 그건 이 자리에서 값 하나
-          //   바꾸는 작업이 아니다. 대장에 남겼다(DW-770).
+          //   바꾸는 작업이 아니다. 대장에 남겼다(DW-787 — 2026-08-10 번호 정정, 등재 당시
+          //   쓴 DW-770이 카드 radius 항목과 중복이었다).
           // spec-16-10 Always — 꽉 찬 Material 아이콘이 아니라 목업(consistency-1.html
           // `.app-hero .silhouette`, viewBox 0 0 640 220) 라인아트를 그대로 이식한다(새 패키지
           // 의존성 없이 CustomPainter로 — A2 단순함 원칙, 정적 도형 하나뿐이라 flutter_svg를

@@ -6,6 +6,7 @@
 // 어느 쪽도 "상세 화면이 실제로 그 자리에 ListingGallery를 꽂아 쓰는지"를 안 본다.
 // app_router_test.dart의 provider-override + pump 관례를 그대로 재사용해, 사진이 있는
 // ListingDetail로 실제 화면을 pump하고 갤러리 카운터로 확인한다.
+import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/chat/chat_providers.dart';
 import 'package:app/features/chat/chat_repository.dart';
@@ -175,6 +176,22 @@ void main() {
       findsOneWidget,
       reason: '상세 화면이 wishedListingIdsProvider 결과를 실제로 WishButton.initialWished에 실어야 한다',
     );
+
+    // 2026-08-10 Epic 16 묶음 코드리뷰(verification-gap) — **`variant`를 아무도 안 봤다.**
+    // `WishButton`은 카드용(그림자 2, 테두리 없음)과 상세용(그림자 0, 테두리 있음) 두 모양으로
+    // 갈리는데(`wish_button.dart`의 `onCard` 분기), 검사는 키 존재와 하트 아이콘만 봤다.
+    // 그래서 상세 호출부의 `variant: WishButtonVariant.inline`을 지워 기본값(card)으로 되돌려도
+    // 전 스위트가 green이었다(아래 실측). 모양 자체를 단언해 그 회귀를 막는다.
+    final material = tester.widget<Material>(
+      find.descendant(
+        of: find.byKey(const Key('detail_wish_button')),
+        matching: find.byType(Material),
+      ).first,
+    );
+    expect(material.elevation, 0,
+        reason: '상세의 찜 버튼은 inline 변형이라 그림자가 없다 — 2면 카드용(card) 변형으로 되돌아간 것이다');
+    expect((material.shape as CircleBorder).side.color, AppColors.borderHairline,
+        reason: '상세는 그림자 대신 테두리로 구분한다 — BorderSide.none이면 card 변형이다');
 
     // 신뢰속성 섹션은 "기본 정보" 12행 뒤에 있어 기본 뷰포트(800×600)를 벗어난다 — 스크롤해
     // 실제로 빌드되게 한다(안 그러면 SliverList가 화면 밖 자식을 아예 안 만들어 findsNothing이

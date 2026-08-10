@@ -78,7 +78,21 @@ Object _defaultChatSubscribe({
     ),
   );
   channel.onBroadcast(event: 'INSERT', callback: onInsert);
-  channel.subscribe(onStatus);
+  // ⚠️ `subscribe()`가 **동기적으로 예외를 던질 수 있다**(realtime_client 2.8.0의
+  // `RealtimeChannel.subscribe()`는 중복 구독 등에서 throw한다). 그런데
+  // `RealtimeClient.channel()`은 그보다 **먼저** `channels.add(chan)`으로 채널을 이미
+  // 등록해 둔다. 그래서 예외를 그냥 전파시키면 호출부(`_subscribeRealtime`)의
+  // `_channelHandle = ...` 대입이 완료되지 않아 `null`로 남고, `dispose()`의
+  // `if (handle != null)` 가드가 거짓이 되어 `removeChannel`이 **한 번도 안 불린다** —
+  // 위젯이 사라진 뒤에도 등록된 채널이 그대로 살아남는다(방을 반복해 여닫으면 누적).
+  // 여기서 잡아 **직접 정리한 뒤** 다시 던진다: 호출부의 에러 표시 동작은 그대로 두고
+  // 누수만 막는다. (2026-08-10 Epic 16 묶음 코드리뷰 adversarial 렌즈 발견)
+  try {
+    channel.subscribe(onStatus);
+  } catch (_) {
+    supabase.removeChannel(channel);
+    rethrow;
+  }
   return channel;
 }
 

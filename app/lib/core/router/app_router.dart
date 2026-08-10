@@ -134,7 +134,14 @@ final _kTabBranches = <_TabBranch>[
     // wishlistProvider는 autoDispose지만 이 브랜치도 IndexedStack으로 영구 마운트되므로
     // (recentListingsProvider·chatRoomsProvider와 같은 함정, 위 _TabBranch.onActivate 문서
     // 참조) 탭을 다시 누를 때 명시 무효화해야 "방금 취소한 찜"이 즉시 사라진다.
-    onActivate: (ref) => ref.invalidate(wishlistProvider),
+    // 비로그인 가드는 채팅 탭(아래)과 같은 이유다 — `onActivate`가 `goBranch()`보다 먼저 도는
+    // 탓에 리다이렉트 전에 인증 전제 쿼리가 나간다. `wishlistProvider`도 `fetchWishlist()`로
+    // 로그인 사용자의 찜만 읽는다. (리뷰는 채팅 탭만 지목했지만 두 줄 위의 **같은 결함**이라
+    // 함께 고친다 — 한쪽만 고치면 다음 리뷰가 나머지를 다시 올린다.)
+    onActivate: (ref) {
+      if (ref.read(currentUserProvider) == null) return;
+      ref.invalidate(wishlistProvider);
+    },
   ),
   _TabBranch(
     key: const Key('tab_chat'),
@@ -152,7 +159,13 @@ final _kTabBranches = <_TabBranch>[
     // chatUnreadTotalProvider(내비 배지, non-autoDispose)·chatUnreadByRoomProvider(목록 배지,
     // autoDispose) 둘 다 탭 재진입 시 명시 무효화한다(Story 16.4, §12.6 — "다음 진입/로드
     // 시점 기준" 갱신을 이 탭 활성화 경로가 구현한다. chatRoomsProvider와 같은 이유·같은 자리).
+    // ⚠️ 비로그인이면 아무것도 무효화하지 않는다(2026-08-10 Epic 16 묶음 코드리뷰 발견).
+    // `_activate()`는 `onActivate` → `goBranch()` 순서라, 가드가 없으면 **리다이렉트가 일어나기
+    // 전에** 인증 전제 쿼리(`chat_rooms` select, `chat_unread_*` RPC)가 먼저 나간다.
+    // 이 세 provider는 전부 로그인 사용자 전용이고, 비로그인은 어차피 `/login`으로 튕기므로
+    // 그 요청은 결과를 쓸 곳이 없다 — 안 보내는 게 맞다.
     onActivate: (ref) {
+      if (ref.read(currentUserProvider) == null) return;
       ref.invalidate(chatRoomsProvider);
       ref.invalidate(chatUnreadTotalProvider);
       ref.invalidate(chatUnreadByRoomProvider);

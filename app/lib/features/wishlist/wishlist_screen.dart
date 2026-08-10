@@ -55,8 +55,14 @@ class WishlistScreen extends ConsumerWidget {
             );
           }
           return ListView.builder(
+            // 하단 패딩: `viewPadding.bottom`이 아니라 `MediaQuery.paddingOf(context).bottom`.
+            // 셸의 `NavigationBar`가 이미 시스템 인셋을 흡수해 Scaffold가 `padding`에서
+            // 걷어내므로, 원본 `viewPadding`을 또 더하면 하단 여백이 이중으로 커진다.
+            // (2026-08-10 Epic 16 묶음 코드리뷰, 리뷰어 2명이 독립 발견 — 셸 브랜치 루트 4개
+            //  중 이 화면만 옛 패턴이었다. 형제 3개는 이미 `paddingOf`다:
+            //  home_screen.dart:113 · chat_list_screen.dart:84 · sell_screen.dart:313)
             padding: EdgeInsets.fromLTRB(
-                12, 12, 12, 12 + MediaQuery.of(context).viewPadding.bottom),
+                12, 12, 12, 12 + MediaQuery.paddingOf(context).bottom),
             itemCount: tiles.length,
             itemBuilder: (context, i) {
               final tile = tiles[i];
