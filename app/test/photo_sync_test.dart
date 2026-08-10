@@ -77,8 +77,11 @@ class _FakeHttpClient extends http.BaseClient {
   _Responder? responder;
   int _insertSeq = 0;
 
-  /// select('storage_path')로 돌려줄 행들(listListingPhotoPaths 테스트용).
-  List<Map<String, dynamic>> existingRows = const [];
+  /// select('storage_path')로 돌려줄 행들(listListingPhotoPaths 테스트용) — 그리고
+  /// **T6**: 이제 이 필드는 손으로 유지하는 게 아니라 성공한 쓰기를 실제로 반영해 갱신되는
+  /// "가짜 DB 현재 상태"다. 아래 send()가 성공한 PATCH(sort_order)/POST/DELETE만 반영한다
+  /// (실패·0행 응답은 절대 반영하지 않는다 — 그래야 "0행도 실패"라는 계약을 이 가짜도 지킨다).
+  List<Map<String, dynamic>> existingRows = [];
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
@@ -102,6 +105,10 @@ class _FakeHttpClient extends http.BaseClient {
     final custom = responder?.call(captured);
     int status;
     Object? respBody;
+    // 기본 처리(custom==null)로 실제 POST가 성공할 때만 합성한 신규 행 — T6가 existingRows에
+    // 반영할 유일한 "실제로 만들어진 행"이다(테스트가 status만 바꿔 POST 성공을 가짜로
+    // 흉내내는 경우는 이 스위트에 없다 — custom 응답은 전부 실패 주입용이다).
+    Map<String, dynamic>? insertedRow;
     if (custom != null) {
       status = custom.status;
       respBody = custom.body;
@@ -110,15 +117,37 @@ class _FakeHttpClient extends http.BaseClient {
       respBody = existingRows;
     } else if (request.method == 'POST') {
       _insertSeq += 1;
-      final row = {...bodyJson, 'id': 'row-$_insertSeq'};
+      insertedRow = {...bodyJson, 'id': 'row-$_insertSeq'};
       status = 201;
-      respBody = wantsSingle ? row : [row];
+      respBody = wantsSingle ? insertedRow : [insertedRow];
     } else {
       // PATCH/DELETE 기본 성공 — 1행 영향.
       status = 200;
       respBody = wantsSingle ? {'id': 'row-x'} : [
         {'id': 'row-x'},
       ];
+    }
+
+    // T6 — 성공한 쓰기만 existingRows(가짜 DB)에 반영한다. "성공"은 2xx이면서 응답이 실제로
+    // 행을 가리킨 경우(List면 비어 있지 않음)다 — 0행 응답(예: T5의 실패 흉내)은 여기서
+    // 걸러져 반영되지 않는다. 이러면 이 파일의 불변식 검사가 하드코딩한 옛 값이 아니라
+    // 이 가짜가 실제로 들고 있는 최종 상태를 읽을 수 있다(파일 헤더 T6 지적 대응).
+    final wroteRow = status >= 200 && status < 300 && (respBody is List ? respBody.isNotEmpty : respBody != null);
+    if (wroteRow) {
+      final idFilter = captured.query['id'];
+      final targetId = (idFilter != null && idFilter.startsWith('eq.')) ? idFilter.substring(3) : null;
+      if (request.method == 'PATCH' && bodyJson.containsKey('sort_order') && targetId != null) {
+        final idx = existingRows.indexWhere((r) => r['id'] == targetId);
+        if (idx >= 0) {
+          final updated = List<Map<String, dynamic>>.from(existingRows);
+          updated[idx] = {...updated[idx], 'sort_order': bodyJson['sort_order']};
+          existingRows = updated;
+        }
+      } else if (request.method == 'POST' && insertedRow != null) {
+        existingRows = [...existingRows, insertedRow];
+      } else if (request.method == 'DELETE' && targetId != null) {
+        existingRows = existingRows.where((r) => r['id'] != targetId).toList();
+      }
     }
 
     final bytes = utf8.encode(jsonEncode(respBody));
@@ -457,6 +486,471 @@ void main() {
         (r) => r.method == 'POST' && r.body['sort_order'] == 0,
       );
       expect(setCover.query['storage_path'], 'eq.${successfulInsert.body['storage_path']}');
+    });
+  });
+
+  group('spec-16-11 결함1 근본수정 — 행 삭제 실패 항목은 저장 대상에서만 빠진다(목록엔 유지)', () {
+    test('사진 1장짜리 매물: Storage 삭제는 성공·행 삭제만 실패하면, 그 행은 sort_order를 '
+        '새로 받지 않고 대표로도 지정되지 않는다(AC1)', () async {
+      final gone = _savedPhoto('a');
+      fakeHttp.responder = (req) =>
+          req.method == 'DELETE' ? (status: 400, body: {'message': 'boom'}) : null;
+
+      final r = await sync(const [], [gone]);
+
+      // 화면 목록엔 오류 상태로 남아 재시도 가능해야 한다(기존 계약, 회귀 확인).
+      expect(r.photos.single.status, PhotoStatus.error);
+      expect(r.photos.single.rowId, gone.rowId);
+
+      // 결함1 핵심: 이 행은 sort_order UPDATE를 받지 않는다 — saved에서 빠졌기 때문이다.
+      expect(
+        fakeHttp.requests.any((req) => req.method == 'PATCH' && req.body.containsKey('sort_order')),
+        isFalse,
+        reason: '삭제에 실패해 남은 행은 저장 대상(saved)에서 빠져야 한다 — sort_order UPDATE가 나가면 안 된다',
+      );
+      // 대표로도 지정되지 않는다 — coverPath가 null이라 is_cover=true 문장 자체가 안 나간다.
+      expect(
+        fakeHttp.requests.any((req) => req.method == 'PATCH' && req.body['is_cover'] == true),
+        isFalse,
+        reason: '저장할 사진이 없으므로(saved가 비었으므로) 대표 지정 문장이 나가면 안 된다',
+      );
+    });
+
+    test('여러 장 중 하나만 삭제 실패해도 나머지는 정상적으로 sort_order를 받고, 실패한 행만 빠진다', () async {
+      final kept = _savedPhoto('kept');
+      final gone = _savedPhoto('gone');
+      fakeHttp.responder = (req) =>
+          req.method == 'DELETE' ? (status: 400, body: {'message': 'boom'}) : null;
+
+      await sync([kept], [kept, gone]);
+
+      final sortReqs = fakeHttp.requests
+          .where((r) => r.method == 'PATCH' && r.body.containsKey('sort_order'))
+          .toList();
+      expect(sortReqs, hasLength(1), reason: 'kept 1건만 sort_order UPDATE를 받아야 한다');
+      expect(sortReqs.single.query['id'], 'eq.${kept.rowId}');
+    });
+  });
+
+  group('spec-16-11 결함2(DW-748) — sort_order UPDATE 실패 행이 옛 번호를 들고 남아도 중복이 생기지 않는다', () {
+    test('재정렬 없이 재제출 중 한 행의 UPDATE가 실패해도 최종 sort_order에 중복이 없다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      final c = _savedPhoto('c', rowId: 'row-c');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+        {'id': 'row-c', 'sort_order': 2},
+      ];
+      fakeHttp.responder = (req) =>
+          (req.method == 'PATCH' && req.body['sort_order'] != null && req.query['id'] == 'eq.row-b')
+              ? (status: 400, body: {'message': 'boom'})
+              : null;
+
+      final r = await sync([a, b, c], [a, b, c]);
+
+      // T6 — 하드코딩 literal(예전의 `const bOldOrder = 1`) 대신 가짜 DB가 실제로 반영한 최종
+      // 상태(existingRows)를 읽는다. b는 UPDATE가 실패했으므로 이 가짜도 그 행의 sort_order를
+      // 갱신하지 않았어야 한다 — literal이 아니라 그 사실 자체를 확인한다.
+      final finalById = {
+        for (final row in fakeHttp.existingRows) row['id'] as String: row['sort_order'] as int,
+      };
+      expect(finalById['row-b'], 1, reason: 'b는 UPDATE 실패로 옛 값을 그대로 들고 있어야 한다');
+      expect(finalById.values.toSet().length, finalById.length,
+          reason: '살아있는 모든 행의 최종 sort_order에 중복이 없어야 한다(DW-748)');
+      // spec-16-11 후속 코드리뷰 패치(P5) — a(화면 맨 앞)가 b보다 먼저 처리되어 이미 대표로
+      // 확정된 뒤에 b의 UPDATE가 실패한다. 대표가 이미 정해졌으므로 "대표 사진이 바뀌었을 수
+      // 있다"는 문구는 이 시나리오에선 거짓이다 — 강화된 경고가 아니라 평범한 경고여야 한다.
+      expect(r.warnings, contains('사진 순서를 저장하지 못한 항목이 있어요.'));
+      expect(r.warnings, isNot(contains('사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.')));
+    });
+
+    test('재정렬과 동시에 다른 행의 UPDATE가 실패해도(반례) 최종 sort_order에 중복이 없고, '
+        '화면 맨 앞 사진이 (sort_order,id) 최솟값을 갖는다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      final c = _savedPhoto('c', rowId: 'row-c');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+        {'id': 'row-c', 'sort_order': 2},
+      ];
+      // 화면 순서를 c, a, b로 재정렬(사용자가 c를 맨 앞으로) — c와 무관한 b의 UPDATE만 실패시킨다.
+      fakeHttp.responder = (req) =>
+          (req.method == 'PATCH' && req.body['sort_order'] != null && req.query['id'] == 'eq.row-b')
+              ? (status: 400, body: {'message': 'boom'})
+              : null;
+
+      await sync([c, a, b], [a, b, c]);
+
+      // T6 — literal(`const bOldOrder = 1`) 대신 가짜 DB의 최종 상태를 읽는다.
+      final finalById = {
+        for (final row in fakeHttp.existingRows) row['id'] as String: row['sort_order'] as int,
+      };
+      final bOldOrder = finalById['row-b']!;
+      expect(bOldOrder, 1, reason: 'b는 UPDATE 실패로 옛 값을 그대로 들고 있어야 한다');
+
+      // 이 반례가 바로 DW-748의 핵심 위험 지점이다 — c가 맨 앞으로 이동하며 원래 0·1·2 자리를
+      // 다시 채우려 하는데, b가 실패해 1을 그대로 들고 있으면 다른 행이 1을 다시 쓰면 중복이 난다.
+      expect(finalById.values.toSet().length, finalById.length, reason: '재정렬+실패가 겹쳐도 중복이 없어야 한다');
+      // 화면 맨 앞(c)이 실제로 (sort_order,id) 최솟값을 가져야 한다 — b가 실패로 옛 번호(1)를
+      // 그대로 들고 있어도 c가 그보다 작아야 한다(파일 최상단 경고: 대표는 sort_order로 읽힌다).
+      expect(finalById['row-c'], lessThan(bOldOrder));
+      expect(finalById['row-c'], lessThan(finalById['row-a']!));
+    });
+  });
+
+  group('spec-16-11 불변식 통합 검사 — 부분 실패를 섞은 시나리오에서도 중복 없고 대표가 의도한 장이다', () {
+    test('행 삭제 실패(대표였던 사진) + sort_order UPDATE 실패가 동시에 있어도 sort_order 중복이 '
+        '없고, 대표는 화면 맨 앞의 정상 저장된 사진이다', () async {
+      final gone = _savedPhoto('gone', rowId: 'row-gone'); // 기존 대표(sort_order 0) — 삭제 시도, 행 삭제 실패 예정
+      final a = _savedPhoto('a', rowId: 'row-a'); // 화면 맨 앞으로 옮겨 새 대표가 될 사진
+      final b = _savedPhoto('b', rowId: 'row-b'); // sort_order UPDATE 실패 예정
+      fakeHttp.existingRows = [
+        {'id': 'row-gone', 'sort_order': 0},
+        {'id': 'row-a', 'sort_order': 1},
+        {'id': 'row-b', 'sort_order': 2},
+      ];
+      fakeHttp.responder = (req) {
+        if (req.method == 'DELETE') return (status: 400, body: {'message': 'boom'}); // 행 삭제 실패
+        if (req.method == 'PATCH' &&
+            req.body['sort_order'] != null &&
+            req.query['id'] == 'eq.row-b') {
+          return (status: 400, body: {'message': 'boom'}); // sort_order UPDATE 실패
+        }
+        return null;
+      };
+
+      // 화면: gone은 지우고, a를 맨 앞으로 재배치.
+      final r = await sync([a, b], [gone, a, b]);
+
+      // gone은 저장 대상에서 빠졌으므로 sort_order UPDATE를 받지 않는다(결함1).
+      expect(
+        fakeHttp.requests.any(
+          (req) =>
+              req.method == 'PATCH' &&
+              req.body.containsKey('sort_order') &&
+              req.query['id'] == 'eq.row-gone',
+        ),
+        isFalse,
+      );
+
+      // T6 — literal(`const bOldOrder = 2`·`const goneOldOrder = 0`) 대신 가짜 DB의 최종
+      // 상태(existingRows)를 읽는다. gone은 행 삭제가 실패했으니 그대로 살아 있고, b는
+      // sort_order UPDATE가 실패했으니 옛 값을 그대로 갖고 있어야 한다 — 픽스처를 손으로
+      // 베껴 쓴 literal이 실제로 반영된 값과 갈라지는 사고를 이 가짜 자체가 막는다.
+      final finalById = {
+        for (final row in fakeHttp.existingRows) row['id'] as String: row['sort_order'] as int,
+      };
+      expect(finalById['row-gone'], 0, reason: 'gone은 행 삭제 실패로 그대로 살아 있어야 한다');
+      expect(finalById['row-b'], 2, reason: 'b는 UPDATE 실패로 옛 값을 그대로 들고 있어야 한다');
+      final aOrder = finalById['row-a']!;
+
+      // 불변식 그 자체: 살아있는 모든 행의 최종 sort_order에 중복이 없다.
+      expect(finalById.values.toSet().length, finalById.length);
+      // 불변식 그 자체: 화면 맨 앞(a)이 실제로 최솟값이다 — gone이 옛 대표 번호(0)를 그대로
+      // 들고 있어도 a가 그보다 작아야 한다(결함1+결함2를 함께 근본수정한 핵심).
+      expect(aOrder, lessThan(finalById['row-gone']!));
+      expect(aOrder, lessThan(finalById['row-b']!));
+
+      // is_cover도 화면 맨 앞(a)을 지목해야 한다(단, 실제로 읽히는 건 sort_order다 — 위 단언이 핵심).
+      final setCover = fakeHttp.requests.firstWhere(
+        (req) => req.method == 'PATCH' && req.body['is_cover'] == true,
+      );
+      expect(setCover.query['storage_path'], 'eq.${a.storagePath}');
+
+      // 사용자에게 사실대로 알린다 — 삭제 실패·순서 실패 각각의 경고가 남는다.
+      expect(r.warnings, contains('사진 삭제 정보를 정리하지 못했어요. 삭제 버튼을 다시 눌러주세요.'));
+      // spec-16-11 후속 코드리뷰 패치(P5) — 화면 맨 앞(a)이 saved의 첫 항목이라 b보다 먼저
+      // 처리돼 이미 대표로 확정된 뒤에 b의 UPDATE가 실패한다. 대표가 이미 정해졌으므로
+      // "대표 사진이 바뀌었을 수 있다"는 강화된 문구는 이 시나리오엔 맞지 않는다.
+      expect(r.warnings, contains('사진 순서를 저장하지 못한 항목이 있어요.'));
+      expect(r.warnings, isNot(contains('사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.')));
+    });
+  });
+
+  group('spec-16-11 후속 코드리뷰(2026-08-10) 패치 — candidateOrder가 자기 옛 번호를 우선 재사용한다', () {
+    test('실패가 전혀 없는 평범한 재저장을 반복해도 대표 사진의 sort_order가 계속 음수로 밀려나지 않는다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+      ];
+
+      await sync([a, b], [a, b]);
+      final firstSortReqs = fakeHttp.requests
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('sort_order'))
+          .toList();
+      final aOrder1 = firstSortReqs.firstWhere((req) => req.query['id'] == 'eq.row-a').body['sort_order'] as int;
+      // 실패가 없었으니 대표(맨 앞) a는 자기 옛 번호(0)를 그대로 유지해야 한다 — 후속
+      // 코드리뷰(2026-08-10) 지적: 첫 구현은 실패가 없어도 매번 예약값보다 작은 새 번호(-1)를
+      // 줘서 이 값이 -1이 됐었다.
+      expect(aOrder1, 0);
+
+      // T6 — existingRows는 이제 성공한 PATCH를 스스로 반영한다(가짜가 진짜 쓰기를 따라간다),
+      // 그래서 두 번째 저장 전에 픽스처를 손으로 다시 만들어 줄 필요가 없다 — 예전엔 이 자리에서
+      // literal을 손으로 베껴 썼는데, 그게 실제 반영값과 갈라지는 사고를 이 파일이 이미 겪었다.
+      final requestCountAfterFirst = fakeHttp.requests.length;
+
+      await sync([a, b], [a, b]);
+      final secondSortReqs = fakeHttp.requests
+          .skip(requestCountAfterFirst)
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('sort_order'))
+          .toList();
+      final aOrder2 = secondSortReqs.firstWhere((req) => req.query['id'] == 'eq.row-a').body['sort_order'] as int;
+      expect(aOrder2, aOrder1,
+          reason: '두 번째 저장에서도 실패가 없으니 대표 사진의 sort_order는 첫 저장과 같아야 한다 '
+              '— 매 저장마다 값이 계속 내려가면(드리프트) "실제 저장 성공 개수 기준 연속 정수" '
+              '계약이 저장을 반복할 때마다 스스로 깨진다.');
+    });
+
+    test('기존 사진이 있는 매물에 새로 추가한 사진을 맨 앞(대표)으로 끌어와 저장하면, '
+        '그 새 사진이 기존 사진들의 옛 번호보다 작은 sort_order로 대표가 된다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      final fresh = _newPhoto('fresh');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+      ];
+
+      // 화면: 새 사진을 맨 앞으로 끌어오고, 기존 두 장은 뒤로 밀린다. initial(기존 행)은 a·b뿐.
+      final r = await sync([fresh, a, b], [a, b]);
+
+      final insert = fakeHttp.requests.singleWhere((req) => req.method == 'POST');
+      final insertOrder = insert.body['sort_order'] as int;
+      final sortReqs = fakeHttp.requests
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('sort_order'))
+          .toList();
+      final aOrder = sortReqs.firstWhere((req) => req.query['id'] == 'eq.row-a').body['sort_order'] as int;
+      final bOrder = sortReqs.firstWhere((req) => req.query['id'] == 'eq.row-b').body['sort_order'] as int;
+
+      // 새 사진(INSERT 대상)이 기존 두 행보다 작은 값을 받아야 (sort_order,id) 최솟값으로 이긴다.
+      expect(insertOrder, lessThan(aOrder));
+      expect(insertOrder, lessThan(bOrder));
+      expect({insertOrder, aOrder, bOrder}.length, 3, reason: '중복이 없어야 한다');
+
+      final setCover = fakeHttp.requests.firstWhere(
+        (req) => req.method == 'PATCH' && req.body['is_cover'] == true,
+      );
+      expect(setCover.query['storage_path'], 'eq.${insert.body['storage_path']}',
+          reason: '대표는 화면 맨 앞의 새 사진이어야 한다');
+      expect(r.warnings, isEmpty, reason: '이 시나리오엔 실패가 없다');
+    });
+  });
+
+  group('spec-16-11 후속 코드리뷰(2026-08-10) 패치 검증 — 새 회귀 테스트(T1~T5)', () {
+    test('T1 — 이미 중복된 옛 sort_order 데이터에서 실패가 겹쳐도 살아 있는 중복을 재생산하지 않는다(P1)', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      // DW-748이 원래 겨냥한, 아직 정리되지 않은 데이터 — 두 행이 이미 같은 옛 번호(0)를 들고 있다.
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 0},
+      ];
+      fakeHttp.responder = (req) =>
+          (req.method == 'PATCH' && req.body['sort_order'] != null && req.query['id'] == 'eq.row-b')
+              ? (status: 400, body: {'message': 'boom'})
+              : null;
+
+      await sync([a, b], [a, b]);
+
+      final sortReqs = fakeHttp.requests
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('sort_order'))
+          .toList();
+      final aOrder = sortReqs.firstWhere((req) => req.query['id'] == 'eq.row-a').body['sort_order'] as int;
+      // b의 UPDATE가 실패해 0을 그대로 들고 있다. a가 정확히 0을 다시 쓰면(옛 `candidateOrder`의
+      // `<=` 버그) 살아 있는 중복이 그대로 재생산된다 — a는 반드시 0보다 작아야 한다.
+      expect(aOrder, lessThan(0),
+          reason: 'candidateOrder가 ownOld==minOther일 때도 ownOld를 재사용하면(옛 `<=`) '
+              'b가 아직 들고 있는 0을 a가 다시 써서 중복이 재생산된다');
+    });
+
+    test('T2 — 화면 기준선이 비어 있어도 DB에 살아있는 행이 있으면 스냅샷을 읽어 충돌을 피한다(P2)', () async {
+      // 화면 기준선(initialPhotos)은 비어 있지만 DB에는 살아있는 행이 있는 상황 — 이전 INSERT의
+      // rowId를 못 읽어 baseline에서 빠졌거나 toPhotoItems가 계약 위반 행을 버린 경우 재현된다.
+      fakeHttp.existingRows = [
+        {'id': 'row-old', 'sort_order': 0},
+      ];
+      final fresh = _newPhoto('fresh');
+
+      await sync([fresh], const []);
+
+      expect(
+        fakeHttp.requests.any((req) => req.method == 'GET'),
+        isTrue,
+        reason: '게이트가 initialPhotos가 아니라 saved를 봐야 한다 — saved가 비어있지 않으므로 '
+            'GET이 나가야 한다(옛 게이트는 initialPhotos가 비었다는 이유로 이 GET을 건너뛰었다)',
+      );
+      final insert = fakeHttp.requests.singleWhere((req) => req.method == 'POST');
+      expect(
+        insert.body['sort_order'] as int,
+        lessThan(0),
+        reason: '이미 있는 행(0)과 충돌하지 않으려면 그보다 작은 값을 받아야 한다',
+      );
+
+      // P3(2회차 후속 코드리뷰) — 이 스냅샷 GET에 listing_id 필터가 빠지면(뮤테이션으로 실측)
+      // 전 스위트가 green으로 남는다. 남의 매물 행까지 예약값으로 끌어와 이 매물과 무관한
+      // sort_order와 충돌을 피하려다 불필요하게 더 내려가거나, 반대로 실제로 겹치는 남의 매물
+      // 행을 못 보고 지나칠 수 있다.
+      final get = fakeHttp.requests.firstWhere((r) => r.method == 'GET');
+      expect(get.query['listing_id'], 'eq.$_listingId',
+          reason: '스냅샷이 남의 매물 행까지 예약하면 안 된다');
+    });
+
+    test('T3 — 기존 sort_order 스냅샷 조회 자체가 실패해도 저장은 계속되고 사용자에게 알린다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      fakeHttp.responder =
+          (req) => req.method == 'GET' ? (status: 500, body: {'message': 'boom'}) : null;
+
+      final r = await sync([a], [a]);
+
+      expect(
+        fakeHttp.requests.any((req) => req.method == 'PATCH' && req.body.containsKey('sort_order')),
+        isTrue,
+        reason: '스냅샷 조회가 실패해도 sort_order 저장 자체는 계속돼야 한다',
+      );
+      final coverPatches = fakeHttp.requests
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('is_cover'))
+          .toList();
+      expect(coverPatches, hasLength(2), reason: '대표 기록 2문장도 그대로 나가야 한다');
+      expect(
+        r.warnings,
+        contains('기존 사진 순서 정보를 불러오지 못해 일부 안전 점검을 건너뛰었어요. 저장 후 대표 사진을 확인해 주세요.'),
+      );
+    });
+
+    test('T4 — 화면 맨 앞(첫 saved 항목)의 sort_order UPDATE가 실패해도 다음 후보가 대표를 이어받는다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+      ];
+      fakeHttp.responder = (req) =>
+          (req.method == 'PATCH' && req.body['sort_order'] != null && req.query['id'] == 'eq.row-a')
+              ? (status: 400, body: {'message': 'boom'})
+              : null;
+
+      final r = await sync([a, b], [a, b]);
+
+      final sortReqs = fakeHttp.requests
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('sort_order'))
+          .toList();
+      final bOrder = sortReqs.firstWhere((req) => req.query['id'] == 'eq.row-b').body['sort_order'] as int;
+      // a는 UPDATE 실패로 옛 값(0)을 그대로 들고 있다 — b가 그보다 작아야 대표를 이어받는다.
+      expect(bOrder, lessThan(0));
+
+      final setCover = fakeHttp.requests.firstWhere(
+        (req) => req.method == 'PATCH' && req.body['is_cover'] == true,
+      );
+      expect(setCover.query['storage_path'], 'eq.${b.storagePath}',
+          reason: '최초 후보(a)가 실패하면 다음 후보(b)가 대표를 이어받아야 한다');
+      // P4 — 이 실패는 catch 분기(예외)를 탄다. 대표가 아직 안 정해진 상태(a가 첫 saved
+      // 항목)에서 난 실패이므로 "대표가 바뀌었을 수 있다" 문구가 나가야 한다 — 예전엔 이
+      // 분기의 경고가 어느 테스트로도 단언되지 않았다(measurement).
+      expect(r.warnings, contains('사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.'));
+    });
+
+    test('T5 — sort_order PATCH가 200인데 0행을 돌려주는 조용한 실패(RLS 등)도 실패로 취급한다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+      ];
+      // 세션 만료·매물이 판매완료로 바뀌는 등 실제 운영에서 재현되는 모양 — 예외가 아니라
+      // 200에 빈 배열로 온다(data.isEmpty 경로, catch 경로가 아니다).
+      fakeHttp.responder = (req) =>
+          (req.method == 'PATCH' && req.body['sort_order'] != null && req.query['id'] == 'eq.row-a')
+              ? (status: 200, body: <dynamic>[])
+              : null;
+
+      final r = await sync([a, b], [a, b]);
+
+      expect(r.warnings, contains('사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.'));
+
+      final sortReqs = fakeHttp.requests
+          .where((req) => req.method == 'PATCH' && req.body.containsKey('sort_order'))
+          .toList();
+      final bOrder = sortReqs.firstWhere((req) => req.query['id'] == 'eq.row-b').body['sort_order'] as int;
+      // 0행 응답도 실패로 취급해 a가 여전히 0을 들고 있다고 봐야 한다 — b가 그 번호를
+      // 다시 쓰면 살아 있는 중복이 생긴다.
+      expect(bOrder, isNot(0), reason: '0행 응답(조용한 실패)을 성공으로 오인하면 b가 0을 재사용해 중복이 생긴다');
+      expect(bOrder, lessThan(0));
+    });
+  });
+
+  group('spec-16-11 후속 코드리뷰 2회차(2026-08-10) 패치 검증 — P1·P2', () {
+    test(
+        'P1 — 대표 확정 전에 한 행, 확정 후에 다른 행이 각각 실패해도 경고가 정확히 1개, '
+        '대표-언급 문장 하나로 합쳐진다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      final c = _savedPhoto('c', rowId: 'row-c');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 0},
+        {'id': 'row-b', 'sort_order': 1},
+        {'id': 'row-c', 'sort_order': 2},
+      ];
+      // a(화면 맨 앞, 대표 후보)는 대표가 정해지기 전에 실패하고, c는 b가 대표로 확정된
+      // 뒤에 실패한다 — 두 실패가 대표 확정 시점의 앞뒤로 갈린다.
+      fakeHttp.responder = (req) => (req.method == 'PATCH' &&
+              req.body['sort_order'] != null &&
+              (req.query['id'] == 'eq.row-a' || req.query['id'] == 'eq.row-c'))
+          ? (status: 400, body: {'message': 'boom'})
+          : null;
+
+      final r = await sync([a, b, c], [a, b, c]);
+
+      // 측정: 패치 전에는 a의 실패가 "…바뀌었을 수 있어요" 문구를, c의 실패가 평범한 문구를
+      // 각각 warnings에 넣어 toSet()으로도 못 합쳐진 채 ' · '로 이어붙어 사용자에게
+      // "…바뀌었을 수 있어요. · 사진 순서를 저장하지 못한 항목이 있어요."처럼 중복·모순으로
+      // 보이는 문구가 나갔다. 지금은 조건만 보고 문장을 한 번만 조립하므로 1개여야 한다.
+      expect(r.warnings.length, 1);
+      expect(r.warnings.single, '사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.');
+    });
+
+    test(
+        'P2 — 스냅샷 조회 자체가 실패한 상태에서 대표가 이미 확정된 뒤 다른 행이 실패해도 '
+        '"대표가 바뀌었을 수 있다" 문구가 나간다', () async {
+      final a = _savedPhoto('a', rowId: 'row-a');
+      final b = _savedPhoto('b', rowId: 'row-b');
+      fakeHttp.existingRows = [
+        {'id': 'row-a', 'sort_order': 5},
+        {'id': 'row-b', 'sort_order': -3},
+      ];
+      fakeHttp.responder = (req) {
+        if (req.method == 'GET') return (status: 500, body: {'message': 'boom'});
+        if (req.method == 'PATCH' &&
+            req.body['sort_order'] != null &&
+            req.query['id'] == 'eq.row-b') {
+          return (status: 400, body: {'message': 'boom'});
+        }
+        return null;
+      };
+
+      final r = await sync([a, b], [a, b]);
+
+      // 측정: 스냅샷 GET이 500이라 reservedOrders·oldOrderByRowId가 둘 다 빈 채로 진행된다 —
+      // a는 candidateOrder(null)이 order(=0)를 그대로 돌려줘 PATCH가 성공하고(대표로 확정),
+      // b는 sort_order:1로 PATCH를 시도했다가 실패해 옛 값(-3)을 그대로 든다. 최종
+      // {row-a: 0, row-b: -3}에서는 -3이 더 작아 실제 대표는 b로 넘어갔는데도, coverAssigned만
+      // 보면 "이미 확정됐다"고 오판해 경고가 안 나갔었다 — snapshotOk도 함께 봐야 한다.
+      final finalById = {
+        for (final row in fakeHttp.existingRows) row['id'] as String: row['sort_order'] as int,
+      };
+      expect(finalById['row-a'], 0);
+      expect(finalById['row-b'], -3, reason: 'b는 PATCH 실패로 옛 값을 그대로 들고 있어야 한다');
+      expect(finalById['row-b'], lessThan(finalById['row-a']!),
+          reason: '실제 (sort_order,id) 최솟값은 b다 — 대표가 b로 넘어갔다는 뜻');
+
+      expect(r.warnings, contains('사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.'));
+      expect(
+        r.warnings,
+        contains('기존 사진 순서 정보를 불러오지 못해 일부 안전 점검을 건너뛰었어요. 저장 후 대표 사진을 확인해 주세요.'),
+      );
     });
   });
 

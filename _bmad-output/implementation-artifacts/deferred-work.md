@@ -5690,7 +5690,8 @@ location: `app/lib/features/listings/photo_sync.dart`(기존 행 `sort_order` UP
 severity: medium
 reason: "구멍을 만들지 않는다"는 규칙(스펙 Always: 실제 저장 성공 개수 기준 연속 정수)을 지키느라 실패한 자리를 다음 항목이 메우는데, **실패한 행은 DB에서 지워지지 않고 옛 sort_order를 그대로 유지**한다. 그래서 옛 값과 새 값이 겹칠 수 있고, 대표는 `is_cover`가 아니라 `(sort_order, id)` 최솟값으로 읽히므로(웹·앱 공통) 중복이 생기면 id 타이브레이크로 **사용자가 아래로 내린 사진이 대표가 될 수 있다**. 사용자에게는 "사진 순서를 저장하지 못한 항목이 있어요" 경고만 뜬다(대표가 바뀐다는 말은 없다). 부분 실패 경로라 일상적으로 재현되지는 않는다.
 trigger: 대표 사진이 의도와 다르게 잡힌다는 리포트가 들어오거나, 사진 순서 계약을 실 DB 통합테스트로 덮는 작업을 할 때(→ DW-751과 같은 자리에서 함께 본다).
-status: open
+status: done 2026-08-10
+resolution: spec-16-11-사진-순서-대표-무결성이 근본수정으로 닫았다(사용자 결정: "데이터 쌓이는 건 좀 치명적인 것 같아서... 실사용 기반으로 하는 거니까"). `photo_sync.dart` 3단계에 이 매물의 현재 `sort_order` 전체를 미리 읽어 "아직 비워지지 않았을 수 있는 번호"로 예약해 두고(`reservedOrders`, 값→개수 맵 — 동일 옛 번호를 든 행이 이미 여럿이어도 안전), 새 번호를 고를 때(`claimOrder`) 예약된 값을 건너뛰게 했다 — 실패한 행이 옛 번호를 그대로 들고 있어도 다른 행이 그 번호를 다시 쓰지 않는다. 아직 아무도 대표가 되지 못한 동안(`coverAssigned==false`)엔, 자기 옛 번호가 이미 (자신을 뺀) 다른 모든 예약값보다 작거나 같으면 그대로 쓰고, 그렇지 않을 때만 예약값보다 작은 번호(필요하면 음수 — DB에 하한 CHECK 없음, `0012_listing_images.sql` 실측)로 내려간다 — 후속 리뷰(2026-08-10)에서 "예약값보다 무조건 작은 번호를 준다"는 첫 구현이 실패가 전혀 없는 평범한 재저장에서도 대표 사진의 sort_order를 저장할 때마다 더 음수로 밀어내는 회귀를 만든다는 지적을 받아 옛 번호를 우선 재사용하도록 고쳤다. `photo_sync_test.dart`에 "결함2(DW-748)" 그룹 2건 + 통합 불변식 검사 1건 + 반복 재저장 드리프트 회귀 검사 신설, red→green 뮤테이션 실측(`candidateOrder`를 무조건 `order` 반환으로 무력화 → 재정렬+실패 반례 테스트와 통합 검사가 즉시 red, 되돌리면 green). ⚠️ 한계: front(화면 맨 앞) 자신의 UPDATE가 실패하면 이 장치로도 못 구한다(다음 성공 항목이 이어받되, 그 항목도 실패하면 계속 재시도) — 드문 복합 실패이고 강화된 warning으로 사용자에게 알린다.
 
 ### DW-749: `epic-16-context.md`가 16.7 인수 커밋에서 재작성되며 16.8의 정정이 사라지고 **이미 철회된 계약**이 되살아났다
 
@@ -5717,7 +5718,8 @@ location: `app/lib/features/listings/listings_repository.dart:fetchOwnListingPho
 severity: medium
 reason: `.order('sort_order')`나 `id` 타이브레이크가 빠져도 어떤 테스트도 실패하지 않는다. 그런데 수정 화면이 기존 사진을 **임의 순서로** 실으면, 판매자가 사진을 건드리지 않고 저장만 해도 `syncListingPhotos`가 화면 목록 위치대로 `sort_order`를 다시 매겨 **대표 사진이 조용히 다른 장으로 바뀐다**(AC1·AC2 위반). 같은 성격의 순수 함수는 이 리포에서 이미 원행으로 직접 단언하는 관행이 있다(`test/listings_repository_image_order_test.dart`의 `pickCoverImages`·`sortGalleryPaths`) — 16.7의 미러 함수만 그 관행에서 빠졌다.
 trigger: 사진 정렬·대표 계약을 건드리는 다음 작업, 또는 16.6 실폰 검증에서 "수정 화면 사진 순서"를 확인할 때. `toPhotoItems`는 원행 map으로 직접 단언하고, `fetchOwnListingPhotos`는 가짜 http로 나간 쿼리에 `order=sort_order.asc,id.asc`가 실렸는지 본다.
-status: open
+status: done 2026-08-10
+resolution: spec-16-11-사진-순서-대표-무결성이 닫았다. 코드 변경은 없었다(`fetchOwnListingPhotos`는 이미 `.order('sort_order').order('id')`를 걸고 있었고 `toPhotoItems`도 이미 올바르게 매핑하고 있었다 — 이 DW의 진짜 문제는 "검사가 없다"였다). 신규 파일 `app/test/listings_repository_photo_order_test.dart` — `toPhotoItems`는 원행 map을 직접 호출해 순서 보존·필드 매핑·buildUrl 호출·계약위반 행 스킵을 단언(리포지토리를 가짜로 갈아 끼우지 않음), `fetchOwnListingPhotos`는 `listings_repository_fr11_wire_test.dart`의 URL 캡처 기법으로 나간 쿼리를 그대로 본다. ⚠️ 스펙 AC 원문은 `order=sort_order.asc,id.asc`를 기대했으나 postgrest-dart의 실제 직렬화는 `sort_order.asc.nullslast,id.asc.nullslast`다(실측) — 검사는 실제 값으로 맞췄다(의미는 동일: sort_order 오름차순 우선, id 오름차순 타이브레이크). red→green 뮤테이션 실측: ①`fetchOwnListingPhotos`의 `.order('id')` 체이닝 제거 → wire 테스트 red ②`toPhotoItems`의 `rowId: id`를 `rowId: null`로 무력화 → 3개 테스트 red. 둘 다 원복 후 green 확인.
 
 ### DW-752: `deleteListing`의 사진 정리 호출이 **실제로 나갔는지**를 아무도 단언하지 않는다 — AC5의 유일한 기계적 방어선인데 비어 있다
 
@@ -6170,4 +6172,98 @@ reason: 주석이 밝히는 의도는 "계정 A 로그아웃 → 계정 B 로그
 fix_sketch: `next.value?.event`가 `signedIn`/`signedOut`/`userDeleted` 등 **신원 변경 이벤트**일 때만 반응하게 좁힌다. ⚠️ 좁히다가 초기 세션 복원(`initialSession`)을 빠뜨리면 첫 진입 redirect가 안 돌 수 있으니 그 케이스를 검사로 먼저 고정한다.
 trigger: 라우터/인증 흐름을 손대는 다음 스토리, 또는 앱이 백그라운드에서 불필요한 요청을 낸다는 관측이 생길 때.
 related: [[DW-783]](같은 리스너가 무효화 대상을 좁게 잡고 있는 문제)
+status: open
+
+### DW-787: 같은 매물에 대한 `syncListingPhotos` 동시 호출(저장 연타 등)을 막는 잠금이 없다
+
+origin: spec-16-11-사진-순서-대표-무결성 후속 코드리뷰(2026-08-10, edge-case-hunter) — DW-748 재발 방지 장치(`reservedOrders`) 추가 중 발견
+location: `app/lib/features/listings/photo_sync.dart:syncListingPhotos`(저장 시작 시 기존 `sort_order`를 한 번 스냅샷 뜨고, 이후 여러 UPDATE/INSERT를 순차 실행 — 동시 호출 간 재확인이 없다)
+severity: medium
+reason: 사용자가 저장 버튼을 두 번 연타하거나 느린 네트워크에서 재시도가 겹치면 `syncListingPhotos`가 같은 매물에 대해 동시에 두 번 실행될 수 있다. 두 호출 모두 저장 시작 시점의 `sort_order` 스냅샷(`reservedOrders`)을 각자 따로 읽어 후보 번호를 계산하므로, 서로의 존재를 모른 채 같은 sort_order로 동시에 성공할 수 있다 — spec-16-11이 막으려 한 바로 그 중복이 이 경합 경로로 재발할 수 있다. 이 diff 이전부터 파일의 다단계 쓰기 패턴 전체가 이런 동시성 보호가 없었으므로(spec-16-11이 새로 만든 문제는 아니다) 이 스토리 범위 밖으로 defer한다. UI가 저장 버튼을 이미 비활성화하고 있을 수도 있으나 이 리뷰는 화면 코드까지 확인하지 않았다.
+fix_sketch: 저장 버튼을 제출 중 비활성화하는지 화면단(`sell_controller.dart` 등)에서 먼저 확인하고, UI가 막지 못하면 `syncListingPhotos`에 매물 단위 뮤텍스나 낙관적 잠금(예: `updated_at` 조건부 UPDATE)을 추가한다.
+trigger: 사용자로부터 "사진 순서가 이상하다"는 리포트가 겹친-저장 정황과 함께 들어오거나, `sell_controller.dart`의 저장 버튼 비활성화 로직을 다음에 손댈 때 이 항목도 같이 확인한다.
+status: open
+
+### DW-788: web의 사진 저장기(`photo-sync.ts`)는 아직 DW-748 이전 알고리즘이다 — 같은 테이블을 두 writer가 다른 규칙으로 쓴다
+
+origin: spec-16-11-사진-순서-대표-무결성 후속 코드리뷰(2026-08-10, edge-case-hunter·verification-gap 독립 발견)
+location: `web/src/app/(user)/sell/photo-sync.ts`(`saved`가 `next.filter(p => p.storagePath)`뿐이라 error 항목을 안 거르고, `let order = 0`에서 시작해 실패 시 카운터를 안 올리며, 대표를 `order === 0`으로 고른다) · 옛 규칙을 고정한 검사 `web/src/app/(user)/sell/photo-sync.test.ts`
+severity: medium
+reason: spec-16-11은 앱(Flutter) 쪽만 고쳤다 — 스토리 인수조건의 Never 절이 "웹을 건드리지 않는다"였기 때문이다(의도적 범위 결정). 그 결과 `public.listing_images`를 쓰는 writer가 둘인데 규칙이 갈렸다: 앱은 "번호는 겹치지 않게, 대표는 최솟값", web은 "0부터 연속, 대표는 0번". web에서 매물을 수정하면서 기존 행 UPDATE가 하나라도 실패하면 옛 번호를 든 행과 새 번호가 겹쳐 DW-748이 web 경로로 그대로 재현된다(사용자에게는 "사진 순서를 저장하지 못한 항목이 있어요"만 뜨고 대표가 바뀐다는 안내도 없다). 또 앱이 남긴 음수 `sort_order` 행이 있는 매물을 web에서 저장하면 그 행이 0부터 매기는 새 번호를 전부 이기고 대표를 가져간다. ⚠️ web 검사(`photo-sync.test.ts`)가 옛 규칙("대표 = sort_order 0번")을 능동적으로 고정하고 있어 web 쪽에서는 이 불일치가 검사로 드러나지 않는다.
+fix_sketch: 앱의 `reservedOrders`/`candidateOrder`(저장 전 현재 `sort_order` 스냅샷 → 예약된 번호 회피 → 대표 후보는 남은 최솟값보다 작은 값)와 `status !== 'error'` 저장 대상 필터를 `photo-sync.ts`에 이식하고, `photo-sync.test.ts`의 "대표 = 0번" 단언을 "대표 = 최솟값"으로 옮긴다. 그 하네스는 이미 `op/payload`를 캡처하므로 앱과 같은 반례 픽스처(재정렬+UPDATE 실패)를 그대로 쓸 수 있다. 계약 정본은 이미 `docs/conventions.md` §10.1에 새 규칙으로 정정돼 있다(2026-08-10).
+trigger: web의 판매자 사진 저장·수정 경로를 다음에 손댈 때, 또는 앱과 web을 오가며 같은 매물을 수정한 사용자에게서 "대표 사진이 바뀐다"는 리포트가 들어올 때. 둘 중 먼저 오는 쪽.
+related: [[DW-748]](앱 쪽에서 닫힌 같은 결함)
+status: open
+
+### DW-789: 기존 `sort_order` 스냅샷 조회가 실패하면, 앱이 남긴 음수 행이 대표를 가로챈다
+
+origin: spec-16-11-사진-순서-대표-무결성 후속 코드리뷰(2026-08-10, edge-case-hunter) — 오케스트레이터 세션이 프로브 테스트로 실측 재현
+location: `app/lib/features/listings/photo_sync.dart`(3단계 시작 시 `select('id, sort_order')` 스냅샷의 `catch` 분기 — 조회 실패 시 `reservedOrders`가 비어 번호를 0부터 매긴다)
+severity: medium
+reason: spec-16-11 이후 앱은 대표 후보에게 음수 `sort_order`를 줄 수 있고, 순서를 바꿔 저장할 때마다 값이 한 칸씩 더 작아진다(실측: 6회 재정렬 → `-6`) — 즉 음수 행은 예외가 아니라 흔하다. 그 상태에서 스냅샷 조회만 실패하면 이번 저장은 0부터 번호를 매기는데, DB에 남아 있는 `-1` 행이 그 전부를 이겨 **화면 맨 뒤로 내린 사진이 대표가 된다**. 실측(프로브): DB `[c=-1, a=0, b=1]`에서 스냅샷 GET 500 + c의 UPDATE 실패 → a=0·b=1이 나가고 c는 -1을 유지해 c가 대표. 스토리의 안전망 자체가 못 켜진 경우라 spec-16-11의 잔여 위험(대표 후보 자신의 UPDATE가 계속 실패하는 복합 실패)과 같은 갈래로 남긴다. ⚠️ 사용자에게는 이 경우 경고 2건("기존 사진 순서 정보를 불러오지 못해 일부 안전 점검을 건너뛰었어요. 저장 후 대표 사진을 확인해 주세요." + 순서 저장 실패 안내)이 실제로 뜬다 — 조용히 넘어가지는 않는다.
+fix_sketch: 선택지가 갈리고 트레이드오프가 사용자 판단 영역이라 이번 스토리에서 정하지 않았다 — ⓐ 스냅샷을 한 번 재시도 ⓑ 스냅샷이 끝내 실패하면 이번 저장에서 순서·대표 확정을 아예 건너뛰고 "사진 순서는 이번에 반영하지 못했어요"라고 알린다(재정렬을 버리는 대신 잘못된 확정을 막는다) ⓒ 그대로 두고 경고만 유지. ⓑ가 이 스토리의 논지("잘못 확정되는 것이 화면 문제보다 나쁘다")와는 맞지만 사용자의 재정렬을 조용히 버리는 대가가 있다.
+trigger: DW-788(web 이식)을 처리해 두 writer의 규칙을 맞출 때 같은 자리에서 함께 본다. 또는 저장 실패 경고를 본 사용자에게서 대표 사진 관련 리포트가 들어올 때.
+related: [[DW-748]] · [[DW-788]]
+status: open
+
+### DW-790: DW-787이 근거로 든 "저장 버튼 연타"는 이미 막혀 있다 — 남는 위험은 다중 세션·재시도 쪽이다
+
+origin: spec-16-11-사진-순서-대표-무결성 후속 코드리뷰(2026-08-10, adversarial) — 오케스트레이터 세션이 화면 코드로 직접 확인
+location: `app/lib/features/listings/sell_screen.dart:457` — `onPressed: busy ? null : _submit`(제출 중 버튼 비활성)
+severity: low
+reason: DW-787은 등재 당시 스스로 "UI가 저장 버튼을 이미 비활성화하고 있을 수도 있으나 이 리뷰는 화면 코드까지 확인하지 않았다"고 적었고, `fix_sketch`도 "화면단에서 먼저 확인하라"였다. 실제로 확인해 보니 제출 중에는 `onPressed`가 `null`이라 **연타 경로는 이미 닫혀 있다.** 즉 DW-787의 심각도를 떠받치던 시나리오가 성립하지 않는다. 남는 실제 위험은 (a) 두 기기·두 세션에서 같은 매물을 동시에 수정 (b) 네트워크 타임아웃 후 `busy`가 이미 풀린 상태에서의 재시도 겹침 — 둘 다 UI로는 못 막는다. ⚠️ DW-787 항목 자체는 이 세션이 고치지 않았다(장부의 기존 항목은 오케스트레이터가 소유). 다음 트리아지가 같은 grep을 다시 돌려 항목을 통째로 기각해 **진짜 남은 구멍(다중 세션)까지 함께 잃는 것**을 막으려고 이 측정만 따로 남긴다.
+fix_sketch: DW-787을 다음에 열 때 이 측정을 반영해 `reason`을 다중 세션·재시도 겹침 기준으로 다시 쓰고 심각도를 재평가한다. 그때 이 항목(DW-790)은 함께 닫는다.
+trigger: DW-787을 다시 볼 때(그 항목의 trigger가 발동하는 순간) 반드시 이 항목을 함께 편다.
+related: [[DW-787]](이 항목이 정정 근거를 대는 대상)
+status: open
+
+### DW-791: 기존 `sort_order` 스냅샷이 **예외 없이 200+0행**으로 돌아오면 안전망이 경고 한 줄 없이 꺼진다
+
+origin: spec-16-11-사진-순서-대표-무결성 3회차 후속 코드리뷰(2026-08-10, edge-case-hunter) — 오케스트레이터 세션이 프로브로 실측 재현
+location: `app/lib/features/listings/photo_sync.dart`(3단계 시작의 `select('id, sort_order')` 스냅샷 — `catch` 분기만 있고 "200인데 0행"은 보지 않는다)
+severity: medium
+reason: [[DW-789]]는 스냅샷 조회가 **예외를 던지는** 경로를 다룬다. 그런데 PostgREST의 더 흔한 실패 형태는 예외가 아니라 **200 + 빈 배열**이다(RLS가 아무것도 매치하지 않는 경우). 그 경로에서는 `reservedOrders`가 빈 채로 남아 번호를 0부터 매기는데, `catch`를 타지 않으므로 **사용자 경고가 하나도 뜨지 않는다** — DW-789가 최소한 경고 2건은 띄우는 것과 대비된다. 실측(프로브): 기존 행 1개짜리 픽스처에서 GET만 `200 []`로 바꾸면 `warnings=[]`, `sort:0`이 그대로 나갔다. ⚠️ 이 스토리가 T5로 **PATCH** 쪽 "200인데 0행"은 이미 검사로 덮었다 — 같은 실패 형태를 GET 쪽에서만 안 보고 있다는 점이 이 항목의 핵심이다. 다만 도달성은 낮다: 같은 RLS가 SELECT를 막으면 보통 UPDATE도 막혀 T5 경로의 경고가 대신 뜬다. SELECT 정책과 UPDATE 정책이 갈릴 때만 조용해진다.
+fix_sketch: 스냅샷 직후 `existingRows.isEmpty && saved.any((p) => p.rowId != null)`(= 화면은 기존 행이 있다고 하는데 DB는 0건이라고 답한 모순 상태)이면 `catch` 분기와 같은 경고를 띄운다. 신규 매물 생성(기존 행이 정말 0건)에서 오탐이 나지 않도록 `rowId` 조건을 반드시 함께 건다.
+trigger: [[DW-789]]를 열 때 같은 자리에서 함께 본다(둘 다 "안전망이 스스로 꺼지는 경로"이고 처방이 같은 줄에 들어간다). 또는 스냅샷 조회의 실패 처리를 다음에 손댈 때.
+related: [[DW-789]](예외 경로 — 이 항목은 그 형제인 무예외 경로) · [[DW-748]]
+status: open
+
+### DW-792: [[DW-790]]이 인용한 `onPressed: busy ? null : _submit`은 `busy`의 정의를 빠뜨렸다 — "연타는 막혀 있다"는 결론이 그만큼 덜 증명됐다
+
+origin: spec-16-11-사진-순서-대표-무결성 3회차 후속 코드리뷰(2026-08-10, adversarial) — 오케스트레이터 세션이 화면 코드로 직접 확인
+location: `app/lib/features/listings/sell_screen.dart:251` `final mine = sell.owner != null && sell.owner == _owner;` · `:255` `final busy = mine && sell.loading;` · `:457` `onPressed: busy ? null : _submit`
+severity: low
+reason: DW-790은 457행 한 줄만 인용해 "제출 중에는 `onPressed`가 `null`이라 연타 경로는 이미 닫혀 있다"고 적었다. 실제로 확인해 보니 `busy`는 `sell.loading` 단독이 아니라 **`mine && sell.loading`**이고, `mine`은 이 화면이 공유 `sellControllerProvider`의 `owner`를 자기 것으로 잡고 있을 때만 참이다. 즉 버튼이 잠기는 것은 **`owner`가 이 화면으로 확정된 뒤**이고, 그 이전 구간과 두 화면이 같은 provider를 공유하는 상황(같은 파일 431행 주석이 판매 탭이 수정 화면과 함께 마운트된 채 남는다고 적고 있다)은 이 인용만으로는 판정되지 않는다. ⚠️ 결론이 틀렸다는 뜻이 아니라 **덜 증명됐다**는 뜻이다 — DW-790의 존재 이유가 "다음 트리아지가 [[DW-787]]을 통째로 기각하지 않게 측정을 정확히 남기는 것"이므로, 그 측정 자체가 불완전하면 항목이 자기 목적을 반만 달성한다. 장부의 기존 항목은 오케스트레이터 소유라 이 세션은 DW-790을 고치지 않고 측정만 따로 남긴다(같은 이유로 DW-790이 DW-787을 안 고쳤던 것과 동일한 처리).
+fix_sketch: DW-787/790을 다음에 열 때 `busy`의 전체 정의를 넣어 `reason`을 다시 쓰고, "같은 화면 연타(owner 확정 후)"와 "owner 확정 전 첫 탭 · 두 화면 공유" 세 경우를 나눠 판정한다. 그때 이 항목과 DW-790을 함께 닫는다.
+trigger: [[DW-787]] 또는 [[DW-790]]을 다시 볼 때 반드시 이 항목을 함께 편다.
+related: [[DW-787]] · [[DW-790]](이 항목이 정정 근거를 대는 대상)
+status: open
+
+### DW-793: web 읽는 쪽 라이브러리 `order.ts`의 주석도 철회된 "대표 = sort_order 0번"을 그대로 들고 있다
+
+origin: spec-16-11-사진-순서-대표-무결성 3회차 후속 코드리뷰(2026-08-10, adversarial)
+location: `web/src/lib/images/order.ts:7` — `// DB의 is_cover는 이 규칙의 파생 결과로 기록한다(sort_order = 0인 행만 true).`
+severity: medium
+reason: 이 스토리가 계약 정본 `docs/conventions.md` §10.1을 "대표 = `sort_order` **최솟값** 행"으로 정정하면서, 그 정정 노트에 *"읽는 쪽 계약은 처음부터 최솟값 기준이었으므로 읽는 쪽은 바뀐 것이 없다"* 고 적었다. 그 판단은 **코드 동작에 대해서는 맞지만**(`order.ts`의 비교 함수는 `sort_order → id` 정렬이라 그대로 옳다) **문서 서술에 대해서는 틀렸다** — 읽는 쪽 라이브러리 파일 머리에 옛 규칙이 문장으로 남아 있다. [[DW-788]]은 web **writer**(`photo-sync.ts`)만 짚었으므로 이 자리는 그 항목의 범위 밖이고, 그래서 "web 불일치는 DW-788 하나뿐"이라고 읽히면 실제보다 작아 보인다. 스토리 Never 절("웹을 건드리지 않는다")이 명시적 범위 권한이라 이번에 고치지 않았다.
+fix_sketch: [[DW-788]]을 처리할 때 같은 커밋에서 주석 한 줄을 `(최솟값 행만 true)`로 고친다. 함께 `grep -rn "sort_order = 0\|sort_order=0\|order === 0" web/ api/ scripts/`를 한 번 돌려 남은 옛 서술을 전부 훑는다(시딩 스크립트 3곳은 새 매물에 연속 번호를 새로 넣는 자리라 최솟값==0이 성립해 결함이 아니다 — 이번에 함께 확인했다).
+trigger: [[DW-788]](web writer 이식)을 열 때 반드시 함께 편다. 그전에 web 사진 정렬·대표 코드를 손대는 일이 생기면 그때.
+related: [[DW-788]] · [[DW-748]]
+status: open
+
+### DW-794: 저장 대상이 하나도 없으면 그 매물의 `is_cover`가 전부 `false`로 남는다(대표 플래그 0장)
+
+origin: spec-16-11-사진-순서-대표-무결성 3회차 후속 코드리뷰(2026-08-10, adversarial·edge-case-hunter 독립 발견) — 오케스트레이터 세션이 프로브로 실측 재현
+location: `app/lib/features/listings/photo_sync.dart` 4단계 — `is_cover=false` 전체 리셋은 **무조건** 나가는데, `coverPath == null`이면 뒤이은 `true` 지정 문장은 나가지 않는다
+severity: low
+reason: 이 스토리가 3단계 `saved`에서 `PhotoStatus.error` 항목을 뺐다(결함1 근본수정). 그래서 **살아 있는 행이 있는데 `saved`는 비는** 새 경로가 생겼다 — 사진 1장짜리 매물에서 그 사진을 지우다 오브젝트 삭제는 성공하고 행 삭제가 실패하는 경우다. 실측(프로브): 나간 요청이 `row:delete` + `cover:false|listing_id=eq.l1` 둘뿐이고 `is_cover=true`는 없으며, 경고는 삭제 실패 건만 떴다 → 살아남은 행의 대표 플래그가 조용히 내려간다. ⚠️ **지금은 관측되지 않는다**: `docs/conventions.md` §10.2가 "읽는 쪽은 `is_cover`를 보지 않는다"를 계약으로 못박았고 `coverImages.ts`는 입력 타입에 그 컬럼이 아예 없다. 그래서 화면·목록·검색 어디에도 영향이 없다. 다만 §10.1이 "`is_cover`는 이 규칙의 **파생 결과**로 기록한다"고 정한 상태와는 어긋나므로, `is_cover`를 읽는 소비처가 하나라도 생기면 그 순간 실제 결함이 된다. 부수 효과 하나 더: 같은 분기에서 `resetFailed = coverPath != null && reset.isEmpty`라 이 경로에서는 리셋이 RLS로 막혀 0행이어도 성공과 구별되지 않는다.
+fix_sketch: 이번에 고치지 않은 이유를 남긴다 — 단순히 "`saved`가 비면 4단계를 건너뛴다"로 바꾸면 **사진이 전부 정상적으로 지워진 경우**(옛 대표 플래그를 내리는 것이 옳은 경우)까지 함께 건너뛴다. 기존 검사 "저장된 사진이 0장이면 대표 지정 문장을 쏘지 않는다"가 그 리셋이 나가는 것을 정당하게 단언하고 있다. 정확한 게이트는 "이 매물에 살아남은 행이 있는가"인데 그건 스냅샷 조회가 답할 수 있고, 하필 `saved`가 비면 그 스냅샷 자체가 안 뜬다(조회를 하나 더 늘려야 한다 — A2 위반). 그래서 처방을 `is_cover` 소비처가 생기는 시점으로 미룬다.
+trigger: `is_cover`를 **읽는** 소비처를 처음 만들 때(§10.2의 "읽는 쪽은 is_cover를 보지 않는다"를 깨는 작업). 또는 4단계 대표 기록 분기를 다음에 손댈 때.
+related: [[DW-748]]
+status: open
+
+### DW-795: Follow-up review still recommended for 16-11-사진-순서-대표-무결성 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-16-11-사진-순서-대표-무결성.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260810-190152-83da; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
