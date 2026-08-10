@@ -53,6 +53,23 @@ class _UrlCapturingHttpClient extends http.BaseClient {
 }
 
 void main() {
+  // ⚠️ **기대값을 `buyerVisibleStatus`에서 가져오지 않는다 — 리터럴 `'on_sale'`을 박는다.**
+  // 2026-08-10 후속 코드리뷰(verification-gap)가 실측으로 잡은 결함: 처음엔 이 파일이
+  // `contains('status=eq.$buyerVisibleStatus')`로 단언했는데, 그러면 **기대값을 피검사 대상에서
+  // 다시 계산**하는 꼴이라 상수 자체가 'sold' 따위로 바뀌면 요청과 기대가 **함께** 바뀌어
+  // 세 테스트 모두 계속 green이었다. 이 리포엔 같은 실패 모드의 실측 전례가 있다
+  // ("자기일관 단언은 절대 실패하지 않는다"). 그래서 두 축으로 나눈다:
+  //   ① 아래 상수 스냅샷 — 값 자체가 바뀌면 여기서 먼저 red
+  //   ② 각 테스트 — 나가는 URL에 리터럴 'on_sale'이 실렸는지
+  const expectedStatus = 'on_sale'; // FR11이 허용하는 유일한 구매자 노출 상태(리터럴, 의도적)
+
+  test('FR11 상수 스냅샷 — buyerVisibleStatus가 조용히 바뀌면 여기서 먼저 걸린다', () {
+    expect(buyerVisibleStatus, expectedStatus,
+        reason: 'FR11의 단일 출처가 바뀌었다. 바꾸는 것이 의도였다면 이 스냅샷과 '
+            'docs/conventions.md §6의 강제 지점 목록을 함께 고쳐야 한다 — '
+            '값만 바꾸고 지나가면 구매자에게 sold가 새거나 정상 매물이 사라진다.');
+  });
+
   late _UrlCapturingHttpClient fakeHttp;
   late SupabaseClient client;
 
@@ -79,7 +96,7 @@ void main() {
     final reqs = listingsRequests();
     expect(reqs, isNotEmpty, reason: 'listings 조회 요청 자체가 안 나갔다');
     for (final u in reqs) {
-      expect(u, contains('status=eq.$buyerVisibleStatus'),
+      expect(u, contains('status=eq.$expectedStatus'),
           reason: 'FR11: 구매자 조회 경로는 판매중 상태만 요청해야 한다 — 이 URL엔 그 필터가 없다: $u');
     }
   });
@@ -92,7 +109,7 @@ void main() {
     final reqs = listingsRequests();
     expect(reqs, isNotEmpty);
     for (final u in reqs) {
-      expect(u, contains('status=eq.$buyerVisibleStatus'),
+      expect(u, contains('status=eq.$expectedStatus'),
           reason: 'FR11: "지금 인기"도 예외가 아니다 — 경로를 열고 필터를 잊는 것이 이 규칙의 '
               '유일한 실패 모드다(conventions.md §6): $u');
     }
@@ -105,7 +122,7 @@ void main() {
     final reqs = listingsRequests();
     expect(reqs, isNotEmpty);
     for (final u in reqs) {
-      expect(u, contains('status=eq.$buyerVisibleStatus'),
+      expect(u, contains('status=eq.$expectedStatus'),
           reason: 'FR11: 딥링크로 sold 매물 id를 직접 열어도 나와선 안 된다: $u');
     }
   });

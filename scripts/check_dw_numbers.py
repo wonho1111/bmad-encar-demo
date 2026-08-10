@@ -43,10 +43,29 @@ from pathlib import Path
 
 DEFAULT_PATH = "_bmad-output/implementation-artifacts/deferred-work.md"
 
-# `### DW-748: 제목` — 번호 뒤에 콜론이 오는 형태만 항목 제목으로 본다.
+# 정본 형식 — `### DW-748: 제목`. 이것만 "정상 항목 제목"으로 센다.
 HEADING = re.compile(r"^###\s+DW-(\d+)\s*:")
-# 번호가 빠졌거나 형식이 어긋난 DW 제목(예: `### DW-: ...`, `### DW 748: ...`).
-MALFORMED = re.compile(r"^###\s+DW[^-\d]|^###\s+DW-(?!\d+\s*:)")
+
+# ⚠️ **정본 형식만 보면 형식을 살짝 어긋내는 것으로 검사를 통째로 우회할 수 있다.**
+# 2026-08-10 후속 코드리뷰(adversarial)가 실측으로 6가지 우회를 찾았다 — 아래 전부
+# 옛 버전에서는 중복으로도, 형식오류로도 **잡히지 않고 그냥 무시**됐다:
+#     `#### DW-770:`(해시 4개) · ` ### DW-770:`(앞 공백) · `> ### DW-770:`(인용)
+#     `### dw-770:`(소문자) · `###DW-770:`(공백 없음) · `### [보류] DW-770:`(접두어)
+# 그래서 판정을 두 단계로 나눈다:
+#   ① SUSPECT — "제목 줄인데 DW 번호를 달고 있는 것"을 **느슨하게** 전부 잡는다.
+#   ② 그중 HEADING(정본)이 아니면 형식오류로 실패시킨다.
+# 느슨하게 잡되 **번호(숫자)가 실제로 붙어 있을 때만** 본다 — 그래야 이 장부 머리말의
+# 형식 예시(`> ### DW-<번호>: <한 줄 제목>`, 숫자가 아니라 자리표시자)를 오탐하지 않는다.
+# (실측: 장부에서 `#`로 시작하며 DW를 언급하는 줄은 그 예시 하나뿐이다.)
+# ⚠️ **DW 토큰이 제목 맨 앞 근처에 있을 때만** 본다(접두어 한 덩어리까지 허용).
+# 처음엔 `.*?`로 줄 어디서든 찾게 했더니 **오탐이 났다**(실측): 장부 5600행은 `#`로 시작하는
+# 산문 주석인데 문장 한참 뒤에 `DW-754`를 인용한다 — 제목이 아닌데 제목으로 잡혔다.
+# 그래서 `#` 뒤에 올 수 있는 것을 "짧은 접두어 한 덩어리"로 제한한다(`### [보류] DW-770:` 통과,
+# 산문 주석은 제외). 이 경계 역시 추측이 아니라 실제 장부로 재서 정했다.
+SUSPECT = re.compile(r"^\s*>*\s*#{1,6}\s*(?:\S{1,12}\s+)?[Dd][Ww]\s*-\s*\d+")
+
+# 0 패딩·전각 숫자는 문제가 아니다(실측): `int("0770") == int("７７０") == 770` 이라
+# 같은 번호로 합쳐져 중복이 정상적으로 잡힌다. 그래서 별도 처리를 두지 않는다.
 
 
 def main() -> int:
@@ -66,7 +85,8 @@ def main() -> int:
         m = HEADING.match(line)
         if m:
             seen[int(m.group(1))].append(lineno)
-        elif MALFORMED.match(line):
+        elif SUSPECT.match(line):
+            # 제목 줄인데 정본 형식이 아니다 → 중복 검사에서 새어나가므로 실패시킨다.
             malformed.append((lineno, line.strip()[:80]))
 
     dupes = {n: ls for n, ls in seen.items() if len(ls) > 1}
@@ -82,7 +102,7 @@ def main() -> int:
         lines = ", ".join(str(x) for x in dupes[num])
         print(f"❌ DW-{num} 이 {len(dupes[num])}번 등장한다 (줄 {lines})", file=sys.stderr)
     for lineno, text in malformed:
-        print(f"❌ 형식이 어긋난 DW 제목 (줄 {lineno}): {text}", file=sys.stderr)
+        print(f"❌ DW 제목인데 정본 형식이 아니다 (줄 {lineno}): {text}\n   → 정본은 `### DW-<숫자>: <제목>` 이다. 이 형태를 벗어나면 중복 검사가 그 항목을 통째로 건너뛴다.", file=sys.stderr)
 
     if dupes:
         nums = sorted(seen)
