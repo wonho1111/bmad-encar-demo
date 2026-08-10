@@ -101,13 +101,35 @@ create table if not exists storage.buckets (
 create table if not exists storage.objects (
   id         uuid primary key default gen_random_uuid(),
   bucket_id  text,
-  name       text
+  name       text,
+  -- metadata: 2026-08-11 추가(Story 17.1) — 실제 storage.objects의 jsonb 컬럼(파일 크기·mimetype 등을
+  -- Storage 서비스가 채운다). 0012~0014는 안 건드리지만, 17.1의 UPDATE 테스트가 처음으로 이 컬럼에
+  -- 쓴다 — "스텁이 실제로 건드리는 컬럼만" 원칙에 따라 이제 이 컬럼도 스텁 대상이다.
+  metadata   jsonb
 );
 
 -- 원격 실측(2026-07-16): relrowsecurity = true — 플랫폼이 이미 켜둔 상태를 재현.
 -- (0012는 이 문을 스스로 켜지 않는다 — 원격에서 소유자가 아닌 롤이 건드리면 실패할 수 있어서다.)
 alter table storage.objects enable row level security;
--- storage 스텁은 여기까지(Story 9.1, 0012 전용).
+
+-- ── storage 스키마·테이블 GRANT (2026-08-11 로컬 실측으로 추가 — Story 17.1 검증공백 리뷰가 드러냄) ──
+--   실측: 로컬 Supabase Docker 스택(포트 55322)에서
+--     has_schema_privilege('authenticated','storage','USAGE') = t (anon·service_role도 동일)
+--     information_schema.role_table_grants → anon/authenticated/service_role에 storage.objects
+--     INSERT/SELECT/UPDATE/DELETE 테이블 GRANT가 이미 있음(플랫폼 기본).
+--   그런데 이 프렐류드에는 스키마 USAGE도 테이블 GRANT도 없었다 → **스텁의 결함**(위 :7-9 "정당한
+--   확장" 기준 충족 — 플랫폼에 있는 걸 스텁이 빠뜨려 red가 나는 경우, 우회가 아니다).
+--   왜 지금까지 안 터졌나: 0013·0014의 storage.objects RLS 정책을 실제 SQL 세션으로 임퍼소네이션해
+--   쏴 보는 테스트가 이 스토리(17.1, `test_suspended_write_block_real_db.py`) 전까지 저장소에 하나도
+--   없었다 — 그래서 "authenticated가 storage.objects를 직접 쓴다"는 경로 자체가 이 프렐류드로는
+--   한 번도 검증된 적이 없었다.
+--   red→green 확인(2026-08-11): CI와 같은 재료로 일회용 pgvector 컨테이너를 띄워 재현했더니
+--     추가 전 `test_suspended_write_block_real_db.py`의 storage.objects 관련 3개가
+--     `InsufficientPrivilege: permission denied for schema storage`로 실패(나머지 1개는 같은
+--     SQLSTATE 42501을 우연히 공유해 통과), 아래 두 줄 추가 후 4개 전부 RLS 결과로만 통과/실패한다.
+grant usage on schema storage to anon, authenticated, service_role;
+grant select, insert, update, delete on storage.objects to anon, authenticated, service_role;
+-- storage 스텁은 여기까지(Story 9.1 · 17.1).
 
 -- ── realtime 스키마 최소 스텁 (0023_chat_realtime_broadcast가 참조 — 2026-07-28 로컬 스택 실측 기반, Story 12.2) ──
 --   실측 근거: 로컬 Supabase Docker 스택(포트 55322)에 psql로 직접 접속해 확인(원격이 아니라 로컬인 이유는

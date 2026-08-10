@@ -395,14 +395,21 @@ def _signup(cur, email, meta_role):
     "meta_role, expected_role",
     [
         (None, "user"),  # 역할 메타데이터 없음(신규 web 가입) → 기본값 'user'
-        ("buyer", "buyer"),  # 명시적 buyer 메타데이터(하위호환 — Flutter/테스트) → 그대로 반영
-        ("seller", "seller"),  # 명시적 seller 메타데이터(하위호환) → 그대로 반영
+        # ✎ 정정(Story 17.1, 0033_remove_legacy_role_passthrough.sql, DW-682): 아래 두 행은
+        #   0028 시점엔 각각 "buyer"·"seller"가 기대값이었다(그 시점엔 메타데이터를 그대로
+        #   반영하는 하위호환 분기가 있었다). 그 분기는 도달 경로가 0이라(Flutter가 16-0에서
+        #   role 전송을 멈춤, 웹은 14.2에서 이미 멈춤) 0033이 지웠다 — 이제 무슨 값을 보내도
+        #   결과는 항상 'user'다. 이 행들이 "buyer"/"seller"를 기대하면 0033을 되돌린 것과
+        #   똑같은 상태에서만 초록이 된다(회귀 가드로 남긴다).
+        ("buyer", "user"),  # 레거시 buyer 메타데이터 — 이제 통과하지 않는다(0033)
+        ("seller", "user"),  # 레거시 seller 메타데이터 — 이제 통과하지 않는다(0033)
         ("admin", "user"),  # admin 승격 시도 → 강제 차단, 'user'로 배정
         ("whatever", "user"),  # buyer/seller가 아닌 임의 문자열도 'user'로 강제
     ],
 )
 def test_handle_new_user_default_role_matrix(meta_role, expected_role):
-    """0028 이후 handle_new_user()가 채우는 profiles 행 — spec의 I/O & Edge-Case Matrix 전량.
+    """0028 → 0033(Story 17.1) 이후 handle_new_user()가 채우는 profiles 행 — spec의 I/O &
+    Edge-Case Matrix 전량.
 
     (건수를 적지 않는다: 옛 문구의 "4행"은 실제 5행일 때 이미 틀려 있었다 — 수치 사본은 늙는다.)
 

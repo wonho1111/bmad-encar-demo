@@ -43,17 +43,24 @@ _LISTING_COLS = (
 
 
 def _create_user(cur, email, role="buyer"):
-    """auth.users에 유저를 만들고, 가입 트리거(handle_new_user)가 새 계약(Story 14.2, 0028)대로
+    """auth.users에 유저를 만들고, 가입 트리거(handle_new_user)가 새 계약(Story 17.1, 0033)대로
     profiles.role을 채웠는지 확인한다.
 
-    role=None이면 metadata에 role 키 자체를 안 보낸다(web 신규 가입 경로와 동일) → 'user' 배정.
-    role이 'buyer'/'seller'면 metadata 그대로 반영한다(하위호환 — Flutter 가입 경로) → 그 값 배정.
+    ⚠️ **0033(DW-682)부터 계약이 바뀌었다**: 트리거는 metadata의 role을 더 이상 읽지 않고
+    **항상 'user'로 배정한다**(이전 0028 계약은 'buyer'/'seller' 메타데이터를 그대로 반영했다 —
+    그 통과 분기가 도달 경로 0이라 0033이 지웠다). role=None/`'buyer'`/`'seller'` 어느 것을
+    넘겨도 가입 직후 실제 profiles.role은 'user'다 — 이 함수가 그 사실을 먼저 단언한다.
 
-    그 밖의 값은 **거부한다**. 트리거가 전부 'user'로 강제하므로 `_create_user(..., role="admin")`은
-    관리자를 만들지 못하는데, 예전엔 그 요청을 조용히 'user'로 재해석하고 단언까지 동의해서
-    "관리자를 만들었다"고 믿는 테스트가 경고 없이 통과할 수 있었다(대장 DW-683이 기록한
-    "픽스처가 만들었다고 믿는 것과 실제가 다르다"와 같은 실패 유형). 관리자·임의 role이 필요하면
-    이 헬퍼로 만든 뒤 profiles를 UPDATE로 올린다 — test_chat_unread_real_db.py가 쓰는 패턴이다.
+    그런데 이 헬퍼를 쓰는 여러 테스트 파일은 "판매자"·"구매자" 같은 **의미상 구분**이 필요해
+    role="seller"/"buyer"를 넘긴다(0033 이전부터 그래 왔다 — 호출부를 전부 고치면 이 스토리
+    범위를 크게 넘는다). 그 필요를 깨지 않기 위해, role이 'buyer'/'seller'면 가입 트리거의
+    'user' 배정을 확인한 **뒤** profiles를 UPDATE로 그 값으로 올린다(admin을 만들 때 이미 쓰던
+    패턴과 동일 — 트리거로는 못 만드는 값을 트리거 이후에 직접 앉힌다). 그래서 이 헬퍼가 돌려주는
+    user_id의 최종 profiles.role은 여전히 호출자가 넘긴 role과 같다 — 달라진 것은 "그 값이
+    트리거의 산출물이 아니라 뒤이은 UPDATE의 산출물"이라는 경로뿐이다.
+
+    role='admin' 같은 그 밖의 값은 **거부한다**(기존 계약 그대로) — 관리자·임의 role이 필요하면
+    이 헬퍼로 만든 뒤 profiles를 직접 UPDATE로 올린다.
     """
     if role not in (None, "buyer", "seller"):
         raise ValueError(
@@ -72,16 +79,21 @@ def _create_user(cur, email, role="buyer"):
             "values (%s, %s, jsonb_build_object('role', %s::text))",
             (user_id, email, role),
         )
-    # role까지 대조하는 이유: 이 인자를 받아만 두고 확인하지 않으면 "판매자를 만들었다"가
-    # 검사되지 않는 주장으로 남는다(12.1이 겪은 실제 결함 — 형제 파일의 _create_seller를
-    # 옮기다 판매자 유저에도 role="buyer"를 하드코딩했었다, 대장 #188).
-    expected_role = role if role in ("buyer", "seller") else "user"
     cur.execute("select role from public.profiles where id = %s", (user_id,))
     row = cur.fetchone()
     assert row is not None, "가입 트리거가 profiles 행을 만들지 않았다"
-    assert row[0] == expected_role, (
-        f"가입 트리거가 role 계약을 지키지 않았다({row[0]} != {expected_role})"
+    assert row[0] == "user", (
+        f"가입 트리거가 'user' 고정 계약(0033, DW-682)을 지키지 않았다: {row[0]!r}"
     )
+    if role in ("buyer", "seller"):
+        # 트리거는 더 이상 이 값을 반영하지 않는다 — 호출자가 의미상 구분을 원하면 직접 앉힌다.
+        # rowcount를 단언하는 이유: 이 UPDATE가 조용히 0행이면(예: id 불일치) 호출자는 "판매자를
+        # 만들었다"고 믿지만 실제로는 role이 여전히 'user'다 — DW-683이 기록한 것과 같은 실패
+        # 유형("픽스처가 만들었다고 믿는 것과 실제가 다르다")을 이 지점에서도 반복하지 않는다.
+        cur.execute("update public.profiles set role = %s where id = %s", (role, user_id))
+        assert cur.rowcount == 1, (
+            f"role={role!r} UPDATE가 정확히 한 행을 못 바꿨다(rowcount={cur.rowcount})"
+        )
     return user_id
 
 

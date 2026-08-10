@@ -344,7 +344,7 @@ development_status:
   #   실제로 발동했는데도 이행되지 않아 여기로 옮겼다. 사문화된 분기를 남겨두면 다음 사람이
   #   "아직 쓰는 데가 있나?" 를 매번 다시 조사한다.
   epic-17: backlog
-  17-1-정지-회원-쓰기-차단-rls: backlog
+  17-1-정지-회원-쓰기-차단-rls: done
   epic-17-retrospective: optional
 
 # 회고에서 나온 액션 아이템. "무엇/상태"의 정본은 여전히 docs/tech-debt.md(대장)이고,

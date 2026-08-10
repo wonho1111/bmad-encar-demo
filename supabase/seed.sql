@@ -167,7 +167,7 @@ begin
       extensions.crypt(v_password, extensions.gen_salt('bf')),  -- bcrypt 해시
       now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
-      '{"role":"seller"}'::jsonb,   -- 가입 메타: 트리거(handle_new_user)가 이 값을 그대로 반영해 profiles를 seller로 생성 → 아래 UPDATE는 대개 no-op(안전망). admin 블록은 메타 없이 기본 role(0028 이후 'user')로 생성된 뒤 UPDATE로 승격하는 점과 다름.
+      '{"role":"seller"}'::jsonb,   -- ✎ 정정(Story 17.1, 0033_remove_legacy_role_passthrough.sql, DW-682): 이 메타는 더 이상 트리거에 반영되지 않는다 — handle_new_user()가 metadata.role을 읽는 통과 분기 자체를 지웠고(도달 경로 0이라 제거), 이제 무엇을 보내든 profiles.role은 항상 'user'다(바로 아래 "역할 승격 없음 — 0029 역할 통합" 주석과 동일하게, 이 seller-seed 계정도 role='user'로 남는다). 이 값은 역사적 흔적일 뿐 지금은 아무 효과가 없다 — 매물 소유는 listings.seller_id가 정하므로(0029) 동작에는 영향 없다.
       '', '', '', '',
       now(), now()
     );
@@ -433,6 +433,9 @@ begin
         'authenticated', 'authenticated', v_email,
         extensions.crypt(current_setting('app.seed_password', true), extensions.gen_salt('bf')), now(),
         '{"provider":"email","providers":["email"]}'::jsonb,
+        -- ✎ 정정(Story 17.1, 0033_remove_legacy_role_passthrough.sql, DW-682): 위 :170과 같다 —
+        --   handle_new_user()가 metadata.role 통과 분기를 잃어 이 값은 아무 효과가 없다.
+        --   무엇을 보내든 profiles.role은 항상 'user'이며, 이 시드의 최종 기대 role도 그대로다.
         '{"role":"seller"}'::jsonb, '', '', '', '', now(), now()
       );
       insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)

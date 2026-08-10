@@ -4705,7 +4705,8 @@ severity: medium
 summary: 관리자가 회원을 정지시켜도(`0005_admin_policies.sql`이 제공하는 기능) 그 회원은 계속 로그인해 매물을 등록·수정·삭제할 수 있다. 정지 상태를 읽어 행동을 막는 지점이 web 게이트·RLS 어디에도 없다.
 evidence: `grep -rln "suspended"` 결과 매치는 `0001_profiles.sql`(컬럼 정의)·`0005_admin_policies.sql`(관리자가 값을 바꾸는 정책)·`0027_role_check_relax.sql`·`MemberActions.tsx`(관리자 UI)·`constants.ts`(상수)뿐 — **정지 여부로 무언가를 거부하는 코드는 0건**이다. ⚠️ **이것은 Story 14.3이 만든 문제가 아니다**: 이전 게이트 `requireRole(SELLER)`도 role만 봤으므로 정지된 seller는 예전에도 그대로 팔 수 있었다. 다만 게이트가 풀리면서 이제 정지된 **모든** 계정으로 범위가 넓어졌다. 이 프로젝트의 원칙(CLAUDE.md B9 "중요한 값은 데이터 계층이 직접 구한다")대로면 해결 자리는 앱 게이트가 아니라 `listings` RLS에 `exists(select 1 from profiles where id=auth.uid() and status='active')`를 더하는 쪽이다.
 trigger: **관리자 회원관리를 손대는 Epic 15 Story 15-3을 착수할 때** — 그 스토리가 "정지"의 의미를 화면에서 다루므로, 정지가 실제로 무엇을 막는지도 그 자리에서 정한다. 정하면 `docs/conventions.md` §8(접근 게이트 계약)에 한 줄로 적어야 다음 사람이 다시 묻지 않는다.
-status: open
+status: done 2026-08-11
+resolution: `supabase/migrations/0032_suspended_write_block.sql`(Story 17.1)이 `listings`·`listing_images`·`storage.objects` 쓰기 3경로 전부에 `profiles.status='active'` 조건을 추가해 닫았다. `docs/conventions.md` §8에 한 줄 등재(2026-08-11). 실DB 검증: `api/tests/integration/test_suspended_write_block_real_db.py`(41건, 로컬 55322 전량 통과 — 원래 21건에서 2026-08-11 bad_spec 루프백이 14건(긍정 대조군·§10.1 순서 회귀·관리자 4정책 양방향 등), 같은 날 2차 코드리뷰 patch가 6건(P1 이중 단언 보강 + P2~P6 신규: listings 긍정 대조군·0015 sold-전환 비대칭·채팅 비참가자 거부·listing_images sold/소유권 축·storage owner UPDATE의 with check 소유권 축) 추가) — INSERT는 42501, UPDATE/DELETE는 0행(실측으로 확인한 정확한 신호, 테스트 파일 헤더 참조). 42501 단언은 전부 `_RLS_MESSAGE_MARK`("row-level security policy") 이중 대조를 동반해 GRANT 누락과 구별한다. red 증명: 정책을 정지/소유권 조건 없는 옛 버전으로 되돌려 관련 테스트가 실제로 실패하는 것을 확인한 뒤 원복·재확인(대상: `listings_insert_own`·`listing_images_insert_own`·`listing_images_objects_owner_insert`·`listing_images_objects_owner_delete`(양방향)·`profiles_update_admin`·`admin_restore_sold_listing`·`chat_messages_insert_participant`의 참가자 조건·`listing_images_objects_owner_update`의 `with check` 소유권 절).
 
 ### DW-670: `profiles` 행이 없는 로그인 사용자가 매물을 등록하면 FK 오류(23503)가 정체불명 문구로 뜬다
 
@@ -4760,7 +4761,8 @@ severity: medium
 summary: Story 14.3이 앱 계층 역할 게이트를 없애면서 "누가 남의 매물을 바꿀 수 있나"의 방어선은 이제 `listings` RLS 하나뿐이다. 그런데 그 정책이 느슨해져도 실패하는 자동 검사가 저장소 어디에도 없다 — 확인 기록은 전부 사람이 psql로 한 번씩 해본 것이다.
 evidence: `find . -name '*.sql' -path '*test*'` → 0건(pgTAP 없음). `api/tests/integration`의 10개 파일 중 listings 소유권 거부를 단언하는 파일 없음. 기록된 검증은 Story 2-1·2-3(2026-06)의 수동 임퍼소네이션과 Story 14.3 2차 리뷰 세션의 psql 1회(스펙 `## Verification Evidence`)뿐이다. ⚠️ 실행 자리는 이미 있다 — CI의 `api-db` 잡이 전 마이그레이션을 실제 Postgres에 적용하고, `test_chat_unread_real_db.py:91-106`·`test_role_check_relax_real_db.py:145-155`가 `set local role authenticated` + `set local request.jwt.claim.sub`로 세션을 흉내 내는 관례를 이미 쓴다. 새 인프라가 아니라 그 관례를 한 번 더 쓰는 일이다. 선례도 있다: `0015`가 `listings_update_own`을 drop 후 재생성했다 — 정책은 실제로 교체된다.
 trigger: **`listings` RLS 정책을 다음에 건드리는 마이그레이션 스토리에서**(DW-669의 정지 회원 검사를 RLS에 넣는 작업이 유력한 첫 후보다) — 그 마이그레이션과 같은 스토리에서 `api/tests/integration`에 비소유자 UPDATE/DELETE가 0행, 타인 명의 INSERT가 42501임을 단언하는 pytest를 추가한다. 그래야 CI(`api-db` 잡)가 실제로 돌린다.
-status: open
+status: done 2026-08-11
+resolution: Story 17.1이 `0032_suspended_write_block.sql`로 `listings` RLS를 다시 건드리면서 이 trigger 조건을 충족했다. `api/tests/integration/test_suspended_write_block_real_db.py::test_non_owner_cannot_update_or_delete_others_listing`이 정지와 무관한 일반 소유권 축(활성·비관리자가 남의 매물을 UPDATE/DELETE)을 0행으로 고정한다. trigger가 명시한 "타인 명의 INSERT가 42501" 축은 원래 판에서 빠져 있었다가 2026-08-11 bad_spec 루프백이 지적해 `test_intruder_cannot_insert_listing_for_other_seller`로 추가됐다 — 이제 INSERT/UPDATE/DELETE 세 축 전부 고정됐다. CI `api-db` 잡이 매 push마다 실행한다.
 
 ### DW-675: admin 계정이 `/sell`에 들어오는 것은 "의도된 결과"로 선언됐지만, 그 선언을 지키는 검사가 없다
 
@@ -4846,7 +4848,8 @@ summary: 0028이 buyer/seller metadata를 그대로 반영하는 분기를 남�
 evidence: 0028의 주석이 그 분기의 근거를 "Flutter 앱은 이번 스토리에서 UI를 안 건드리므로 여전히 role metadata를 보낸다"로 명시한다 — 즉 조건부 코드인데 해제 조건이 코드에도 장부에도 안 적혀 있다. DW-678은 앱이 role을 **읽는** 쪽(`currentRoleProvider`)만 다루고 **보내는** 쪽은 범위에 없다. CLAUDE.md B8: "미룬 항목엔 '언제·어디서 고칠지'를 대장에 함께 적는다 — '이월'만 적으면 조용히 또 밀린다."
 trigger: ~~Epic 16에서 Flutter 가입 화면의 역할 선택을 제거할 때(DW-678과 같은 스토리)~~ → **그 조건은 2026-08-06 `16-0`에서 실제로 발동했는데 이 항목은 이행되지 않았다**(앱이 role 전송을 멈췄다 = 분기가 도달 불가가 됐다). 재지정: **Epic 17 `17-1-정지-회원-쓰기-차단-rls`** — 어차피 마이그레이션을 여는 backend-only 에픽이라 사문화 분기 제거를 같은 마이그레이션 묶음에서 처리하는 게 자연스럽다. sprint-status.yaml의 Epic 17 주석에 심어뒀다(2026-08-07).
 ✎ 2026-08-07 실측 — **분기는 그대로 있고, 이제 진짜로 죽었다.** `0028_handle_new_user_default_role.sql`이 *"metadata.role이 정확히 'buyer' 또는 'seller'면 그대로 반영한다(하위호환 — Flutter 앱은…)"* 를 유지하는데, 그 유일한 공급자였던 Flutter 가입 화면이 `16-0`에서 role 전송을 멈췄다(`auth_controller.dart:56`). 웹은 14.2에서 이미 멈췄다. **즉 이 분기에 도달할 경로가 하나도 없다.**
-status: open
+status: done 2026-08-11
+resolution: `supabase/migrations/0033_remove_legacy_role_passthrough.sql`(Story 17.1)이 `handle_new_user()`를 다시 `create or replace`해 buyer/seller 통과 분기를 지웠다 — 이제 metadata에 무엇을 보내든 `profiles.role`은 항상 `'user'`다. 실DB 확인: `api/tests/integration/test_suspended_write_block_real_db.py::test_legacy_seller_metadata_still_yields_user_role` + `test_role_check_relax_real_db.py::test_handle_new_user_default_role_matrix`(파라미터 `("buyer","user")`·`("seller","user")`로 갱신 — 분기가 되살아나면 이 행이 red가 된다). 도달 불가능했다는 근거(도달 경로 0)가 실제로 지워도 결과가 안 바뀌는 것으로 재확인됐다.
 ### DW-683: `test_fr11_cover_images_real_db.py`의 픽스처는 "판매자를 만들었다"고 믿지만 그 INSERT는 항상 no-op다
 
 source_spec: `_bmad-output/implementation-artifacts/spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
@@ -5230,7 +5233,8 @@ summary: DW-669는 "Epic 15 Story 15-3을 착수할 때 정지가 실제로 무�
 evidence: `grep -n "Story 15.4" epics-increment-2026-07-12.md` → 1311행 "⚠️ 이 에픽의 'UI-only' 범위를 한 칸 넘는 스토리다 — 마이그레이션 1개(복구 전용 RPC)가 필요하다"가 15.4에만 붙어 있고 15.3 블록(1296-1307행)엔 그런 경고가 없음을 직접 대조 확인. dev-auto 세션이 이미 `supabase/migrations/0030_listings_suspend_gate.sql`(정지 회원 listings INSERT/UPDATE/DELETE 차단)을 짜서 vitest 336/336·playwright 73/73·red/green 자체검증까지 전부 통과시켰으나, 위 충돌을 뒤늦게 발견하고 코드를 되돌렸다(같은 세션이 직접 `git checkout`으로 원복 + 마이그레이션 파일 삭제 + 로컬 DB `supabase db reset`으로 재동기화 확인).
 why_it_matters: 되돌리지 않았다면 Epic 15의 스코프 정본(계획 문서)과 실제 배포 코드가 조용히 어긋난 채 넘어갈 뻔했다 — 다음 사람이 "Epic 15는 DB를 안 건드린다"고 믿고 그 가정 위에서 판단하면 틀린다. 또한 이번 코드리뷰(adversarial 렌즈)가 그 RLS 구현 자체의 실측 결함 2건도 찾았다: **관리자용 `listings_delete_admin`은 안 막힘**(정지된 관리자가 여전히 남의 매물 삭제 가능, 로컬 DB 실측 DELETE 성공) · **`listing_images`/`storage.objects` 쓰기 정책도 안 막힘**(정지된 판매자가 여전히 사진 추가·삭제 가능, 로컬 DB 실측 INSERT/DELETE 성공). 재구현할 스토리는 이 두 갭도 함께 닫아야 DW-669의 원래 문제("정지가 실제로 무엇을 막는지")가 온전히 해소된다.
 trigger: ✅ **결정됨 (2026-08-07, 사용자) = (b)안 — Epic 15 밖 독립 스토리로 분리.** 신설 `epic-17: 접근 제어 마무리`의 `17-1-정지-회원-쓰기-차단-rls`가 이 항목을 소유한다(`sprint-status.yaml`). (a)안(에픽 15에 예외를 하나 더 추가)을 택하지 않은 이유: Epic 15의 "UI-only"는 예외가 15.4 하나뿐일 때만 제약으로 기능한다 — 두 번째 예외를 뚫는 순간 다음 사람이 "이 에픽은 DB를 안 건드린다"는 가정을 못 쓰게 된다. 재구현 시 아래 두 갭을 범위에 포함할지 그 자리에서 판단할 것. 어느 쪽이든 저장된 패치 파일(`bmad-dev-auto-intent-gap-patch-15-3-회원관리-역할통합-반영.diff`)을 출발점으로 재사용하고, 위 두 갭(admin delete·사진 경로)을 범위에 포함할지 그 자리에서 판단한다.
-status: open
+status: done 2026-08-11
+resolution: `17-1-정지-회원-쓰기-차단-rls`가 저장된 패치를 출발점으로만 쓰고 그대로 재사용하지 않았다 — `0032_suspended_write_block.sql`이 이 항목이 지목한 두 실측 구멍을 모두 함께 닫았다: `listings_delete_admin`(0005)은 `is_admin()` → `is_admin_active()`로 교체해 정지된 관리자를 막고, `listing_images`(0031판)·`storage.objects`(0013판) 쓰기 3정책 모두에 `profiles.status='active'` 조건을 추가했다. 실DB 확인은 `test_suspended_write_block_real_db.py`(정지된 관리자 DELETE 0행·정지된 판매자 사진/파일 쓰기 42501 또는 0행 — 항목별 정확한 신호는 테스트 헤더 참조).
 
 ### DW-718: 관리자 쓰기 액션(삭제·정지·되돌리기)에 감사 로그(누가·언제)가 전혀 없다
 
@@ -5278,7 +5282,8 @@ summary: `is_admin()`은 `profiles.role='admin'`만 보고 `profiles.status`(`ac
 evidence: 실측(2026-08-07, 로컬 Supabase 55322) — `profiles.status='suspended'`인 관리자를 만들고 `set local role authenticated` + JWT sub 임퍼소네이션으로 sold 매물에 RPC를 호출한 결과 `rows=1`, `status`가 `on_sale`로 실제로 바뀌었다(트랜잭션 롤백). `is_admin()` 정의를 직접 읽어 `status` 술어가 없음을 확인.
 why_it_matters: 17-1이 "정지 = 쓰기 차단"을 RLS로만 구현하고 끝나면, 팀 전체가 정지 게이트가 완성됐다고 믿는 상태에서 이 경로만 조용히 열려 있게 된다 — DW-669가 원래 잡으려던 문제("정지가 실제로 무엇을 막는가")가 반만 해소된다. 또한 이 축은 15.4의 인수조건 밖이었다(스펙 Never 절이 정지 게이트를 명시적으로 범위 밖으로 뒀다) — 그래서 15.4의 결함이 아니라 17-1이 반드시 흡수해야 할 범위다.
 trigger: `17-1-정지-회원-쓰기-차단-rls` 착수 시 — 그 스토리의 인수조건에 **"SECURITY DEFINER RPC 경로(`admin_restore_sold_listing` 포함)도 정지 계정에서 차단된다"**를 반드시 포함할 것(CLAUDE.md B5 — 회고 약속은 다음 스토리의 체크박스로 심는다). 구현 후보: `is_admin()`에 `and status = 'active'` 추가(전역 파급 — 관리자 SELECT 정책까지 함께 좁아지므로 그 영향을 먼저 실측할 것) 또는 RPC 쪽에만 `status='active'` 조건 추가.
-status: open
+status: done 2026-08-11
+resolution: 후보 중 "RPC 쪽에만 조건 추가"가 아니라 **관리자 판정 전용 SECURITY DEFINER 헬퍼(`public.is_admin_active()`)를 신설**하는 세 번째 안으로 닫았다 — `is_admin()`은 전역 그대로 두고(관리자 SELECT 정책 회귀 없음), 모든 관리자 **쓰기** 소비처(`admin_restore_sold_listing` 포함)만 `is_admin_active()`로 교체했다. 실DB 확인: `test_suspended_write_block_real_db.py::test_suspended_admin_cannot_restore_sold_listing`(0행 반환·status 불변) + `test_active_admin_can_still_perform_admin_actions`(활성 관리자는 회귀 없이 성공 — is_admin() 전역 수정을 피했다는 증거).
 
 ### DW-722: `supabase db reset`로 만든 로컬 스택엔 플랫폼 기본 테이블 GRANT가 없어 로그인 사용자용 앱이 통째로 안 뜬다
 
@@ -6132,7 +6137,8 @@ reason: `epic-16-context.md`가 "`sold` 매물 사진 추가/삭제는 **DB 쓰�
 fix_sketch: `storage.objects`의 `listing_images_objects_owner_insert/update/delete` 3정책에 경로의 `listing_id`로 `listings.status <> 'sold'`를 확인하는 조건을 더한다(전진 마이그레이션 1개). ⚠️ **"정책이 있다"로 닫지 않는다** — sold 매물 사진 경로에 실제로 쓰기를 시도해 거부되는 것을 확인해야 닫는다(CLAUDE.md B4 "존재 확인은 작동 확인이 아니다").
 trigger: 사진 관련 기능을 다시 손대는 스토리, 또는 Storage 정책을 건드리는 마이그레이션이 생길 때. 그 전이라도 `sell_controller`의 "listings UPDATE 먼저" 순서를 바꾸는 변경이 제안되면 **그 자리에서 선행 조건으로** 올린다.
 related: [[DW-390]](같은 계약의 절반만 닫은 항목)
-status: open
+status: done 2026-08-11
+resolution: `0032_suspended_write_block.sql`(Story 17.1)이 fix_sketch 그대로 `storage.objects`의 `listing_images_objects_owner_insert/update/delete` 3정책에 `split_part(name,'/',2)::uuid`로 얻은 `listing_id`를 `listings`와 조인해 sold 여부를 확인하는 조건을 추가했다. "정책이 있다"로 닫지 않는다는 요구대로 실제 쓰기 시도로 확인: `api/tests/integration/test_suspended_write_block_real_db.py::test_active_seller_cannot_write_storage_object_for_sold_listing`(정지와 무관하게 활성 판매자로만 구성 — sold 축을 격리) — INSERT 42501, UPDATE/DELETE 0행. ⚠️ **2026-08-11 bad_spec 루프백 정정**: INSERT/UPDATE는 `exists(... status <> 'sold')`(긍정형)지만 **DELETE는 `not exists(... status = 'sold')`(부정형)로 다르다** — 세 verb에 같은 긍정형을 쓰면 `docs/conventions.md` §10.1의 실제 삭제 순서(매물 행 먼저 DELETE → 사진 DELETE)에서 사진 DELETE가 0행이 되고 고아 파일이 영구 잔존했다(로컬 실 스택으로 재현·확정). `test_active_seller_delete_listing_then_photo_leaves_no_orphan`이 그 순서를 실제로 밟아 고정한다.
 
 ### DW-783: `searchControllerProvider`가 로그인/로그아웃에도 옛 결과를 들고 있는다
 
@@ -6301,4 +6307,156 @@ reason: `grep -rn "_defaultChatSubscribe\|removeChannel\|channel.subscribe\|Real
 fix_sketch: `chat_repository_test.dart`가 이미 쓰는 `SupabaseClient(httpClient:)` 기법으로는 소켓 경로를 못 덮는다. 토픽 문자열은 이미 `roomTopic()` 순수 함수로 분리돼 있으니 **그 함수의 반환값을 §12 리터럴과 대조하는 단위 테스트**가 가장 싸고 확실한 첫 걸음이다(구독 자체를 모사하지 않는다).
 trigger: 실시간 채팅 계약(§12)을 다시 손대는 스토리, 또는 실시간 수신이 조용히 죽는 증상이 재발할 때 — 그 계열은 이 리포에서 이미 한 번 발생했다(전 검사 green인데 수신이 죽어 사람이 복구).
 related: [[DW-733]] 인근(16.x가 wire 계약을 넓히며 커진 검증 공백)
+status: open
+
+### DW-799: 정지된 회원이 여전히 새 채팅방을 열 수 있다 — 메시지 발신만 막혔다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 코드리뷰(adversarial + edge-case-hunter, 독립 2건이 같은 경로를 지목)
+location: `supabase/migrations/0003_chat.sql:82-84`(`chat_rooms_insert_participant`, 정지 조건 없음) — 형제 정책 `chat_messages_insert_participant`(`0032_suspended_write_block.sql`)는 이번 스토리가 정지 조건을 추가했다.
+severity: low
+summary: `0032`는 채팅 "메시지 발신"만 정지 조건을 추가했고, 채팅 "방 생성"(`chat_rooms` INSERT, 구매자가 문의하기를 누를 때)에는 추가하지 않았다. 정지된 회원이 여전히 새 방은 열 수 있다(그 방에 메시지는 못 보낸다).
+evidence: `0003_chat.sql:82-84`을 직접 읽어 `chat_rooms_insert_participant`의 `with check`에 `profiles.status` 조건이 없음을 확인. `0032`가 건드린 파일·정책 목록에도 이 정책은 없다(diff 대조 확인).
+왜 이 스토리 범위 밖으로 판단했나: 스토리의 불변식 문장이 "매물·사진·파일·관리자 RPC 어느 경로로도"라고 네 범주를 명시했고, 채팅은 별도 항목("정지 회원이 **메시지를 보낼 수 있는지**")으로 좁혀 다뤘다 — "방 생성"은 그 문장에도 그 별도 항목에도 없다. 다만 그 경계가 스토리 작성 당시 의식적 결정이었는지 사각지대였는지는 스펙에 남아 있지 않아, 다음에 판단할 수 있게 여기 남긴다.
+trigger: 채팅 쓰기 경로를 다시 손대는 스토리, 또는 정지 회원이 새 문의방을 여는 것이 실제 문제로 보고될 때 — 그때 `chat_rooms_insert_participant`에도 `and exists (select 1 from public.profiles where id=auth.uid() and status='active')`를 추가할지 결정한다.
+status: open
+
+### DW-800: `is_admin_active()` 도입으로 관리자 전원이 정지되면 psql 직접 접근 외 복구 경로가 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 코드리뷰(adversarial)
+location: `supabase/migrations/0032_suspended_write_block.sql`의 `profiles_update_admin`(`is_admin_active()`로 교체) — `test_suspended_admin_cannot_unsuspend_self`가 이 변경의 의도된 효과를 확인한다.
+severity: low
+summary: 이 스토리 전에는 `is_admin()`이 `status`를 안 봐서, 정지된 관리자도 자기 자신 또는 다른 관리자를 UPDATE해 정지를 풀 수 있었다(의도치 않은 구멍이었지만 사실상의 복구 경로이기도 했다). `is_admin_active()`가 그 경로를 정확히 의도대로 막으면서, 관리자 전원이 정지되는 상황(실수 또는 악의적 연쇄 정지)에 대한 앱 내 복구 수단이 이제 하나도 없다 — 남는 것은 DB에 직접 접근(psql)뿐이다.
+evidence: `profiles_update_admin`(`0032`) 정의를 읽어 `using (public.is_admin_active())`가 호출자 본인의 `status`까지 확인함을 확인. `test_suspended_admin_cannot_unsuspend_self`(로컬 실행, green)가 정지된 관리자의 자가 UPDATE가 0행임을 실측.
+why_it_matters: 데모/과제용 프로젝트라 당장 위험도는 낮지만(CLAUDE.md 프로젝트 성격), 관리자 계정이 하나뿐이거나 관리자끼리 실수로 서로를 정지시키는 시나리오가 생기면 앱을 통한 복구가 원천 차단된다 — 관리자 감사 로그([[DW-718]], 별건)와는 다른 축이다.
+trigger: 이 프로젝트가 데모를 넘어 실사용자 운영으로 전환될 때, 또는 관리자 기능을 다시 손대는 스토리에서 — 최소 psql 복구 절차를 런북에 적거나, DB 레벨에서 "마지막 활성 관리자는 정지 불가" 같은 안전장치를 검토한다.
+status: open
+
+### DW-801: 정지된 회원이 여전히 찜(wishlist)을 추가·삭제할 수 있다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 bad_spec 루프백 — Always 2항이 요구한 쓰기 경로 전수조사(`select schemaname, tablename, policyname, cmd from pg_policies where cmd <> 'SELECT' and 'authenticated' = any(roles)` 실측)에서 판정 없이 남아 있던 항목으로 지목됨.
+location: `supabase/migrations/0018_wishlists.sql`의 `wishlists_insert_own`·`wishlists_delete_own` — `0032`가 건드린 정책 목록에 없음(diff 대조 확인).
+severity: low
+summary: `0032`는 매물·사진·파일·관리자 RPC·채팅 발신에만 정지 조건을 추가했다. 찜 추가/삭제는 그 네 범주 어디에도 없어 정지 조건이 없다 — 정지된 회원도 여전히 찜을 추가·삭제할 수 있다.
+evidence: `pg_policies` 실측(로컬 55322, 2026-08-11) — `wishlists_insert_own`(INSERT)·`wishlists_delete_own`(DELETE) 둘 다 `authenticated` 대상이고 `0032`의 재정의 목록에 없음을 확인.
+왜 이 스토리 범위 밖으로 판단했나: 스토리의 불변식 문장("매물·사진·파일·관리자 RPC")에 찜이 없다. 찜은 상태를 바꾸긴 하지만 타인에게 영향을 주지 않는 개인화 데이터(본인만 보는 목록)라 이 스토리가 막으려는 "정지된 계정이 서비스에 계속 영향력을 행사한다"는 문제와 성격이 다르다고 판단했지만, 그 판단이 스펙 본문에는 남아있지 않았다(bad_spec 루프백이 지적).
+trigger: 찜 관련 RLS를 다시 손대는 스토리, 또는 정지 회원의 찜 조작이 실제 문제로 보고될 때 — 그때 `wishlists_insert_own`/`wishlists_delete_own`에도 `and exists (select 1 from public.profiles where id=auth.uid() and status='active')`를 추가할지 결정한다.
+status: open
+
+### DW-802: 정지된 회원이 여전히 채팅 안읽음 커서(chat_room_reads)를 갱신할 수 있다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 bad_spec 루프백 — 같은 전수조사에서 판정 없이 남아 있던 항목으로 지목됨.
+location: `supabase/migrations/0024_chat_unread.sql`류의 `chat_room_reads_insert_participant`·`chat_room_reads_update_own` — `0032`가 건드린 정책 목록에 없음(diff 대조 확인).
+severity: low
+summary: 정지된 회원이 채팅방을 "읽음" 처리하는 행(`chat_room_reads`)은 여전히 INSERT/UPDATE할 수 있다 — 이 행은 본인의 안읽음 배지 계산에만 쓰이므로(`chat_unread_count()`), 정지된 본인이 자기 배지를 조작하는 것 이상의 영향은 없다.
+evidence: `pg_policies` 실측(로컬 55322, 2026-08-11) — `chat_room_reads_insert_participant`(INSERT)·`chat_room_reads_update_own`(UPDATE) 둘 다 `authenticated` 대상이고 `0032`의 재정의 목록에 없음을 확인. `docs/conventions.md` §12(실시간 채팅 계약)를 함께 확인 — 이 테이블이 상대방에게 노출하는 값은 없다.
+왜 이 스토리 범위 밖으로 판단했나: 정지 회원이 이 행을 갱신해도 본인 안읽음 카운트만 바뀌고 채팅 상대방·다른 회원에게는 아무 영향이 없다 — 스토리 불변식이 막으려는 "정지된 계정이 타인에게 영향을 미치는 쓰기"와 성격이 다르다. 다만 이 판단이 스펙 본문에는 남아있지 않았다(bad_spec 루프백이 지적) — 그래서 여기 근거를 남긴다.
+trigger: 채팅 안읽음 계약(§12)을 다시 손대는 스토리에서 — 그때 이 두 정책에도 정지 조건을 추가할지 재검토한다. 위험도가 낮아 지금은 급하지 않다.
+status: open
+
+### DW-803: 쓰기 경로 전수조사 판정이 "실행되는 검사"가 아니라 주석·문서로만 산다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 2차 코드리뷰(adversarial·intent-alignment 두 렌즈가 독립 지적).
+location: `supabase/migrations/0032_suspended_write_block.sql` 9절 주석 · `docs/conventions.md` §8 "막지 않는 쓰기" 문단 · 스펙 Design Notes 전수조사 표.
+severity: medium
+summary: 17.1이 `pg_policies`·`pg_proc` 실측으로 21개 정책 + 11개 SECURITY DEFINER 함수 전량에 "막는다/안 막는다 + 이유" 판정을 붙였지만, 그 판정 목록을 강제하는 **실행되는 검사가 없다.** 새 마이그레이션이 `authenticated` 대상 non-SELECT 정책을 추가하면서 정지 조건도 안 걸고 판정도 안 적어도 **아무것도 red가 되지 않는다.**
+evidence: 판정은 세 곳(마이그레이션 주석·conventions §8·스펙 표) 전부 산문이다. 숫자(21·11)도 손으로 센 것이라 2차 리뷰가 실제로 오류를 찾았다(막는다 15→16, 안 막는다 6→5 — `increment_listing_view`를 정책 그룹에 잘못 계상해 합계만 우연히 맞았다). CLAUDE.md B9는 이 상황을 정확히 지목한다 — *"주석·문서는 계약이 아니다. 지켜야 하는 규칙이면 실행되는 검사로 바꾼다."* [[DW-669]]가 처음 생긴 방식이 바로 이것이다(정지의 의미가 문서에만 있고 강제가 0건이었다).
+why_it_matters: 이 스토리의 결론은 "정지가 무엇을 막고 무엇을 안 막는지"인데, 그 결론의 완전성이 다음 마이그레이션 한 줄에 조용히 깨진다. 17.1이 정책 자체는 실행되는 검사로 만들었지만 **범위 규칙은 여전히 문서**다.
+fix_sketch: `scripts/check_migrations.py`에 동적 검사 한 축을 더하거나(`api-db` 잡에서 `pg_policies`를 조회) `api/tests/integration`에 pytest 한 건을 둔다 — `cmd <> 'SELECT' and 'authenticated' = any(roles)`인 정책 전량을 명시 허용/차단 매니페스트와 대조하고, 목록에 없는 정책이 나오면 실패. 매니페스트는 `0032` 9절 판정을 기계가 읽을 수 있는 형태로 옮긴 것이면 된다.
+trigger: **`authenticated` 대상 쓰기 정책을 추가·변경하는 다음 마이그레이션 스토리에서** — 그 스토리가 이 검사의 첫 소비자가 된다. 또는 Epic 17 회고에서 인수조건으로 심을 때(CLAUDE.md B5 — 회고 약속은 다음 스토리의 체크박스로 심어야 이행된다).
+status: open
+
+### DW-804: 정지된 판매자의 매물은 계속 노출·문의 가능하고, 차단된 쓰기가 엉뚱한 이유로 안내된다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 2차 코드리뷰(adversarial·intent-alignment).
+location: `web/src/app/(user)/sell/ListingActions.tsx`(0행 → "본인 매물만 삭제할 수 있습니다") · `web/src/app/(user)/sell/SellForm.tsx`(같은 계열 문구) · `app/lib/features/listings/listings_repository.dart` · `chat_rooms_insert_participant`(0003, 미차단 — [[DW-799]]).
+severity: medium
+summary: 17.1은 DB 강제만 했고(의도된 범위 — 스펙 Never 절이 화면 작업을 금지), 그 결과 두 가지 사용자 표면 문제가 열린 채 남았다. (1) 정지된 판매자의 `on_sale` 매물은 계속 검색·노출되고 구매자가 채팅방을 열어 말을 걸 수 있는데 **판매자는 영원히 답할 수 없다**(발신만 차단). (2) 정지 회원이 자기 매물 수정·삭제를 누르면 RLS가 0행을 돌려주고 화면은 그걸 **"본인 매물만 수정할 수 있습니다 (매물을 찾을 수 없거나 접근 권한이 없습니다)"** 로 안내한다 — 자기 매물인데 소유권 문제라고 말한다.
+evidence: `0032`가 `listings_select_*`를 하나도 좁히지 않았다(불변식 후반부 "읽기는 줄지 않는다"의 의도된 결과). `chat_messages_insert_participant`만 막고 `chat_rooms_insert_participant`는 열어 뒀다(DW-799). 0행 → 소유권 문구 매핑은 `ListingActions.tsx`의 기존 분기이며 정지라는 새 사유를 구분하지 않는다. 스펙의 Spec Change Log가 이미 같은 계열의 위험(42501 vs 0행 혼동)을 기록했는데, 그 혼동이 **사용자 문구**에도 그대로 있다.
+why_it_matters: 구매자는 응답 없는 판매자를 "무시당했다"로 읽고, 정지 회원은 시스템이 고장 났다고 판단해 문의한다. 그리고 그 문의를 받는 사람이 원인을 찾아갈 단서가 어느 장부에도 없다.
+fix_sketch: (a) 정지 계정의 `on_sale` 매물 노출·문의 가능 여부를 제품 결정으로 정한다(숨김 / 유지 / "응답 불가" 배지). (b) 쓰기 거부 시 화면이 정지 사유를 구분해 안내한다 — 강제력은 계속 DB에 두고 화면은 **안내만** 한다(CLAUDE.md B9 위반 아님, 스펙 Never 절도 "안내 문구를 다듬는 것은 되지만"으로 허용).
+trigger: **판매자 화면(`/sell`)이나 채팅 UX를 다음에 손대는 웹·앱 스토리에서** — 그 자리가 0행 신호를 사용자 문구로 옮기는 유일한 지점이다. 그 전이라도 정지 기능을 실제 운영에 쓰기로 결정하는 순간 선행 조건으로 올린다.
+related: [[DW-799]](방 생성 미차단 — 이 항목의 (1)번 증상을 만드는 정책)
+status: open
+
+### DW-805: `increment_listing_view`(SECURITY DEFINER)가 정지 회원의 `listings` 쓰기를 그대로 통과시키는데, 그 판정만 대장에 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 3차(후속) 코드리뷰 — adversarial·intent-alignment 두 렌즈가 독립적으로 같은 항목을 지목.
+location: `supabase/migrations/0020_listing_view_count.sql`의 `public.increment_listing_view(uuid)` · 판정 문장은 `supabase/migrations/0032_suspended_write_block.sql` 9절 주석과 `docs/conventions.md` §8에만 존재.
+severity: medium
+summary: 17.1의 전수조사가 이 함수를 "안 막는다"로 판정했는데, 그 사유가 *"anon도 호출하므로 `profiles` 신원 자체가 없는 호출자가 있다"* 다. 이건 **anon에게 게이트를 걸기 어렵다**는 사실이지 **authenticated인 정지 회원을 통과시켜야 할 이유**는 아니다. 그리고 미차단 판정 5건 중 이 항목만 대장 항목이 없어([[DW-799]]·[[DW-801]]·[[DW-802]]는 있다) 다시 볼 `trigger:`가 어디에도 없다.
+evidence: 로컬 55322 실측(2026-08-11) — `pg_proc.prosecdef = t`, 실행 권한 `{postgres, anon, authenticated}`, 함수 본문이 `public.listings`를 UPDATE한다. 즉 **정의자 함수가 RLS를 우회해 `listings`에 쓴다** — [[DW-721]]이 지목해 이 스토리가 닫은 계열(`admin_restore_sold_listing`)과 같은 형태이고, 스토리 불변식이 명시한 네 범주 중 "매물"에 걸린다. 그런데 17.1의 Intent가 인용한 grep 목록에는 이 함수가 없었고, 2차 리뷰가 뒤늦게 찾아 판정만 붙였다.
+why_it_matters: 정지 회원이 임의 매물의 조회수를 계속 부풀릴 수 있다. 조회수는 **다른 사용자에게 보이는 값**이라, 찜([[DW-801]])·안읽음 커서([[DW-802]])를 면제할 때 쓴 기준(*"본인만 보는 개인화 데이터, 타인에게 영향을 주는 쓰기가 아니다"*)이 이 항목에는 성립하지 않는다. 같은 전수조사 안에서 기준이 갈린다.
+fix_sketch: anon 호출을 막지 않으면서 정지만 거르는 형태가 있다 — 함수 본문의 UPDATE 앞에 `not exists (select 1 from public.profiles where id = auth.uid() and status = 'suspended')` 가드(비로그인은 `auth.uid()`가 NULL이라 참 → 통과, 정지 회원만 거짓 → 차단). 반대로 "조회수는 불변식 밖"이 최종 결론이면 그 근거를 `docs/conventions.md` §8의 "막지 않는 쓰기" 목록에 다른 3건과 같은 형태로 명시한다.
+trigger: **조회수(`view_count`)나 `0020` 계열을 다음에 손대는 스토리에서**, 또는 [[DW-803]]의 전수조사 강제 검사를 만드는 스토리에서 — 그 검사가 이 항목의 판정을 기계가 읽는 형태로 옮길 때 함께 결정한다.
+related: [[DW-721]](같은 계열 — 정의자 함수의 RLS 우회) · [[DW-803]](판정이 실행되는 검사가 아니다) · [[DW-801]]·[[DW-802]](같은 전수조사의 다른 미차단 판정)
+status: open
+
+### DW-806: 정지된 관리자가 `/admin` 콘솔에 그대로 들어가고, 모든 관리 작업이 조용히 0행으로 실패한다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 3차(후속) 코드리뷰(adversarial 렌즈), 리뷰 세션이 `guard.ts`를 직접 열어 확인.
+location: `web/src/lib/auth/guard.ts:21-40`(`requireRole`) · `web/src/app/(admin)/layout.tsx`가 그 헬퍼로 콘솔 접근을 통제.
+severity: medium
+summary: `0032`가 관리자 쓰기 7경로 전부에 `status='active'`를 전제로 걸었는데, `/admin` 콘솔 진입 게이트는 여전히 `role`만 본다. 그래서 정지된 관리자는 콘솔에 들어가 회원 삭제·매물 삭제·거래 복원 버튼을 전부 살아 있는 상태로 보고, 누르면 **0행이 돌아와 아무 일도 안 일어난다.**
+evidence: `requireRole`이 `.select('role')`만 하고 `profile?.role !== role`만 비교한다(2026-08-11 파일 직접 확인 — `status`를 읽지도 않는다). DB 쪽은 `0032`의 `is_admin_active()`가 `role='admin' and status='active'`를 요구하므로 두 층의 기준이 어긋난다. [[DW-804]]는 판매자 화면(`/sell`)과 채팅만 다루고 관리자 콘솔은 언급하지 않는다.
+why_it_matters: 조작한 사람은 "관리 도구가 고장 났다"고 읽는다. 0행 실패는 예외를 던지지 않아 화면·로그 어디에도 흔적이 없다 — 이 스토리가 이미 두 번 밟은 실패 형태다(§10.1 사진 고아 사건과 같은 계열).
+fix_sketch: `requireRole`에서 `.select('role, status')`로 넓히고 `status !== 'active'`면 홈으로 보내거나 정지 안내 화면으로 보낸다. **강제력은 계속 DB에 둔다** — 화면은 안내만 담당(CLAUDE.md B9 위반 아님, 17.1 Never 절도 *"안내 문구를 다듬는 것은 되지만"* 으로 허용). 관리자 정지가 실제 운영 시나리오인지도 함께 판단한다.
+trigger: **`/admin` 라우트 게이트나 관리자 화면을 다음에 손대는 웹 스토리에서.** 그 전이라도 정지 기능을 실제 운영에 쓰기로 결정하는 순간 [[DW-804]]와 함께 선행 조건으로 올린다.
+related: [[DW-804]](같은 계열 — 판매자 화면 표면) · [[DW-800]](관리자 전원 정지 시 복구 경로 없음)
+status: open
+
+### DW-807: sold·정지 사진 차단은 직접 SQL로만 검증됐다 — 실제 클라이언트가 쓰는 Storage HTTP API 경로는 미검증
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 3차(후속) 코드리뷰(adversarial·intent-alignment 두 렌즈).
+location: `api/tests/integration/test_suspended_write_block_real_db.py`의 `_as()` 헬퍼(세션마다 `set local storage.allow_delete_query = 'true'`) · 대상은 `supabase/migrations/0032_suspended_write_block.sql`의 `listing_images_objects_owner_*` 3정책.
+severity: low
+summary: `storage.objects` 관련 테스트는 전부 **직접 SQL**로 쓰기를 시도하고, 그러기 위해 플랫폼의 `storage.protect_objects_delete` 보호 트리거를 세션 설정으로 **끄고** 들어간다. 그 트리거가 존재하는 이유가 정확히 "직접 SQL 우회 방지 = 실제 경로는 Storage HTTP API여야 한다"이므로, 검증 표면과 실제 사용 표면이 한 층 어긋나 있다.
+evidence: 테스트 파일 헤더가 이 공백을 스스로 명시한다(*"실제 Storage API(HTTP) 경로는 검증하지 않는다"*). 반면 [[DW-782]]의 마감 조건은 *"'정책이 있다'로 닫지 않는다 — 실제로 쓰기를 시도해 거부되는 것을 확인해야 닫는다"* 였고, 그 항목은 이 SQL 층 증거로 done 처리됐다. RLS는 두 경로 모두에 걸리므로 결론이 뒤집힐 개연성은 낮지만, 그건 추론이지 측정이 아니다(CLAUDE.md B4 *"재보기 전엔 선언하지 않는다"*).
+why_it_matters: 이 저장소가 반복해 밟은 실패 형태가 *"존재 확인은 작동 확인이 아니다"* 인데, 여기서는 한 걸음 더 나아가 **보호 장치를 끄고 잰 결과**를 작동 확인으로 쓰고 있다. 다음 사람이 Storage API 경로를 "커버됨"으로 읽으면 그 자리에 새 구멍이 생겨도 아무도 안 본다.
+fix_sketch: 로컬 스택의 Storage API(kong 55321 경유)로 정지 판매자 세션 JWT를 써서 업로드/삭제를 1회씩 쏴 보고 결과를 기록한다. 또는 `web/e2e`에 사진 업로드 시나리오가 생길 때 정지 계정 케이스를 얹는다.
+trigger: **사진 업로드·삭제 경로(`web/src/lib/storage/upload.ts`·`photo-sync.ts` 또는 Flutter 대응)를 다음에 손대는 스토리에서**, 또는 web E2E를 CI에 올리는 작업([[DW-468]] 계열)에서 함께.
+related: [[DW-782]](이 증거로 닫힌 항목) · [[DW-803]]
+status: open
+
+### DW-808: `0032` 이후 [[DW-670]]이 기록한 증상(23503)이 더 이상 재현되지 않는다 — 대신 엉뚱한 한국어 문구가 뜬다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 3차(후속) 코드리뷰(adversarial 렌즈). 이 실행은 오케스트레이터 지시로 **기존 대장 항목을 수정할 수 없어** 신규 항목으로 남긴다.
+location: `_bmad-output/implementation-artifacts/deferred-work.md`의 [[DW-670]] 본문 · `supabase/migrations/0032_suspended_write_block.sql`의 `listings_insert_own` · `web/src/app/(user)/sell/SellForm.tsx`의 `toKoreanError`.
+severity: low
+summary: [[DW-670]]은 *"`profiles` 행이 없는 로그인 사용자가 매물을 등록하면 FK 위반 `23503`이 정체불명 문구로 뜬다"* 를 열린 문제로 기록해 두었다. `0032`가 `listings_insert_own`에 `exists (select 1 from public.profiles where id = auth.uid() and status = 'active')`를 추가하면서, 이제 그 사용자는 **FK에 닿기 전에 RLS에서 `42501`로 거부**된다. 즉 DW-670의 재현 절차와 증상 코드가 낡았다.
+evidence: `0032`의 `listings_insert_own` `with check`가 `auth.uid() = seller_id`와 정지 조건을 함께 요구한다 — `profiles` 행이 없으면 그 `exists`가 거짓이므로 INSERT가 `42501`로 떨어지고, FK(`seller_id references profiles(id)`)는 평가되지 않는다. `toKoreanError`는 `42501`을 이미 매핑하고 있다.
+why_it_matters: 증상이 "정체불명 오류"에서 **"본인 매물만 등록할 수 있습니다" 계열의 틀린 안내**로 바뀌었다 — 나아진 게 아니라 **원인이 더 감춰졌다**. 그리고 DW-670을 집어드는 사람은 기록된 `23503`을 재현하려다 실패해 "이미 고쳐졌다"고 결론 낼 수 있다. 부수적으로: `profiles` 행이 없는 사용자와 정지된 사용자가 DB 층에서 **같은 신호**가 되어 화면이 둘을 구분할 수 없다([[DW-806]]·[[DW-804]]와 같은 축).
+fix_sketch: DW-670 본문의 `evidence`/`summary`를 `0032` 이후 신호로 갱신하고, 고칠 때는 `42501` 안에서 "소유권 위반 / 정지 / 프로필 없음" 세 사유를 구분할 방법을 함께 정한다(정책 분리 또는 사전 조회).
+trigger: **[[DW-670]]을 실제로 집어드는 스토리에서 가장 먼저 이 항목을 읽는다.** 또는 `SellForm.tsx`의 에러 매핑을 손대는 스토리에서(그게 DW-670 자신의 trigger다).
+related: [[DW-670]](본문이 낡은 항목 — 이 실행은 수정 권한이 없어 건드리지 않았다) · [[DW-804]] · [[DW-806]]
+status: open
+
+### DW-809: 활성 관리자가 한 문장으로 자기 자신을 정지시킬 수 있다 — 그 순간 앱 내 복구 경로가 사라진다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-1-정지-회원-쓰기-차단-rls.md`
+origin: 2026-08-11 Story 17.1 3차(후속) 코드리뷰(edge-case 렌즈)가 지목, 이 리뷰 세션이 로컬 55322 롤백 트랜잭션으로 직접 재현.
+location: `supabase/migrations/0032_suspended_write_block.sql`의 `profiles_update_admin`(`using`·`with check` 둘 다 `public.is_admin_active()`).
+severity: low
+summary: `is_admin_active()`는 `stable` 함수라 문장 시작 시점의 스냅샷을 읽는다. 그래서 활성 관리자가 `update profiles set status='suspended' where id = auth.uid()`를 실행하면 `using`도 `with check`도 **정지 이전 상태**를 보고 통과시킨다 — 한 문장으로 자기 쓰기 권한 전부를 잃고, 되돌리려면 다시 `profiles`를 UPDATE해야 하는데 그건 이미 막혀 있다.
+evidence: 로컬 55322 실측(2026-08-11, 롤백 트랜잭션) — `role='admin', status='active'` 계정으로 `set local role authenticated` + `request.jwt.claim.sub` 세션을 만들고 자기 행에 `status='suspended'` UPDATE → **`UPDATE 1`**, 조회 결과 `status=suspended`로 실제 반영됨. 관련 테스트(`test_suspended_admin_cannot_unsuspend_self`)는 **이미 정지된 뒤**만 고정하고, 정지 상태로 **들어가는 문장 자체**는 어느 검사도 보지 않는다.
+why_it_matters: [[DW-800]]은 "관리자 전원이 정지되면 복구 불가"라는 **결과**를 기록했지만, 관리자가 실수 한 번(회원 목록에서 자기 행의 정지 버튼)으로 그 상태에 들어갈 수 있다는 **경로**는 기록되지 않았다. 데모 프로젝트라 위험은 낮으나, 운영으로 가면 이건 첫 번째로 밟히는 지뢰다.
+fix_sketch: `profiles_update_admin`의 `with check`에 자가 강등 금지 축을 더한다 — `with check (public.is_admin_active() and not (id = auth.uid() and status <> 'active'))`. 또는 화면에서 자기 행의 정지 버튼을 비활성화한다(강제력은 DB에 남긴다). 어느 쪽이든 [[DW-800]]의 런북과 함께 결정한다.
+trigger: **관리자 회원관리 화면(`MemberActions.tsx`)이나 `profiles_update_admin` 정책을 다음에 손대는 스토리에서**, 또는 [[DW-800]]의 복구 런북을 실제로 쓰는 시점에 함께.
+related: [[DW-800]](결과를 기록한 항목 — 이 항목은 그 상태로 들어가는 경로) · [[DW-806]]
+status: open
+
+### DW-810: Follow-up review still recommended for 17-1-정지-회원-쓰기-차단-rls after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-17-1-정지-회원-쓰기-차단-rls.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-000420-4ea3; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

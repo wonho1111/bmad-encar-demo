@@ -385,6 +385,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "supabase" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -413,6 +414,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary", "pool"] },
     { name = "pydantic-settings" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "python-dotenv" },
     { name = "sqlparse", marker = "extra == 'ai'" },
     { name = "supabase" },
     { name = "uvicorn", extras = ["standard"] },

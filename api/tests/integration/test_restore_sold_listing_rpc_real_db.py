@@ -64,19 +64,37 @@ def _insert_listing(cur, listing_id, seller_id, status):
 
 
 def _create_user(cur, email, *, role=None):
+    # ⚠️ 2026-08-11 갱신(Story 17.1, 0033): 가입 트리거는 metadata의 role을 더 이상 안 읽는다
+    # (항상 'user'로 배정) — conftest.py·test_chat_idempotency_real_db.py의 같은 정정과 동일
+    # 계약(2026-08-11 3차 코드리뷰 patch로 이 사본도 그 두 곳과 형태를 맞췄다: metadata는
+    # jsonb_build_object('role', ...)로 보내고, 트리거 직후 role=='user'를 실제로 단언한다 —
+    # 이전엔 이 사본만 '{}'::jsonb를 보내고 그 단언이 없어 세 사본의 계약 정정 문서화가 갈렸다).
     user_id = uuid.uuid4()
-    cur.execute(
-        "insert into auth.users (id, email, raw_user_meta_data) "
-        "values (%s, %s, '{\"role\":\"seller\"}'::jsonb)",
-        (user_id, email),
-    )
+    if role is None:
+        cur.execute(
+            "insert into auth.users (id, email, raw_user_meta_data) values (%s, %s, '{}'::jsonb)",
+            (user_id, email),
+        )
+    else:
+        cur.execute(
+            "insert into auth.users (id, email, raw_user_meta_data) "
+            "values (%s, %s, jsonb_build_object('role', %s::text))",
+            (user_id, email, role),
+        )
     # 0001의 가입 트리거가 profiles 행을 만든다 — listings.seller_id FK가 이를 요구한다.
-    cur.execute("select id from public.profiles where id = %s", (user_id,))
-    assert cur.fetchone() is not None, "가입 트리거가 profiles 행을 만들지 않았다"
+    cur.execute("select role from public.profiles where id = %s", (user_id,))
+    row = cur.fetchone()
+    assert row is not None, "가입 트리거가 profiles 행을 만들지 않았다"
+    assert row[0] == "user", (
+        f"가입 트리거가 'user' 고정 계약(0033, DW-682)을 지키지 않았다: {row[0]!r}"
+    )
     if role is not None:
-        # 관리자는 운영자가 승격시키는 역할이라 가입 메타데이터로 안 온다(0028) — profiles를
-        # 직접 올린다(is_admin()이 보는 것이 이 컬럼이다).
+        # 관리자는 운영자가 승격시키는 역할이라 가입 메타데이터로 안 온다(0028 시절에도, 0033 이후에도
+        # 마찬가지) — profiles를 직접 올린다(is_admin()이 보는 것이 이 컬럼이다).
         cur.execute("update public.profiles set role = %s where id = %s", (role, user_id))
+        assert cur.rowcount == 1, (
+            f"role={role!r} UPDATE가 정확히 한 행을 못 바꿨다(rowcount={cur.rowcount})"
+        )
     return user_id
 
 

@@ -80,15 +80,15 @@ _LISTING_COLS = (
 
 
 def _create_user(cur, email, role="buyer"):
-    """auth.users에 유저를 만들고, 가입 트리거(handle_new_user)가 새 계약(Story 14.2, 0028)대로
-    profiles.role을 채웠는지 확인한다.
+    """auth.users에 유저를 만들고, 가입 트리거(handle_new_user)가 새 계약(Story 17.1, 0033)대로
+    profiles.role을 채웠는지 확인한다(conftest._create_user와 동일 계약 — 이 파일은 그 사본이다).
 
-    role=None이면 metadata에 role 키 자체를 안 보낸다(web 신규 가입 경로와 동일) → 'user' 배정.
-    role이 'buyer'/'seller'면 metadata 그대로 반영한다(하위호환 — Flutter 가입 경로) → 그 값 배정.
+    ⚠️ **0033(DW-682)부터 계약이 바뀌었다**: 트리거는 metadata의 role을 더 이상 읽지 않고
+    항상 'user'로 배정한다. role='buyer'/'seller'를 넘기면 그 사실을 먼저 확인한 뒤 profiles를
+    UPDATE로 그 값으로 올린다(이 파일의 호출부가 여전히 "판매자"·"구매자" 구분을 쓰기 때문 —
+    conftest._create_user의 docstring에 같은 근거가 더 자세히 있다).
 
-    그 밖의 값은 **거부한다**(conftest._create_user와 동일 계약 — 이 파일은 그 사본이다).
-    트리거가 전부 'user'로 강제하므로 role="admin" 요청을 조용히 재해석하면 "관리자를 만들었다"고
-    믿는 테스트가 경고 없이 통과한다. 관리자가 필요하면 만든 뒤 profiles를 UPDATE로 올린다.
+    그 밖의 값(admin 등)은 **거부한다** — 관리자가 필요하면 만든 뒤 profiles를 UPDATE로 올린다.
     """
     if role not in (None, "buyer", "seller"):
         raise ValueError(
@@ -107,16 +107,17 @@ def _create_user(cur, email, role="buyer"):
             "values (%s, %s, jsonb_build_object('role', %s::text))",
             (user_id, email, role),
         )
-    # role까지 대조하는 이유: 이 인자를 받아만 두고 확인하지 않으면 "판매자를 만들었다"가
-    # 검사되지 않는 주장으로 남는다. 트리거가 raw_user_meta_data->>'role' 읽기를 멈추면
-    # 여기서 잡힌다(B4 — 만드는 것이 아니라 잡는 것이 완료다).
-    expected_role = role if role in ("buyer", "seller") else "user"
     cur.execute("select role from public.profiles where id = %s", (user_id,))
     row = cur.fetchone()
     assert row is not None, "가입 트리거가 profiles 행을 만들지 않았다"
-    assert row[0] == expected_role, (
-        f"가입 트리거가 role 계약을 지키지 않았다({row[0]} != {expected_role})"
+    assert row[0] == "user", (
+        f"가입 트리거가 'user' 고정 계약(0033, DW-682)을 지키지 않았다: {row[0]!r}"
     )
+    if role in ("buyer", "seller"):
+        cur.execute("update public.profiles set role = %s where id = %s", (role, user_id))
+        assert cur.rowcount == 1, (
+            f"role={role!r} UPDATE가 정확히 한 행을 못 바꿨다(rowcount={cur.rowcount})"
+        )
     return user_id
 
 
