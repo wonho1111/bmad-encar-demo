@@ -564,6 +564,18 @@ Future<PhotoSyncResult> syncListingPhotos(
         );
       }
       failedCount += 1;
+      // DW-797(2026-08-10 후속 코드리뷰) — **여기서도 대표가 넘어갈 수 있다.**
+      // 이 사진이 화면 맨 앞(아직 아무도 대표가 안 된 상태)이었다면, INSERT 실패로
+      // coverAssigned가 false로 남아 **다음 사진이 실제 대표가 된다**. 기존 행 분기는 이 조건을
+      // 기록하는데(위 orderSaveFailed/coverMayHaveChanged) 이 분기만 빠져 있어서, 판매자는
+      // 개별 카드의 실패 배지만 보고 "내가 맨 앞에 둔 사진이 대표가 아니게 됐다"는 사실은
+      // 몰랐다(spec-16-11 Always: "부분 실패로 대표가 바뀔 수 있으면 알린다").
+      // ⚠️ 기존 행 분기의 `!coverAssigned || !snapshotOk`를 그대로 복사하지 않는다 —
+      // snapshotOk 조건은 "실패한 행이 옛 번호를 그대로 들고 남아 경합한다"는 사정 때문인데,
+      // INSERT 실패는 **행 자체가 안 생기므로** 남는 옛 번호가 없다. 여기선 !coverAssigned면 족하다.
+      if (!coverAssigned) {
+        coverMayHaveChanged = true;
+      }
       continue; // 카운터를 올리지 않는다 — 구멍 방지(INSERT 실패는 옛 번호를 남기지 않으므로 안전).
     }
 
@@ -595,11 +607,16 @@ Future<PhotoSyncResult> syncListingPhotos(
   // spec-16-11 후속 코드리뷰 2회차 패치(P1+P2) — 루프 안에서 여러 행이 sort_order UPDATE에
   // 실패해도 문장은 **정확히 하나**만 남긴다(위 orderSaveFailed/coverMayHaveChanged 선언부
   // 설명 참조).
-  if (orderSaveFailed) {
+  // ✎ DW-797 — 조건을 `orderSaveFailed`에서 **두 축**으로 넓혔다. INSERT 실패로 대표가
+  // 넘어간 경우는 "순서 저장 실패"가 아니므로 그 문구를 붙이면 사실과 다르다(그 사진은 순서가
+  // 아니라 **행 자체가** 안 만들어졌고, 그건 개별 카드 배지가 이미 말한다). 그래서 세 갈래로 나눈다.
+  if (orderSaveFailed || coverMayHaveChanged) {
     warnings.add(
-      coverMayHaveChanged
-          ? '사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.'
-          : '사진 순서를 저장하지 못한 항목이 있어요.',
+      !orderSaveFailed
+          ? '대표 사진이 바뀌었을 수 있어요.'
+          : coverMayHaveChanged
+              ? '사진 순서를 저장하지 못한 항목이 있어요. 대표 사진이 바뀌었을 수 있어요.'
+              : '사진 순서를 저장하지 못한 항목이 있어요.',
     );
   }
 

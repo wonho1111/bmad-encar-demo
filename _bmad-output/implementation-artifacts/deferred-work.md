@@ -6285,7 +6285,11 @@ spec-16-11이 Always로 요구한 *"부분 실패로 대표가 바뀔 수 있는
 fix_sketch: 신규 행 INSERT catch에 `orderSaveFailed = true;`와 `if (!coverAssigned) coverMayHaveChanged = true;`를 더한다. 검사는 **기존 `photo_sync_test.dart:469`("첫 INSERT가 실패하면 대표는 실제로 sort_order=0을 받은 사진에 붙는다")가 이미 이 시나리오를 만들어 놓고 `r.warnings`만 안 보고 있으므로**, 그 테스트에 warnings 단언을 더하는 것이 가장 싸다. 채택 전 뮤테이션으로 red 확인할 것.
 trigger: 사진 파이프라인을 다시 손대는 다음 스토리, 또는 [[DW-794]](저장 대상 0건일 때 is_cover가 전부 false)를 처리하는 자리에서 함께 — 둘 다 "부분 실패 시 대표 상태" 축이다.
 related: [[DW-794]] · [[DW-789]]·[[DW-790]](스냅샷 실패 시 중복회피가 꺼지는 같은 계열)
-status: open
+resolution: 2026-08-10 수정 완료. 신규 행 INSERT 실패 catch에 `if (!coverAssigned) coverMayHaveChanged = true;`를 더했다 — 기존 행 분기의 `!coverAssigned || !snapshotOk`를 **그대로 복사하지 않았다**: `snapshotOk` 조건은 "실패한 행이 옛 번호를 들고 남아 경합한다"는 사정 때문인데 INSERT 실패는 행 자체가 안 생겨 남는 옛 번호가 없다(그 판단 근거를 코드 주석에 남겼다).
+경고 조립도 함께 고쳤다 — 조건을 `orderSaveFailed`에서 `orderSaveFailed || coverMayHaveChanged`로 넓히고 문구를 세 갈래로 나눴다. INSERT 실패는 "순서를 저장하지 못했다"가 아니므로(행 자체가 없다) 그 문구를 붙이면 판매자가 엉뚱한 데를 고치려 든다.
+검사: 기존 테스트가 이미 만들어 둔 시나리오(맨 앞 사진 INSERT만 실패)에 warnings 단언을 더했다 — "대표가 바뀌었을 수 있다"가 있고 "순서 저장 실패" 문구는 **없다**를 둘 다 본다.
+**red를 서로 다른 두 형태로 확인했다**: ⓐ 가드 조건을 `!coverAssigned` → `coverAssigned`로 뒤집기(플래그는 그대로 둠) ⓑ 조건은 두고 경고 조립부를 옛 형태(`if (orderSaveFailed)`)로 되돌리기 — 둘 다 이 검사만 red. 백업본으로 원복 후 전량 green(520건).
+status: done 2026-08-10
 
 ### DW-798: `_defaultChatSubscribe`·`fetchRooms` 계열의 실제 구독 경로를 어떤 테스트도 실행하지 않는다
 

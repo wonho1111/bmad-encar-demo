@@ -487,6 +487,36 @@ void main() {
       );
       expect(setCover.query['storage_path'], 'eq.${successfulInsert.body['storage_path']}');
     });
+
+    // DW-797(2026-08-10 후속 코드리뷰) — 위 테스트는 **대표가 실제로 넘어간다는 사실**까지만
+    // 확인하고 "그걸 사용자에게 알렸는가"는 아무도 안 봤다. 그래서 기존 행 실패 분기에만
+    // 있던 경고 조건이 신규 행 INSERT 실패 분기에 빠져 있어도 전 스위트가 green이었다.
+    // 시나리오는 바로 위 테스트와 같다(맨 앞 사진의 INSERT만 실패) — 거기에 warnings를 단언한다.
+    test('맨 앞 사진의 INSERT가 실패해 대표가 넘어가면 그 사실을 사용자에게 알린다(DW-797)',
+        () async {
+      var n = 0;
+      fakeHttp.responder = (req) {
+        if (req.method != 'POST') return null;
+        n += 1;
+        return n == 1 ? (status: 400, body: {'message': 'boom'}) : null;
+      };
+
+      final r = await sync([_newPhoto('a'), _newPhoto('b')], const []);
+
+      expect(r.failedCount, 1, reason: '전제: 첫 INSERT가 실제로 실패해야 이 검사가 의미 있다');
+      expect(
+        r.warnings.any((w) => w.contains('대표 사진이 바뀌었을 수 있어요')),
+        isTrue,
+        reason: '판매자가 맨 앞에 둔 사진이 대표가 되지 못했다 — 개별 카드의 실패 배지만으로는 '
+            '"대표가 다른 장으로 확정됐다"는 사실을 알 수 없다. 실제 warnings: ${r.warnings}',
+      );
+      expect(
+        r.warnings.any((w) => w.contains('순서를 저장하지 못한')),
+        isFalse,
+        reason: 'INSERT 실패는 "순서 저장 실패"가 아니다 — 그 행은 아예 만들어지지 않았다. '
+            '사실과 다른 문구를 붙이면 판매자가 엉뚱한 데를 고치려 든다. 실제: ${r.warnings}',
+      );
+    });
   });
 
   group('spec-16-11 결함1 근본수정 — 행 삭제 실패 항목은 저장 대상에서만 빠진다(목록엔 유지)', () {
