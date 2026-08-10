@@ -6083,3 +6083,71 @@ fix_sketch: 프로필▾를 햄버거 메뉴 안으로 옮긴다 → 좁은 화�
 trigger: **웹을 정리하는 다음 라운드**(Epic 16 회고 이후 웹 UI 작업이 열리는 자리)에서 처리한다. 그 전이라도 웹을 운영(`main`)에 반영하기로 결정하는 순간, 반영 전에 같이 본다 — 시연에서 모바일 브라우저로 열면 바로 보이는 자리다.
 related: [[DW-768]](웹·앱 편차) · [[DW-774]](시각 축 검사가 실제 폭에서 안 도는 문제)
 status: open
+
+## Deferred from: code review of Epic 16 bundle (2026-08-10)
+
+### DW-781: 사진 업로더 썸네일 고정 높이 140이 시스템 글자 크기 확대에서 넘칠 수 있다
+
+origin: Epic 16 묶음 코드리뷰(2026-08-10, acceptance-auditor 렌즈, D그룹) — 보고서 `epic-16-bundle-review-2026-08-10.md`
+location: `app/lib/features/listings/photo_uploader_widget.dart:210`(가로 `ListView`의 `SizedBox(height: 140)`) · 내용물 = `:317-395`(썸네일 88 + 재시도 버튼 + 오류문구 2줄)
+severity: low
+reason: 코드 주석 자체가 "오류 상태가 가장 큰 경우라 108로는 부족했다(실측 오버플로)"라고 밝혀 **기본 배율에서도 여유가 거의 없음**을 인정한다. `minimumSize`는 최소값일 뿐이라 배율이 커지면 버튼·텍스트 실제 높이가 함께 커진다. 다만 **이 리뷰는 실행 검증을 하지 않았다**(리뷰어 20명 동시 실행 시 WSL 스왑 스래싱을 막으려 `flutter test` 실행을 금지했다) — 리뷰어도 "정적 추정"이라고 스스로 명시했다. 추정 상태로 고치지 않는다.
+fix_sketch: [[DW-778]]과 **같은 방식으로 먼저 실측한다** — `390x844`+`MediaQuery.textScaler = TextScaler.linear(2.0)`로 오류 상태 썸네일을 pump하고 `FlutterError.onError`로 오버플로를 센다. 실제로 터지면 고정 140을 없애고 내용에 맞춰 늘어나게 하거나 오류문구를 1줄로 줄인다. 안 터지면 이 항목을 그 실측을 근거로 닫는다.
+trigger: [[DW-778]](홈 화면 textScaler 2.0 오버플로, **실측된 건**)을 처리하는 그 스토리에서 함께 잰다 — 둘 다 "접근성 글자 크기" 한 축이라 따로 돌 이유가 없다.
+related: [[DW-778]](같은 계열, 실측 완료된 쪽)
+status: open
+
+### DW-782: `sold` 매물 쓰기 차단이 `listing_images` 행에만 있고 실제 파일(`storage.objects`)에는 없다
+
+origin: Epic 16 묶음 코드리뷰(2026-08-10, verification-gap 렌즈, D그룹)
+location: `supabase/migrations/0031_listing_images_sold_write_block.sql`(3정책에 `and l.status <> 'sold'` 추가) vs `supabase/migrations/0013_listing_images_path_integrity.sql:77-100`(`storage.objects` insert/update/delete 정책 — 경로 소유자만 검사, `sold` 검사 없음)
+severity: low
+reason: `epic-16-context.md`가 "`sold` 매물 사진 추가/삭제는 **DB 쓰기 정책으로** 막는다(화면 방어 아님)"고 계약을 선언하는데, 그 보장이 **메타 행에만** 적용되고 파일 자체에는 적용되지 않는다. **지금 앱 경로로는 도달 불가**다 — `sell_controller.dart`가 `syncListingPhotos` 전에 항상 `listings` UPDATE를 통과시켜야 하고 `0015`가 이미 sold를 막는다. 즉 "실제로 뚫리는 버그"가 아니라 **그 순서 의존이 깨지면 조용히 뚫리는 잠재 구멍**이라 지금 고치지 않는다. [[DW-390]]은 `listing_images` 3정책만 스코프로 잡고 done으로 닫혔다.
+fix_sketch: `storage.objects`의 `listing_images_objects_owner_insert/update/delete` 3정책에 경로의 `listing_id`로 `listings.status <> 'sold'`를 확인하는 조건을 더한다(전진 마이그레이션 1개). ⚠️ **"정책이 있다"로 닫지 않는다** — sold 매물 사진 경로에 실제로 쓰기를 시도해 거부되는 것을 확인해야 닫는다(CLAUDE.md B4 "존재 확인은 작동 확인이 아니다").
+trigger: 사진 관련 기능을 다시 손대는 스토리, 또는 Storage 정책을 건드리는 마이그레이션이 생길 때. 그 전이라도 `sell_controller`의 "listings UPDATE 먼저" 순서를 바꾸는 변경이 제안되면 **그 자리에서 선행 조건으로** 올린다.
+related: [[DW-390]](같은 계약의 절반만 닫은 항목)
+status: open
+
+### DW-783: `searchControllerProvider`가 로그인/로그아웃에도 옛 결과를 들고 있는다
+
+origin: Epic 16 묶음 코드리뷰(2026-08-10, adversarial 렌즈, E그룹)
+location: `app/lib/features/listings/listings_providers.dart:127`(비-autoDispose 싱글턴) · `app/lib/core/router/app_router.dart:194-202`(`ref.listen(authStateProvider)`가 `chatUnreadTotalProvider`만 무효화)
+severity: low
+reason: `SearchScreen`은 `rootNavigator`로 push돼 GoRouter가 위치를 추적하지 않고(`/home`으로 남는다), `searchControllerProvider`는 autoDispose도 아니며 어떤 무효화 경로에도 없다. 그래서 탐색 화면을 열어 둔 채 세션이 바뀌면 비로그인용 컬럼(`listingCardColumns(false)` — 신뢰속성 3컬럼 제외)으로 받아 온 결과가 그대로 남는다. **트리거가 배경 타이밍**(토큰 갱신 실패로 인한 SIGNED_OUT 등)이라 리뷰어도 실행 확인은 못 했다. [[DW-758]]이 같은 계열(로그인 전환 직후 옛 목록)을 이미 담고 있어 함께 도는 게 맞다.
+fix_sketch: `app_router.dart`의 auth 리스너에서 `searchControllerProvider`도 무효화하거나, 이 provider를 autoDispose로 바꾼다. 검사는 "auth 상태를 뒤집은 뒤 `SearchState.results`가 비워지거나 재조회된다"를 단언한다.
+trigger: [[DW-758]](로그인/로그아웃 직후 목록이 옛 결과를 보여줌)을 처리하는 그 스토리에서 같이 본다.
+related: [[DW-758]](같은 뿌리) · [[DW-763]](anon 컬럼 분기)
+status: open
+
+### DW-784: 손상·비호환 이미지의 처리 실패가 항상 "재시도 가능"으로 표시된다
+
+origin: Epic 16 묶음 코드리뷰(2026-08-10, edge-case-hunter 렌즈, D그룹)
+location: `app/lib/features/listings/photo_sync.dart:279-303`(리사이즈 실패 catch가 전부 `retryable: true`) · `app/lib/features/listings/photo_item.dart:368-381`(`validatePickedFile` — 확장자만 검사)
+severity: low
+reason: 확장자만 통과시키는 검증 뒤에 실제 디코딩이 실패하면, 재시도해도 결과가 같은데 "다시 시도해주세요" 버튼이 뜬다. 사용자는 같은 실패를 반복하고 진짜 해결책(그 사진을 빼고 다른 사진 고르기)은 안내되지 않는다. 다만 `flutter_image_compress`가 **실제로 어떤 포맷에서 실패하는지**는 실기기 확인 없이는 확정할 수 없고, 이 리뷰는 실행 검증을 하지 않았다.
+fix_sketch: 리사이즈 단계의 디코딩 실패를 `retryable: false` + "이 사진은 열 수 없어요. 다른 사진을 골라주세요"로 분리한다. 어떤 예외가 "영구 실패"인지 실기기로 먼저 확인한다.
+trigger: [[DW-745]](사진 파이프라인 실기기 미검증)을 실기기로 검증하는 그 자리에서 함께 판정한다 — 어떤 포맷이 실제로 실패하는지 그때 측정된다.
+related: [[DW-745]](같은 실기기 미검증 계열)
+status: open
+
+### DW-785: AI 대화 이력(`_messages`)에 길이 상한이 없다
+
+origin: Epic 16 묶음 코드리뷰(2026-08-10, adversarial 렌즈, C그룹)
+location: `app/lib/features/ai_search/ai_chat_screen.dart`(`_messages` — `add`/`removeLast`만 있고 상한 없음) · `app/lib/features/ai_search/chat_message.dart:65-79`(`buildContext`가 `.take(maxContextTurns)`로 **서버 전송분만** 자른다)
+severity: low
+reason: 서버로 보내는 맥락은 12턴으로 잘리지만 화면이 들고 있는 이력은 안 잘린다. 각 assistant 턴이 매물카드 배열을 함께 들고 있어 긴 세션에서 계속 쌓인다. **되묻기 칩(16.5)이 여러 라운드를 유도하는 UX**라 세션이 길어질 유인이 이 에픽에서 새로 생겼다. 현재 데모 규모에서는 무해해서 지금 고치지 않는다.
+fix_sketch: `_messages`에 상한을 두고 오래된 턴을 잘라내거나(스크롤 위쪽에 "이전 대화 접힘" 표시), 최소한 턴 수 상한을 관측할 수 있게 남긴다.
+trigger: AI 대화를 다시 손대는 스토리, 또는 긴 세션에서 앱이 느려진다는 리포트가 들어올 때.
+related: [[DW-733]] 인근(16.5가 wire 계약을 넓히며 커진 검증 공백)
+status: open
+
+### DW-786: 라우터 auth 리스너가 토큰 자동 갱신에도 로그인/로그아웃과 똑같이 반응한다
+
+origin: Epic 16 묶음 코드리뷰(2026-08-10, edge-case-hunter 렌즈, E그룹)
+location: `app/lib/core/router/app_router.dart:194-201`(`ref.listen(authStateProvider, ...)`이 `previous`/`next`를 검사하지 않음) · `app/lib/features/auth/auth_controller.dart:16-17`(`onAuthStateChange`를 필터 없이 흘림)
+severity: low
+reason: 주석이 밝히는 의도는 "계정 A 로그아웃 → 계정 B 로그인"처럼 **신원이 바뀌는** 경우인데, 코드는 그 조건을 검사하지 않아 조용한 토큰 갱신에도 GoRouter 전체 redirect 재평가 + 안읽음 RPC 재호출이 돈다. 기능이 틀리지는 않고(재평가 결과가 같다) 낭비만 있어 지금 고치지 않는다.
+fix_sketch: `next.value?.event`가 `signedIn`/`signedOut`/`userDeleted` 등 **신원 변경 이벤트**일 때만 반응하게 좁힌다. ⚠️ 좁히다가 초기 세션 복원(`initialSession`)을 빠뜨리면 첫 진입 redirect가 안 돌 수 있으니 그 케이스를 검사로 먼저 고정한다.
+trigger: 라우터/인증 흐름을 손대는 다음 스토리, 또는 앱이 백그라운드에서 불필요한 요청을 낸다는 관측이 생길 때.
+related: [[DW-783]](같은 리스너가 무효화 대상을 좁게 잡고 있는 문제)
+status: open
