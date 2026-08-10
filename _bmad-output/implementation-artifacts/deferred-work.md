@@ -2319,7 +2319,11 @@ location: `.github/workflows/tests.yml`(web 잡은 `lint`+`vitest`만) · `web/p
 severity: high
 reason: CI에서 Playwright를 돌리려면 (a) 헤드리스 Chromium 설치(`npx playwright install --with-deps chromium`), (b) 로컬 Supabase 스택을 CI 컨테이너 안에서 기동(마이그레이션 전량 적용 + 시드), (c) `web/.env.local` 대응 시크릿(anon key 등) 관리가 추가로 필요하다 — 이미 `api-db` 잡이 하는 "실DB 컨테이너 기동" 패턴을 재사용할 수는 있지만, 세 가지를 한 번에 결정하는 것은 이 스토리(E2E 스펙 작성) 범위를 넘는 별도 인프라 작업이다.
 trigger: **스토리로 만들어 처리한다(사용자 의사: CI에 붙이길 원함).** 순서 = ①CI 전용 시드 픽스처(`buyer@test.com` + 사진 1장 매물) → ②`supabase start` 기반 `e2e` 잡 신설 → ③처음엔 `continue-on-error: true`로 **비차단** 운영하며 flaky 여부 관찰 → ④안정 확인 후 필수 게이트로 승격.
-status: open
+resolution: **하지 않기로 확정 — 2026-08-10 사용자 결정**(Epic 16 회고). *"이건 안 할 거니까 뭐 어디 빼주거나 이제 안 하겠다고 하거나 해주고."*
+⚠️ **결함이 해소돼서 닫는 게 아니다.** `web/e2e/*.spec.ts`는 여전히 로컬 전용이고 CI는 그것을 돌리지 않는다 — 이 항목이 서술한 사실은 그대로다. **하지 않기로 한 결정을 기록하며 닫는다.**
+왜 닫는가: 이행할 생각이 없는 약속을 `open`으로 두면 회고마다 "미이행 ❌"로 다시 세어지고(실제로 Epic 13 회고의 A4로 한 번, Epic 16 회고에서 또 한 번 세어졌다), 그 ❌가 쌓이면 **정말 중요한 미이행과 구분되지 않는다.** 안 할 것은 안 한다고 적는 것이 장부를 정확하게 유지하는 방법이다(CLAUDE.md B8).
+되살리려면: E2E를 CI에서 돌려야 할 이유가 생겼을 때(예: 웹을 운영에 반영하기로 결정) 새 항목으로 다시 연다 — 이 항목의 trigger에 적힌 4단계 순서는 그때 그대로 재사용할 수 있다.
+status: wont-do 2026-08-10
 
 - **위치:** `.github/workflows/tests.yml`(web 잡은 `lint`+`vitest`만) · `web/playwright.config.ts` · `web/e2e/*.spec.ts`.
 - **내용:** Story 11.5가 레포 최초의 Playwright E2E 스위트를 세웠지만, `npm run test:e2e`를 CI에서 자동으로 돌리는 job은 만들지 않았다(스펙 Never 항목 — "로컬 재실행 가능성(#86)까지가 이 스토리의 범위"). 그래서 지금은 `web/e2e/**`를 건드리는 PR이 push돼도 이 스위트가 자동으로 검증되지 않고, 사람이 로컬에서 `npm run test:e2e`를 직접 돌려야만 한다.
