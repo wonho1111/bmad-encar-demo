@@ -134,14 +134,14 @@ final _kTabBranches = <_TabBranch>[
     // wishlistProvider는 autoDispose지만 이 브랜치도 IndexedStack으로 영구 마운트되므로
     // (recentListingsProvider·chatRoomsProvider와 같은 함정, 위 _TabBranch.onActivate 문서
     // 참조) 탭을 다시 누를 때 명시 무효화해야 "방금 취소한 찜"이 즉시 사라진다.
-    // 비로그인 가드는 채팅 탭(아래)과 같은 이유다 — `onActivate`가 `goBranch()`보다 먼저 도는
-    // 탓에 리다이렉트 전에 인증 전제 쿼리가 나간다. `wishlistProvider`도 `fetchWishlist()`로
-    // 로그인 사용자의 찜만 읽는다. (리뷰는 채팅 탭만 지목했지만 두 줄 위의 **같은 결함**이라
-    // 함께 고친다 — 한쪽만 고치면 다음 리뷰가 나머지를 다시 올린다.)
-    onActivate: (ref) {
-      if (ref.read(currentUserProvider) == null) return;
-      ref.invalidate(wishlistProvider);
-    },
+    // ✎ 2026-08-10 되돌림 — 여기 잠깐 비로그인 가드를 넣었다가 뺐다. 근거가 틀렸다:
+    //   "채팅 탭과 같은 결함"이라고 적었는데, `wishlistProvider`가 부르는
+    //   `wishlist_repository.dart`의 `fetchWishlist()`는 **원래부터**
+    //   `if (userId == null) return [];` 가드를 갖고 있어(같은 파일 123-124행) 비로그인이면
+    //   네트워크 호출 자체를 안 낸다. 가드 없이 곧장 요청을 내보내는 채팅 쪽
+    //   (`fetchRooms`·`fetchUnreadTotal`·`fetchUnreadByRoom`)과는 상황이 다르다.
+    //   코드를 다시 읽지 않고 "옆에 있으니 같은 문제겠지"로 유추한 것이었다(후속 코드리뷰 발견).
+    onActivate: (ref) => ref.invalidate(wishlistProvider),
   ),
   _TabBranch(
     key: const Key('tab_chat'),

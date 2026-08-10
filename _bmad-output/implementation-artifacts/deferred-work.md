@@ -6273,3 +6273,28 @@ source_spec: `spec-16-11-사진-순서-대표-무결성.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260810-190152-83da; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open
+
+### DW-797: 새로 추가한 사진의 INSERT가 실패해 대표가 넘어가도 사용자에게 알리지 않는다
+
+origin: Epic 16 후속 코드리뷰(2026-08-10, acceptance-auditor) — spec-16-11 인수조건 대조 중 발견. 오케스트레이터가 코드로 직접 재확인했다.
+location: `app/lib/features/listings/photo_sync.dart` 3단계의 **신규 행 INSERT 실패 catch**(`failedCount += 1; continue;`) — 대조군은 같은 루프의 **기존 행 실패 분기**로, 그쪽은 `orderSaveFailed = true` + 조건부 `coverMayHaveChanged = true`를 세팅한다.
+severity: medium
+reason: `grep -n "coverMayHaveChanged\|orderSaveFailed" photo_sync.dart` 실측 — 두 변수가 **세팅되는 자리는 491·493·506·508 네 곳뿐이고 전부 기존 행 분기 안**이다. 신규 행 INSERT 실패 경로는 둘 다 건드리지 않는다. 그래서 판매자가 새 사진을 목록 맨 앞(대표 자리)에 놓고 저장했는데 그 INSERT만 실패하면, `coverAssigned`가 false로 남아 **다음 사진이 실제 대표가 되는데** `warnings`에는 아무 문장도 안 실린다. 사용자는 개별 카드의 "사진 정보를 저장하지 못했어요" 배지만 보고 **대표가 자기 의도와 다르게 확정됐다는 사실은 모른다.**
+spec-16-11이 Always로 요구한 *"부분 실패로 대표가 바뀔 수 있는 상황이면 무엇이 어떻게 될지 한 줄로 알린다"* 를 **이 경로에서만** 못 지킨다 — 기존 행 경로는 지킨다.
+**왜 지금 안 고쳤나:** 16.11은 이미 종료된 스토리이고, 이 수정은 조건 판단이 하나 붙는다 — 기존 행 분기는 `!coverAssigned || !snapshotOk`를 쓰는데(옛 번호가 남아 경합하므로) INSERT 실패는 행 자체가 안 생겨 옛 번호가 남지 않으므로 `!coverAssigned`만으로 충분해 보인다. 그 판단을 검증 없이 복사하면 안 된다.
+fix_sketch: 신규 행 INSERT catch에 `orderSaveFailed = true;`와 `if (!coverAssigned) coverMayHaveChanged = true;`를 더한다. 검사는 **기존 `photo_sync_test.dart:469`("첫 INSERT가 실패하면 대표는 실제로 sort_order=0을 받은 사진에 붙는다")가 이미 이 시나리오를 만들어 놓고 `r.warnings`만 안 보고 있으므로**, 그 테스트에 warnings 단언을 더하는 것이 가장 싸다. 채택 전 뮤테이션으로 red 확인할 것.
+trigger: 사진 파이프라인을 다시 손대는 다음 스토리, 또는 [[DW-794]](저장 대상 0건일 때 is_cover가 전부 false)를 처리하는 자리에서 함께 — 둘 다 "부분 실패 시 대표 상태" 축이다.
+related: [[DW-794]] · [[DW-789]]·[[DW-790]](스냅샷 실패 시 중복회피가 꺼지는 같은 계열)
+status: open
+
+### DW-798: `_defaultChatSubscribe`·`fetchRooms` 계열의 실제 구독 경로를 어떤 테스트도 실행하지 않는다
+
+origin: Epic 16 후속 코드리뷰(2026-08-10, verification-gap)
+location: `app/lib/features/chat/chat_room_screen.dart`의 `_defaultChatSubscribe`(실제 `supabase.channel(...).subscribe(...)`) · `app/lib/features/chat/chat_repository.dart`의 `fetchRooms`
+severity: low
+reason: `grep -rn "_defaultChatSubscribe\|removeChannel\|channel.subscribe\|RealtimeChannelConfig" app/test/*.dart` = **0건**. 채팅방 위젯 테스트는 전부 `subscribeOverride`를 주입해 이 함수를 통째로 우회한다. 그래서 토픽 문자열·`RealtimeChannelConfig(private: true, replay: ...)`·`onBroadcast` 이벤트명이 바뀌어도 어떤 검사도 red가 되지 않는다 — `docs/conventions.md` §12가 계약으로 못박은 값들이다.
+※ 같은 리뷰가 이 함수에 있던 `try/catch` 방어를 **도달 불가능**으로 판정해 제거했다(realtime_client 2.8.0 소스 실측: `channel()`이 매번 새 인스턴스를 만들고 `subscribe()`는 `joinedOnce`가 true일 때만 던진다). 즉 이 자리는 "방어가 없어서" 위험한 게 아니라 **계약 값이 무검사**인 것이 남은 문제다.
+fix_sketch: `chat_repository_test.dart`가 이미 쓰는 `SupabaseClient(httpClient:)` 기법으로는 소켓 경로를 못 덮는다. 토픽 문자열은 이미 `roomTopic()` 순수 함수로 분리돼 있으니 **그 함수의 반환값을 §12 리터럴과 대조하는 단위 테스트**가 가장 싸고 확실한 첫 걸음이다(구독 자체를 모사하지 않는다).
+trigger: 실시간 채팅 계약(§12)을 다시 손대는 스토리, 또는 실시간 수신이 조용히 죽는 증상이 재발할 때 — 그 계열은 이 리포에서 이미 한 번 발생했다(전 검사 green인데 수신이 죽어 사람이 복구).
+related: [[DW-733]] 인근(16.x가 wire 계약을 넓히며 커진 검증 공백)
+status: open

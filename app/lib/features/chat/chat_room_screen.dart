@@ -78,21 +78,21 @@ Object _defaultChatSubscribe({
     ),
   );
   channel.onBroadcast(event: 'INSERT', callback: onInsert);
-  // ⚠️ `subscribe()`가 **동기적으로 예외를 던질 수 있다**(realtime_client 2.8.0의
-  // `RealtimeChannel.subscribe()`는 중복 구독 등에서 throw한다). 그런데
-  // `RealtimeClient.channel()`은 그보다 **먼저** `channels.add(chan)`으로 채널을 이미
-  // 등록해 둔다. 그래서 예외를 그냥 전파시키면 호출부(`_subscribeRealtime`)의
-  // `_channelHandle = ...` 대입이 완료되지 않아 `null`로 남고, `dispose()`의
-  // `if (handle != null)` 가드가 거짓이 되어 `removeChannel`이 **한 번도 안 불린다** —
-  // 위젯이 사라진 뒤에도 등록된 채널이 그대로 살아남는다(방을 반복해 여닫으면 누적).
-  // 여기서 잡아 **직접 정리한 뒤** 다시 던진다: 호출부의 에러 표시 동작은 그대로 두고
-  // 누수만 막는다. (2026-08-10 Epic 16 묶음 코드리뷰 adversarial 렌즈 발견)
-  try {
-    channel.subscribe(onStatus);
-  } catch (_) {
-    supabase.removeChannel(channel);
-    rethrow;
-  }
+  // ✎ 2026-08-10 되돌림 — 여기 `try { subscribe } catch { removeChannel; rethrow; }`를 넣었다가
+  //   뺐다. 묶음 코드리뷰가 "subscribe()가 예외를 던지면 이미 등록된 채널이 정리 없이 샌다"고
+  //   지적했고 나도 그대로 받았는데, **후속 리뷰가 라이브러리 소스로 재보니 이 호출부에서는
+  //   그 예외가 일어날 수 없다**(실측, `realtime_client-2.8.0`):
+  //     · `RealtimeClient.channel()`(realtime_client.dart:398)은 호출마다 **새 인스턴스**를 만든다
+  //       — 토픽이 같아도 기존 채널을 재사용하지 않는다.
+  //     · `RealtimeChannel.subscribe()`가 동기적으로 던지는 유일한 지점은
+  //       `if (joinedOnce == true) throw`(realtime_channel.dart:140)이고, `joinedOnce`는
+  //       선언 시 false(:18)이며 **그 인스턴스에서 subscribe가 끝까지 성공했을 때만**(:171) true다.
+  //   즉 새 인스턴스에 subscribe를 한 번만 부르는 이 코드에서는 도달 불가능한 분기였다.
+  //   A2("불가능한 시나리오용 예외처리를 넣지 않는다")에 따라 제거한다 — 근거가 틀린 방어 코드를
+  //   남겨두면 다음 사람이 그 주석의 라이브러리 설명을 믿고 다른 자리에 잘못 옮긴다.
+  //   ⚠️ 되살릴 조건: 이 함수가 채널 인스턴스를 **재사용**하도록 바뀌거나 같은 인스턴스에
+  //   subscribe를 두 번 부르게 되면 그때는 실제 경로가 생긴다.
+  channel.subscribe(onStatus);
   return channel;
 }
 
