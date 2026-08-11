@@ -28,7 +28,7 @@
 // 서버에서는 getSession()이 아니라 getUser()를 쓴다 — 쿠키를 그대로 믿지 않고 Auth 서버에 재검증해 신뢰 가능.
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { USER_ROLE, ROLE_LABEL, type UserRole } from '@/lib/constants';
+import { USER_ROLE, ROLE_LABEL, PROFILE_STATUS, type UserRole } from '@/lib/constants';
 import { fetchPopularAndRecentListings, type PopularRecentSection } from '@/lib/listings';
 import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
@@ -56,13 +56,21 @@ export default async function Home() {
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, status')
       .eq('id', user.id)
       .single();
     if (profile?.role) {
       // 역할별 랜딩: 관리자는 로그인 후 곧바로 관리 페이지로 보낸다(편의 라우팅).
       //   보안 차단이 아니라 "도착지 유도"다 — /admin 자체의 접근 통제는 proxy + requireRole이 담당.
-      if (profile.role === USER_ROLE.ADMIN) {
+      // status==='active'일 때만 보낸다(spec-17-3, guard.ts의 requireRole과 락스텝) — 정지된
+      //   관리자는 requireRole이 /admin에서 여기(/)로 돌려보내는데, 이 분기가 role만 보면
+      //   무조건 다시 /admin으로 되돌려 "/admin → / → /admin → …" 무한 리다이렉트가 된다.
+      //   정지된 관리자는 홈에 그대로 머문다(새 화면을 만들지 않는 선택지 ⓑ).
+      // ⚠️ 여기도 guard.ts의 requireRole과 같은 이유로 `web/src/lib/auth/status.ts`의
+      //   getOwnStatus를 쓰지 않는다 — role·status를 이미 한 번의 select로 묶어 읽고 있고,
+      //   그 헬퍼를 또 부르면 auth.getUser() 왕복이 한 번 더 늘 뿐이다. getOwnStatus는 "쓰기
+      //   거부 뒤 사유 안내"용 단일 경로다(ListingActions.tsx·SellForm.tsx).
+      if (profile.role === USER_ROLE.ADMIN && profile.status === PROFILE_STATUS.ACTIVE) {
         redirect('/admin');
       }
       roleLabel = ROLE_LABEL[profile.role as UserRole] ?? profile.role;

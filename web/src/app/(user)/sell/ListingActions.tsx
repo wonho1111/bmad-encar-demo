@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_STATUS } from '@/lib/constants';
+import { getOwnStatus, writeRejectionMessage } from '@/lib/auth/status';
 import Button, { buttonClasses } from '@/components/ui/Button';
 import { listListingPhotoPaths, deletePhotoObjectsByPaths } from './photo-sync';
 
@@ -72,9 +73,15 @@ export default function ListingActions({
         return;
       }
       if (!updated || updated.length === 0) {
-        // 0행이 나오는 경우: ① 타인 매물(RLS 차단) ② 매물 없음(그새 삭제됨) ③ 이미 sold(전제조건 불충족).
+        // 0행이 나오는 경우: ① 타인 매물(RLS 차단) ② 매물 없음(그새 삭제됨) ③ 이미 sold(전제조건 불충족)
+        // ④ 행위자가 정지됨(17.1 RLS). 거부가 난 "뒤에" 본인 status를 조회해 ④를 구분한다 —
+        // 먼저 조회해 막는 사전 검사로 쓰지 않는다(spec-17-3 Always, 강제력은 계속 DB에만 있다).
+        const status = await getOwnStatus(supabase);
         setError(
-          '본인 매물만 구매 완료 처리할 수 있습니다. (매물을 찾을 수 없거나, 접근 권한이 없거나, 이미 구매 완료된 매물입니다.)',
+          writeRejectionMessage(
+            status,
+            '본인 매물만 구매 완료 처리할 수 있습니다. (매물을 찾을 수 없거나, 접근 권한이 없거나, 이미 구매 완료된 매물입니다.)',
+          ),
         );
         return;
       }
@@ -123,8 +130,15 @@ export default function ListingActions({
         return;
       }
       if (!deleted || deleted.length === 0) {
-        // 본인 매물이 아니거나 이미 삭제됨(RLS 0행).
-        setError('본인 매물만 삭제할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)');
+        // 본인 매물이 아니거나 이미 삭제됐거나(RLS 0행) 행위자가 정지됨(17.1) — 거부가 난 뒤에
+        // 본인 status를 조회해 정지 사유만 구분한다(spec-17-3 Always).
+        const status = await getOwnStatus(supabase);
+        setError(
+          writeRejectionMessage(
+            status,
+            '본인 매물만 삭제할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)',
+          ),
+        );
         return;
       }
 

@@ -6384,8 +6384,9 @@ summary: 17.1은 DB 강제만 했고(의도된 범위 — 스펙 Never 절이 �
 evidence: `0032`가 `listings_select_*`를 하나도 좁히지 않았다(불변식 후반부 "읽기는 줄지 않는다"의 의도된 결과). `chat_messages_insert_participant`만 막고 `chat_rooms_insert_participant`는 열어 뒀다(DW-799). 0행 → 소유권 문구 매핑은 `ListingActions.tsx`의 기존 분기이며 정지라는 새 사유를 구분하지 않는다. 스펙의 Spec Change Log가 이미 같은 계열의 위험(42501 vs 0행 혼동)을 기록했는데, 그 혼동이 **사용자 문구**에도 그대로 있다.
 why_it_matters: 구매자는 응답 없는 판매자를 "무시당했다"로 읽고, 정지 회원은 시스템이 고장 났다고 판단해 문의한다. 그리고 그 문의를 받는 사람이 원인을 찾아갈 단서가 어느 장부에도 없다.
 fix_sketch: (a) 정지 계정의 `on_sale` 매물 노출·문의 가능 여부를 제품 결정으로 정한다(숨김 / 유지 / "응답 불가" 배지). (b) 쓰기 거부 시 화면이 정지 사유를 구분해 안내한다 — 강제력은 계속 DB에 두고 화면은 **안내만** 한다(CLAUDE.md B9 위반 아님, 스펙 Never 절도 "안내 문구를 다듬는 것은 되지만"으로 허용).
-trigger: **판매자 화면(`/sell`)이나 채팅 UX를 다음에 손대는 웹·앱 스토리에서** — 그 자리가 0행 신호를 사용자 문구로 옮기는 유일한 지점이다. 그 전이라도 정지 기능을 실제 운영에 쓰기로 결정하는 순간 선행 조건으로 올린다.
+trigger: **(a)만 남았다 — [[Story 17.4]](`17-4-정지-판매자-매물-비노출`, DW-804(a))가 맡는다.** 2026-08-11 사용자 결정으로 "정지 판매자 매물을 구매자·비로그인에게서 숨긴다"(`listings_select_on_sale`/`listings_select_on_sale_anon` 축)로 방향이 정해졌다 — `epic-17-context.md` "2026-08-11 정정" 참고. (b)는 아래 resolution으로 해소.
 related: [[DW-799]](방 생성 미차단 — 이 항목의 (1)번 증상을 만드는 정책)
+resolution: 2026-08-11 Story 17.3으로 **(b)만** 해소. (a)(정지 판매자 매물 노출 여부)는 미해결 — 위 갱신된 trigger대로 17.4가 맡는다. (b) 조치: `web/src/lib/auth/status.ts`(신설)의 `getOwnStatus`/`writeRejectionMessage`가 "거부(0행/`42501`)가 난 **뒤에** 본인 status를 조회해 정지 사유만 구분"하는 유일한 경로다(사전 검사 아님 — 스토리 불변식). `ListingActions.tsx`(구매완료·삭제)·`SellForm.tsx`(등록·수정) 4개 쓰기 경로 전부가 이 헬퍼를 재사용하도록 배선했고, 기존 소유권/미존재 문구는 정지가 아닐 때 그대로 유지했다(회귀 0). 실측: `web/e2e/suspended-access.spec.ts` B그룹이 throwaway 판매자 계정으로 4경로(구매완료·삭제·수정·신규등록) 전부를 브라우저로 직접 시도해 정지 문구를 확인했고, 매물 값이 실제로 안 바뀌었음(0행/`42501` 거부가 실제로 DB까지 간 뒤 사후 조회로 확인한 것이지 화면이 사전에 막은 게 아님)도 psql로 함께 고정했다. 긍정 대조군(B2, "이미 삭제됨" 레이스 — status='active'인 채로 0행을 받으면 정지 문구가 아니라 기존 문구가 뜬다)도 짝으로 뒀다. 단위테스트: `web/src/lib/auth/status.test.ts`.
 status: open
 
 ### DW-805: `increment_listing_view`(SECURITY DEFINER)가 정지 회원의 `listings` 쓰기를 그대로 통과시키는데, 그 판정만 대장에 없다
@@ -6415,7 +6416,8 @@ why_it_matters: 조작한 사람은 "관리 도구가 고장 났다"고 읽는�
 fix_sketch: `requireRole`에서 `.select('role, status')`로 넓히고 `status !== 'active'`면 홈으로 보내거나 정지 안내 화면으로 보낸다. **강제력은 계속 DB에 둔다** — 화면은 안내만 담당(CLAUDE.md B9 위반 아님, 17.1 Never 절도 *"안내 문구를 다듬는 것은 되지만"* 으로 허용). 관리자 정지가 실제 운영 시나리오인지도 함께 판단한다.
 trigger: **`/admin` 라우트 게이트나 관리자 화면을 다음에 손대는 웹 스토리에서.** 그 전이라도 정지 기능을 실제 운영에 쓰기로 결정하는 순간 [[DW-804]]와 함께 선행 조건으로 올린다.
 related: [[DW-804]](같은 계열 — 판매자 화면 표면) · [[DW-800]](관리자 전원 정지 시 복구 경로 없음)
-status: open
+resolution: 2026-08-11 Story 17.3으로 해소. `web/src/lib/auth/guard.ts`의 `requireRole`이 `.select('role, status')`로 넓어졌고, `role` 불일치 또는 `status !== 'active'`면 동일하게 홈(`/`)으로 보낸다(fix_sketch 중 "홈으로 보낸다" 선택지 ⓑ 채택 — 새 화면(`/suspended`)을 만들지 않는다, Block If 조건 미해당이라 사용자 승인 불필요). 무한 리다이렉트 축(`web/src/app/page.tsx`의 관리자 랜딩 편의 분기가 `role==='admin'`이면 무조건 `/admin`으로 되돌리던 것)을 락스텝으로 `status==='active'`까지 보도록 고쳐, 정지된 관리자가 `/admin`(→`/`)·`/`(그대로 `/`) 어느 쪽에서 시작해도 유한 번에 멈추고 홈에 머문다. 실측: `web/e2e/suspended-access.spec.ts`의 A그룹이 throwaway 관리자 계정(공유 시드 `admin@test.com`을 정지시키지 않음 — 다른 스펙이 병렬로 그 계정을 쓴다)으로 브라우저를 직접 눌러 확인(활성 상태 `/admin` 정상 도달 → 정지 후 `/admin` 접근이 루프 없이 `/`로 귀결 → `/` 재접근도 `/admin`으로 안 튕김). 단위 red 증명 2형태(`web/src/lib/auth/guard.test.ts`): ⓐ status 조건을 제거 → "정지된 관리자가 리다이렉트된다" 단언만 실패, 원복 후 green. ⓑ 비교를 `status !== 'active'`가 아니라 `status === 'active'`(반대 방향)로 뒤집음 → 이번엔 **긍정 대조군**("활성 관리자는 통과") 단언이 실패, 원복 후 green — 서로 다른 단언이 각각 깨지는 것까지 확인했다.
+status: done 2026-08-11
 
 ### DW-807: sold·정지 사진 차단은 직접 SQL로만 검증됐다 — 실제 클라이언트가 쓰는 Storage HTTP API 경로는 미검증
 
@@ -6478,4 +6480,101 @@ why_it_matters: 마이그레이션은 결정론적 SQL이라 로컬·CI가 실�
 fix_sketch: 다음 CI(`api-db` 잡) 실행 로그에서 `test_write_policy_manifest_real_db.py` 4건이 실제로 green인지 확인하고, 가능하면 CI 로그의 `pg_policies`/`pg_proc` 카운트를 로컬 실측(21정책+11함수)과 비교해 한 줄로 기록한다.
 trigger: **다음으로 이 브랜치가 CI(`api-db` 잡)를 실제로 통과하는 시점에** — 그 CI 실행 로그를 열어 이 검사 4건의 결과를 확인하고 이 항목을 닫는다. 또는 `.github/workflows/tests.yml`이나 `migration-check-prelude.sql`을 다음에 손대는 스토리에서 함께 재확인한다.
 related: [[DW-803]](이 검사 자체를 만든 항목) · [[DW-805]]
+status: open
+
+### DW-812: 앱(Flutter)에도 DW-804 (b)와 같은 문제가 있다 — 정지 회원의 쓰기 거부가 엉뚱한 이유로 안내된다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+origin: 2026-08-11 Story 17.3 구현 세션 — 스펙 Never 절이 앱을 범위 밖으로 명시하며 "조용히 빠뜨리지 않는다"고 못박아 신규 등재.
+location: `app/lib/features/listings/listings_repository.dart` — 웹의 `web/src/app/(user)/sell/ListingActions.tsx`·`SellForm.tsx`에 대응하는 앱 쪽 쓰기 경로(등록·수정·삭제·구매완료).
+severity: medium
+reason_for_severity: DW-804(같은 실패 모드 — 정지 거부가 엉뚱한 이유로 안내됨)와 동일 severity로 맞춘다. 클라이언트만 다를 뿐 사용자가 겪는 결과(정지를 "고장"으로 오인해 문의)는 동일하다 — 클라이언트가 다르다는 이유만으로 낮춰 잡을 근거가 없다(코드리뷰 patch 지적, 2026-08-11).
+summary: 17.1(RLS, `supabase/migrations/0032_suspended_write_block.sql`)은 웹·앱 어느 클라이언트로 접속해도 동일하게 정지 회원의 쓰기를 DB에서 막는다 — 강제력 자체는 앱에도 이미 적용돼 있다. 그런데 이번 17.3은 **웹 화면**에만 "거부 뒤 정지 사유를 구분해 안내"하는 로직(`web/src/lib/auth/status.ts`)을 배선했다(스펙 Never 절이 앱을 명시적으로 범위 밖에 둠). 앱은 여전히 정지 회원의 쓰기 거부를 기존 소유권/일반 오류 문구로만 보여줄 것이다(DW-804가 원래 기록했던 것과 같은 증상 — 코드 확인은 안 했고 웹과 동일 구조일 것이라는 합리적 추정, 아래 fix_sketch가 이걸 실측으로 바꾸는 첫 단계다).
+evidence: `web/src/lib/auth/status.ts`(신설)의 `getOwnStatus`/`writeRejectionMessage`는 웹 전용 모듈(`@/lib/supabase/*` 의존)이라 앱이 재사용할 수 없다 — 앱은 Dart/Riverpod 스택이라 동등한 헬퍼를 별도로 만들어야 한다.
+why_it_matters: 웹만 고치면 "정지는 버그가 아니라 제재"라는 사실을 웹 사용자만 알게 되고, 같은 계정으로 앱을 쓰는 사용자는 여전히 "고장 났다"고 오인해 문의한다 — 이 스토리가 웹에서 해소한 것과 정확히 같은 문제가 다른 클라이언트에 그대로 남는다.
+fix_sketch: `app/lib/features/listings/listings_repository.dart`의 등록·수정·삭제·구매완료 4경로에서 0행/`42501` 거부 뒤 본인 `profiles.status`를 조회해 정지 문구로 분기한다(웹의 "사전 검사 금지" 불변식과 동일 규칙 — 강제력은 계속 DB). `/admin` 콘솔 게이트(DW-806)에 대응하는 앱 쪽 관리자 화면이 있는지도 함께 확인한다(있으면 같은 축, 없으면 이 항목에서 제외).
+trigger: **앱(Flutter)의 매물 쓰기 경로(`listings_repository.dart`)나 관리자 화면을 다음에 손대는 스토리에서.** 그 전이라도 정지 기능을 앱에서도 실제 운영에 쓰기로 결정하는 순간 선행 조건으로 올린다.
+related: [[DW-804]](같은 문제의 웹 표면 — (b)는 17.3이 해소) · [[DW-806]](관리자 콘솔 축, 앱에 대응 화면이 있는지는 미확인)
+status: open
+
+### DW-813: 웹 채팅 발신의 정지 거부는 여전히 "고장" 문구로 안내된다 — 17.3이 새로 띄운 문구가 그 표면을 약속하는데 배선이 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+origin: 2026-08-11 Story 17.3 **후속 코드리뷰**(verification-gap·intent-alignment 독립 지적) — 앱 축은 [[DW-812]]로 등재했으면서 웹 채팅 축은 E2E 파일 코드 주석에만 있었다. 주석은 장부가 아니다(CLAUDE.md B8).
+location: `web/src/lib/messages.ts:153,163`(`sendMessage`의 catch-all 분기) → 소비처 `web/src/app/(user)/chat/[roomId]/ChatRoomMessages.tsx`.
+severity: medium
+reason_for_severity: [[DW-804]](b)·[[DW-812]]와 **같은 실패 모드**(정지 거부가 엉뚱한 이유로 안내됨)이므로 같은 등급. 오히려 이 항목은 한 단계 나쁘다 — 17.3이 띄우는 새 문구가 사용자에게 *"채팅 보내기가 제한됩니다"* 라고 **직접 알려 준 뒤** 그 화면으로 가면 다시 "고장" 문구가 뜬다.
+summary: 17.1(RLS `chat_messages_insert_participant`)이 정지 회원의 채팅 발신을 DB에서 막고, `docs/conventions.md` §8도 채팅 발신을 정지 축에 포함한다. 17.3이 새로 만든 `SUSPENDED_WRITE_MESSAGE`("정지된 계정입니다. 매물 등록·수정·삭제와 **채팅 보내기**가 제한됩니다.")도 그 사실을 사용자에게 말한다. 그런데 정작 채팅 발신 경로는 `getOwnStatus`/`writeRejectionMessage`를 배선하지 않아, 정지 회원이 메시지를 보내면 `42501`이 catch-all로 떨어져 *"메시지를 보내지 못했습니다. 잠시 후 다시 시도해주세요."* 가 뜬다.
+evidence: `web/src/lib/messages.ts`의 insert 에러 분기는 `23505`(멱등 재전송)·`23514`(빈 본문) 두 코드만 구분하고 나머지는 전부 위 문구로 합류한다(주석도 `// 그 외(RLS 거부·네트워크 등)`이라고 직접 적는다). `grep -rn "getOwnStatus\|writeRejectionMessage" web/src` 결과에 채팅 쪽 참조가 **0건**이다(2026-08-11 실측).
+why_it_matters: 사용자는 `/sell`에서 "채팅도 제한된다"는 안내를 읽고 채팅으로 이동한다 — 거기서 "잠시 후 다시 시도"를 보면 안내가 틀렸다고 판단하거나 시스템이 고장 났다고 읽는다. 17.3이 매물 축에서 없앤 바로 그 오인을, 17.3이 만든 문구가 채팅 축에서 새로 유도한다.
+fix_sketch: `sendMessage`의 catch-all 직전(또는 `ChatRoomMessages.tsx`의 `setError(res.error)` 자리)에서 거부를 받은 **뒤** `getOwnStatus`를 불러 정지 문구로 분기한다 — 매물 4경로와 동일 규칙(사전 검사 금지, 강제력은 계속 DB). 배선하면 `web/src/lib/auth/__tests__/suspendedGateWiringContract.test.ts`의 B 그룹에 채팅 경로를 한 줄 추가해 CI가 지키게 한다.
+trigger: **웹 채팅 발신 경로(`web/src/lib/messages.ts`·`ChatRoomMessages.tsx`)를 다음에 손대는 스토리에서.** 그 전이라도 정지 기능을 실제 운영에 쓰기로 결정하는 순간 [[DW-812]]와 함께 선행 조건으로 올린다.
+related: [[DW-804]](같은 실패 모드의 매물 표면 — (b)는 17.3이 해소) · [[DW-812]](앱 축) · [[DW-799]](채팅방 생성 미차단 — 정책 축이라 별건)
+status: open
+
+### DW-814: 정지된 관리자는 콘솔에서 튕기지만 **왜 튕겼는지는 여전히 못 듣는다** — 17.3이 차단만 하고 설명은 안 했다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+origin: 2026-08-11 Story 17.3 **후속 코드리뷰**(adversarial·edge-case-hunter 독립 지적).
+location: `web/src/lib/auth/guard.ts`의 `requireRole`(정지 시 `redirect('/')`) → 도착지 `web/src/app/page.tsx`(평범한 홈, 안내 없음).
+severity: medium
+reason_for_severity: [[DW-806]]의 `why_it_matters`("조작한 사람은 관리 도구가 고장 났다고 읽는다")가 **차단 축에서는 해소됐지만 설명 축에서는 그대로**다. 매물 축은 17.3이 문구까지 고쳤는데 관리자 축만 안 고쳐져 같은 스토리 안에서 두 표면의 완성도가 다르다.
+summary: 17.3은 정지된 관리자를 `/admin`에서 홈(`/`)으로 돌려보낸다(무한 리다이렉트 없이 — 실측 확인). 그런데 도착한 홈에는 **아무 안내도 없다.** 역할 라벨은 여전히 "관리자"로 뜨고, 콘솔만 조용히 사라진다. 스토리 Intent가 명시한 Value가 *"그 강제가 왜 걸렸는지 사람에게 말해 주는 것"* 인데, 관리자 축은 "차단"만 하고 "설명"을 하지 않는다 — 변경 전(들어가지지만 버튼이 무동작)과 변경 후(들어가지지 않음) 모두 사유를 모른다는 점은 같다.
+evidence: `web/src/app/page.tsx`의 관리자 랜딩 분기는 `status !== 'active'`면 `redirect('/admin')`을 건너뛸 뿐 어떤 배너·문구도 렌더하지 않는다(2026-08-11 코드 확인). `web/e2e/suspended-access.spec.ts` A그룹도 최종 URL이 `/`인 것만 단언하고 안내 문구는 보지 않는다 — 즉 **검사조차 이 축을 안 본다**.
+why_it_matters: 정지된 관리자는 "내 콘솔이 사라졌다"만 알고 원인을 모른 채 문의한다. 그 문의를 받는 사람도 화면·로그에서 단서를 못 찾는다 — [[DW-806]]이 원래 지목한 비용이 그대로 남는다.
+fix_sketch: 새 화면(`/suspended`)을 만들지 않고 홈에 조건부 안내만 띄운다 — `page.tsx`가 이미 `role, status`를 한 번에 읽고 있으므로 조회 왕복이 늘지 않는다. 문구는 `web/src/lib/auth/status.ts`의 `SUSPENDED_WRITE_MESSAGE`를 재사용하거나 관리자용 한 줄을 추가한다(사실만 말한다 — 정지 사유·해제 시점을 지어내지 않는다). 배너 존재 자체는 제품 결정이라 **착수 전에 사용자에게 확인**한다(17.3 스펙의 Block If가 "새 화면"에 대해 같은 판단을 요구했다). 넣으면 E2E A그룹에 문구 단언을 함께 추가한다.
+trigger: **`web/src/app/page.tsx`의 랜딩 분기나 `/admin` 게이트를 다음에 손대는 웹 스토리에서**(가장 자연스러운 자리는 [[Story 17.4]] — 정지 축을 이어서 다루므로 정지 사용자에게 보이는 화면을 한 번에 정리할 수 있다). 그 전이라도 관리자 정지를 실제 운영 절차로 쓰기로 결정하는 순간 선행 조건으로 올린다.
+related: [[DW-806]](이 항목의 차단 축 — 17.3이 해소) · [[DW-809]](관리자 자가 정지) · [[DW-800]](관리자 전원 정지 시 복구 경로 없음)
+status: open
+
+### DW-815: 사진·파일(Storage) 업로드의 정지 거부는 사유를 구분하지 않는다 — §8의 차단 범위에 있는데 안내에도 배선에도 없다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+origin: 2026-08-11 Story 17.3 **후속 코드리뷰**(adversarial·intent-alignment 독립 지적).
+location: `web/src/lib/storage/upload.ts` → 소비처 `web/src/app/(user)/sell/SellForm.tsx`(사진 업로드 실패 시 "사진 N장 실패" 계열 문구).
+severity: low
+reason_for_severity: 사용자가 실제로 부딪히려면 정지 상태에서 **사진까지** 올리려 해야 하는데, 그 전에 매물 등록·수정 자체가 이미 정지 문구로 막혀 안내된다(17.3이 해소). 즉 대부분의 동선에서 사유는 이미 전달되고 이 축은 보조적이다.
+summary: `docs/conventions.md` §8은 정지가 막는 범위에 **사진·파일**(storage.objects 정책)을 포함한다. 그런데 17.3이 채택한 문구(`SUSPENDED_WRITE_MESSAGE`)는 "매물 등록·수정·삭제와 채팅 보내기"만 열거하고 사진·파일·관리자 쓰기·조회수 RPC는 빼며, 업로드 실패 경로에도 `getOwnStatus` 배선이 없다. 문구가 §8의 부분집합인 것은 Intent가 그 최소 형태를 **직접 지정**해서 생긴 의도적 결과지만(스펙 Always 절이 문구를 글자 그대로 준다), 그래서 "문구와 §8이 정확히 일치한다"는 스펙 AC는 문언 그대로는 충족되지 않는다.
+evidence: `SUSPENDED_WRITE_MESSAGE`는 4개 항목만 열거한다(`web/src/lib/auth/status.ts`). `grep -rn "getOwnStatus" web/src/lib/storage` 결과 0건(2026-08-11 실측). §8 본문은 "매물·사진·파일 등록/수정/삭제와 관리자 쓰기 액션"으로 더 넓게 적는다.
+why_it_matters: 문구가 말하는 제한 범위와 실제 제한 범위가 어긋나면, 사용자는 "사진은 되겠지"라고 읽고 시도했다가 다시 원인 불명의 실패를 본다 — 안내의 신뢰가 한 번 더 깎인다.
+fix_sketch: 둘 중 하나를 **고르고 근거를 남긴다.** (a) 문구를 §8 전체 범위로 넓힌다(길어져 가독성이 떨어진다). (b) 문구는 최소 형태로 두되 업로드 실패 경로에 `getOwnStatus`를 배선해 사진 축에서도 정지 사유를 말하게 한다. 어느 쪽이든 `docs/conventions.md` §8에 "문구는 §8의 부분집합이며 그 이유는 X"를 한 줄 등재해 다음 리뷰가 같은 지적을 반복하지 않게 한다.
+trigger: **`web/src/lib/storage/upload.ts`나 `SellForm.tsx`의 사진 업로드 경로를 다음에 손대는 스토리에서.** 또는 `SUSPENDED_WRITE_MESSAGE` 문구를 다음에 고칠 때 함께 판정한다.
+related: [[DW-804]] · [[DW-807]](사진 차단이 Storage HTTP API 경로로는 미검증 — 같은 표면의 강제력 축)
+status: open
+
+### DW-816: 관리자 콘솔 **쓰기 액션**의 0행 거부 문구는 여전히 사유를 구분하지 않는다 — 진입 게이트가 대부분 가리지만 낡은 탭은 안 가린다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+origin: 2026-08-11 Story 17.3 **후속 코드리뷰**(intent-alignment·adversarial 독립 지적).
+location: `web/src/app/(admin)/admin/members/MemberActions.tsx`(예: *"회원 상태를 변경할 수 없습니다. (권한이 없거나 회원을 찾을 수 없습니다.)"*) · `.../listings/ListingAdminActions.tsx` · `.../chats/ChatAdminActions.tsx`.
+severity: low
+reason_for_severity: 도달 경로가 좁다 — 17.3의 `requireRole` 게이트가 정지된 관리자의 **콘솔 진입**을 막으므로, 이 분기에 닿으려면 콘솔을 이미 연 상태에서 **세션 중에** 정지돼야 한다. 그때는 버튼 클릭이 라우트 재요청 없이 REST로 직행해 게이트를 안 탄다.
+summary: 스토리 Intent의 문제 진술은 정지된 관리자가 "회원 삭제·매물 삭제·거래 복원 버튼을 전부 살아 있는 상태로 보고, 누르면 0행이 돌아와 아무 일도 일어나지 않는다"를 **증상으로 직접 열거**했다. 17.3은 그중 앞부분(진입)만 고쳤고, 뒷부분(눌렀을 때의 무흔적 0행)은 그대로다 — 관리자 쓰기 액션 파일들은 `getOwnStatus`/`writeRejectionMessage`를 쓰지 않는다.
+evidence: `grep -rn "getOwnStatus" "web/src/app/(admin)"` 결과 0건. `MemberActions.tsx`의 0행 분기는 여전히 권한/존재 문구 한 갈래다(2026-08-11 실측). `web/e2e/suspended-access.spec.ts` A그룹도 URL 귀결만 보고 콘솔 내 버튼은 누르지 않는다.
+why_it_matters: 잔여 창이 좁긴 해도, 그 창에서 벌어지는 일이 정확히 [[DW-806]]이 기록한 원래 증상이다 — 관리자는 "도구가 고장 났다"고 읽고, 로그에도 흔적이 없다. 그리고 이 축은 **DB가 받쳐 준다**(0032가 관리자 쓰기를 `is_admin_active()`로 막는다)는 점에서 강제력 문제는 아니고 순수 안내 문제다.
+fix_sketch: 세 파일의 0행 분기에서 거부 **뒤** `getOwnStatus`를 불러 정지 문구로 분기한다(매물 4경로와 동일 규칙). 배선하면 `web/src/lib/auth/__tests__/suspendedGateWiringContract.test.ts` B 그룹에 세 경로를 추가해 CI가 지키게 한다. 관리자 감사 로그([[DW-718]])와는 별건이므로 섞지 않는다.
+trigger: **관리자 콘솔의 쓰기 액션 컴포넌트(`MemberActions.tsx`·`ListingAdminActions.tsx`·`ChatAdminActions.tsx`)를 다음에 손대는 웹 스토리에서.** 또는 [[DW-814]](정지 관리자에게 사유를 안내하는 축)를 착수할 때 같은 스토리로 묶는다.
+related: [[DW-806]](진입 축 — 17.3이 해소) · [[DW-814]](같은 관리자 표면의 안내 축) · [[DW-718]](관리자 감사 로그 — 별건)
+status: open
+
+### DW-817: `docs/tech-debt.md`의 이관 색인이 `#168`을 아직 "열림"으로 표기한다 — 실제 [[DW-468]]은 `wont-do`로 닫혔다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+origin: 2026-08-11 Story 17.3 **3차(후속) 코드리뷰**(adversarial 렌즈 지적, 오케스트레이터가 두 파일을 직접 열어 대조 확인).
+location: `docs/tech-debt.md:166` — 이관 색인 표의 `| #168 | DW-468 | 열림 |` 행.
+severity: low
+reason_for_severity: 색인 한 행의 상태 표기 오류다. 코드 동작에는 영향이 없고, 정확한 상태는 장부([[DW-468]])에 이미 있다 — 다만 **잘못된 방향으로** 틀렸다는 점이 문제다(닫힌 것을 열렸다고 말하므로, 읽는 사람이 "언젠가 될 일"로 오해한다).
+summary: `docs/tech-debt.md`의 옛 번호 이관 색인은 `#168`(E2E가 CI에 배선돼 있지 않다)을 `DW-468`로 넘기면서 상태를 `열림`으로 적었다. 그런데 `deferred-work.md`의 [[DW-468]] 실제 상태는 `status: wont-do 2026-08-10`(Epic 16 회고에서 **사용자가 안 하기로 결정**)이다. 색인과 장부가 반대를 말한다.
+evidence: `grep -n "168" docs/tech-debt.md` → 166행 `| #168 | DW-468 | 열림 |`. `grep -A12 "### DW-468" _bmad-output/implementation-artifacts/deferred-work.md` → `status: wont-do 2026-08-10` + `resolution: **하지 않기로 확정 — 2026-08-10 사용자 결정**`(2026-08-11 실측 대조).
+why_it_matters: 이 차이가 실제로 사람을 오도한 흔적이 있다 — 17.3이 §8·계약 검사 주석·스펙에 `#168`을 인용하며 E2E의 CI 미배선을 *"언젠가 해소될 구조적 한계"* 처럼 적었다(3차 리뷰가 그 세 자리를 [[DW-468]] `wont-do` 인용으로 정정했다). E2E가 **영영 CI에 안 붙는다**는 사실이 가려지면, 그 자리를 메우는 정적 계약 검사에 대한 투자가 "곧 E2E가 커버할 것"이라는 잘못된 전제로 계속 미뤄진다.
+fix_sketch: 166행의 `열림`을 `wont-do 2026-08-10`으로 고친다(한 셀). 같은 색인 표의 **다른 행들도 같은 종류로 낡았는지 함께 훑는다** — 색인은 장부가 갱신될 때 자동으로 따라오지 않으므로 이 결함은 구조적이다. 원한다면 색인 행을 상태 없이 번호 매핑만 남기고 상태는 장부에서만 읽게 하는 것이 더 안전하다(사본은 반드시 늙는다 — `project-context.md`가 같은 이유로 계약 값 복사를 금지한다).
+trigger: **`docs/tech-debt.md`를 다음에 여는 작업에서**(옛 번호를 찾아 이관 색인을 볼 때). 그 전이라도 회고가 "미이행 항목"을 색인으로 세는 순간 선행 조건으로 올린다 — [[DW-468]]이 `wont-do`가 된 이유 자체가 "미이행 ❌로 반복 계수되는 것을 끊기 위해서"였는데, 색인이 `열림`인 한 그 목적이 절반만 달성된다.
+related: [[DW-468]](이 색인 행이 가리키는 실제 항목 — `wont-do`로 닫힘)
+status: open
+
+### DW-818: Follow-up review still recommended for 17-3-정지-관리자-콘솔-차단-거부-안내-구분 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-212857-e995; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

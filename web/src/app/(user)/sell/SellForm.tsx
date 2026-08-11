@@ -17,8 +17,10 @@
 //   · DB CHECK/RLS 위반은 한국어로 변환해 노출(원본·코드는 콘솔에만).
 import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
+import { getOwnStatus, writeRejectionMessage } from '@/lib/auth/status';
 import { optionsChanged, parseOptionsInput, partitionOptions, serializeOptions } from '@/lib/options';
 import Button from '@/components/ui/Button';
 import FocusTrap from '@/components/ui/FocusTrap';
@@ -115,16 +117,28 @@ type SellFormProps = {
 
 // Postgres/Supabase 에러를 사용자용 한국어 메시지로 변환(원본 메시지·코드는 화면에 직접 노출하지 않음).
 //   23514 = check_violation(목록 밖 값·범위 위반), 42501 = insufficient_privilege(RLS 거부).
-function toKoreanError(err: { message: string; code?: string }, mode: 'create' | 'edit'): string {
+//
+// 42501은 소유권 위조(등록) 또는 정지(17.1의 with check 거부, 등록 경로가 42501로 오는 유일한
+// 사유 — 스토리 17-3 Design Notes 실측표 참고)의 두 사유가 합류하는 자리다. 거부가 난 "뒤에"
+// 본인 status를 조회해 구분한다(spec-17-3 Always — 사전 검사로 쓰지 않는다).
+async function toKoreanError(
+  supabase: SupabaseClient,
+  err: { message: string; code?: string },
+  mode: 'create' | 'edit',
+): Promise<string> {
   const code = err.code ?? '';
   if (code === '23514') {
     return '입력값이 허용 목록/범위를 벗어났습니다. 드롭다운 항목과 숫자 범위를 확인해주세요.';
   }
   if (code === '42501') {
-    // 권한/RLS 거부 — 등록은 본인 명의 위조, 수정은 타인 매물 접근.
-    return mode === 'edit'
-      ? '본인 매물만 수정할 수 있습니다. 다시 로그인 후 시도해주세요.'
-      : '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.';
+    const status = await getOwnStatus(supabase);
+    // 권한/RLS 거부 — 등록은 본인 명의 위조 또는 정지, 수정은 타인 매물 접근 또는 정지.
+    return writeRejectionMessage(
+      status,
+      mode === 'edit'
+        ? '본인 매물만 수정할 수 있습니다. 다시 로그인 후 시도해주세요.'
+        : '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.',
+    );
   }
   return mode === 'edit'
     ? '매물 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
@@ -341,12 +355,19 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         if (updateError) {
           console.error('[sell] listings update 실패:', updateError);
-          setError(toKoreanError(updateError, 'edit'));
+          setError(await toKoreanError(supabase, updateError, 'edit'));
           return;
         }
         if (!updated || updated.length === 0) {
-          // RLS로 막혀 0행 — 본인 매물이 아니거나 이미 삭제됨.
-          setError('본인 매물만 수정할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)');
+          // RLS로 막혀 0행 — 본인 매물이 아니거나 이미 삭제됐거나 행위자가 정지됨(17.1). 거부
+          // 뒤에 status를 조회해 정지 사유만 구분한다(spec-17-3 Always).
+          const status = await getOwnStatus(supabase);
+          setError(
+            writeRejectionMessage(
+              status,
+              '본인 매물만 수정할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)',
+            ),
+          );
           return;
         }
 
@@ -384,7 +405,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       if (insertError || !created) {
         // 원본 에러·코드는 콘솔에만(디버깅), 사용자에겐 한국어.
         console.error('[sell] listings insert 실패:', insertError);
-        setError(toKoreanError(insertError ?? { message: 'insert 결과 없음' }, 'create'));
+        setError(await toKoreanError(supabase, insertError ?? { message: 'insert 결과 없음' }, 'create'));
         return;
       }
 

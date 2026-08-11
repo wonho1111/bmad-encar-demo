@@ -360,7 +360,7 @@ development_status:
   epic-17: backlog
   17-1-정지-회원-쓰기-차단-rls: done
   17-2-조회수-옆문-차단-전수조사-강제검사: done
-  17-3-정지-관리자-콘솔-차단-거부-안내-구분: backlog
+  17-3-정지-관리자-콘솔-차단-거부-안내-구분: done
   17-4-정지-판매자-매물-비노출: backlog
   epic-17-retrospective: optional
 
