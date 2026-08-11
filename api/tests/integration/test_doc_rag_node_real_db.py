@@ -42,6 +42,16 @@
 
 실행: CI의 `api-db` 잡이 pgvector 컨테이너를 띄우고 TEST_DATABASE_URL을 준다.
   로컬에서 돌리려면 같은 변수를 직접 지정한다. 없으면 skip(거짓 통과 금지).
+
+✎ Story 17.4(DW-804(a))가 정지 판매자 케이스를 추가했다 — 왜 새 파일을 만들지 않고 여기 붙이나:
+  `doc_rag_node`·`hybrid_rag_node`는 둘 다 `app/db/readonly.py`의 같은 `ai_readonly` 커넥션
+  풀로 `listings`를 읽으므로, 이 스토리가 닫은 강제 지점(`listings_ai_readonly_select`, 0035)은
+  두 경로에 **동일하게** 적용된다. `hybrid_rag_node`는 실제 Gemini 호출(LLM 구조조건 추출)이
+  있어야 실행되므로 별도 real-db 파일을 만들면 CI가 API 키 없이는 못 돌린다(그래서 기존에도
+  `test_hybrid_rag_node.py`는 전부 모킹이다) — 그 경로의 DB 레벨 강제는
+  `test_suspended_seller_hidden_real_db.py`의 `set local role ai_readonly` 검사가 이미 같은
+  RLS 정책을 직접 확인한다. 여기서는 `doc_rag_node`가 실제로 부르는 함수 호출로 한 번 더
+  고정한다(문서 RAG 축).
 """
 
 import uuid
@@ -142,3 +152,60 @@ def test_sold_listing_never_reaches_doc_rag_semantic_search_on_real_postgres(see
     ids = [str(c.id) for c in out["listings"]]
     assert str(on_sale_id) in ids, "판매중 매물이 의미검색 결과에서 빠졌다(과잉 차단)"
     assert str(sold_id) not in ids, "sold 매물이 doc_rag_node 의미검색 결과에 실렸다 (FR11 위반)"
+
+
+@pytest.fixture
+def seeded_suspended(monkeypatch):
+    """활성 판매자의 on_sale 매물 1건 + **정지된** 판매자의 on_sale 매물 1건, 둘 다 같은 임베딩
+    (Story 17.4, DW-804(a)). `seeded`와 별도 픽스처인 이유: 이 스토리의 강제 지점은
+    `listings_ai_readonly_select`(0035) RLS이지 `doc_rag_node.py`의 `status='on_sale'` 코드
+    조건이 아니라서, sold 축과 섞으면 "어느 조건이 걸렀는지"가 흐려진다."""
+    monkeypatch.setenv("DATABASE_URL", _DSN)
+    from app.db import readonly
+
+    monkeypatch.setattr(readonly, "_pool", None)
+    monkeypatch.setattr(readonly.settings, "database_url", _DSN, raising=False)
+
+    active_seller_id = None
+    susp_seller_id = None
+    active_email = f"ci-doc-rag-active-{uuid.uuid4()}@example.com"
+    susp_email = f"ci-doc-rag-susp-{uuid.uuid4()}@example.com"
+    active_listing_id, susp_listing_id = uuid.uuid4(), uuid.uuid4()
+
+    try:
+        with psycopg.connect(_DSN, autocommit=True) as conn, conn.cursor() as cur:
+            active_seller_id = _create_user(cur, active_email, role="seller")
+            susp_seller_id = _create_user(cur, susp_email, role="seller")
+            _insert_listing(cur, active_listing_id, active_seller_id, "on_sale")
+            _insert_listing(cur, susp_listing_id, susp_seller_id, "on_sale")
+            cur.execute("update public.profiles set status = 'suspended' where id = %s", (susp_seller_id,))
+
+        yield active_listing_id, susp_listing_id
+    finally:
+        readonly.close_pool()
+        with psycopg.connect(_DSN, autocommit=True) as conn, conn.cursor() as cur:
+            for email, seller_id in ((active_email, active_seller_id), (susp_email, susp_seller_id)):
+                cur.execute("select id from auth.users where email = %s", (email,))
+                row = cur.fetchone()
+                actual_id = row[0] if row is not None else seller_id
+                if actual_id is not None:
+                    cur.execute("delete from public.listings where seller_id = %s", (actual_id,))
+                    cur.execute("delete from public.profiles where id = %s", (actual_id,))
+                    cur.execute("delete from auth.users where id = %s", (actual_id,))
+
+
+def test_suspended_sellers_listing_never_reaches_doc_rag_semantic_search(seeded_suspended):
+    """정지된 판매자의 on_sale 매물은 `doc_rag_node`의 의미검색 결과에 없다(Story 17.4, DW-804(a)).
+
+    긍정 대조군을 짝으로 둔다 — 활성 판매자의 매물은 그대로 나와야 한다. 이게 없으면
+    `listings_ai_readonly_select`가 전부를 막아도(0035 헤더가 경고하는 함정) 이 테스트는
+    초록일 수 있다.
+    """
+    active_listing_id, susp_listing_id = seeded_suspended
+
+    qvec = [0.01] * 767 + [1.0]
+    out = doc_rag_node("싼타페 같은 SUV", qvec=qvec)
+
+    ids = [str(c.id) for c in out["listings"]]
+    assert str(active_listing_id) in ids, "활성 판매자의 매물이 의미검색 결과에서 빠졌다(과잉 차단)"
+    assert str(susp_listing_id) not in ids, "정지 판매자의 매물이 doc_rag_node 의미검색 결과에 실렸다"

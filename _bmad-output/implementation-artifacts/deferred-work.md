@@ -6320,6 +6320,7 @@ evidence: `0003_chat.sql:82-84`을 직접 읽어 `chat_rooms_insert_participant`
 왜 이 스토리 범위 밖으로 판단했나: 스토리의 불변식 문장이 "매물·사진·파일·관리자 RPC 어느 경로로도"라고 네 범주를 명시했고, 채팅은 별도 항목("정지 회원이 **메시지를 보낼 수 있는지**")으로 좁혀 다뤘다 — "방 생성"은 그 문장에도 그 별도 항목에도 없다. 다만 그 경계가 스토리 작성 당시 의식적 결정이었는지 사각지대였는지는 스펙에 남아 있지 않아, 다음에 판단할 수 있게 여기 남긴다.
 trigger: 채팅 쓰기 경로를 다시 손대는 스토리, 또는 정지 회원이 새 문의방을 여는 것이 실제 문제로 보고될 때 — 그때 `chat_rooms_insert_participant`에도 `and exists (select 1 from public.profiles where id=auth.uid() and status='active')`를 추가할지 결정한다.
 note (2026-08-11, Story 17.2): 판정 자체는 바뀌지 않았다("안 막는다" 그대로) — 다만 이제 그 판정이 `api/tests/integration/test_write_policy_manifest_real_db.py`의 `POLICY_MANIFEST`에 `("public", "chat_rooms", "chat_rooms_insert_participant", "INSERT"): ("exempt", ...)`로 기계가 읽는 형태로도 남아, 이 정책이 조용히 사라지거나 새 정책으로 바뀌면 매니페스트 대조 검사가 잡는다.
+note (2026-08-12, Story 17.4 재판정): 17.4가 정지 판매자의 매물을 `listings_select_on_sale`/`_anon`에서 숨기면서 "매물이 안 보이면 방 생성 진입점도 사라지는가"를 실측했다 — **부분적으로만 닫힌다.** 브라우저 정상 흐름(매물 상세페이지 → 문의하기 버튼)의 진입점은 사라진다: 상세페이지(`web/src/app/(user)/listings/[id]/page.tsx`)가 `buyerListingsQuery`(같은 `listings_select_on_sale*` RLS)로 매물을 찾으므로 정지 판매자 매물은 404가 되어 `InquiryCta` 버튼 자체가 렌더되지 않는다. **그러나 API 직접 호출 경로는 열려 있다** — `chat_rooms` INSERT 시 `seller_id`를 채우는 `enforce_chat_room_seller()`(0016)가 SECURITY DEFINER라 `listings` RLS를 완전히 우회해 `listing_id`로 직접 판매자를 조회한다. 2026-08-12 로컬 55322 실측(트랜잭션+rollback): 정지 판매자의 매물 id를 이미 아는 구매자(예: 정지 전 북마크, 또는 API를 직접 두드리는 경우)가 `insert into chat_rooms(listing_id, buyer_id)`를 실행하면 **성공**한다(RLS `chat_rooms_insert_participant`도 `with check`가 `auth.uid()=buyer_id or auth.uid()=seller_id`뿐이라 이 경로를 안 막는다). 그래서 이 항목은 **여전히 open**이고 판정("방 생성은 안 막는다")도 그대로다 — 다만 "정지 회원이 새 문의방을 여는 것" 문제와 "매물이 안 보이는데도 API로 방이 만들어지는 것" 두 층으로 나뉘었다. 후자가 더 미묘하다: 구매자 화면에는 애초에 그 매물이 안 보이므로 실사용자가 이 경로를 밟을 일은 거의 없지만(발견 가능성이 낮다), 존재 자체는 남아 있다. **trigger 갱신**: 위 원본 trigger에 더해 — `enforce_chat_room_seller()`(0016)를 다시 손대는 스토리에서는, 판매자 소유권 조회에 `is_seller_active(seller_id)`(0035) 조건을 함께 걸어 방 생성 자체를 막을지도 그때 판단한다(원래 목적인 소유권 위조 방지와 섞이므로 더 큰 변경 — 이번 스토리 범위 밖으로 판단).
 status: open
 
 ### DW-800: `is_admin_active()` 도입으로 관리자 전원이 정지되면 psql 직접 접근 외 복구 경로가 없다
@@ -6387,7 +6388,8 @@ fix_sketch: (a) 정지 계정의 `on_sale` 매물 노출·문의 가능 여부�
 trigger: **(a)만 남았다 — [[Story 17.4]](`17-4-정지-판매자-매물-비노출`, DW-804(a))가 맡는다.** 2026-08-11 사용자 결정으로 "정지 판매자 매물을 구매자·비로그인에게서 숨긴다"(`listings_select_on_sale`/`listings_select_on_sale_anon` 축)로 방향이 정해졌다 — `epic-17-context.md` "2026-08-11 정정" 참고. (b)는 아래 resolution으로 해소.
 related: [[DW-799]](방 생성 미차단 — 이 항목의 (1)번 증상을 만드는 정책)
 resolution: 2026-08-11 Story 17.3으로 **(b)만** 해소. (a)(정지 판매자 매물 노출 여부)는 미해결 — 위 갱신된 trigger대로 17.4가 맡는다. (b) 조치: `web/src/lib/auth/status.ts`(신설)의 `getOwnStatus`/`writeRejectionMessage`가 "거부(0행/`42501`)가 난 **뒤에** 본인 status를 조회해 정지 사유만 구분"하는 유일한 경로다(사전 검사 아님 — 스토리 불변식). `ListingActions.tsx`(구매완료·삭제)·`SellForm.tsx`(등록·수정) 4개 쓰기 경로 전부가 이 헬퍼를 재사용하도록 배선했고, 기존 소유권/미존재 문구는 정지가 아닐 때 그대로 유지했다(회귀 0). 실측: `web/e2e/suspended-access.spec.ts` B그룹이 throwaway 판매자 계정으로 4경로(구매완료·삭제·수정·신규등록) 전부를 브라우저로 직접 시도해 정지 문구를 확인했고, 매물 값이 실제로 안 바뀌었음(0행/`42501` 거부가 실제로 DB까지 간 뒤 사후 조회로 확인한 것이지 화면이 사전에 막은 게 아님)도 psql로 함께 고정했다. 긍정 대조군(B2, "이미 삭제됨" 레이스 — status='active'인 채로 0행을 받으면 정지 문구가 아니라 기존 문구가 뜬다)도 짝으로 뒀다. 단위테스트: `web/src/lib/auth/status.test.ts`.
-status: open
+resolution (a, 2026-08-12 Story 17.4): 사용자 결정(2026-08-11 Discord, "숨겨야돼")으로 (a)도 해소됐다 — 정지 판매자의 `on_sale` 매물을 `listings_select_on_sale`/`_anon`·`listings_ai_readonly_select`(`supabase/migrations/0035_hide_suspended_seller_listings.sql`)에서 숨겨 (1)번 증상("답할 수 없는 판매자에게 계속 문의가 감")의 뿌리를 제거했다 — 매물 자체가 안 보이므로 브라우저 정상 흐름으로는 문의 버튼에 도달하지 못한다(상세페이지가 404). 판정 함수는 `public.is_seller_active(uuid)`(SECURITY DEFINER, `is_admin()`·`is_admin_active()`와 같은 계보) — 인라인 서브쿼리로 짜면 `profiles` RLS가 걸려 전체 매물이 사라지는 함정을 실측으로 확인한 뒤 이 형태로 갔다(`0035` 파일 헤더). 본인·관리자 조회는 그대로 유지(회귀 가드: `api/tests/integration/test_suspended_seller_hidden_real_db.py`). ⚠️ **API 직접 호출을 통한 방 생성(DW-799의 잔여 경로)까지는 안 닫혔다** — 위 DW-799 갱신 참조. `docs/conventions.md` §6.2(신설)·§8(정정)이 이 축을 정본으로 등재했다.
+status: done 2026-08-12 (a·b 모두 해소, DW-799는 별도 open)
 
 ### DW-805: `increment_listing_view`(SECURITY DEFINER)가 정지 회원의 `listings` 쓰기를 그대로 통과시키는데, 그 판정만 대장에 없다
 
@@ -6575,6 +6577,163 @@ status: open
 ### DW-818: Follow-up review still recommended for 17-3-정지-관리자-콘솔-차단-거부-안내-구분 after the review budget was exhausted
 origin: review-budget-followup
 source_spec: `spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
+severity: low
+reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-212857-e995; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-819: `increment_listing_view`는 **호출자**의 정지만 보고 **판매자**의 정지는 안 본다 — 아무에게도 안 보이는 매물의 조회수가 계속 오른다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰**(adversarial·intent-alignment 독립 지적, 오케스트레이터가 로컬 실DB 프로브로 재현 확인).
+location: `supabase/migrations/0034_view_count_suspended_guard.sql`(함수 본문 가드) · 원본 `0020_listings_view_count.sql` · 소비처 `web/src/app/(user)/listings/[id]/page.tsx`.
+severity: low
+reason_for_severity: 데이터 정합성 오염이지 노출 사고가 아니다 — 올라간 `view_count`는 그 매물이 다시 보이게 될 때(정지 해제) 부풀려진 채로 나타나고, 정지 중에는 관리자만 본다. 다만 자동화하면 무한히 부풀릴 수 있어 "인기" 정렬(`fetchPopularListings`·홈 인기 섹션)의 신뢰도를 조용히 갉는다.
+summary: 17.2가 `0034`로 심은 정지 가드는 `not exists (select 1 from public.profiles where id = auth.uid() and status='suspended')` — 즉 **누르는 사람**이 정지됐는지만 본다. 17.4가 판매자 정지 매물을 조회에서 숨겼지만, 이 함수는 SECURITY DEFINER라 `listings` RLS를 통째로 우회하므로 **숨겨진 매물의 조회수는 계속 올릴 수 있다.** `auth.uid()`가 NULL인 비로그인은 가드를 항상 통과하는 설계라(FR58, 의도됨) anon이 그대로 부른다.
+evidence: 2026-08-12 로컬 55322 트랜잭션+rollback 프로브 — 판매자를 `suspended`로 만든 뒤 `set local role anon`에서 (1) `select count(*) from public.listings where id=<lid>` → **0행**(숨김 정상 동작), (2) 같은 세션에서 `select public.increment_listing_view('<lid>')` → 성공, `view_count` **0 → 1**. 즉 "볼 수 없는 매물의 조회수를 올렸다"가 같은 롤·같은 트랜잭션에서 성립한다.
+why_it_matters: 17.4의 불변식은 "어느 조회 경로에서도 노출되지 않는다"인데, 이 경로는 **읽기가 아니라 쓰기**라 그 불변식의 문장 밖에 있다. `docs/conventions.md` §6.2의 "SECURITY DEFINER 축"이 `get_seller_public_summary` 하나만 열거하고 이 함수를 안 적은 것도 같은 사각이다 — §6이 정의자 함수는 조회·쓰기를 함께 올리라고 요구한다(규칙7).
+fix_sketch: `0034`의 가드 옆에 판매자 축을 한 줄 더한다 — `and private.is_seller_active(listings.seller_id)`(또는 UPDATE의 WHERE에 추가). 기존 마이그레이션은 수정하지 않고 새 번호로 `create or replace`한다. 강제 장치는 `test_write_policy_manifest_real_db.py`가 아니라 `test_suspended_write_block_real_db.py`(3주체 실호출 파일)에 "정지 판매자 매물은 anon이 눌러도 증분 0" 케이스를 붙이고, **긍정 대조군**(활성 판매자 매물은 계속 +1)을 반드시 짝으로 둔다. 함께 `docs/conventions.md` §6.2의 SECURITY DEFINER 축 목록에 이 함수를 등재한다.
+trigger: **`0034`/`increment_listing_view` 또는 홈 "지금 인기" 정렬을 다음에 손대는 스토리에서.** 그 전이라도 정지를 실제 제재 절차로 운영하기 시작하면(= 정지 계정이 다수가 되면) 선행 조건으로 올린다.
+related: [[DW-805]](이 함수의 정지 가드를 만든 항목 — 호출자 축은 그때 닫혔다) · [[DW-804]](판매자 정지 축) · [[DW-799]](같은 "정의자 함수가 RLS를 우회한다" 형태)
+status: open
+
+### DW-820: 이미 열려 있던 채팅방에서는 구매자가 정지된 판매자에게 계속 말을 걸 수 있다 — DW-804(a)가 지목한 증상이 **기존 방**에는 그대로 남았다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰**(adversarial·edge-case·intent-alignment 3개 렌즈 수렴, 오케스트레이터가 로컬 실DB 프로브로 재현 확인).
+location: `web/src/app/(user)/chat/[roomId]/page.tsx`(`ChatRoomMessages` 렌더 조건) · `supabase/migrations/0032_suspended_write_block.sql`(`chat_messages_insert_participant`).
+severity: medium
+reason_for_severity: 17.4가 닫은 것은 **새 유입**(상세페이지가 404가 되어 문의 진입점이 사라짐)이고, DW-804(a)가 문장으로 적은 증상 — *"답할 수 없는 판매자에게 구매자가 계속 말을 건다"* — 은 **정지 시점에 이미 존재하던 방**에서 그대로 재현된다. 구매자는 화면 문구를 "판매 완료"로 읽고 계속 기다린다.
+summary: 방 자체는 `chat_rooms_select_participant`가 `chat_rooms`를 직접 보므로 계속 보인다(매물 임베드만 null이 된다). 구매자는 활성이라 `chat_messages` INSERT가 통과하고, 판매자는 `0032`가 막아 영원히 못 답한다. 화면에는 그 비대칭을 알리는 표시가 없다 — 입력창은 그대로 활성이다.
+evidence: 2026-08-12 로컬 55322 트랜잭션+rollback 프로브 — 판매자를 `suspended`로 만든 뒤 구매자 세션(`set local role authenticated` + `request.jwt.claim.sub=<buyer>`)에서 (1) `chat_rooms` 그 방 **1행 보임**, (2) 그 방의 `listings` 조인 **0행**(임베드 null 확정), (3) `insert into chat_messages ...` **성공(1행)**. 이어 판매자 세션으로 같은 INSERT → `new row violates row-level security policy for table "chat_messages"`. 비대칭이 실측으로 성립.
+why_it_matters: 17.4의 `resolution`과 `docs/conventions.md` §6.2는 새 유입 차단을 근거로 (a)를 닫았는데, **닫힌 것은 유입 경로이지 증상 자체가 아니다.** 다음 사람이 "DW-804는 해소됨"만 보고 이 잔여 분기를 다시 발견하는 비용을 미리 없애기 위해 별도 항목으로 연다(기존 항목은 오케스트레이터 소유라 이 리뷰가 손대지 않았다).
+fix_sketch: 두 갈래 중 **고르는 것은 제품 결정**이라 착수 전에 사용자에게 확인한다. (a) 판매자가 응답 불가 상태면 채팅 입력창을 비활성화하고 사유를 한 줄로 안내한다 — `chat/[roomId]/page.tsx`가 이미 매물 임베드(`l`)를 들고 있으므로 조회 왕복이 늘지 않지만, **임베드 null은 sold와 정지를 구분하지 못한다**(두 트리거가 같은 null이다 — `web/src/lib/chat.ts` 주석 참조). 구분이 필요하면 방의 `seller_id`로 상태를 따로 물어야 한다. (b) 입력은 그대로 두되 "판매자가 현재 응답할 수 없습니다" 배너만 띄운다. 어느 쪽이든 문구는 사실만 말한다(정지 사유·해제 시점을 지어내지 않는다 — 17.3 관례).
+trigger: **채팅 쓰기 경로(`chat/[roomId]/page.tsx`·`ChatRoomMessages`)를 다음에 손대는 스토리에서.** 또는 [[DW-799]](API 직접 호출 방 생성)를 판정할 때 같은 스토리로 묶는다 — 둘 다 "정지 판매자와의 대화" 한 축이다.
+related: [[DW-804]](이 항목이 남긴 잔여 분기 — 신규 유입 축은 17.4가 닫음) · [[DW-799]](같은 축의 방 생성 경로) · [[DW-807]]
+status: open
+
+### DW-821: 매물 조회 최핫경로의 RLS에 인라인 불가 함수 호출이 들어갔는데 성능을 한 번도 안 쟀다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰**(adversarial·edge-case 독립 지적).
+location: `supabase/migrations/0036_is_seller_active_private_schema.sql`(및 원본 `0035`) — `listings_select_on_sale`·`listings_select_on_sale_anon`·`listings_ai_readonly_select`의 `using` 절 · pgvector 소비처 `api/app/graph/doc_rag_node.py`·`hybrid_rag_node.py`.
+severity: low
+reason_for_severity: 지금 이 데모의 데이터 규모(로컬 실측 `on_sale` 158건)에서는 체감 불가다. 항목을 여는 이유는 **측정이 없다는 사실 자체**가 다음 사람에게 안 보이기 때문이다 — 스펙 Design Notes는 정확성만 재고 성능은 한 줄도 안 적었다.
+summary: (1) `private.is_seller_active(seller_id)`는 `security definer`라 Postgres가 **인라인하지 못한다** — 후보 행마다 실제 함수 호출이 일어나고, 인자가 행마다 달라 상수 접기도 안 된다. 기존 `listings_select_admin using (public.is_admin())`은 무인자·관리자 전용이라 성격이 다르다. 이 조건은 `/search`·상세·찜/채팅 임베드·`count: 'exact'` 페이지네이션 등 **모든 매물 읽기**에 붙는다. (2) pgvector 축은 별개 위험이다 — `doc_rag_node.py:110-112`가 이미 *"pgvector는 사전 필터링을 안 해서 필터+벡터 조합 시 결과가 LIMIT보다 적게 나올 수 있다"* 고 적어 두었는데, 17.4가 **같은 스캔에 두 번째 후필터를 추가**했다. 정지 판매자 비중이 커지면 AI 추천이 조용히 `DEFAULT_LIMIT`(5)보다 적게 돌려준다.
+evidence: 0036/0035의 `using` 절과 `pg_proc.prosecdef` 확인(정의자 함수 = 인라인 불가). `doc_rag_node.py`의 기존 주석이 recall 위험을 이미 문서화하고 있고, 17.4의 새 실DB 검사는 매물 2건만 심어 `ef_search` 후보군보다 훨씬 작아 이 현상을 **관측할 수 없다**. 성능·recall 측정 기록은 스펙 Design Notes·마이그레이션 헤더 어디에도 없다(2026-08-12 대조).
+why_it_matters: 두 위험 모두 **에러 없이 조용히** 나타난다 — 느려지거나, 추천 개수가 줄거나. 오류가 안 나는 열화는 검사가 안 잡고 사용자만 느낀다.
+fix_sketch: (1) 시드된 표에서 `EXPLAIN (ANALYZE, BUFFERS)`로 `/search` 대표 쿼리를 재고 결과를 `docs/conventions.md` §6.2 또는 부채 문서에 적는다. 물리면 표준 탈출구는 `listings.seller_active` 컬럼을 `profiles.status` 트리거로 유지하는 것(인덱스 스캔 복원). (2) recall 축은 `SET LOCAL hnsw.iterative_scan='relaxed_order'`를 켜거나 후보를 `LIMIT * k`로 넉넉히 뽑고 필터 후 자르는 방식 중 택일 — 어느 쪽이든 **정지 판매자 비중을 올린 상태에서 개수를 세는 검사**를 함께 둔다.
+trigger: **데이터가 실제로 늘거나(수천 건대) AI 추천 경로를 다음에 손대는 스토리에서.** 그 전이라도 `/search` 응답이 느리다는 관찰이 한 번이라도 나오면 선행 조건으로 올린다.
+related: [[DW-804]](이 조건을 심은 스토리) · [[DW-819]](같은 17.4 후속이지만 그쪽은 정합성 축, 이 항목은 성능·recall 축)
+status: open
+
+### DW-822: 스펙의 `final_revision`이 도달 불가능한 커밋을 가리킨다 — amend 관례가 정확한 값을 구조적으로 불가능하게 만든다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰**(adversarial 렌즈 지적, 오케스트레이터가 `git merge-base --is-ancestor`로 대조 확인).
+location: `_bmad-output/implementation-artifacts/spec-17-4-*.md:7` · 같은 필드를 쓰는 `spec-17-3-*.md:7` 등 Epic 17 스펙 전반.
+severity: low
+reason_for_severity: 코드 동작에 영향 없다. 다만 "스펙 → 그것을 구현한 커밋" 추적 링크가 끊기고, `git gc` 이후에는 `git show`가 아예 실패한다.
+summary: 스펙 프론트매터의 `final_revision`은 커밋 **직전**의 HEAD를 적고 그 줄 자체를 `--amend`로 같은 커밋에 접는 관례로 채워진다. 그런데 `git commit --amend`는 **항상 새 해시를 만든다** — 그래서 적힌 해시는 amend 이전의 고아 객체가 되고, 어느 브랜치에서도 도달할 수 없다. 관례가 정확한 값을 원리적으로 불가능하게 만든다.
+evidence: 17.4가 기록한 `886dbfe`는 `git merge-base --is-ancestor 886dbfe HEAD` 거짓, `git for-each-ref --contains 886dbfe` 빈 결과. `git diff --stat 886dbfe HEAD`는 이 한 줄만 다르다고 나온다 — 즉 amend 직전 객체가 맞다. 17.3의 `009c239`도 같은 상태(2026-08-12 대조).
+why_it_matters: 대장·회고·감사 어느 쪽에서든 "이 스펙이 실제로 들어간 커밋"을 되짚는 순간 링크가 죽어 있다. `git gc` 후에는 조용한 실패가 아니라 `bad object`로 터진다.
+fix_sketch: 둘 중 하나. (a) `final_revision`을 **후속 커밋**으로 적는다(스펙 갱신을 별도 커밋으로 분리 — 커밋 수가 하나 늘지만 값이 항상 참이다). (b) 필드를 없애고 커밋 메시지 관례(`story <id>: ... via bmad-dev-auto`)로 역추적한다 — 사본은 반드시 늙는다는 원칙(`project-context.md`)과도 맞는다. 어느 쪽이든 `bmad-dev-auto`의 step-04 Finalize 절과 함께 고쳐야 재발하지 않는다(문서만 고치면 다음 실행이 되돌린다 — CLAUDE.md B9).
+trigger: **`bmad-dev-auto`/`bmad-loop`의 마무리 단계를 다음에 손대는 작업에서.** 또는 회고가 커밋 추적을 실제로 필요로 하는 순간 선행 조건으로 올린다.
+related: [[DW-818]]
+status: open
+
+### DW-823: [[DW-804]]의 `trigger:` 줄이 아직 (a)를 Story 17.4에 배정 중인데 `status`는 done이다 — 반쯤 닫힌 항목
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰**(adversarial 렌즈 지적). **이 리뷰는 기존 항목을 고치지 않는다** — 오케스트레이터가 기존 항목의 status·resolution을 소유하므로, 알림만 새 항목으로 남긴다.
+location: `_bmad-output/implementation-artifacts/deferred-work.md` — [[DW-804]] 블록의 `trigger:` 줄.
+severity: low
+reason_for_severity: 표기 불일치다. 다만 방향이 나쁘다 — 닫힌 항목이 아직 일을 배정하고 있어, 트리거를 훑어 다음 스프린트를 짜는 쪽(사람이든 `bmad-loop-sweep`이든)이 이미 끝난 일을 다시 잡는다.
+summary: 17.4가 [[DW-804]]의 `status`를 `done`으로 바꾸고 `resolution:`을 붙였지만, 그 위의 `trigger:` 줄은 여전히 *"(a)만 남았다 — Story 17.4가 맡는다"* 라고 적혀 있다. 같은 블록 안에서 한 줄은 "끝났다", 다른 줄은 "17.4가 할 일"이라고 말한다.
+evidence: `git diff 5f11c39..HEAD -- _bmad-output/implementation-artifacts/deferred-work.md` — 변경된 줄은 `status`와 새 `resolution` 뿐이고 `trigger:`는 `-`/`+` 어디에도 없다(2026-08-12 대조).
+why_it_matters: CLAUDE.md B8이 적은 비용이 그대로다 — *"안 닫으면 '안 한 것'과 '했는지 모르는 것'이 구별되지 않는다"*. 반쯤 닫힌 상태는 둘 중 어느 쪽보다도 나쁘다. 게다가 [[DW-820]]이 방금 (a)의 **잔여 분기**를 별도로 열었으므로, DW-804의 `trigger:`를 지울지 DW-820으로 넘길지는 판단이 필요하다.
+fix_sketch: 오케스트레이터가 [[DW-804]]의 `trigger:` 줄을 `resolution`과 정합하게 정리한다 — (a) 완결이면 트리거를 제거하거나 "해소됨"으로 바꾸고, 잔여가 있다는 판단이면 [[DW-820]]을 가리키게 바꾼다. 이 항목은 그때 함께 닫는다.
+trigger: **오케스트레이터가 대장을 다음에 정리할 때(가장 가까운 자리는 다음 sweep 실행).**
+related: [[DW-804]](대상 항목) · [[DW-820]](같은 (a)의 잔여 분기)
+status: open
+
+### DW-824: `private` 스키마 차단의 성립 조건(Data API 노출 스키마 목록)을 원격에서 한 번도 안 쟀고, 그 계층을 도는 자동 검사가 0건이다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰 3회차**(adversarial·verification-gap 독립 수렴, 오케스트레이터가 로컬 HTTP·문서 대조로 확인).
+location: `supabase/migrations/0036_is_seller_active_private_schema.sql`(헤더·`comment on function`의 근거 문장) · `docs/conventions.md` §6.2 · `docs/deployment-runbook.md`(적용 절차) · `supabase/config.toml:13`.
+severity: medium
+reason_for_severity: 17.4가 잡은 유일한 high(anon 정지 오라클)의 **수정이 실제로 성립하는 근거**가 미측정 상태로 남았다. 로컬에서는 실측으로 막혔지만(아래 evidence), 그 근거로 인용한 파일이 원격에는 존재하지 않는 파일이다.
+summary: P1 수정의 논리는 *"`private` 스키마는 PostgREST 노출 목록 밖이라 RPC 경로 자체가 안 생긴다"* 이고, 그 근거로 `supabase/config.toml:13`(`schemas = ["public","graphql_public"]`)을 인용한다. 그런데 그 파일은 **로컬 스택 전용**이다 — `docs/deployment-runbook.md`는 원격 적용이 Supabase MCP `apply_migration`이며 *"이 프로젝트엔 Supabase CLI도 config.toml도 없다"* 고 못박는다(그 문장 자체도 파일이 나중에 생겨 낡았다). 원격의 노출 스키마는 Supabase 프로젝트의 Data API 설정이고, 이 리포는 그 값을 **읽지도 검사하지도 않는다**. 게다가 어느 환경이든 이 계층(HTTP 노출면)을 도는 자동 검사가 0건이다 — 새로 심은 가드(`test_public_is_seller_active_removed_private_version_exists_with_grants`)는 `pg_proc`/`pg_namespace`/`has_function_privilege`만 본다.
+evidence: 2026-08-12 로컬 55321 실측 — anon 키로 `POST /rest/v1/rpc/is_seller_active` → `PGRST202`(경로 없음), **긍정 대조군** `GET /rest/v1/listings?status=eq.on_sale&select=id&limit=1` → 1행(읽기 경로 무손상). 즉 로컬에서는 막혔다. 반면 `grep -rn config.toml api/ web/ scripts/ .github/ supabase/` → 참조하는 코드·CI·테스트 0건(마이그레이션 주석뿐). `docs/deployment-runbook.md`의 적용 절차 항목에 config.toml 부재가 명시돼 있다. 원격 프로젝트의 노출 스키마 목록은 이 세션이 **재지 않았다**(원격 접속은 스토리 Never 절이 금지).
+why_it_matters: 노출 목록에 `private`가 들어가는 순간(로컬은 config 한 줄, 원격은 대시보드 설정) high 결함이 그대로 되살아나는데 **모든 검사는 초록**이다 — 재발 경로가 "함수 재생성"이 아니라 "설정 한 줄"인데, red를 증명한 것은 함수 재생성 축뿐이다. CLAUDE.md B9(*"규칙은 어길 수 없는 자리에 박는다"*)가 아직 이 축에서 안 지켜졌다.
+fix_sketch: 두 축을 나눠 처리한다. (1) **로컬 축(값싸다)**: `supabase/config.toml`의 `schemas` 배열에 `private`가 없음을 단언하는 정적 검사 몇 줄을 CI에 붙인다(파싱 불필요, 문자열 검사로 충분). (2) **원격 축**: 배포 런북의 마이그레이션 적용 절차에 *"적용 전 Data API 노출 스키마 목록을 떠서 before/after 두 벌로 남긴다"* 를 추가한다(런북이 이미 정책 축에 요구하는 before/after 관례와 같은 형식). 가능하면 anon 키로 `/rest/v1/rpc/is_seller_active`가 404/`PGRST202`인지, **긍정 대조군**으로 anon 매물 읽기가 200인지를 함께 확인하는 스모크를 배포 게이트에 넣는다 — 대조군이 없으면 "전부 막힘"과 구별되지 않는다.
+trigger: **0035·0036을 원격(운영)에 적용하는 순간 — 그 적용의 선행 조건이다.** 그 전이라도 CI에 정적 검사를 붙이는 작업이 생기면 (1)만 먼저 처리한다.
+related: [[DW-804]](이 함수를 만든 스토리) · [[DW-819]] · [[DW-821]]
+status: open
+
+### DW-825: Flutter 찜 화면은 정지 판매자 매물을 아직 "판매완료"라고 단정한다 — 웹만 고쳐졌고, 앱 테스트가 옛 문구를 초록으로 고정한다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰 3회차**(verification-gap 렌즈, 오케스트레이터가 앱 소스·테스트 대조로 확인).
+location: `app/lib/features/wishlist/wishlist_screen.dart:126`(배지 `'판매완료'`) · `:134`(제목 폴백 `'판매완료된 매물'`) · 그 문구를 단언하는 `app/test/wishlist_screen_test.dart:65-66`.
+severity: medium
+reason_for_severity: 사용자에게 **사실이 아닌 것을 단정**한다 — 팔리지 않은 매물을 팔렸다고 말한다. 17.4 2회차 리뷰가 웹에서 정확히 이 이유로 문구를 헤지로 바꿨는데(`web/src/lib/wishlist.ts`의 `blockedWishTileCopy`), 같은 원인·같은 화면의 앱 판이 남았다.
+summary: 0035/0036 이후 임베드가 null이 되는 원인이 둘(**판매완료** / **판매자 정지**)로 늘었다. 웹 찜 타일은 2회차 패치로 `조회 불가` 배지 + *"판매 완료되었거나 조회할 수 없는 매물"* 로 바뀌었지만, Flutter 찜 타일은 여전히 `판매완료` 배지 + `판매완료된 매물`이다. 앱의 **채팅** 축은 이미 헤지 문구를 쓰고 있어(Epic 7 때부터) 앱 안에서도 찜만 어긋난 상태다.
+evidence: 2026-08-12 소스 대조 — `grep -rn '판매 완료되었거나' app/lib/` → `chat_room_screen.dart:793`·`chat_list_screen.dart:215`(헤지 있음), `wishlist_screen.dart`는 0건. `grep -rn '판매완료' app/lib/features/wishlist/` → 배지·제목 리터럴 확인. `app/test/wishlist_screen_test.dart:65-66`이 `find.text('판매완료')`·`find.text('판매완료된 매물')`를 단언한다 — 즉 코드를 안 고치는 한 CI의 `flutter test` 잡이 **옛 문구를 계약으로 고정**한다. 앱 파싱 자체는 null 안전해 크래시 경로는 없다(`wishlist_repository.dart`의 임베드 null 분기 확인).
+why_it_matters: 데이터 계층 한 곳을 고쳐 모든 클라이언트를 막는다는 이 스토리의 설계는 성립했지만, **"막힌 뒤 화면이 뭐라고 말하는가"는 클라이언트마다 따로 있다.** 웹만 고치면 같은 결함이 앱에 그대로 남고, 그 사실을 잡아 줄 검사가 오히려 반대 방향으로 잠겨 있다.
+fix_sketch: `wishlist_screen.dart`의 `_BlockedWishTile`에서 제목 폴백이 null인 분기(= 임베드가 없어 원인을 알 수 없는 경우)만 웹 `blockedWishTileCopy`와 같은 규칙으로 바꾼다 — 배지 `조회 불가`, 제목 *"판매 완료되었거나 조회할 수 없는 매물"*. **제목이 있는 본인 sold 분기는 그대로 둔다**(웹 패치와 동일 판단 — 그건 실제로 판매완료가 맞다). 그리고 `wishlist_screen_test.dart:65-66`의 단언을 새 문구로 옮겨 두 트리거를 이름 붙여 고정한다. ⚠️ 17.4 스펙 Never 절이 금지한 것은 *"앱에 별도 필터를 넣는 것"* 이지 문구 정정이 아니지만, 앱 코드를 여는 판단 자체는 이 스토리 범위 밖이라 별도 항목으로 연다.
+trigger: **앱(Flutter) 화면을 다음에 손대는 스토리에서** — 가장 가까운 자리는 찜·채팅 화면을 건드리는 작업. 그 전이라도 앱을 실제 사용자에게 배포하기로 결정하는 순간 선행 조건으로 올린다.
+related: [[DW-804]](원인이 된 스토리) · [[DW-820]](같은 "null 임베드가 두 원인을 갖게 됐다" 축의 채팅 판)
+status: open
+
+### DW-826: `get_seller_public_summary`가 anon에게 임의 uuid의 **계정 존재 여부와 가입일**을 돌려준다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰 3회차**(adversarial·edge-case 독립 지적. 두 렌즈는 *"P1이 닫은 정지 오라클이 이 함수로 되살아난다"* 고 보고했으나, 오케스트레이터가 실측으로 **그 주장은 기각**하고 아래의 더 좁은 사실만 남겼다).
+location: `supabase/migrations/0019_seller_public_summary.sql`(원본 정의·anon GRANT) · `0036_is_seller_active_private_schema.sql`의 `create or replace`(이번 스토리가 본문만 개정).
+severity: low
+reason_for_severity: 노출되는 값이 가입일 한 개이고 uuid를 이미 알아야 부를 수 있다. 다만 스펙 Never 절(*"남의 회원 정보를 열어 주지 않는다"*)이 겨냥한 면과 같은 면이라, 판단을 기록해 두지 않으면 다음 리뷰가 반드시 같은 지적을 반복한다.
+summary: 이 함수는 `public` 스키마 + anon EXECUTE라 PostgREST가 `/rest/v1/rpc/get_seller_public_summary`로 노출한다. 인자는 호출자가 주는 임의 uuid이고, `joined_at`은 정지 여부·매물 유무와 **무관하게 항상** 반환된다. 즉 anon이 임의 uuid에 대해 "그 계정이 존재하는가 + 언제 가입했는가"를 물을 수 있다. **정지 여부 오라클은 아니다** — 정지된 판매자(매물 보유)와 활성 판매자(매물 0건)가 응답으로 구별되지 않는다.
+evidence: 2026-08-12 로컬 55321 anon 키 실측 — 활성 판매자 → `{"joined_at":"2026-08-11T13:49:23...","other_on_sale_count":54}`, 존재하지 않는 uuid → `{"joined_at":null,"other_on_sale_count":0}`. 로컬 55322 트랜잭션+rollback으로 같은 판매자를 정지시킨 뒤 anon 호출 → `{"joined_at":"2026-08-11T13:49:23...","other_on_sale_count":0}` — `joined_at`은 그대로, count만 0. 따라서 count 신호는 "매물 0건인 활성 판매자"와 구별 불가이고, 매물이 사라진 것 자체로 이미 관측 가능한 정보를 넘지 않는다.
+why_it_matters: 이 노출은 17.4가 만든 것이 아니라 0019(판매자 공개 요약 위젯)의 설계다. 그런데 17.4가 이 함수 본문을 개정하면서 같은 파일을 다시 열었고, 같은 스토리가 형제 함수의 유사한 노출을 high로 고쳤다 — **검토했는지 여부가 기록에 없으면 "몰랐다"와 "허용하기로 했다"가 구별되지 않는다**(CLAUDE.md B8).
+fix_sketch: 먼저 **결정**한다 — 공개 위젯의 성질상 허용할 것인가. 허용이면 `docs/conventions.md` §6.2(또는 §5 접근 게이트 절)에 *"anon이 임의 uuid로 가입일을 물을 수 있다 — 검토 후 허용, 근거는 판매자 공개 요약 위젯"* 을 한 줄 등재하고 이 항목을 닫는다. 좁힐 것이면 `returns table`의 **행 전체**를 carve-out으로 게이트한다(제3자 + 존재하지 않거나 비활성인 판매자면 0행) — 단 `test_suspended_seller_listings_excluded_from_count`가 *"가입일은 계속 반환돼야 한다"* 를 **의도적으로 단언**하고 있으므로 그 계약을 함께 뒤집어야 한다.
+trigger: **판매자 공개 요약 위젯(`get_seller_public_summary`)을 다음에 손대는 스토리에서.** 또는 개인정보 노출면을 한 번에 점검하는 작업이 생기면 그때.
+related: [[DW-804]](이 함수를 개정한 스토리) · [[DW-824]](같은 PostgREST 노출면 축)
+status: open
+
+### DW-827: [[DW-814]]의 `trigger:`도 Story 17.4를 지목한 채 열려 있다 — [[DW-823]]이 [[DW-804]] 한 건만 셌다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰 3회차**(adversarial 렌즈 지적, 오케스트레이터가 `grep`으로 전수해 확인). **이 리뷰는 기존 항목을 고치지 않는다** — [[DW-823]]을 포함해 기존 항목의 status·범위는 오케스트레이터 소유이므로 알림만 새 항목으로 남긴다.
+location: `_bmad-output/implementation-artifacts/deferred-work.md` — [[DW-814]] 블록의 `trigger:` 줄.
+severity: low
+reason_for_severity: 표기 불일치이고 코드 영향은 없다. 다만 [[DW-823]]이 *"17.4를 지목한 채 남은 trigger"* 를 정리하려고 연 항목인데 **손으로 세다 하나를 빠뜨렸다** — 그 항목만 처리하고 넘어가면 같은 결함이 반만 닫힌다.
+summary: [[DW-814]](정지된 관리자가 왜 튕겼는지 못 듣는다)의 `trigger:` 줄이 *"가장 자연스러운 자리는 Story 17.4 — 정지 축을 이어서 다루므로"* 라고 적혀 있는데, 17.4는 그 축을 건드리지도 언급하지도 않고 끝났다. DW-814는 `status: open`이라 반쯤 닫힌 상태는 아니지만, **이미 지나간 스토리에 일을 배정한 채** 남아 있어 트리거를 훑는 쪽이 그 제안을 그대로 믿는다.
+evidence: 2026-08-12 `grep -n "trigger:.*17\.4" deferred-work.md` → 두 줄(6388 = [[DW-804]], 6528 = [[DW-814]]). [[DW-823]]의 본문은 [[DW-804]]만 대상으로 적혀 있다. 17.4의 diff(`git diff 5f11c39..HEAD`)에 `page.tsx` 랜딩 분기·`requireRole` 변경 0건.
+why_it_matters: 장부 위생을 위해 연 항목이 장부 위생을 반만 하면, 다음 sweep은 "정리했다"고 판단하고 나머지 절반을 영영 안 본다. 그리고 이런 종류(닫힌·지나간 스토리를 가리키는 `trigger:`)는 `scripts/check_dw_numbers.py`가 **일부러 안 보기로 한** 축이라 기계가 잡아 주지 않는다.
+fix_sketch: 오케스트레이터가 [[DW-814]]의 `trigger:`에서 "17.4가 자연스러운 자리" 제안을 **다음에 실제로 열릴 웹 스토리**로 옮긴다(항목 자체는 계속 open — 일이 남아 있는 것은 맞다). [[DW-823]]을 처리할 때 같은 패스에서 함께 본다. 손으로 세지 말고 `grep -n "trigger:.*<끝난 스토리 번호>"` 전수 결과를 근거로 남긴다.
+trigger: **오케스트레이터가 대장을 다음에 정리할 때(가장 가까운 자리는 다음 sweep 실행) — [[DW-823]]과 같은 패스에서.**
+related: [[DW-823]](같은 결함의 다른 절반) · [[DW-814]](대상 항목) · [[DW-804]]
+status: open
+
+### DW-828: 정지 → 비노출 → 해제 → 복귀를 도는 브라우저 검사가 없다 — 17.4의 화면 확인은 1회성 수동 관찰로만 존재한다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-4-정지-판매자-매물-비노출.md`
+origin: 2026-08-12 Story 17.4 **후속 코드리뷰 3회차**(adversarial 렌즈 지적, 오케스트레이터가 `web/e2e/` diff 0건으로 확인).
+location: `web/e2e/suspended-access.spec.ts`(17.3이 만든 정지 축 E2E — 17.4가 케이스를 추가하지 않았다) · `docs/conventions.md` §6.2의 강제 장치 목록(전부 pytest 파일).
+severity: low
+reason_for_severity: 데이터 계층 차단은 실DB 격자 검사 20건이 이미 단단히 고정한다. 빠진 것은 **"사용자 눈에 실제로 그렇게 보이는가"** 를 다음 사람이 **재실행**할 수 있는 형태다. E2E는 CI에 안 붙는 것이 이미 확정된 결정이라([[DW-468]] `wont-do`) 게이트 축의 손실은 아니다.
+summary: 17.4는 산출물이 "구매자에게 무엇이 보이는가"인 스토리인데 브라우저 자동 검사를 한 줄도 안 늘렸다. 스펙 Verification 절이 요구한 브라우저 확인(정지 → `/search`·상세에서 사라짐 → 해제 → 재노출)은 구현 세션이 Playwright MCP로 **수동 수행하고 스크린샷만 남겼다**. 17.3은 같은 정지 축에서 `web/e2e/suspended-access.spec.ts`를 만들어 두었으므로 자리는 이미 있다.
+evidence: `git diff 5f11c39..HEAD --stat -- web/e2e/` → 변경 0건(2026-08-12 확인). 스펙 Auto Run Result의 브라우저 검증 서술은 산문 기록이며 재실행 가능한 검사가 아니다. 참고로 보고된 `npm run test:e2e — 82 passed, 122 skipped`는 이 변경에 대해 아무 신호도 아니다(스킵이 60%이고, 정지-비노출 케이스가 그 안에 없다).
+why_it_matters: CLAUDE.md B4가 요구하는 것은 "돌려 봤다"가 아니라 **"다음에도 잡는다"** 이다. 수동 관찰은 회귀가 생겨도 아무도 모른다 — 특히 이 축은 RLS 정책 한 줄만 되돌려도 조용히 되살아난다.
+fix_sketch: `suspended-access.spec.ts`에 케이스 하나를 추가한다 — throwaway 판매자·매물 시드(17.3이 쓴 패턴 재사용) → 관리자로 정지 → 비로그인 `/search`·`/listings/[id]`에서 사라짐 단언 → **긍정 대조군**(활성 판매자 매물은 계속 보임) → 해제 → 재노출 단언 → 시드 정리. CI 배선은 하지 않는다([[DW-468]] 결정 유지) — 로컬 `npm run test:e2e`로 재실행 가능한 것만으로 목적을 달성한다. 추가하면 `docs/conventions.md` §6.2 강제 장치 목록에 그 파일을 함께 등재한다.
+trigger: **`web/e2e/` 스위트를 다음에 손대는 스토리에서**(가장 자연스러운 자리는 정지 축 후속 — [[DW-820]]이나 [[DW-825]]를 처리하는 작업). 그 전이라도 매물 조회 RLS를 다시 건드리는 변경이 생기면 선행 조건으로 올린다.
+related: [[DW-804]](이 스토리) · [[DW-468]](E2E를 CI에 붙이지 않기로 한 결정) · [[DW-824]](같은 "표면 검증이 사람 손에만 있다" 축의 HTTP 판)
+status: open
+
+### DW-829: Follow-up review still recommended for 17-4-정지-판매자-매물-비노출 after the review budget was exhausted
+origin: review-budget-followup
+source_spec: `spec-17-4-정지-판매자-매물-비노출.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-212857-e995; this entry preserves the lingering follow-up recommendation for a deliberate later review.
 status: open

@@ -19,7 +19,12 @@ import type { ReactNode } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, type UserRole } from '@/lib/constants';
 import { attachCoverImages } from '@/lib/listings';
-import { fetchWishlist, isWishedListingBlocked, type WishlistListingEmbed } from '@/lib/wishlist';
+import {
+  blockedWishTileCopy,
+  fetchWishlist,
+  isWishedListingBlocked,
+  type WishlistListingEmbed,
+} from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import RemoveWishButton from '@/components/listings/RemoveWishButton';
@@ -29,16 +34,19 @@ import ErrorState from '@/components/ui/ErrorState';
 
 export const dynamic = 'force-dynamic';
 
-// 판매완료(또는 RLS로 안 보이는 타인 소유 sold) 매물의 회색 비활성 타일. 상세 링크 없음(진입 차단,
-// FR11·UX-DR20). embed가 있으면(본인 소유 sold) 차량명을 보여주고, 없으면(타인 소유 sold — RLS가
-// 값 자체를 안 줌) 일반 문구로 대신한다 — 없는 정보를 지어내지 않는다.
+// 판매완료(또는 RLS로 안 보이는 매물)의 회색 비활성 타일. 상세 링크 없음(진입 차단, FR11·
+// UX-DR20). embed가 null이 되는 원인은 둘이다 — 판매완료(본인 소유 sold는 embed가 채워져 온다) ·
+// 판매자 정지(Story 17.4, DW-804(a) — 타인 소유는 어느 원인이든 RLS가 값 자체를 안 준다). 두
+// 원인을 구분할 방법이 PostgREST 응답만으로는 없어(§6.2), `blockedWishTileCopy`(@/lib/wishlist)가
+// embed 유무로만 문구를 가른다: embed가 있으면(본인 소유 sold) 차량명 + "판매완료", 없으면
+// (타인 소유 — sold든 정지든) 두 원인을 함께 흡수하는 문구 + "조회 불가"로 대신한다.
 // listingId는 embed=null일 때도 필요해서(찜 해제 대상 지정) entry.listing_id를 별도로 받는다.
 function BlockedWishTile({ listingId, embed }: { listingId: string; embed: WishlistListingEmbed }) {
-  const title = embed ? `[${embed.manufacturer}] ${embed.model} · ${embed.year}년` : '판매완료된 매물';
+  const { title, badge } = blockedWishTileCopy(embed);
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-card border border-border-hairline bg-surface-raised p-8 text-center opacity-60 shadow-card dark:shadow-none">
       <span className="rounded-badge border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary">
-        판매완료
+        {badge}
       </span>
       <p className="truncate text-body text-ink-secondary">{title}</p>
       {/* 코드리뷰 2026-07-22 P1: sold 찜은 WishButton이 없어 해제 수단이 없었다(영구 클러터).

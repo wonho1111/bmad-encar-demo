@@ -78,21 +78,32 @@ def seeded():
         conn.rollback()
 
 
-def _call(cur, seller_id, exclude_id, *, as_anon=True):
+def _call(cur, seller_id, exclude_id, *, as_anon=True, caller_id=None):
     """`get_seller_public_summary`를 호출한다.
 
     기본으로 **anon 롤로 임퍼소네이션**한다 — profiles는 본인·admin만 읽을 수 있는데(0001 RLS),
     RPC 경유로는 anon조차 남의 가입 시점을 읽어낼 수 있어야 "RLS가 아니라 함수 본문의 인라인
     조건이 FR11을 지킨다"는 이 함수의 설계(SECURITY DEFINER 안엔 RLS가 없음)가 실제로 성립한다.
+
+    `caller_id`(Story 17.4 코드리뷰 patch)를 주면 그 사용자로 로그인한 것처럼(`authenticated`
+    롤 + `request.jwt.claim.sub`) 호출한다 — 판매자 **본인**·**관리자**가 정지된 판매자의 요약을
+    볼 때를 검증하려면 `auth.uid()`가 실제 값이어야 하는데 anon으로는 항상 NULL이라 그 분기를
+    태울 수 없다. `caller_id`가 있으면 `as_anon`은 무시된다(상호 배타).
     """
-    if as_anon:
+    if caller_id is not None:
+        cur.execute(f"set local request.jwt.claim.sub = '{caller_id}'")
+        cur.execute("set local role authenticated")
+    elif as_anon:
         cur.execute("set local role anon")
     cur.execute(
         "select joined_at, other_on_sale_count from public.get_seller_public_summary(%s, %s)",
         (seller_id, exclude_id),
     )
     row = cur.fetchone()
-    if as_anon:
+    if caller_id is not None:
+        cur.execute("reset role")
+        cur.execute("reset request.jwt.claim.sub")
+    elif as_anon:
         cur.execute("reset role")
     return row
 
@@ -159,6 +170,83 @@ def test_additional_sold_listings_never_inflate_count(seeded, extra_sold):
 
     _joined_at, count = _call(cur, seller_id, current_id)
     assert count == 1, "sold 매물을 몇 건 늘려도 집계는 그대로여야 한다(FR11)"
+
+
+def test_suspended_seller_listings_excluded_from_count_for_third_party(seeded):
+    """Story 17.4(DW-804(a)) — **제3자(anon)** 가 볼 때, 정지된 판매자는 on_sale 매물이 있어도
+    집계가 0이 된다.
+
+    함수 본문에 `public.is_seller_active(p_seller_id)`(0035)를 추가했다 — SECURITY DEFINER라
+    RLS가 대신 걸러주지 않으므로 이 인라인 조건이 유일한 강제 지점이다(0019·0035 주석과 동일
+    이유). 긍정 대조군은 이 파일의 다른 테스트(`test_other_on_sale_counted_current_excluded`
+    등)가 이미 활성 판매자 집계를 고정하고 있어 별도로 두지 않는다. **판매자 본인·관리자가 볼
+    때는 다르다** — 아래 두 테스트(`test_suspended_seller_can_view_own_summary_with_correct_count`
+    ·`test_admin_can_view_suspended_sellers_summary_with_correct_count`)가 그 축을 짝으로 고정한다
+    (코드리뷰 patch — `is_seller_active` 단독 조건이던 1차 작성은 본인·관리자가 봐도 무조건 0을
+    돌려주는 결함이 있었다, 불변식 "본인·관리자 조회는 그대로" 위반)."""
+    cur, seller_id, current_id = seeded
+    cur.execute("update public.profiles set status = 'suspended' where id = %s", (seller_id,))
+
+    joined_at, count = _call(cur, seller_id, current_id)
+    assert count == 0, "정지된 판매자의 다른 on_sale 매물이 집계에 포함됐다"
+    assert joined_at is not None, (
+        "정지된 판매자여도 가입 시점(joined_at)은 계속 반환돼야 한다 — 이 스토리가 좁힌 것은 "
+        "매물 집계뿐이다(마이그레이션 주석 참조)"
+    )
+
+
+def test_suspended_seller_can_view_own_summary_with_correct_count(seeded):
+    """정지된 판매자 **본인**이 자기 요약을 볼 때는 정지와 무관하게 실제 집계가 나온다
+    (코드리뷰 patch — 불변식 "본인 조회는 그대로"). `auth.uid() = p_seller_id` 조건이 이 축의
+    강제 지점이다(0035 5절)."""
+    cur, seller_id, current_id = seeded
+    cur.execute("update public.profiles set status = 'suspended' where id = %s", (seller_id,))
+
+    joined_at, count = _call(cur, seller_id, current_id, caller_id=seller_id)
+    assert count == 1, "정지된 판매자 본인이 자기 요약을 볼 때는 실제 on_sale 집계(1건)가 나와야 한다"
+    assert joined_at is not None
+
+
+def test_admin_can_view_suspended_sellers_summary_with_correct_count(seeded):
+    """관리자가 정지된 판매자의 요약을 볼 때도 정지와 무관하게 실제 집계가 나온다(코드리뷰 patch —
+    불변식 "관리자 조회는 그대로"). `public.is_admin()` 조건이 이 축의 강제 지점이다(0035 5절)."""
+    cur, seller_id, current_id = seeded
+    cur.execute("update public.profiles set status = 'suspended' where id = %s", (seller_id,))
+
+    admin_id = uuid.uuid4()
+    cur.execute(
+        "insert into auth.users (id, email, raw_user_meta_data) "
+        "values (%s, %s, '{\"role\": \"buyer\"}'::jsonb)",
+        (admin_id, f"seller-summary-admin-{uuid.uuid4()}@example.com"),
+    )
+    cur.execute("update public.profiles set role = 'admin' where id = %s", (admin_id,))
+
+    joined_at, count = _call(cur, seller_id, current_id, caller_id=admin_id)
+    assert count == 1, "관리자가 정지된 판매자의 요약을 볼 때는 실제 on_sale 집계(1건)가 나와야 한다"
+    assert joined_at is not None
+
+
+def test_ordinary_buyer_caller_id_gets_zero_for_suspended_seller(seeded):
+    """제3자(로그인한 일반 구매자)가 `caller_id=`로 볼 때도 0이어야 한다(코드리뷰 patch, P6).
+
+    기존 `caller_id=` 케이스 둘은 전부 양성(판매자 본인 → 1, 관리자 → 1)뿐이었다 — anon 음성
+    케이스는 `as_anon` 경로로 이미 있지만, **로그인한 일반 구매자**가 `auth.uid()`를 갖고 볼 때의
+    음성 케이스가 없었다. 그래서 함수 조건을 `auth.uid() = p_seller_id`에서 `auth.uid() is not
+    null`(로그인만 하면 통과)로 잘못 넓혀도 기존 테스트가 전부 green으로 남는 사각이 있었다 —
+    이 테스트가 그 사각을 막는다."""
+    cur, seller_id, current_id = seeded
+    cur.execute("update public.profiles set status = 'suspended' where id = %s", (seller_id,))
+
+    buyer_id = uuid.uuid4()
+    cur.execute(
+        "insert into auth.users (id, email, raw_user_meta_data) "
+        "values (%s, %s, '{\"role\": \"buyer\"}'::jsonb)",
+        (buyer_id, f"seller-summary-buyer-{uuid.uuid4()}@example.com"),
+    )
+
+    joined_at, count = _call(cur, seller_id, current_id, caller_id=buyer_id)
+    assert count == 0, "일반 구매자가 정지된 판매자를 볼 때는 집계가 0이어야 한다(본인·관리자가 아니다)"
+    assert joined_at is not None
 
 
 def test_null_exclude_id_still_counts_all_on_sale(seeded):

@@ -11,7 +11,8 @@
 // 매 요청 최신 DB 상태를 반영해야 하므로(새 방·sold 변화 즉시) force-dynamic.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
+import { ROLE_LABEL, type UserRole } from '@/lib/constants';
+import { chatListingSummary } from '@/lib/chat';
 import AppHeader from '@/components/layout/AppHeader';
 import Badge from '@/components/ui/Badge';
 
@@ -130,14 +131,14 @@ export default async function ChatListPage() {
                     ? `구매자 ${counterpartName} 문의`
                     : '구매자 문의';
                 const l = room.listings;
-                // 매물 임베드가 null = 판매완료(sold)거나 구매자 RLS상 조회 불가한 매물.
-                //   FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심 단일 규칙)을 지켜
-                //   상세 정보(제조사·모델·가격)는 노출하지 않고 플레이스홀더만 보인다.
-                //   [Decision 옵션D] sold를 다시 보이게 하지 않는다(RLS 확대·스냅샷·서버우회 채택 안 함).
-                //   대화방 자체는 살아 있으므로 행은 그대로 클릭 가능(/chat/[roomId] 진입은 정상).
-                const summary = l
-                  ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
-                  : '판매 완료되었거나 조회할 수 없는 매물';
+                // 매물 임베드가 null = 판매완료(sold)거나 판매자가 정지됨(Story 17.4, DW-804(a))이거나
+                //   구매자 RLS상 조회 불가한 매물. FR11(판매완료 매물은 구매자의 모든 경로에서 비노출
+                //   — 프로젝트 핵심 단일 규칙)을 지켜 상세 정보(제조사·모델·가격)는 노출하지 않고
+                //   플레이스홀더만 보인다. [Decision 옵션D] sold를 다시 보이게 하지 않는다(RLS 확대·
+                //   스냅샷·서버우회 채택 안 함). 대화방 자체는 살아 있으므로 행은 그대로 클릭 가능
+                //   (/chat/[roomId] 진입은 정상). 요약 문구는 `chatListingSummary`(@/lib/chat)로
+                //   chat/[roomId]/page.tsx와 공유한다.
+                const summary = chatListingSummary(l);
                 const unread = unreadByRoom.get(room.id) ?? 0;
                 return (
                   <li key={room.id}>

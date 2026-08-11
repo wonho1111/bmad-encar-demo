@@ -112,3 +112,22 @@ export function isWishedListingBlocked(embed: WishlistListingEmbed): boolean {
   if (!embed) return true;
   return embed.status !== LISTING_STATUS.ON_SALE;
 }
+
+/**
+ * 찜 목록의 회색 타일(`BlockedWishTile`)에 쓸 제목·배지 문구를 정한다(Story 17.4 코드리뷰
+ * patch, P2 — `web/src/lib/chat.ts`의 `chatListingSummary`와 같은 이유로 순수 함수로 뺐다).
+ *
+ * embed가 null이 되는 원인은 최소 두 가지다 — **①** `status='sold'`(FR11) **②** 판매자가
+ * 정지됨(Story 17.4, DW-804(a) — `listings_select_on_sale`/`_anon`이 이제 판매자 활성 여부도
+ * 본다). PostgREST의 임베드 null은 "RLS가 이 행을 안 보여줬다"만 알려줄 뿐 어느 정책이
+ * 막았는지는 안 알려주므로, 두 원인을 구분할 방법이 없다 — 그래서 embed=null일 때는 "판매완료"
+ * 대신 `chatListingSummary`와 동일한 문구("판매 완료되었거나 조회할 수 없는 매물")로 두 원인을
+ * 함께 흡수한다(배지도 "판매완료" 대신 "조회 불가"). embed가 있는 경우(본인 소유 sold)는 실제로
+ * sold가 확정이므로 기존 "판매완료" 문구·배지를 그대로 쓴다.
+ */
+export function blockedWishTileCopy(embed: WishlistListingEmbed): { title: string; badge: string } {
+  if (embed) {
+    return { title: `[${embed.manufacturer}] ${embed.model} · ${embed.year}년`, badge: '판매완료' };
+  }
+  return { title: '판매 완료되었거나 조회할 수 없는 매물', badge: '조회 불가' };
+}

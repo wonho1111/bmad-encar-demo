@@ -8,7 +8,12 @@
 // 체인)는 여기서 mock하지 않는다 — 그 부분은 순수 로직이 아니라 RLS·네트워크에 기대는 통합 동작이라
 // 로컬 Supabase 스택으로 손수 검증한다(Story 문서의 red/green 실측 기록, Design Notes 참조).
 import { describe, expect, it } from 'vitest';
-import { buildWishedIdSet, isWishedListingBlocked, type WishlistListingEmbed } from '../wishlist';
+import {
+  blockedWishTileCopy,
+  buildWishedIdSet,
+  isWishedListingBlocked,
+  type WishlistListingEmbed,
+} from '../wishlist';
 
 function embed(overrides: Partial<NonNullable<WishlistListingEmbed>> = {}): NonNullable<WishlistListingEmbed> {
   return {
@@ -57,6 +62,26 @@ describe('isWishedListingBlocked', () => {
   // 위 두 신규 케이스(undefined·미래값)가 즉시 fail한다. 아래는 그 자리를 문서로 남긴 실측 절차 —
   // 실제로는 코드를 `return embed.status === 'sold';` 로 되돌려 이 두 테스트가 fail(red)하는 것을
   // 확인한 뒤 원상복구해 다시 pass(green)하는 것을 실행 로그로 검증했다(Verification 절 참조).
+});
+
+// blockedWishTileCopy 단위테스트 (Story 17.4 코드리뷰 patch, P2).
+//
+// embed=null이 되는 두 트리거(①판매완료 ②판매자 정지, Story 17.4 DW-804(a))는 PostgREST 응답만
+// 으로 구분할 수 없다(§6.2) — 그래서 embed=null이면 두 원인을 함께 흡수하는 문구+배지를 쓰고,
+// embed가 있을 때(본인 소유 sold, 원인이 확정됨)만 기존 "판매완료" 문구를 그대로 쓴다.
+describe('blockedWishTileCopy', () => {
+  it('embed가 있으면(본인 소유 sold) 차량명 + "판매완료" 배지', () => {
+    expect(
+      blockedWishTileCopy(embed({ manufacturer: '현대', model: '아반떼', year: 2021, status: 'sold' })),
+    ).toEqual({ title: '[현대] 아반떼 · 2021년', badge: '판매완료' });
+  });
+
+  it('embed가 null이면(①판매완료 또는 ②판매자 정지, 구분 불가) 흡수 문구 + "조회 불가" 배지', () => {
+    expect(blockedWishTileCopy(null)).toEqual({
+      title: '판매 완료되었거나 조회할 수 없는 매물',
+      badge: '조회 불가',
+    });
+  });
 });
 
 describe('buildWishedIdSet', () => {

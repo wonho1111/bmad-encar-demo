@@ -302,8 +302,9 @@ def validate_select_sql(sql: str) -> str:
 
     # ── 4) OR 금지 — status='on_sale' 무력화 차단(FR11, 코드리뷰 Critical) ──
     # 가드는 status 필터의 "존재"만 본다. OR가 허용되면 `status='on_sale' OR price<9e9`처럼
-    # 써서 sold까지 새어나간다(ai_readonly RLS는 using(true)라 sold를 못 거름 → 쿼리가 유일
-    # 방어선). 그래서 OR 자체를 거부해 status 필터가 항상 AND로 유효하게 만든다(프롬프트 규칙 ③ 동일 의도).
+    # 써서 sold까지 새어나간다(ai_readonly RLS는 Story 17.4(0035/0036)로 판매자 활성 여부만
+    # 걸러졌을 뿐 sold는 여전히 못 거름 → 이 쿼리가 유일 방어선). 그래서 OR 자체를 거부해 status
+    # 필터가 항상 AND로 유효하게 만든다(프롬프트 규칙 ③ 동일 의도).
     if re.search(r"\bor\b", no_strings, re.IGNORECASE):
         raise SqlGuardError(
             "forbidden_or",

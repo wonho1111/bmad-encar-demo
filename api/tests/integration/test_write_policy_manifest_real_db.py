@@ -44,8 +44,13 @@
   · **함수 매니페스트는 `proname`(함수 이름)만 키로 쓴다** — 스펙 Always 절이 지정한 실측 쿼리
     (`select p.proname from pg_proc ...`)가 이름만 반환하기 때문이다. 같은 이름의 오버로드가
     생기면(현재 0건, 실측 확인) 이 검사는 그 둘을 구별하지 못한다.
-  · **함수 매니페스트(`_fetch_functions`)는 `public` 스키마만 본다** — 다른 스키마(예: `storage`)의
-    SECURITY DEFINER 함수는 대상이 아니다(실측 쿼리가 `n.nspname='public'`으로 명시 한정).
+  · **함수 매니페스트(`_fetch_functions`)는 `public`·`private` 두 스키마만 본다** — 다른
+    스키마(예: `storage`)의 SECURITY DEFINER 함수는 대상이 아니다(실측 쿼리가
+    `n.nspname in ('public','private')`로 명시 한정). ✎ 2026-08-12 Story 17.4 후속 코드리뷰
+    patch(P1)로 `public`에서 `private`로 넓혔다 — `is_seller_active`(0035)가 PostgREST의 RPC
+    자동 노출(anon이 임의 uuid의 정지 여부를 알아내는 오라클이 됨, 실측은
+    `0036_is_seller_active_private_schema.sql` 헤더 참조)을 막기 위해 `private.is_seller_active`
+    (0036)로 옮겨졌는데, 좁게 `public`만 보면 이 함수가 DW-803 census에서 조용히 빠진다.
     **정책 매니페스트(`_fetch_policies`)는 스키마 제한이 없다** — `storage.objects`의 4개 정책도
     포함해서 본다. 이 둘을 섞어 "이 파일 전체가 public 스키마만 본다"로 읽지 않는다.
   · **GRANT(누가 이 함수를 실행할 수 있는지)는 보지 않는다.** `prosecdef`(SECURITY DEFINER
@@ -205,10 +210,22 @@ FUNCTION_MANIFEST = {
         "exempt",
         "auth.users INSERT 트리거 — 아직 존재하지 않는 사용자를 다룸, 정지 전제가 성립하지 않음",
     ),
-    # ── 해당 없음: 읽기 전용(1) ──────────────────────────────────────────────────────────────
+    # ── 해당 없음: 읽기 전용(2) ──────────────────────────────────────────────────────────────
     "get_seller_public_summary": (
         "exempt",
         "판매자 공개 요약 조회 — 쓰기가 아니다(§6이 이미 문서화)",
+    ),
+    "is_seller_active": (
+        "exempt",
+        "정지 판매자 매물 비노출 판정 헬퍼(Story 17.4, DW-804(a)) — 쓰기가 아니라 "
+        "listings_select_on_sale/_anon·listings_ai_readonly_select의 SELECT 판정에 쓰인다. "
+        "이 매니페스트는 '쓰기 경로' 전수조사(DW-803)라 읽기 판정 함수는 위 get_seller_public_summary와 "
+        "같은 이유로 exempt다 — is_admin_active()(쓰기 전용, blocked)와 성격이 다르다. "
+        "✎ 2026-08-12 후속 코드리뷰 patch(P1): public.is_seller_active(0035)가 PostgREST RPC로 "
+        "자동 노출돼 anon이 임의 uuid의 정지 여부를 알아내는 오라클이 됐다(실측:  "
+        "POST /rest/v1/rpc/is_seller_active가 anon 키만으로 true/false를 반환) — "
+        "private.is_seller_active(0036)로 옮겨 노출 스키마 밖으로 뺐다. 이름(proname)은 그대로라 "
+        "이 매니페스트 키에는 영향이 없고, 위 _fetch_functions의 스키마 스코프만 private까지 넓혔다.",
     ),
 }
 
@@ -241,13 +258,33 @@ def _fetch_policies(cur):
 
 
 def _fetch_functions(cur):
-    """스펙 Always 절이 지정한 실측 쿼리 — 0032 9절이 쓴 것과 동일."""
+    """스펙 Always 절이 지정한 실측 쿼리(0032 9절이 쓴 것) — 스키마 스코프를 `public`·`private`
+    둘로 넓힌 버전(2026-08-12 후속 코드리뷰 patch, P1). `private.is_seller_active`(0036)가
+    `public.is_seller_active`(0035)를 대체했는데, 원래 쿼리(`n.nspname = 'public'`)로는 그
+    함수가 이동한 순간 census에서 조용히 사라진다 — 위 헤더 docstring 참조.
+
+    반환 딕셔너리 키가 `proname` 하나뿐이라(스펙이 이름만 반환하는 실측 쿼리를 지정했으므로,
+    ✎ 위 헤더 docstring의 세 번째 "안 보는 것" 참조) 스코프를 두 스키마로 넓힌 순간 같은 이름의
+    함수가 `public`·`private`에 동시에 있으면 뒤 행이 앞 행을 조용히 덮어쓸 수 있다 — 넓힌
+    자리(2026-08-12 후속 코드리뷰 patch, P2)에서 그 구멍을 함께 닫는다: 딕셔너리로 접기 전에
+    중복이 0건임을 단언한다."""
     cur.execute(
-        "select p.proname, p.oid from pg_proc p "
+        "select p.proname, n.nspname, p.oid from pg_proc p "
         "join pg_namespace n on n.oid = p.pronamespace "
-        "where p.prosecdef and n.nspname = 'public'"
+        "where p.prosecdef and n.nspname in ('public', 'private')"
     )
-    return {r[0]: r[1] for r in cur.fetchall()}
+    rows = cur.fetchall()
+
+    schemas_by_name: dict[str, list[str]] = {}
+    for proname, nspname, _oid in rows:
+        schemas_by_name.setdefault(proname, []).append(nspname)
+    dupes = {name: schemas for name, schemas in schemas_by_name.items() if len(schemas) > 1}
+    assert not dupes, (
+        "같은 이름의 SECURITY DEFINER 함수가 두 스키마에 동시에 있다 — 매니페스트 키가 proname "
+        f"하나뿐이라 뒤 행이 앞 행을 조용히 덮어쓴다(이름 → 중복된 스키마들): {dupes}"
+    )
+
+    return {r[0]: r[2] for r in rows}
 
 
 # ── 검사 ① — 실측 집합과 매니페스트 키 집합이 정확히 일치(양방향 차집합 모두 비어야 한다) ──────

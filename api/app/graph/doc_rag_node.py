@@ -106,7 +106,9 @@ def doc_rag_node(query: str, qvec: list[float] | None = None) -> dict:
     qvec = _vec_literal(qvec if qvec is not None else embed_query(query))  # 키 부재 시 여기서 fail-loud
 
     # ── 매물 의미검색 — on_sale·임베딩 보유 행만, 코사인 거리 오름차순(=유사도 내림차순) ──
-    # FR11(sold 비노출)은 ai_readonly RLS가 못 거르므로(using(true)) 이 WHERE가 직접 책임진다.
+    # FR11(sold 비노출)은 ai_readonly RLS가 못 거르므로 이 WHERE가 직접 책임진다 — RLS는
+    # Story 17.4(0035/0036)로 판매자가 활성인지만 걸러졌고(using(private.is_seller_active(
+    # seller_id))), status='on_sale' 필터는 여전히 이 쿼리 밖에서 강제되지 않는다.
     # 참고(연구 §5.5): pgvector는 사전 필터링을 안 해서 필터+벡터 조합 시 결과가 LIMIT보다 적게
     #   나올 수 있다. 본 데모는 on_sale 42/44로 필터가 느슨해 실질 위험이 작아 그대로 둔다
     #   (대규모라면 SET hnsw.iterative_scan='relaxed_order' 또는 후보 과다조회로 완화).
