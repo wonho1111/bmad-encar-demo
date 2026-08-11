@@ -2,9 +2,11 @@
 title: '17.2 조회수 옆문 차단 + 쓰기 경로 전수조사를 실행되는 검사로'
 type: 'feature'
 created: '2026-08-11'
-status: 'backlog'
-baseline_revision: '27e5b75'
+status: 'done'
+baseline_revision: 'b47316abe73e04e53b734f2cf71a85589580ef26'
+final_revision: '0b77236fae277066c4bf5a7bf16360fad84073d0' # 이 줄 자체는 다음 커밋에 기록
 review_loop_iteration: 0
+followup_review_recommended: false
 context:
   - '{project-root}/docs/conventions.md'
   - '{project-root}/_bmad-output/implementation-artifacts/epic-17-context.md'
@@ -246,13 +248,61 @@ context:
 
 ## Design Notes
 
-_(구현 세션이 채운다. 최소한 아래는 반드시 담긴다.)_
+- **GRANT 유지 실측**: `create or replace function public.increment_listing_view(uuid)`(0034) 적용
+  전후로 `anon`·`authenticated`의 EXECUTE 권한을 롤백 트랜잭션 안에서 직접 비교 — **동일하게 유지됨**
+  (`create or replace`는 함수 시그니처가 같으면 GRANT를 보존한다는 Postgres 동작이 그대로 확인됨).
+  별도 `revoke/grant` 재적용 불필요.
+- **매니페스트를 pytest에 둔 근거**: `scripts/check_migrations.py`의 `PROBES`는
+  `(라벨, 단일쿼리, 기대문자열)` 3튜플이라 "정책 집합 전체가 매니페스트와 정확히 일치"라는
+  **양방향 집합 대조**를 표현할 수 없다(기대문자열 하나로는 21+11개 항목의 존재/누락을 동시에
+  못 잡는다). `check_migrations.py`가 나은 점은 마이그레이션 파일 자체의 정적 구조(번호 밀집 등)를
+  보는 용도로는 여전히 적합하다는 것 — 이번 검사가 보는 대상(런타임 `pg_policies`/`pg_proc` 상태)과
+  범주가 다르다.
+- **red 증명 ⓐ·ⓑ 실행 로그**:
+  - 조회수 축 ⓐ(가드 조건 제거): 정지 회원 단언 2건(`test_suspended_member_cannot_bump_view_count`,
+    `test_suspended_member_cannot_bump_own_listing_view_count`)이 실패, 나머지는 계속 green.
+    가드 복원 후 재확인 → 176/176 green.
+  - 조회수 축 ⓑ(조건을 `status='active'`로 반전): 비로그인 단언
+    (`test_anon_view_count_still_increments`)이 실패(anon은 `profiles` 행이 없어 `exists`가
+    항상 거짓) — 정지 회원 단언은 이 형태에서도 우연히 통과하지 않고 여전히 의도대로 막힘.
+    서로 다른 단언이 각각 red가 된 것을 확인. 원복 후 green.
+  - 매니페스트 축 ⓐ(항목 하나 삭제): 매니페스트에서 `wishlists_insert_own` 삭제 →
+    "실측에 있는데 매니페스트에 없다" 실패 메시지로 정확히 죽음. 백업본으로 원복 후 green.
+  - 매니페스트 축 ⓑ(실제 정책 신설): 임시 정책 `wishlists_update_own_probe_dw803`을 로컬 DB에
+    실제로 만들어 매니페스트 검사 실행 → 같은 형태("매니페스트에 없다")로 실패, 정책 DROP 후
+    전체 스위트 재확인 → green. 이 형태가 검사의 진짜 임무(매니페스트 편집이 아니라 **실제 DB
+    변경**을 잡는지)를 증명한다.
+- **이 검사가 안 보는 것**(실측):
+  - 매니페스트 검사는 `cmd <> 'SELECT'`이고 `'authenticated' = any(roles)`인 정책만 본다 —
+    `anon`·`ai_readonly` 전용 쓰기 정책이 새로 생기면 이 검사엔 보이지 않는다.
+  - `blocked`로 표시된 정책의 판정식 검증은 `pg_policies.qual`/`with_check`·`pg_get_functiondef`
+    문자열에 특정 패턴이 있는지만 보는 **문자열 검사**라, `(status='on_sale' OR true)`처럼 조건을
+    무력화해도 문자열 검사 자체는 계속 통과할 수 있다(`docs/conventions.md` §6이 이미 기록한
+    같은 함정). 그래서 이 검사는 "판정 누락"만 잡는 보조이고, 실제 차단 여부는 위 행위 검사
+    (조회수 축 등)가 본체다.
 
-- `create or replace function`이 기존 GRANT를 유지하는지 **실측 결과**.
-- 매니페스트를 pytest에 둔 근거(= `PROBES` 3튜플이 집합 대조를 못 담는다)와, 그래도
-  `check_migrations.py`가 나은 상황은 무엇인지 한 줄.
-- red 증명 ⓐ·ⓑ 각각의 실행 로그 요약(어떤 단언이 어떻게 실패했는지 — "red 확인함"만으로는 부족).
-- 이 검사가 **안 보는 것** 목록(실측 기반).
+## Review Triage Log
+
+<!-- Append-only. 첫 리뷰 패스 전까지 비움. -->
+
+### 2026-08-11 — Review pass
+- intent_gap: 0
+- bad_spec: 0
+- patch: 3 (low 3low)
+- defer: 1 (low 1low)
+- reject: 6 (low 6low)
+- addressed_findings:
+  - `[low]` `[patch]` `api/tests/integration/test_write_policy_manifest_real_db.py`의 `_fetch_policies()` 실측 쿼리(`'authenticated' = any(roles)`)가 `TO authenticated` 절 없이 만든 정책(Postgres가 `roles={public}`로 기본 배정, `authenticated`도 그 일원이라 여전히 적용됨)을 못 본다 — DW-803이 막으려는 실패 모드가 검사 자신에게서 한 단계 위로 재현. `roles && '{authenticated,public}'::name[]`로 넓히고 실측(21건, 추가 없음) 확인, 헤더의 "안 보는 것" 문구 정정.
+  - `[low]` `[patch]` `supabase/migrations/0034_view_count_suspended_guard.sql:22`의 "빠뜨린 코alesce"가 한/영이 섞인 오탈자 — 비로그인 조회수 경로를 지키는 핵심 경고 문장 안이라 "빠뜨린 coalesce"로 정정.
+  - `[low]` `[patch]` 같은 테스트 파일 헤더의 "`public` 스키마만 본다" 문구가 파일 전체에 적용되는 것처럼 읽히나 실제로는 `_fetch_functions`에만 해당(`_fetch_policies`는 스키마 제한 없음, `storage.objects` 4건 포함) — 문구를 두 함수로 나눠 정정.
+- 재검증: `cd api && pytest tests/integration -q` 176 passed(회귀 0) · `python scripts/check_migrations.py` 게이트 통과.
+- reject 6건(근거는 각 리뷰 서브에이전트 원문 참조):
+  - exempt 항목(정책 5건·함수 7건)의 정의문 내용이 검사되지 않는다는 지적 2건 — 스펙 Task가 검사②를 "blocked 항목의 정의문만" 보도록 명시적으로 좁혔다(불변식이 요구하는 건 blocked 경로가 실제로 막히는가이지 exempt 항목의 내용 불변이 아님). 검사①(키 집합 대조)이 이름 변경·삭제는 여전히 잡는다.
+  - `increment_listing_view`가 `not exists(suspended)`(부정형)를 쓰는 게 다른 정책들의 `exists(active)`(긍정형)와 다르다는 지적 — 스펙 Always 절이 이 정확한 부정형을 **비로그인 통과를 위해 명시적으로 지정**했다(긍정형을 쓰면 anon 호출이 `profiles` 행 부재로 막혀 FR58이 깨진다). 스펙이 의도한 설계.
+  - `0032`에 남은 "해당 없음(anon도 호출)" 판정이 이번 스토리로 뒤집혔는데 `0032` 안에 정정 포인터가 없다는 지적 — 스펙 Never 절이 "기존 마이그레이션 파일을 수정하지 않는다"를 명시했다. `0034`가 배경 설명을 충분히 담았고 `docs/conventions.md`·`deferred-work.md`가 정정을 기록하므로 대체 경로가 이미 있다.
+  - red 증명 ⓑ(임시 정책 생성→확인→드롭)이 diff에 재현 가능한 형태로 안 남았다는 지적 — 스펙 Always 절이 "임시 마이그레이션 → red 확인 → 원복"을 명시적으로 요구했다(프로브를 남기지 않는 것 자체가 스펙 준수).
+  - 세 표면(§8 산문·`0032` 9절 주석·매니페스트)의 일치를 검사가 아니라 사람이 눈으로 대조한다는 점이 intent-contract의 상위 Always 문구("검사가 그 어긋남도 잡아야 한다")와 다소 어긋나 보인다는 관찰 — 스펙의 구체적인 Task·AC 절이 "사람이 눈으로 대조하고 결과를 Design Notes에 적는다"로 이미 명시적으로 좁혀 뒀고, 테스트 파일 헤더도 동일하게 스스로 그 경계를 선언한다. 구현이 더 구체적인 지시를 따른 것으로 판단.
+- defer 1건: 이번 세션은 로컬 55322(기존 DB에 순차 적용)와 `check_migrations.py`(신선한 도커, 전 마이그레이션 재적용)로만 검증했고, 스펙 Block If가 요구한 "로컬과 CI가 같은 정책 집합을 보는가"는 실제 CI(`api-db` 잡) 실행으로 직접 재확인하지 않았다 — DW-811로 이월(trigger: 다음 CI 통과 시 로그 확인).
 
 ## Verification
 
@@ -261,3 +311,49 @@ _(구현 세션이 채운다. 최소한 아래는 반드시 담긴다.)_
 - red 증명 2축 × 2형태, 각각 원복 후 green 재확인(원복은 백업본으로).
 - 로컬 실DB에서 정지/활성/비로그인 3주체 × 조회수 호출을 **직접 실행**해 관찰(존재 확인이 아니라
   작동 확인 — CLAUDE.md B4).
+
+## Auto Run Result
+
+**요약**: 17.1이 남긴 옆문([[DW-805]] — `increment_listing_view` SECURITY DEFINER RPC가 정지
+회원의 `listings.view_count` 쓰기를 우회 허용)을 새 마이그레이션 `0034`로 닫고, 17.1의 쓰기 경로
+전수조사 판정(21개 정책 + 11개 함수)을 산문에서 실행되는 매니페스트 대조 검사로 옮겼다([[DW-803]]).
+코드리뷰 4렌즈(adversarial·edge-case·verification-gap·intent-alignment) 병렬 실행 후 patch 3건
+(전부 low)을 반영, defer 1건을 대장에 이월했다.
+
+**변경 파일**:
+- `supabase/migrations/0034_view_count_suspended_guard.sql` (신규) — `increment_listing_view`를
+  `not exists(auth.uid()가 가리키는 profiles 행이 status='suspended')` 가드로 재정의(시그니처·
+  GRANT·anon 통과 보존).
+- `api/tests/integration/test_write_policy_manifest_real_db.py` (신규, 4건) — `POLICY_MANIFEST`
+  (21)·`FUNCTION_MANIFEST`(11) 화이트리스트 + `pg_policies`/`pg_proc` 양방향 차집합 대조 검사
+  2건 + blocked 항목 정의문 마커 보조 검사 2건.
+- `api/tests/integration/test_suspended_write_block_real_db.py` — 조회수 축 5건 추가(정지 회원
+  차단·자기 매물도 차단·비로그인 회귀·활성 회원 회귀·트리거 회귀).
+- `docs/conventions.md` — §6(SECURITY DEFINER 함수 축)·§8(접근 게이트 계약)에서
+  `increment_listing_view`를 "안 막는다" → "막는다"로 갱신.
+- `_bmad-output/implementation-artifacts/deferred-work.md` — [[DW-805]]·[[DW-803]] `resolution:`과
+  함께 done. [[DW-799]]·[[DW-801]]·[[DW-802]]는 open 유지, 매니페스트에 판정이 옮겨졌다는 note만
+  추가(판정 자체는 안 바뀜). 코드리뷰 defer 1건으로 신규 [[DW-811]] 등재.
+
+**리뷰 findings 분류(1패스)**:
+- intent_gap 0 · bad_spec 0 · **patch 3**(전부 low, 전부 수정) · defer 1(low, [[DW-811]]) ·
+  reject 6(low) — 상세는 위 Review Triage Log 참조.
+
+**검증 수행(전부 이 실행이 직접 실행·관찰)**:
+- `cd api && pytest tests/integration -q` — **176 passed**(패치 전 167 + 신규 9, 회귀 0).
+- `python scripts/check_migrations.py` — 게이트 통과(34개 마이그레이션, 신선한 도커 컨테이너).
+- GRANT 유지 실측(재정의 전/후 `has_function_privilege` 동일) — `0034` 각주 참조.
+- red 증명 4형태 전부 확인·원복(조회수 축 ⓐ가드 제거 ⓑ조건 반전, 매니페스트 축 ⓐ항목 삭제
+  ⓑ실제 정책 신설→드롭) — Design Notes 참조.
+- 로컬 3주체(정지·비로그인·활성) 직접 호출로 view_count 증분 관찰.
+
+**잔여 리스크**:
+- [[DW-811]] — 이번 검증은 로컬 55322 + `check_migrations.py`(신선한 도커)까지만 했고, 실제
+  `api-db` CI 잡 실행으로 로컬·CI가 같은 정책 집합을 보는지는 재확인하지 않았다.
+- 매니페스트 검사 ②(정의문 문자열 마커 검사)는 스스로 약하다고 문서화돼 있다 —
+  `(status='active' OR true)`식 무력화는 통과할 수 있다. 행위 검사(조회수 축 실호출)가 본체.
+- `anon`·`ai_readonly` **전용**(둘 다 아닌) 쓰기 정책은 이번 패치로도 여전히 매니페스트 밖이다
+  (현재 0건, 실측 확인) — 코드리뷰 patch로 `authenticated`/`public` 축은 넓혔으나 이 축은 스펙
+  Always 절이 이미 명시한 한계라 이번 범위 밖으로 유지.
+- 웹·앱 클라이언트 코드는 이 스토리가 건드리지 않았다(Never 절) — `increment_listing_view`가
+  실제 상세 페이지 호출 경로에서 정지 회원에게 어떻게 보이는지는 이번 실행이 재보지 않았다.

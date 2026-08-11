@@ -1670,3 +1670,118 @@ def test_suspended_member_can_still_wishlist_chat_room_reads_and_create_chat_roo
             (member_id, room_id),
         )
         assert cur.rowcount == 1, "정지 회원의 chat_room_reads UPDATE가 막혔다"
+
+
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# 2026-08-11 Story 17.2 — 조회수 RPC(increment_listing_view) 정지 가드 (DW-805)
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# `0034_view_count_suspended_guard.sql`이 이 함수 본문에 정지 가드를 추가했다 — 17.1(0032) 9절이
+# "해당 없음(anon도 호출)"으로 판정했던 자리를 뒤집는다(정문(listings 직접 쓰기)은 잠갔는데
+# view_count RPC라는 옆문이 열려 있었다). 여기 붙이는 이유는 스펙(Story 17.2)이 "같은 관심사,
+# 같은 헬퍼(_create_user/_insert_listing/_suspend/_as)를 재사용 — 새 파일을 만들지 않는다"고
+# 지정했기 때문이다. RPC 자체의 GRANT·멱등성·트리거 하드닝(정지와 무관한 축)은 이미
+# `test_view_count_rpc_real_db.py`(Story 11.1)가 지킨다 — 여기서는 **정지 축**만 새로 고정한다.
+#
+# 이 검사가 안 보는 것: `increment_listing_view`가 실제로 웹 상세 페이지에서 호출되는지는
+# 이 파일이 보지 않는다(web `viewCountCallSite.test.ts`·수동 확인의 몫). 이 파일도
+# `test_view_count_rpc_real_db.py`와 동일하게 `set local role`로 Postgres 롤만 흉내 낼 뿐,
+# 실제 PostgREST/`supabase.rpc()` HTTP 경로는 거치지 않는다.
+
+
+def _view_count(cur, listing_id):
+    cur.execute("select view_count from public.listings where id = %s", (listing_id,))
+    return cur.fetchone()[0]
+
+
+def test_suspended_member_cannot_increment_view_count(db):
+    """정지 회원의 조회수 증가 시도는 0행으로 조용히 실패한다(예외 없음 — 함수 안
+    SECURITY DEFINER UPDATE의 WHERE절이 거른 것도 RLS using 거부와 같은 신호 형태)."""
+    cur = db
+    suspended_id = _create_user(cur, f"vc-susp-{uuid.uuid4()}@example.test")
+    other_seller_id = _create_user(cur, f"vc-susp-other-{uuid.uuid4()}@example.test")
+    listing_id = uuid.uuid4()
+    _insert_listing(cur, listing_id, other_seller_id)  # 정지 회원 소유가 아닌 매물
+    _suspend(cur, suspended_id)
+    before = _view_count(cur, listing_id)
+
+    with _as(cur, suspended_id):
+        cur.execute("select public.increment_listing_view(%s)", (listing_id,))
+
+    assert _view_count(cur, listing_id) == before, "정지 회원의 조회수 증가가 통과했다"
+
+
+def test_suspended_member_cannot_increment_view_count_of_own_listing(db):
+    """소유 여부와 무관하다 — 정지는 행위자 기준이다. 자기 매물이어도 똑같이 막힌다."""
+    cur = db
+    seller_id = _create_user(cur, f"vc-susp-own-{uuid.uuid4()}@example.test")
+    listing_id = uuid.uuid4()
+    _insert_listing(cur, listing_id, seller_id)
+    _suspend(cur, seller_id)
+    before = _view_count(cur, listing_id)
+
+    with _as(cur, seller_id):
+        cur.execute("select public.increment_listing_view(%s)", (listing_id,))
+
+    assert _view_count(cur, listing_id) == before, "정지 회원이 자기 매물의 조회수를 올렸다"
+
+
+def test_anon_view_count_increment_unaffected_by_suspended_guard(db):
+    """비로그인 회귀(스펙 AC) — 이게 없으면 정지 가드가 "전부 막힘"으로 잘못 짜여도 구별할 수
+    없다. `auth.uid()`가 NULL이면 정지 판정 서브쿼리가 항상 0행이라 통과해야 한다(FR58, 설계
+    의도 — 우연한 NULL 처리가 아니다)."""
+    cur = db
+    seller_id = _create_user(cur, f"vc-anon-{uuid.uuid4()}@example.test")
+    listing_id = uuid.uuid4()
+    _insert_listing(cur, listing_id, seller_id)
+    before = _view_count(cur, listing_id)
+
+    cur.execute("set local role anon")
+    try:
+        cur.execute("select public.increment_listing_view(%s)", (listing_id,))
+    finally:
+        cur.execute("reset role")
+
+    assert _view_count(cur, listing_id) == before + 1, (
+        "비로그인 호출이 정지 가드에 막혔다(FR58 회귀)"
+    )
+
+
+def test_active_member_view_count_increment_unaffected_by_suspended_guard(db):
+    """활성 회원 회귀(스펙 AC) — 정지 가드가 정지된 사람만 막는지, "전부 막힘"이 아닌지 확인하는
+    짝(비로그인 회귀와 함께 둬야 "정지만 막는다"가 증명된다)."""
+    cur = db
+    seller_id = _create_user(cur, f"vc-active-{uuid.uuid4()}@example.test")
+    listing_id = uuid.uuid4()
+    _insert_listing(cur, listing_id, seller_id)
+    assert _profile_status(cur, seller_id) == "active", "전제 실패"
+    before = _view_count(cur, listing_id)
+
+    with _as(cur, seller_id):
+        cur.execute("select public.increment_listing_view(%s)", (listing_id,))
+
+    assert _view_count(cur, listing_id) == before + 1, "활성 회원의 조회수 증가가 막혔다(회귀)"
+
+
+def test_active_view_count_increment_leaves_timestamps_unchanged(db):
+    """트리거 회귀(스펙 Code Map) — 0020의 `listings_set_timestamps()`는 view_count가 바뀐
+    UPDATE에서 updated_at을 갱신하지 않는다. 가드가 UPDATE를 0행으로 만들면 트리거가 애초에
+    안 돌므로 정지 케이스는 별도로 볼 필요가 없다 — 이 테스트는 **활성 회원의 정상 증가**가
+    그 계약을 여전히 지키는지만 확인한다(이 스토리가 이 축을 건드리지 않았다는 증거)."""
+    cur = db
+    seller_id = _create_user(cur, f"vc-trigger-{uuid.uuid4()}@example.test")
+    listing_id = uuid.uuid4()
+    _insert_listing(cur, listing_id, seller_id)
+    cur.execute(
+        "select updated_at, created_at from public.listings where id = %s", (listing_id,)
+    )
+    before_updated_at, before_created_at = cur.fetchone()
+
+    with _as(cur, seller_id):
+        cur.execute("select public.increment_listing_view(%s)", (listing_id,))
+
+    cur.execute(
+        "select updated_at, created_at from public.listings where id = %s", (listing_id,)
+    )
+    after_updated_at, after_created_at = cur.fetchone()
+    assert after_updated_at == before_updated_at, "조회수 증가가 updated_at을 건드렸다(트리거 회귀)"
+    assert after_created_at == before_created_at, "조회수 증가가 created_at을 건드렸다"

@@ -6319,6 +6319,7 @@ summary: `0032`는 채팅 "메시지 발신"만 정지 조건을 추가했고, �
 evidence: `0003_chat.sql:82-84`을 직접 읽어 `chat_rooms_insert_participant`의 `with check`에 `profiles.status` 조건이 없음을 확인. `0032`가 건드린 파일·정책 목록에도 이 정책은 없다(diff 대조 확인).
 왜 이 스토리 범위 밖으로 판단했나: 스토리의 불변식 문장이 "매물·사진·파일·관리자 RPC 어느 경로로도"라고 네 범주를 명시했고, 채팅은 별도 항목("정지 회원이 **메시지를 보낼 수 있는지**")으로 좁혀 다뤘다 — "방 생성"은 그 문장에도 그 별도 항목에도 없다. 다만 그 경계가 스토리 작성 당시 의식적 결정이었는지 사각지대였는지는 스펙에 남아 있지 않아, 다음에 판단할 수 있게 여기 남긴다.
 trigger: 채팅 쓰기 경로를 다시 손대는 스토리, 또는 정지 회원이 새 문의방을 여는 것이 실제 문제로 보고될 때 — 그때 `chat_rooms_insert_participant`에도 `and exists (select 1 from public.profiles where id=auth.uid() and status='active')`를 추가할지 결정한다.
+note (2026-08-11, Story 17.2): 판정 자체는 바뀌지 않았다("안 막는다" 그대로) — 다만 이제 그 판정이 `api/tests/integration/test_write_policy_manifest_real_db.py`의 `POLICY_MANIFEST`에 `("public", "chat_rooms", "chat_rooms_insert_participant", "INSERT"): ("exempt", ...)`로 기계가 읽는 형태로도 남아, 이 정책이 조용히 사라지거나 새 정책으로 바뀌면 매니페스트 대조 검사가 잡는다.
 status: open
 
 ### DW-800: `is_admin_active()` 도입으로 관리자 전원이 정지되면 psql 직접 접근 외 복구 경로가 없다
@@ -6343,6 +6344,7 @@ summary: `0032`는 매물·사진·파일·관리자 RPC·채팅 발신에만 �
 evidence: `pg_policies` 실측(로컬 55322, 2026-08-11) — `wishlists_insert_own`(INSERT)·`wishlists_delete_own`(DELETE) 둘 다 `authenticated` 대상이고 `0032`의 재정의 목록에 없음을 확인.
 왜 이 스토리 범위 밖으로 판단했나: 스토리의 불변식 문장("매물·사진·파일·관리자 RPC")에 찜이 없다. 찜은 상태를 바꾸긴 하지만 타인에게 영향을 주지 않는 개인화 데이터(본인만 보는 목록)라 이 스토리가 막으려는 "정지된 계정이 서비스에 계속 영향력을 행사한다"는 문제와 성격이 다르다고 판단했지만, 그 판단이 스펙 본문에는 남아있지 않았다(bad_spec 루프백이 지적).
 trigger: 찜 관련 RLS를 다시 손대는 스토리, 또는 정지 회원의 찜 조작이 실제 문제로 보고될 때 — 그때 `wishlists_insert_own`/`wishlists_delete_own`에도 `and exists (select 1 from public.profiles where id=auth.uid() and status='active')`를 추가할지 결정한다.
+note (2026-08-11, Story 17.2): 판정 자체는 바뀌지 않았다("안 막는다" 그대로) — 다만 이제 `api/tests/integration/test_write_policy_manifest_real_db.py`의 `POLICY_MANIFEST`에 두 정책 모두 `("exempt", "찜 추가/삭제 — 본인만 보는 개인화 데이터, 타인에게 영향 없음(DW-801)")`로 기계가 읽는 형태로 남았다 — 조용히 사라지거나 새 쓰기 정책으로 바뀌면 매니페스트 대조 검사가 잡는다.
 status: open
 
 ### DW-802: 정지된 회원이 여전히 채팅 안읽음 커서(chat_room_reads)를 갱신할 수 있다
@@ -6355,6 +6357,7 @@ summary: 정지된 회원이 채팅방을 "읽음" 처리하는 행(`chat_room_r
 evidence: `pg_policies` 실측(로컬 55322, 2026-08-11) — `chat_room_reads_insert_participant`(INSERT)·`chat_room_reads_update_own`(UPDATE) 둘 다 `authenticated` 대상이고 `0032`의 재정의 목록에 없음을 확인. `docs/conventions.md` §12(실시간 채팅 계약)를 함께 확인 — 이 테이블이 상대방에게 노출하는 값은 없다.
 왜 이 스토리 범위 밖으로 판단했나: 정지 회원이 이 행을 갱신해도 본인 안읽음 카운트만 바뀌고 채팅 상대방·다른 회원에게는 아무 영향이 없다 — 스토리 불변식이 막으려는 "정지된 계정이 타인에게 영향을 미치는 쓰기"와 성격이 다르다. 다만 이 판단이 스펙 본문에는 남아있지 않았다(bad_spec 루프백이 지적) — 그래서 여기 근거를 남긴다.
 trigger: 채팅 안읽음 계약(§12)을 다시 손대는 스토리에서 — 그때 이 두 정책에도 정지 조건을 추가할지 재검토한다. 위험도가 낮아 지금은 급하지 않다.
+note (2026-08-11, Story 17.2): 판정 자체는 바뀌지 않았다("안 막는다" 그대로) — 다만 이제 `api/tests/integration/test_write_policy_manifest_real_db.py`의 `POLICY_MANIFEST`에 두 정책 모두 `("exempt", ...)`로 기계가 읽는 형태로 남았다 — 조용히 사라지거나 새 쓰기 정책으로 바뀌면 매니페스트 대조 검사가 잡는다.
 status: open
 
 ### DW-803: 쓰기 경로 전수조사 판정이 "실행되는 검사"가 아니라 주석·문서로만 산다
@@ -6368,7 +6371,8 @@ evidence: 판정은 세 곳(마이그레이션 주석·conventions §8·스펙 �
 why_it_matters: 이 스토리의 결론은 "정지가 무엇을 막고 무엇을 안 막는지"인데, 그 결론의 완전성이 다음 마이그레이션 한 줄에 조용히 깨진다. 17.1이 정책 자체는 실행되는 검사로 만들었지만 **범위 규칙은 여전히 문서**다.
 fix_sketch: `scripts/check_migrations.py`에 동적 검사 한 축을 더하거나(`api-db` 잡에서 `pg_policies`를 조회) `api/tests/integration`에 pytest 한 건을 둔다 — `cmd <> 'SELECT' and 'authenticated' = any(roles)`인 정책 전량을 명시 허용/차단 매니페스트와 대조하고, 목록에 없는 정책이 나오면 실패. 매니페스트는 `0032` 9절 판정을 기계가 읽을 수 있는 형태로 옮긴 것이면 된다.
 trigger: **`authenticated` 대상 쓰기 정책을 추가·변경하는 다음 마이그레이션 스토리에서** — 그 스토리가 이 검사의 첫 소비자가 된다. 또는 Epic 17 회고에서 인수조건으로 심을 때(CLAUDE.md B5 — 회고 약속은 다음 스토리의 체크박스로 심어야 이행된다).
-status: open
+resolution: 2026-08-11 Story 17.2로 해소. `api/tests/integration/test_write_policy_manifest_real_db.py`(NEW)가 fix_sketch가 제시한 pytest 형태를 그대로 택했다 — `PROBES` 3튜플(라벨/단일쿼리/기대문자열)은 집합 대조를 표현할 수 없어 `check_migrations.py`에는 넣지 않았다(근거는 새 파일 헤더 docstring에 남김). `POLICY_MANIFEST`(21개)·`FUNCTION_MANIFEST`(11개) 두 딕셔너리에 `0032` 9절 판정을 이름→(judgment, reason) 형태로 옮기고(`increment_listing_view`만 DW-805 해소로 exempt→blocked), 실측(`pg_policies`/`pg_proc`)과 **양방향 차집합**을 대조하는 검사 2건 + blocked 항목의 정의문에 정지 마커가 있는지 보는 보조 검사 2건을 만들었다(하한 검사 아님 — 화이트리스트 대조). red 증명 2형태 모두 확인: ⓐ 매니페스트에서 항목 하나(`wishlists_insert_own`)를 지움 → "새 쓰기 경로에 판정이 없다" 실패 ⓑ 실제로 새 정책(`wishlists_update_own_probe_dw803`, `using(false)`)을 만들어 → 같은 실패, 드롭 후 green 재확인(ⓑ가 이 검사의 진짜 임무 — ⓐ만으론 매니페스트 편집만 잡는다는 것만 증명된다). `docs/conventions.md` §8을 정본으로 두고 세 곳(§6·§8·`0032` 9절·이 매니페스트)의 항목 집합을 사람이 눈으로 대조해 일치를 확인했다.
+status: done 2026-08-11
 
 ### DW-804: 정지된 판매자의 매물은 계속 노출·문의 가능하고, 차단된 쓰기가 엉뚱한 이유로 안내된다
 
@@ -6396,7 +6400,8 @@ why_it_matters: 정지 회원이 임의 매물의 조회수를 계속 부풀릴 
 fix_sketch: anon 호출을 막지 않으면서 정지만 거르는 형태가 있다 — 함수 본문의 UPDATE 앞에 `not exists (select 1 from public.profiles where id = auth.uid() and status = 'suspended')` 가드(비로그인은 `auth.uid()`가 NULL이라 참 → 통과, 정지 회원만 거짓 → 차단). 반대로 "조회수는 불변식 밖"이 최종 결론이면 그 근거를 `docs/conventions.md` §8의 "막지 않는 쓰기" 목록에 다른 3건과 같은 형태로 명시한다.
 trigger: **조회수(`view_count`)나 `0020` 계열을 다음에 손대는 스토리에서**, 또는 [[DW-803]]의 전수조사 강제 검사를 만드는 스토리에서 — 그 검사가 이 항목의 판정을 기계가 읽는 형태로 옮길 때 함께 결정한다.
 related: [[DW-721]](같은 계열 — 정의자 함수의 RLS 우회) · [[DW-803]](판정이 실행되는 검사가 아니다) · [[DW-801]]·[[DW-802]](같은 전수조사의 다른 미차단 판정)
-status: open
+resolution: 2026-08-11 Story 17.2로 해소. `supabase/migrations/0034_view_count_suspended_guard.sql`이 `increment_listing_view` 본문에 `not exists(auth.uid()가 가리키는 profiles 행이 status='suspended')` 가드를 추가 — fix_sketch가 제시한 형태 그대로다. `create or replace`가 기존 GRANT(anon·authenticated EXECUTE)를 유지하는지 로컬 55322 트랜잭션 안에서 실측(재정의 전/후 `has_function_privilege` 결과 동일)했고, 실제 세 주체(정지·비로그인·활성) 호출로 작동을 확인했다: 정지 회원 0→0(막힘) · anon 0→1(FR58 유지) · 활성 회원 1→2(회귀 없음) · 정지 회원 자기 소유 매물도 동일하게 막힘(행위자 기준). red 증명 2형태 모두 확인: ⓐ 가드 제거 → 정지 단언만 실패 ⓑ `not exists(suspended)`를 `exists(active)`로 뒤집음(반대 의미) → 비로그인 단언만 실패(서로 다른 단언이 각각 red, 매번 원복 후 green 재확인). `docs/conventions.md` §6·§8을 "안 막는다" → "막는다"로 갱신하고 강제 장치(`api/tests/integration/test_suspended_write_block_real_db.py`의 조회수 축 5건 + `test_write_policy_manifest_real_db.py`의 매니페스트 대조)를 추가했다. `increment_listing_view`의 시그니처·반환형·호출 지점은 변경하지 않았다(Never 절 준수).
+status: done 2026-08-11
 
 ### DW-806: 정지된 관리자가 `/admin` 콘솔에 그대로 들어가고, 모든 관리 작업이 조용히 0행으로 실패한다
 
@@ -6459,4 +6464,18 @@ origin: review-budget-followup
 source_spec: `spec-17-1-정지-회원-쓰기-차단-rls.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-000420-4ea3; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+status: open
+
+### DW-811: 17.2의 매니페스트 대조 검사가 "로컬과 CI가 같은 정책 집합을 본다"를 명시적으로 재확인하지 않았다
+
+source_spec: `_bmad-output/implementation-artifacts/spec-17-2-조회수-옆문-차단-전수조사-강제검사.md`
+origin: 2026-08-11 Story 17.2 코드리뷰(intent-alignment 렌즈) — 스펙의 Block If 절("매니페스트 대조 검사가 로컬과 CI에서 서로 다른 정책 집합을 본다는 것이 확인되면 멈추고 묻는다")을 실제로 확인했는지 diff·Design Notes 어디에도 근거가 없다고 지적.
+location: `api/tests/integration/test_write_policy_manifest_real_db.py`(`_fetch_policies`/`_fetch_functions`) · `scripts/check_migrations.py`(동적 검사, 매 push마다 신선한 도커 Postgres에 전 마이그레이션 적용).
+severity: low
+summary: 이번 구현 세션은 로컬 55322(기존 DB에 순차 적용)에서만 매니페스트 검사 4건을 돌렸다. `scripts/check_migrations.py`의 동적 검사(신선한 도커 컨테이너에 34개 마이그레이션 전량 적용)는 통과했고 이건 "빈 DB에서 처음부터 재현했을 때도 같은 정책 집합이 나온다"는 간접 증거이긴 하지만, `api-db` CI 잡이 실제로 쓰는 조건(GitHub Actions 컨테이너 + `scripts/migration-check-prelude.sql`)에서 `pg_policies`/`pg_proc` 결과가 로컬과 정확히 같은 집합인지는 이번 세션이 직접 비교하지 않았다.
+evidence: 구현 세션의 검증 로그에 `cd api && pytest tests/integration -q`(로컬 55322, 176 passed)와 `python scripts/check_migrations.py`(신선한 도커, 게이트 통과)만 있고, CI에서 같은 테스트 파일을 실행한 로그나 로컬/CI 간 `pg_policies` 결과를 직접 diff한 기록은 없다.
+why_it_matters: 마이그레이션은 결정론적 SQL이라 로컬·CI가 실제로 다를 가능성은 낮지만(`migration-check-prelude.sql`이 플랫폼 기본 GRANT를 재현하는 것도 GRANT 축이지 정책 존재 자체는 아니다), 스펙이 이 축을 명시적 Block-If로 지정한 이유는 "다르면 검사의 기준선 자체를 사용자가 정해야 한다"는 판단이 필요해서다. 확인 없이 넘어가면 CI에서 이 매니페스트 검사가 실제로 어떻게 동작하는지는 다음 GitHub Actions 실행 때 처음 드러난다.
+fix_sketch: 다음 CI(`api-db` 잡) 실행 로그에서 `test_write_policy_manifest_real_db.py` 4건이 실제로 green인지 확인하고, 가능하면 CI 로그의 `pg_policies`/`pg_proc` 카운트를 로컬 실측(21정책+11함수)과 비교해 한 줄로 기록한다.
+trigger: **다음으로 이 브랜치가 CI(`api-db` 잡)를 실제로 통과하는 시점에** — 그 CI 실행 로그를 열어 이 검사 4건의 결과를 확인하고 이 항목을 닫는다. 또는 `.github/workflows/tests.yml`이나 `migration-check-prelude.sql`을 다음에 손대는 스토리에서 함께 재확인한다.
+related: [[DW-803]](이 검사 자체를 만든 항목) · [[DW-805]]
 status: open
