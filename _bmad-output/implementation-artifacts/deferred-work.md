@@ -5306,7 +5306,7 @@ severity: low
 summary: `MemberActions.tsx`는 정지/해제와 삭제가 각자 자기 `loading` 상태만 보고 서로를 잠그지 않는다 — 한쪽이 진행 중일 때 다른 쪽을 눌러 같은 회원에 두 요청을 동시에 보낼 수 있다. Story 15.4 1차 코드리뷰가 `ListingAdminActions.tsx`에서 정확히 같은 결함을 찾아 `busy = deleting || restoring` 공유 가드로 고쳤는데, 그 패턴의 **본보기였던 파일**은 안 고쳐졌다.
 evidence: 두 파일을 직접 대조 — `ListingAdminActions.tsx`는 두 버튼 모두 `disabled={busy}`를 갖고 두 핸들러가 `if (deleting || restoring) return`으로 시작한다. `MemberActions.tsx`는 각 핸들러가 자기 상태만 보고(`if (toggling) return` / `if (deleting) return`), 버튼에 `disabled`를 넘기지 않아 `Button`의 `disabled={disabled || loading}`가 자기 `loading`만 반영한다.
 why_it_matters: 15.4의 결함이 아니라 15.4가 **드러낸** 기존 결함이다(범위 밖이라 이 스토리에서 고치지 않는다). 다만 CLAUDE.md B8이 말하는 "미루는 판단은 틀린 게 아니고 안 적는 게 틀린 것"에 해당한다 — 팀이 이 결함을 이미 진단했다는 사실이 어디에도 기록돼 있지 않으면, 다음 사람이 매물 쪽 `busy` 가드를 보고 "회원 쪽엔 왜 없지?"를 처음부터 다시 조사하게 된다. 실사용 영향은 낮다(관리자 1인 조작, 결과는 중복 요청 1건).
-trigger: 관리자 회원 관리 화면을 다음에 손대는 스토리 — Epic 17의 정지 게이트 작업(`17-1-정지-회원-쓰기-차단-rls`)이 이 파일을 열 가능성이 높다. 그때 `busy = toggling || deleting` 공유 가드를 두 버튼과 두 핸들러 양쪽에 넣을 것.
+trigger: **관리자 회원 관리 화면(`MemberActions.tsx`)을 다음에 손대는 스토리에서.** 그때 `busy = toggling || deleting` 공유 가드를 두 버튼과 두 핸들러 양쪽에 넣을 것. ✎ **2026-08-12 Epic 17 회고에서 정정** — 원래 "Epic 17의 `17-1`이 이 파일을 열 가능성이 높다"고 적었으나 **17-1은 backend-only로 끝나 이 파일을 열지 않았다**(에픽 전체에서 열린 웹 파일은 17.3의 `guard.ts`·`page.tsx`·`sell/*`뿐). 끝난 스토리를 계속 가리키면 조건이 영원히 발동하지 않으므로 화면 조건만 남긴다([[DW-827]]의 전수 grep이 찾아낸 2건 중 하나 — 그 항목이 손으로 셌을 땐 안 잡혔다).
 status: open
 
 ### DW-724: `is_admin()`이 `set search_path = public`이라, 이 함수를 유일한 인가 관문으로 쓰는 SECURITY DEFINER RPC들의 하드닝이 한 칸 무르다
@@ -5318,7 +5318,7 @@ severity: low
 summary: 리포의 최신 SECURITY DEFINER 함수들은 `set search_path = ''`(빈 문자열 + 전 참조 스키마 수식)로 하드닝하는데(0019·0020·0030), 그 함수들이 인가 판정을 통째로 위임하는 `is_admin()`은 `set search_path = public`이다. 즉 새 함수만 하드닝하고 **자물쇠 자체는 옛 기준**에 남아 있다.
 evidence: `0030`은 `set search_path = ''`를 선언하고 본문에서 `public.listings`·`public.is_admin()`으로 전부 수식한다. `0001`의 `is_admin()` 정의를 직접 읽어 `set search_path = public`임을 확인. 신설된 `test_restore_sold_listing_rpc_real_db.py`는 `0030`의 시그니처·GRANT는 구조적으로 단언하지만 `is_admin()`의 `prosecdef`·`proconfig`는 아무것도 보지 않는다.
 why_it_matters: 지금 당장 뚫리는 경로를 실측으로 재현하지는 못했다(`public` 고정 자체가 빈 search_path보다 무를 뿐, 임의 스키마 주입은 아니다) — 그래서 이 항목은 "확인된 취약점"이 아니라 **기준 불일치**로 등재한다. 문제는 새 RPC를 추가할 때마다 하드닝 검사를 그 RPC에만 걸고 위임 대상은 아무도 안 보는 습관이 굳는다는 점이다. DW-721(같은 함수의 `status` 미확인)이 그 습관의 비용을 이미 한 번 보여줬다.
-trigger: `is_admin()`을 다음에 수정할 때 — 현재 가장 유력한 자리는 DW-721이 지정한 `17-1-정지-회원-쓰기-차단-rls`(거기서 `status='active'` 술어를 넣게 된다). 같은 편집에서 `search_path`를 `''`로 좁히고 본문 참조를 수식할 것. ⚠️ `is_admin()`은 다수 RLS 정책이 부르므로 변경 후 관리자 SELECT/DELETE 경로를 실DB로 회귀 확인해야 한다.
+trigger: ~~`is_admin()`을 다음에 수정할 때 — 현재 가장 유력한 자리는 DW-721이 지정한 `17-1-정지-회원-쓰기-차단-rls`(거기서 `status='active'` 술어를 넣게 된다).~~ ✎ **2026-08-12 Epic 17 회고에서 정정 — 그 예상은 빗나갔고, 범위가 오히려 늘었다.** 17-1은 `is_admin()`을 **고치지 않았다**(에픽 컨텍스트의 판단대로 전역 파급을 피해 형제 함수를 새로 만드는 쪽을 택했다). 실측(2026-08-12, 로컬 55322): `select proname, proconfig from pg_proc where proname in ('is_admin','is_admin_active')` → **둘 다 `{search_path=public}`**. 즉 이 항목이 지적한 느슨한 `search_path`가 고쳐지기는커녕 **0032가 만든 `is_admin_active()`에 그대로 복제**됐다. 재지정: **`is_admin()` 또는 `is_admin_active()` 중 하나라도 손대는 다음 마이그레이션 스토리에서, 둘을 함께** `search_path=''`로 좁히고 본문 참조를 수식한다(한쪽만 고치면 형제 사이에 기준이 갈린다). ⚠️ 두 함수 모두 다수 RLS 정책이 부르므로 변경 후 관리자 SELECT/DELETE 경로를 실DB로 회귀 확인해야 한다.
 status: open
 
 ### DW-725: 관리자 매물 행의 sold 상태(버튼 2개 나란히)가 반응형 자동 검사에 없다 — D5 근거가 1회성 스크린샷뿐이다
@@ -6385,7 +6385,7 @@ summary: 17.1은 DB 강제만 했고(의도된 범위 — 스펙 Never 절이 �
 evidence: `0032`가 `listings_select_*`를 하나도 좁히지 않았다(불변식 후반부 "읽기는 줄지 않는다"의 의도된 결과). `chat_messages_insert_participant`만 막고 `chat_rooms_insert_participant`는 열어 뒀다(DW-799). 0행 → 소유권 문구 매핑은 `ListingActions.tsx`의 기존 분기이며 정지라는 새 사유를 구분하지 않는다. 스펙의 Spec Change Log가 이미 같은 계열의 위험(42501 vs 0행 혼동)을 기록했는데, 그 혼동이 **사용자 문구**에도 그대로 있다.
 why_it_matters: 구매자는 응답 없는 판매자를 "무시당했다"로 읽고, 정지 회원은 시스템이 고장 났다고 판단해 문의한다. 그리고 그 문의를 받는 사람이 원인을 찾아갈 단서가 어느 장부에도 없다.
 fix_sketch: (a) 정지 계정의 `on_sale` 매물 노출·문의 가능 여부를 제품 결정으로 정한다(숨김 / 유지 / "응답 불가" 배지). (b) 쓰기 거부 시 화면이 정지 사유를 구분해 안내한다 — 강제력은 계속 DB에 두고 화면은 **안내만** 한다(CLAUDE.md B9 위반 아님, 스펙 Never 절도 "안내 문구를 다듬는 것은 되지만"으로 허용).
-trigger: **(a)만 남았다 — [[Story 17.4]](`17-4-정지-판매자-매물-비노출`, DW-804(a))가 맡는다.** 2026-08-11 사용자 결정으로 "정지 판매자 매물을 구매자·비로그인에게서 숨긴다"(`listings_select_on_sale`/`listings_select_on_sale_anon` 축)로 방향이 정해졌다 — `epic-17-context.md` "2026-08-11 정정" 참고. (b)는 아래 resolution으로 해소.
+trigger: ~~**(a)만 남았다 — [[Story 17.4]](`17-4-정지-판매자-매물-비노출`, DW-804(a))가 맡는다.** 2026-08-11 사용자 결정으로 "정지 판매자 매물을 구매자·비로그인에게서 숨긴다"(`listings_select_on_sale`/`listings_select_on_sale_anon` 축)로 방향이 정해졌다 — `epic-17-context.md` "2026-08-11 정정" 참고. (b)는 아래 resolution으로 해소.~~ ✎ **2026-08-12 Epic 17 회고에서 소멸 — (a)·(b) 모두 해소돼 이 항목이 지목할 다음 자리는 없다**([[DW-823]]이 "status는 done인데 trigger는 아직 배정 중"인 자기모순을 지적했고 그 fix_sketch대로 오케스트레이터가 정리했다). **잔여 증상은 이 항목이 아니라 [[DW-820]]이 소유한다** — 매물은 숨겨졌지만 *이미 열려 있던 채팅방*에서는 구매자가 정지 판매자에게 계속 말을 건다(17.4는 새 진입만 막았다).
 related: [[DW-799]](방 생성 미차단 — 이 항목의 (1)번 증상을 만드는 정책)
 resolution: 2026-08-11 Story 17.3으로 **(b)만** 해소. (a)(정지 판매자 매물 노출 여부)는 미해결 — 위 갱신된 trigger대로 17.4가 맡는다. (b) 조치: `web/src/lib/auth/status.ts`(신설)의 `getOwnStatus`/`writeRejectionMessage`가 "거부(0행/`42501`)가 난 **뒤에** 본인 status를 조회해 정지 사유만 구분"하는 유일한 경로다(사전 검사 아님 — 스토리 불변식). `ListingActions.tsx`(구매완료·삭제)·`SellForm.tsx`(등록·수정) 4개 쓰기 경로 전부가 이 헬퍼를 재사용하도록 배선했고, 기존 소유권/미존재 문구는 정지가 아닐 때 그대로 유지했다(회귀 0). 실측: `web/e2e/suspended-access.spec.ts` B그룹이 throwaway 판매자 계정으로 4경로(구매완료·삭제·수정·신규등록) 전부를 브라우저로 직접 시도해 정지 문구를 확인했고, 매물 값이 실제로 안 바뀌었음(0행/`42501` 거부가 실제로 DB까지 간 뒤 사후 조회로 확인한 것이지 화면이 사전에 막은 게 아님)도 psql로 함께 고정했다. 긍정 대조군(B2, "이미 삭제됨" 레이스 — status='active'인 채로 0행을 받으면 정지 문구가 아니라 기존 문구가 뜬다)도 짝으로 뒀다. 단위테스트: `web/src/lib/auth/status.test.ts`.
 resolution (a, 2026-08-12 Story 17.4): 사용자 결정(2026-08-11 Discord, "숨겨야돼")으로 (a)도 해소됐다 — 정지 판매자의 `on_sale` 매물을 `listings_select_on_sale`/`_anon`·`listings_ai_readonly_select`(`supabase/migrations/0035_hide_suspended_seller_listings.sql`)에서 숨겨 (1)번 증상("답할 수 없는 판매자에게 계속 문의가 감")의 뿌리를 제거했다 — 매물 자체가 안 보이므로 브라우저 정상 흐름으로는 문의 버튼에 도달하지 못한다(상세페이지가 404). 판정 함수는 `public.is_seller_active(uuid)`(SECURITY DEFINER, `is_admin()`·`is_admin_active()`와 같은 계보) — 인라인 서브쿼리로 짜면 `profiles` RLS가 걸려 전체 매물이 사라지는 함정을 실측으로 확인한 뒤 이 형태로 갔다(`0035` 파일 헤더). 본인·관리자 조회는 그대로 유지(회귀 가드: `api/tests/integration/test_suspended_seller_hidden_real_db.py`). ⚠️ **API 직접 호출을 통한 방 생성(DW-799의 잔여 경로)까지는 안 닫혔다** — 위 DW-799 갱신 참조. `docs/conventions.md` §6.2(신설)·§8(정정)이 이 축을 정본으로 등재했다.
@@ -6525,7 +6525,7 @@ summary: 17.3은 정지된 관리자를 `/admin`에서 홈(`/`)으로 돌려보�
 evidence: `web/src/app/page.tsx`의 관리자 랜딩 분기는 `status !== 'active'`면 `redirect('/admin')`을 건너뛸 뿐 어떤 배너·문구도 렌더하지 않는다(2026-08-11 코드 확인). `web/e2e/suspended-access.spec.ts` A그룹도 최종 URL이 `/`인 것만 단언하고 안내 문구는 보지 않는다 — 즉 **검사조차 이 축을 안 본다**.
 why_it_matters: 정지된 관리자는 "내 콘솔이 사라졌다"만 알고 원인을 모른 채 문의한다. 그 문의를 받는 사람도 화면·로그에서 단서를 못 찾는다 — [[DW-806]]이 원래 지목한 비용이 그대로 남는다.
 fix_sketch: 새 화면(`/suspended`)을 만들지 않고 홈에 조건부 안내만 띄운다 — `page.tsx`가 이미 `role, status`를 한 번에 읽고 있으므로 조회 왕복이 늘지 않는다. 문구는 `web/src/lib/auth/status.ts`의 `SUSPENDED_WRITE_MESSAGE`를 재사용하거나 관리자용 한 줄을 추가한다(사실만 말한다 — 정지 사유·해제 시점을 지어내지 않는다). 배너 존재 자체는 제품 결정이라 **착수 전에 사용자에게 확인**한다(17.3 스펙의 Block If가 "새 화면"에 대해 같은 판단을 요구했다). 넣으면 E2E A그룹에 문구 단언을 함께 추가한다.
-trigger: **`web/src/app/page.tsx`의 랜딩 분기나 `/admin` 게이트를 다음에 손대는 웹 스토리에서**(가장 자연스러운 자리는 [[Story 17.4]] — 정지 축을 이어서 다루므로 정지 사용자에게 보이는 화면을 한 번에 정리할 수 있다). 그 전이라도 관리자 정지를 실제 운영 절차로 쓰기로 결정하는 순간 선행 조건으로 올린다.
+trigger: **`web/src/app/page.tsx`의 랜딩 분기나 `/admin` 게이트를 다음에 손대는 웹 스토리에서.** ✎ **2026-08-12 Epic 17 회고에서 정정** — 원래 "가장 자연스러운 자리는 [[Story 17.4]]"라고 적었으나 **17.4는 DB 정책만 다루고 끝났다**(웹 화면을 한 줄도 안 건드렸다). 이미 done인 스토리를 계속 지목하면 이 항목은 영원히 안 집힌다([[DW-827]]이 지적). 정지 축의 **화면 안내**를 묶어 처리할 자리는 이제 [[DW-813]](웹 채팅 발신 안내)과 **같은 스토리**다 — 둘 다 "정지 거부를 화면이 옳게 설명한다"는 한 가지 일이므로 함께 집는다. 그 전이라도 관리자 정지를 실제 운영 절차로 쓰기로 결정하는 순간 선행 조건으로 올린다.
 related: [[DW-806]](이 항목의 차단 축 — 17.3이 해소) · [[DW-809]](관리자 자가 정지) · [[DW-800]](관리자 전원 정지 시 복구 경로 없음)
 status: open
 
@@ -6654,7 +6654,8 @@ why_it_matters: CLAUDE.md B8이 적은 비용이 그대로다 — *"안 닫으�
 fix_sketch: 오케스트레이터가 [[DW-804]]의 `trigger:` 줄을 `resolution`과 정합하게 정리한다 — (a) 완결이면 트리거를 제거하거나 "해소됨"으로 바꾸고, 잔여가 있다는 판단이면 [[DW-820]]을 가리키게 바꾼다. 이 항목은 그때 함께 닫는다.
 trigger: **오케스트레이터가 대장을 다음에 정리할 때(가장 가까운 자리는 다음 sweep 실행).**
 related: [[DW-804]](대상 항목) · [[DW-820]](같은 (a)의 잔여 분기)
-status: open
+resolution: 2026-08-12 Epic 17 회고에서 오케스트레이터가 fix_sketch대로 처리. [[DW-804]]의 `trigger:` 줄을 취소선으로 남기고(지우지 않는다 — 17.3·17.4의 스펙과 마이그레이션 주석이 그 줄을 근거로 쓰였다) "(a)·(b) 모두 해소, 잔여 증상은 [[DW-820]]이 소유"로 정정했다. 실측: `status: done`과 `trigger:`가 더는 반대 방향을 가리키지 않는다.
+status: done 2026-08-12
 
 ### DW-824: `private` 스키마 차단의 성립 조건(Data API 노출 스키마 목록)을 원격에서 한 번도 안 쟀고, 그 계층을 도는 자동 검사가 0건이다
 
@@ -6713,8 +6714,9 @@ evidence: 2026-08-12 `grep -n "trigger:.*17\.4" deferred-work.md` → 두 줄(63
 why_it_matters: 장부 위생을 위해 연 항목이 장부 위생을 반만 하면, 다음 sweep은 "정리했다"고 판단하고 나머지 절반을 영영 안 본다. 그리고 이런 종류(닫힌·지나간 스토리를 가리키는 `trigger:`)는 `scripts/check_dw_numbers.py`가 **일부러 안 보기로 한** 축이라 기계가 잡아 주지 않는다.
 fix_sketch: 오케스트레이터가 [[DW-814]]의 `trigger:`에서 "17.4가 자연스러운 자리" 제안을 **다음에 실제로 열릴 웹 스토리**로 옮긴다(항목 자체는 계속 open — 일이 남아 있는 것은 맞다). [[DW-823]]을 처리할 때 같은 패스에서 함께 본다. 손으로 세지 말고 `grep -n "trigger:.*<끝난 스토리 번호>"` 전수 결과를 근거로 남긴다.
 trigger: **오케스트레이터가 대장을 다음에 정리할 때(가장 가까운 자리는 다음 sweep 실행) — [[DW-823]]과 같은 패스에서.**
-related: [[DW-823]](같은 결함의 다른 절반) · [[DW-814]](대상 항목) · [[DW-804]]
-status: open
+related: [[DW-823]](같은 결함의 다른 절반) · [[DW-814]](대상 항목) · [[DW-804]] · [[DW-723]]·[[DW-724]](전수 조사가 추가로 찾아낸 2건)
+resolution: 2026-08-12 Epic 17 회고에서 처리. fix_sketch가 요구한 대로 **손으로 세지 않고 전수 조사**로 근거를 남겼다 — 열린 항목 전체를 순회해 `trigger:` 줄이 이미 done인 17.x 스토리를 가리키는 것을 뽑았다(`status: open`인 블록만 대상). **결과: 이 항목이 셌던 1건([[DW-814]])이 아니라 3건이었다** — [[DW-723]](`MemberActions.tsx`를 17-1이 열 거라 예상했으나 backend-only로 끝나 안 열림) · [[DW-724]](`is_admin()`을 17-1이 고칠 거라 예상했으나 형제 함수를 새로 만드는 쪽으로 갔음) 가 추가로 나왔다. 셋 다 `trigger:`를 정정했고(원문은 취소선으로 보존), [[DW-724]]는 조사 과정의 실측으로 **범위가 오히려 넓어졌다**(`is_admin`·`is_admin_active` 둘 다 `search_path=public`으로 확인 — 결함이 새 함수에 복제됐다). **교훈: "손으로 센 개수"는 근거가 아니다** — 이 항목 자신이 그 실패의 사례가 됐다.
+status: done 2026-08-12
 
 ### DW-828: 정지 → 비노출 → 해제 → 복귀를 도는 브라우저 검사가 없다 — 17.4의 화면 확인은 1회성 수동 관찰로만 존재한다
 
