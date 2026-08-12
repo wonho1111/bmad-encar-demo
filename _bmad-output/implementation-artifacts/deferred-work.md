@@ -6854,4 +6854,13 @@ fix_sketch: `error` 분기에서 **세션 관련 오류와 설정 오류를 가�
 verification: 재현이 쉽다 — 로그인한 상태에서 Supabase 대시보드로 해당 세션을 폐기하거나, `pm clear` 대신 앱 저장소의 세션만 손상시킨 뒤 실행한다. 고친 뒤에는 같은 조건에서 **로그인 화면**이 떠야 한다.
 trigger: 앱 인증 흐름을 다음에 손대는 스토리. 데모 시연 전이라면 그 전에(시연 중에 밟기 가장 쉬운 결함이다).
 related: [[DW-832]](같은 날 앱 동기화 작업 — 그 작업 중 발견됐다)
-status: open
+resolution: 2026-08-13 사용자 지시로 즉시 수정. `AuthException`이면 "설정 필요"가 아니라 남은 세션을
+  정리하고 앱 본화면으로 보낸다(`ExpiredSessionRecovery`). 정리에는 3초 타임아웃을 걸었다 — 네트워크가
+  막히면 스피너에 갇히는데, 그건 고치려던 막다른 길의 다른 얼굴이다.
+  ⚠️ **검증의 한계를 남겨 둔다**: 트리거(인증 스트림이 error가 되는 순간) 자체는 이번에 재현하지
+  못했다. ⓐ 위젯 테스트에서는 이 Riverpod 버전이 스트림 오류를 `AsyncLoading(hasError:true)`로 두어
+  `.when()`이 loading으로 매핑된다(Stream.error·컨트롤러 addError·create throw 세 방식 모두 실측 동일).
+  ⓑ 실기기에서는 서버 세션을 지워도 **캐시된 access token이 아직 유효**해 그 launch에서는 갱신 실패가
+  일어나지 않았다(토큰 만료까지 최대 1시간). 그래서 고정한 것은 정책(`isExpiredSessionError`)과 복구
+  화면의 동작 두 가지이고, 트리거는 최초 기기 관측이 근거다.
+status: done 2026-08-13
