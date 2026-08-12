@@ -6690,9 +6690,10 @@ summary: P1 수정의 논리는 *"`private` 스키마는 PostgREST 노출 목록
 evidence: 2026-08-12 로컬 55321 실측 — anon 키로 `POST /rest/v1/rpc/is_seller_active` → `PGRST202`(경로 없음), **긍정 대조군** `GET /rest/v1/listings?status=eq.on_sale&select=id&limit=1` → 1행(읽기 경로 무손상). 즉 로컬에서는 막혔다. 반면 `grep -rn config.toml api/ web/ scripts/ .github/ supabase/` → 참조하는 코드·CI·테스트 0건(마이그레이션 주석뿐). `docs/deployment-runbook.md`의 적용 절차 항목에 config.toml 부재가 명시돼 있다. 원격 프로젝트의 노출 스키마 목록은 이 세션이 **재지 않았다**(원격 접속은 스토리 Never 절이 금지).
 why_it_matters: 노출 목록에 `private`가 들어가는 순간(로컬은 config 한 줄, 원격은 대시보드 설정) high 결함이 그대로 되살아나는데 **모든 검사는 초록**이다 — 재발 경로가 "함수 재생성"이 아니라 "설정 한 줄"인데, red를 증명한 것은 함수 재생성 축뿐이다. CLAUDE.md B9(*"규칙은 어길 수 없는 자리에 박는다"*)가 아직 이 축에서 안 지켜졌다.
 fix_sketch: 두 축을 나눠 처리한다. (1) **로컬 축(값싸다)**: `supabase/config.toml`의 `schemas` 배열에 `private`가 없음을 단언하는 정적 검사 몇 줄을 CI에 붙인다(파싱 불필요, 문자열 검사로 충분). (2) **원격 축**: 배포 런북의 마이그레이션 적용 절차에 *"적용 전 Data API 노출 스키마 목록을 떠서 before/after 두 벌로 남긴다"* 를 추가한다(런북이 이미 정책 축에 요구하는 before/after 관례와 같은 형식). 가능하면 anon 키로 `/rest/v1/rpc/is_seller_active`가 404/`PGRST202`인지, **긍정 대조군**으로 anon 매물 읽기가 200인지를 함께 확인하는 스모크를 배포 게이트에 넣는다 — 대조군이 없으면 "전부 막힘"과 구별되지 않는다.
-trigger: **0035·0036을 원격(운영)에 적용하는 순간 — 그 적용의 선행 조건이다.** 그 전이라도 CI에 정적 검사를 붙이는 작업이 생기면 (1)만 먼저 처리한다.
-related: [[DW-804]](이 함수를 만든 스토리) · [[DW-819]] · [[DW-821]]
-status: open
+trigger: ~~**0035·0036을 원격(운영)에 적용하는 순간 — 그 적용의 선행 조건이다.**~~ ✎ **2026-08-12 그 조건이 발동했고 원격 축은 이행됐다(위 resolution).** 재지정: **`scripts/check_migrations.py`·`.github/workflows/migration-gate.yml`·`supabase/config.toml` 중 하나를 다음에 손대는 스토리에서 — 그 자리에 (1) 정적 검사를 심는다.** 그 전이라도 독립적으로 붙일 수 있는 가장 값싼 항목이다(다른 층을 안 건드린다).
+related: [[DW-804]](이 함수를 만든 스토리) · [[DW-819]] · [[DW-821]] · `_bmad-output/implementation-artifacts/deploy-record-2026-08-12-migrations-0027-0036.md`(원격 축의 실측 기록)
+resolution (원격 축, 2026-08-12): **fix_sketch (2)의 절반이 해소됐다 — trigger가 지목한 "0035·0036 원격 적용"이 실제로 일어났고, 그 선행 조건을 적용 전에 측정했다.** 실측(원격 `psrnsasxpkpwqdukjdmt`, anon 키): `Accept-Profile: private` 요청에 PostgREST가 스스로 노출 목록을 답한다 — `PGRST106 "Only the following schemas are exposed: public, graphql_public"`. 즉 `private`는 목록 밖이고 차단의 전제가 원격에서도 성립한다. **긍정 대조군**(fix_sketch가 요구한 것)도 함께 뒀다: 같은 키로 `/rest/v1/listings` → **200**(“전부 막힘”과 구별). 적용 **후** 재측정도 동일했고(그때는 `private` 스키마가 실제로 존재하는 상태), RPC 직접 호출은 `/rpc/is_seller_active` → **404**. 독립 확인: Supabase 자체 보안 린터(`get_advisors`) 결과 목록에 `is_seller_active`가 **없다** — 우리 검사가 아니라 플랫폼이 같은 결론을 냈다.
+status: open (**축소** — 남은 것은 fix_sketch (1) 로컬 정적 검사뿐이다: `supabase/config.toml`의 `schemas` 배열에 `private`가 없음을 CI가 매번 확인하는 몇 줄. 위 실측은 **한 시점의 관측**이라 다음에 누가 노출 목록을 바꾸면 아무도 모른다 — 그래서 항목을 닫지 않는다. trigger는 아래로 재지정)
 
 ### DW-825: Flutter 찜 화면은 정지 판매자 매물을 아직 "판매완료"라고 단정한다 — 웹만 고쳐졌고, 앱 테스트가 옛 문구를 초록으로 고정한다
 

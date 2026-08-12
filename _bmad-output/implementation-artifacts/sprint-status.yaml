@@ -530,7 +530,11 @@ action_items:
   - epic: 17
     action: "A4 원격 적용 전에 DW-824의 전제(Data API 노출 스키마 목록에 private이 없음)를 실측한다"
     owner: "orchestrator"
-    status: open # 3절 신탁 차단이 이 전제 위에 서 있는데 그 계층을 도는 자동 검사가 0건이다
+    status: done # 2026-08-12 적용 직전 원격에서 실측 — PostgREST가 스스로 답했다:
+                 # PGRST106 "Only the following schemas are exposed: public, graphql_public".
+                 # 긍정 대조군(anon 매물 읽기 200)도 짝으로 뒀고, 적용 후 재측정·RPC 404·
+                 # Supabase 린터 독립 확인까지 3중으로 고정. 기록=deploy-record-2026-08-12-migrations-0027-0036.md
+                 # DW-824 자체는 open 유지(축소) — 남은 것은 config.toml을 매번 보는 CI 정적 검사
   - epic: 17
     action: "A5 is_admin·is_admin_active의 search_path를 함께 ''로 좁힌다"
     owner: "orchestrator"
