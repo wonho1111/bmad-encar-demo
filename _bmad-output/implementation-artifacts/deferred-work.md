@@ -3634,7 +3634,8 @@ origin: review-budget-followup
 source_spec: `spec-13-1-sql-guard-하이브리드-정비-g2-baseline.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260730-153003-855d; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 교차 지점 실측.** 이 계열에서 후속 리뷰가 실제로 값을 낼 수 있는 축은 '이후 에픽이 AI 읽기 경로를 조용히 끊었는가'다 — 17.4가 `listings_ai_readonly_select`를 `using(true)`에서 `using(private.is_seller_active(seller_id))`로 **좁혔기 때문**이다. 실측: `set role ai_readonly`로 매물 **166건**·가이드문서 **10건**을 여전히 읽는다(대조군: 전체 166건). AI 경로는 끊기지 않았다.
+status: done 2026-08-12
 
 ### DW-568: bmad-loop의 실패-시도 보존(attempt-preserve)이 **한글 파일명에서 항상 실패**한다 — 이 리포에선 안전망이 사실상 꺼져 있다
 
@@ -3769,7 +3770,8 @@ origin: review-budget-followup
 source_spec: `spec-13-2-4분기-라우팅.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260730-205944-48e1; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 교차 지점 실측(공통).** [[DW-567]]과 같은 근거 — 17.4의 정책 축소 이후에도 `ai_readonly`의 읽기가 정상임을 실측으로 확인했다. 라우팅 로직 자체는 이후 에픽이 건드리지 않았고 단위 검사가 유지되고 있다.
+status: done 2026-08-12
 
 ### DW-579: `assert last_error is not None`이 SQL/HYBRID 노드의 재시도 루프 종료를 제어 흐름으로 방어한다 — `-O` 최적화 실행 시 사라지는 방어
 source_spec: `spec-13-3-하이브리드-검색-sql-벡터.md`
@@ -3935,7 +3937,8 @@ origin: review-budget-followup
 source_spec: `spec-13-4-조건-좁혀-되묻기-clarify.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-034209-7126; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 교차 지점 실측(공통).** [[DW-567]]과 같은 근거.
+status: done 2026-08-12
 
 ### DW-597: REJECT `narrowed_by`는 값만 배선되고 실제 "재제안 칩" 탭 UI(web/app)는 없다
 
@@ -3999,7 +4002,8 @@ origin: review-budget-followup
 source_spec: `spec-13-5-부드러운-거절.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-051647-7a0b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 교차 지점 실측(공통).** [[DW-567]]과 같은 근거.
+status: done 2026-08-12
 
 ### DW-604: 컷오프 실측(Block-If) 미검증 — 이 구현 세션엔 로컬 Supabase/pgvector가 없다
 
@@ -4099,7 +4103,8 @@ origin: review-budget-followup
 source_spec: `spec-13-6-가이드-문서-content-활용-거리-컷오프.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260731-180320-15df; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 교차 지점 실측(공통).** [[DW-567]]과 같은 근거. 가이드 문서 읽기(10건)가 `ai_readonly`로 계속 되는 것을 함께 확인했다.
+status: done 2026-08-12
 
 ### DW-613: Story 13.9 초안(epic-13-context.md·epics-increment)에 DW-611/612가 안 덮는 인접 엣지케이스 6건이 남아있다
 
@@ -4528,7 +4533,8 @@ origin: review-budget-followup
 source_spec: `spec-13-9-라우팅-안정화-최상급-교체요청-맥락재작성.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260803-013219-ca30; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 교차 지점 실측(공통).** [[DW-567]]과 같은 근거.
+status: done 2026-08-12
 
 ### DW-655: Epic 13의 열린 AI 후속 항목 8건이 **백로그에 없는 작업**을 trigger로 걸고 있다 — DW-640이 닫은 병이 재발했다
 
@@ -4683,7 +4689,8 @@ origin: review-budget-followup
 source_spec: `spec-14-1-role-check-완화-마이그레이션.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-023902-0381; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 실DB 침투 프로브.** 이 스토리가 완화한 `profiles.role` CHECK(현재 `role <> ''` — 실측)가 권한 상승으로 이어지는지 직접 시도했다(로컬 55322, 트랜잭션+rollback): 일반 authenticated 세션에서 ⓐ 내 role→admin ⓑ 내 status 조작 ⓒ 남의 role→admin **3방향 모두 0행**, 이후 실제 값이 `user/active` 그대로임을 확인. 막는 것은 CHECK가 아니라 **`profiles`에 자기 행 UPDATE 정책이 아예 없다는 사실**이다(유일한 UPDATE 정책 = `profiles_update_admin`, `is_admin_active()` 요구). 그 구조가 위태롭다는 별건을 [[DW-830]]으로 등재했다.
+status: done 2026-08-12
 
 ### DW-668: Flutter 앱이 아직 "판매 = 역할" 모델이다 — 같은 계정이 web에선 팔 수 있고 앱에선 차단된다
 
@@ -4791,7 +4798,8 @@ origin: review-budget-followup
 source_spec: `spec-14-3-소유권-기반-판매-게이트.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 실DB 정책·권한 대조.** 소유권 축의 강제 지점이 정책으로 남아 있는지 `pg_policies`로 확인했고, 권한 상승 경로는 [[DW-667]] 프로브가 함께 덮었다. 이 스토리 이후 Epic 17이 같은 테이블 정책을 여러 번 고쳤으므로 **드리프트 여부**가 관심사였는데, 정지 게이트가 추가됐을 뿐 소유권 축은 그대로다.
+status: done 2026-08-12
 
 ### DW-678: web 신규 가입 계정은 metadata에 role이 없어, Flutter 앱의 역할 기반 화면 5곳이 그 계정에서 판매자 기능을 숨긴다
 
@@ -4911,7 +4919,8 @@ origin: review-budget-followup
 source_spec: `spec-14-2-가입-역할선택-제거-트리거-기본-role.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-050742-04ee; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 실DB 트리거 본문 확인 + 침투 프로브.** `handle_new_user` 현재 본문 실측: `insert into public.profiles (id, role, status, name) values (new.id, 'user', 'active', ...)` — 역할이 **하드코딩**돼 있어 클라이언트가 보낸 값이 들어갈 자리가 없다(0033이 legacy passthrough를 제거한 상태가 유지됨). 가입 직후 자기 role을 올릴 수 있는지는 [[DW-667]]의 프로브가 함께 확인했다(0행).
+status: done 2026-08-12
 
 ### DW-689: E2E `C2 매물 목록 검색·필터`가 13-10 데이터 보강으로 무효화됐다 — 필터가 안 걸려도 초록이 될 수 없어 red
 origin: 2026-08-06 Epic 14 마감 E2E 실행(사람). Epic 14가 만든 회귀가 아니다.
@@ -5085,7 +5094,8 @@ origin: review-budget-followup
 source_spec: `spec-15-1-관리자-6화면-디자인-리스킨.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** 웹 관리자 화면 축 — 오케스트레이터가 `vitest` **376건 green**을 직접 확인했다. 코드 정독은 하지 않았다. 이 축의 미해결은 별도로 [[DW-816]](관리자 콘솔 쓰기 액션의 거부 문구)이 이미 소유한다.
+status: done 2026-08-12
 
 ### DW-703: 관리자 채팅방 좌/우 배치 테스트가 "기타"(당사자 아닌) 발신자 분기를 한 번도 실측하지 않는다
 source_spec: `spec-15-2-관리자-반응형.md`
@@ -5222,7 +5232,8 @@ origin: review-budget-followup
 source_spec: `spec-15-2-관리자-반응형.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260806-184136-ee73; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-702]]와 같은 근거(vitest 376건 green).
+status: done 2026-08-12
 
 ### DW-717: DW-669(정지 회원 매물 쓰기 차단)는 Epic 15의 명시적 UI-only 제약과 충돌한다 — RLS 구현은 되돌려졌고 별도 스토리가 필요하다
 source_spec: `spec-15-3-회원관리-역할통합-반영.md`
@@ -5338,7 +5349,8 @@ origin: review-budget-followup
 source_spec: `spec-15-4-관리자-판매완료-되돌리기.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-013500-4548; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행 + 정지 축 교차 확인.** 이 스토리가 만든 `admin_restore_sold_listing`(SECURITY DEFINER RPC)은 17.1이 `is_admin_active()`로 정지 관리자까지 막도록 고쳤다. 통합 검사(`test_restore_sold_listing_rpc_real_db.py` 포함 201건)를 오케스트레이터가 직접 실행해 green 확인했고, 이 함수가 17.2의 함수 매니페스트에 등재돼 있어 **판정 없이 조용히 바뀌면 검사가 red가 된다**.
+status: done 2026-08-12
 
 ### DW-727: E2E `R4`가 **깨끗한 시드에서는 실패하고, 앞선 실행이 DB를 더럽혀야 통과**한다 — 초록이 잘못된 이유로 나온다
 origin: 2026-08-07 Epic 15 마감 E2E에서 실패 → 원인 추적. 15-3 세션이 `supabase db reset`으로 로컬 DB를 새로 시드하면서 드러났다(그 전까지는 누적 상태에 가려 계속 초록이었다).
@@ -5400,7 +5412,8 @@ origin: review-budget-followup
 source_spec: `spec-16-1-디자인-토큰-미러-하단-4탭-내비.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** 앱(Flutter) 축 — 오케스트레이터가 `flutter test` **520건 green**을 직접 확인했다. 코드 정독은 하지 않았다. 앱의 미해결은 [[DW-812]]·[[DW-825]]가 이미 소유한다.
+status: done 2026-08-12
 
 - source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
   summary: `epics-increment-2026-07-12.md`의 Story 16.2 AC 원문이 여전히 "앱은 서명 원본 이미지를 Storage에서 받아 렌더한다(api는 storage_path만 반환하므로 앱이 서명)"이라고 적혀 있어, Story 9.0(공개 버킷 전환, `0014_listing_images_public_bucket.sql`)으로 이미 낡은 "서명" 표현이 정정 없이 남아 있다.
@@ -5437,7 +5450,8 @@ origin: review-budget-followup
 source_spec: `spec-16-2-이미지-카드-재설계-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거(flutter test 520건 green).
+status: done 2026-08-12
 
 - source_spec: `spec-16-3-신뢰속성-찜-앱.md`
   summary: `wishedListingIdsProvider`(찜 오버레이 전체 집합, `app/lib/features/wishlist/wishlist_providers.dart` 신규)가 로그아웃/계정 전환 시 invalidate되지 않는다 — 같은 기기에서 계정을 바꾸면 이전 계정이 찜한 매물이 새 계정 화면에도 잠깐 채워진 하트로 보일 수 있다.
@@ -5474,7 +5488,8 @@ origin: review-budget-followup
 source_spec: `spec-16-3-신뢰속성-찜-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260807-162721-25ed; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거.
+status: done 2026-08-12
 
 - source_spec: `spec-16-4-실시간-채팅-앱.md`
   summary: 채팅방 최초 `SUBSCRIBED` 도달 시 도는 "조회~구독 사이 틈 보정" 재조회(`§12.3`, `_initialSyncDone` 블록)가 성공해도, 그 이전에 초기 로드가 실패해 세워둔 `_loadError`("과거 대화를 불러오지 못했습니다") 안내를 지우지 않는다 — 갭보정(`_gapFillFromCursor`)에는 있는 "자기가 세운 안내만 거둔다" 복구 로직이 이 블록에는 없다.
@@ -5546,7 +5561,8 @@ origin: review-budget-followup
 source_spec: `spec-16-5-4분기-ai-응답-되묻기-칩-앱.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260808-154358-5a0b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거.
+status: done 2026-08-12
 
 ### DW-735: 앱 매물 상세에 **하단 고정 바(가격 + 문의하기)가 없다** — 웹엔 있고 UX 목업이 명시한 것인데 Epic 16 어느 인수조건에도 안 들어 있다
 origin: 2026-08-08 사용자 지시("등재해"). 같은 날 실기기 눈 확인(갤럭시 S21) 중 웹↔앱을 나란히 놓고 비교하다 발견 — 자동 검사나 리뷰가 아니라 **사람이 화면을 봐서** 나온 항목이다.
@@ -5654,7 +5670,8 @@ origin: review-budget-followup
 source_spec: `spec-16-8-앱-홈-랜딩-미러.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260808-204638-063b; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거.
+status: done 2026-08-12
 
 ### DW-744: 사진 리사이즈가 원본을 축소 없이 통째로 디코딩한 뒤에야 목표 크기를 계산한다 — 고화소 사진에서 메모리 스파이크 위험
 
@@ -5922,7 +5939,8 @@ origin: review-budget-followup
 source_spec: `spec-16-9-앱-ui-정합성-교정.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260809-213941-2b07; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거.
+status: done 2026-08-12
 
 ### DW-767: 16.9 이후에도 히어로가 목업보다 밋밋하다 — **헤드라인이 절반 크기(19px vs 30~34px)** 이고 `AI 매물 검색` 라벨이 없다
 
@@ -6080,7 +6098,8 @@ origin: review-budget-followup
 source_spec: `spec-16-10-히어로-검색창-마감.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260810-011427-dabe; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거. ⚠️ 이 항목은 **2026-08-10 사용자가 명시적으로 '실행한다'고 결정했는데 이행되지 않은 채 Epic 17이 시작된 바로 그 2건 중 하나**다(Epic 17 회고 4.1절). 이번엔 깊이를 낮추더라도 **닫는다** — 쌓아두는 것이 가장 나쁘다는 것이 그 회고의 결론이었다.
+status: done 2026-08-12
 
 ### DW-787: 히어로 배경 글로우를 앱에서 제거했다 — 스파인이 요구한 "은은한 빛무리"를 원 하나로 구현해 **잘린 노란 얼룩**으로 보였다
 
@@ -6278,7 +6297,8 @@ origin: review-budget-followup
 source_spec: `spec-16-11-사진-순서-대표-무결성.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260810-190152-83da; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 검사 실행만(가벼움, 의도적).** [[DW-731]]과 같은 근거. ⚠️ [[DW-779]]와 함께 2026-08-10 사용자 결정 미이행분이었다. 사진 순서·대표 무결성 축의 알려진 한계(DB 제약이 없고 web writer가 옛 규칙을 따른다)는 `docs/conventions.md`가 이미 정정으로 박아 뒀으므로 이 항목이 새로 발견할 몫은 아니다.
+status: done 2026-08-12
 
 ### DW-797: 새로 추가한 사진의 INSERT가 실패해 대표가 넘어가도 사용자에게 알리지 않는다
 
@@ -6468,7 +6488,8 @@ origin: review-budget-followup
 source_spec: `spec-17-1-정지-회원-쓰기-차단-rls.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-000420-4ea3; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 독립 재검증(오늘 수행).** `storage.objects` 정책 4건이 살아 있고(`pg_policies` 실측) 통합 검사가 storage 축을 111회 참조한다. 17.2가 만든 매니페스트가 이 스토리의 전수조사 판정을 기계 대조로 고정하는데, **매니페스트 등재 집합(public 17 + storage 4)이 실DB와 정확히 일치**함을 확인했다(빠진 스키마 없음). 추가로 오케스트레이터가 매니페스트를 개발 세션이 쓰지 않은 축(정책 추가가 아니라 **정의자 함수 추가**)으로 깨서 red를 확인했다.
+status: done 2026-08-12
 
 ### DW-811: 17.2의 매니페스트 대조 검사가 "로컬과 CI가 같은 정책 집합을 본다"를 명시적으로 재확인하지 않았다
 
@@ -6579,7 +6600,8 @@ origin: review-budget-followup
 source_spec: `spec-17-3-정지-관리자-콘솔-차단-거부-안내-구분.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-212857-e995; this entry preserves the lingering follow-up recommendation for a deliberate later review.
-status: open
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 독립 재검증(오늘 수행).** E2E `suspended-access.spec.ts` 8건을 직접 실행해 green 확인(무한 리다이렉트 축 포함), 웹 단위 376건 green. 이 스토리가 남긴 미해결은 이미 [[DW-813]]~[[DW-816]]으로 등재돼 있어 후속 리뷰가 새로 발견할 몫이 남아 있지 않다 — 특히 [[DW-813]](채팅 배선 0건)은 오케스트레이터가 `grep`으로 직접 재확인했다.
+status: done 2026-08-12
 
 ### DW-819: `increment_listing_view`는 **호출자**의 정지만 보고 **판매자**의 정지는 안 본다 — 아무에게도 안 보이는 매물의 조회수가 계속 오른다
 
@@ -6738,4 +6760,19 @@ origin: review-budget-followup
 source_spec: `spec-17-4-정지-판매자-매물-비노출.md`
 severity: low
 reason: Review budget (2 cycles) was exhausted with the story finalized (status: done, verify green) while the review pass kept recommending an independent follow-up. The work was committed by bmad-loop run 20260811-212857-e995; this entry preserves the lingering follow-up recommendation for a deliberate later review.
+resolution: 2026-08-12 사용자 지시("후속리뷰 가볍게")로 오케스트레이터가 일괄 처리. **깊이를 항목마다 명시한다** — "23건 리뷰 완료"로 뭉뚱그리면 다음 사람이 무엇이 실제로 검사됐는지 알 수 없다. **깊이 = 독립 재검증(오늘 수행, 이 에픽에서 가장 깊게).** ⓐ 정의자 함수를 인라인 서브쿼리로 되돌리는 **함정 형태**로 깨서 9건 red 확인(그중 6건이 긍정 대조군 — '전부 사라지는데 초록' 이 실제로 잡힌다) ⓑ 빈 DB에 마이그레이션 전량 번호순 적용 후 통합 201건 green ⓒ 브라우저로 정지→비노출→해제→복구를 눈으로 확인(159→158, 딱 1건) ⓓ `private` 미노출을 **원격**에서 실측(PostgREST가 `"Only the following schemas are exposed: public, graphql_public"`로 직접 답함). 검사 자체도 20개 축(AI·본인·관리자·사진·FR11 회귀·parallel safe)을 덮고 있음을 확인했다.
+status: done 2026-08-12
+
+### DW-830: `profiles`의 권한 상승을 막는 것은 CHECK도 컬럼 권한도 아니라 "정책이 하나도 없다"는 사실뿐이다 — 정책 한 줄이면 열린다
+
+origin: 2026-08-12 후속 리뷰 일괄 처리([[DW-667]] 축) 중 오케스트레이터 실측 발견. 리뷰 대상 스토리(14-1 `role-check` 완화)의 결함이 아니라, **그 완화가 다른 두 층의 느슨함과 겹쳐 만드는 잠복 조건**이다.
+location: `supabase/migrations/0005_admin_policies.sql`(`profiles_update_admin`) · `0032_suspended_write_block.sql`(같은 정책의 `is_admin_active()` 강화) · `profiles_role_check` 제약 · `authenticated`의 컬럼 GRANT.
+severity: medium
+reason_for_severity: 오늘은 **실제로 안 뚫린다**(아래 실측). 그러나 뚫리는 조건이 *"누군가 `profiles`에 자기 행 UPDATE 정책을 하나 추가한다"* 뿐이고, 그건 **매우 평범한 요구**다("회원이 자기 이름을 바꾸게 해주세요"). 그 순간 방어층이 0이 된다 — 상승 결과가 관리자 권한이므로 영향은 최대치다.
+summary: 일반 회원이 `profiles.role`을 `'admin'`으로 바꾸는 것을 막는 층이 **단 하나**다. ⓐ CHECK 제약은 `role <> ''`뿐이라 임의 문자열을 허용한다(14-1이 의도적으로 완화). ⓑ `authenticated` 롤은 `role`·`status` 컬럼에 **UPDATE GRANT를 이미 가지고 있다**. ⓒ 유일하게 막는 것은 `profiles`에 **자기 행을 UPDATE하는 RLS 정책이 존재하지 않는다**는 사실이다(현재 UPDATE 정책은 `profiles_update_admin` 하나, `is_admin_active()` 요구).
+evidence: 2026-08-12 로컬 55322 실측(트랜잭션+rollback). ⓐ `select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid='public.profiles'::regclass and contype='c'` → `profiles_role_check CHECK ((role <> ''::text))`. ⓑ `select column_name from information_schema.column_privileges where table_name='profiles' and grantee='authenticated' and privilege_type='UPDATE'` → `created_at, id, name, role, status` (**role·status 포함**). ⓒ `select policyname, roles, qual, with_check from pg_policies where tablename='profiles' and cmd in ('UPDATE','ALL')` → `profiles_update_admin` **1건뿐**. 침투 프로브: 일반 authenticated 세션에서 내 role→admin / 내 status 조작 / 남의 role→admin **3방향 모두 `UPDATE 0`**, 이후 값이 `user/active` 그대로.
+why_it_matters: CLAUDE.md B9가 *"접근 권한과 필터 정책은 별개다 — 권한만 주고 정책이 없으면 다 보이고, 정책만 있고 권한이 없으면 아무것도 안 보인다. 둘 다 확인한다"* 고 적은 축의 실제 사례다. 지금은 **정책이 없어서** 안전한데, 이건 방어를 설계한 것이 아니라 **기능이 없어서 생긴 안전**이다. 다음 사람이 "내 프로필 수정" 화면을 만들며 `create policy profiles_update_own ... using (auth.uid() = id)`를 추가하면 — 그게 정상적인 작성법이다 — `with check`로 role·status를 고정하지 않는 한 **그 한 줄이 권한 상승 경로가 된다**. 그리고 그 순간을 잡아 줄 검사가 없다: 17.2의 쓰기 매니페스트는 "새 쓰기 정책에 판정이 없다"를 잡지만, 그 판정은 **정지 게이트** 축이라 리뷰어가 `is_admin_active()` 대신 `auth.uid()=id`를 적어 넣고 통과시킬 수 있다.
+fix_sketch: 둘 중 하나 이상. (1) **컬럼 GRANT를 좁힌다** — `revoke update (role, status) on public.profiles from authenticated`. 관리자 경로는 `profiles_update_admin`이 아니라 SECURITY DEFINER RPC로 옮겨야 하므로 범위가 커진다. (2) **CHECK를 좁힌다** — `role in ('user','admin')`으로 되돌리면 임의 문자열은 막지만 `'admin'` 자체는 여전히 허용되므로 **상승은 못 막는다**(부분 완화). (3) **가장 싼 것 = 검사** — `profiles`의 UPDATE 정책 집합을 매니페스트에 넣고, `role`/`status`를 `with check`로 고정하지 않는 자기 행 UPDATE 정책이 생기면 red가 나게 한다. 어느 쪽이든 **먼저 침투 프로브를 회귀 검사로 승격**한다(이 항목의 evidence 3방향을 그대로 `test_suspended_write_block_real_db.py` 옆에 둔다).
+trigger: **`profiles`에 UPDATE 정책을 추가하거나 회원 프로필 수정 기능을 만드는 스토리에서 — 그 스토리의 인수조건 첫 줄로.** 그 전이라도 (3)의 회귀 검사만은 독립적으로 심을 수 있다(비용이 가장 싸고 다른 층을 안 건드린다).
+related: [[DW-667]](이 발견이 나온 후속 리뷰 대상 — 14-1이 CHECK를 완화한 스토리) · [[DW-803]](쓰기 경로 전수조사 매니페스트 — (3)의 자리) · [[DW-806]](같은 축의 다른 절반: 정지된 관리자)
 status: open
