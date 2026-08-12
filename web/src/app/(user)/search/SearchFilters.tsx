@@ -29,6 +29,16 @@ export type SearchFilterValues = {
   price_max: string;
   year_min: string;
   year_max: string;
+  // 신뢰속성 필터(2026-08-13 사용자 요청) — 상세·카드에 뱃지로 보여주던 값으로 거를 수 있게 한다.
+  //   accident_status: ''(전체) | 무사고 | 단순교환 | 사고 — **뱃지 기준**이다(사용자 결정).
+  //     예전 "무사고 차량" 체크박스가 쓰던 accident_free는 필터에서 쓰지 않는다(그건 이제 파생값이고
+  //     소비처가 AI 검색 하나뿐이다).
+  //   single_owner·non_smoker: '1'(신고한 것만) | ''(전체). 체크박스라 두 값뿐이다 —
+  //     "1인소유가 아닌 차만"은 만들지 않는다: 값이 없는 매물은 "아니다"가 아니라 "말하지 않음"이라
+  //     그런 필터는 무엇을 고르는지 스스로도 정의할 수 없다.
+  accident_status: string;
+  single_owner: string;
+  non_smoker: string;
 };
 
 export default function SearchFilters({ initial }: { initial: SearchFilterValues }) {
@@ -57,6 +67,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
     const empty: SearchFilterValues = {
       q: '', body_type: '', color: '', fuel: '', transmission: '', region: '',
       price_min: '', price_max: '', year_min: '', year_max: '',
+      accident_status: '', single_owner: '', non_smoker: '',
     };
     setValues(empty);
     router.push('/search');
@@ -130,6 +141,47 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             placeholder="최대"
             className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
+        </div>
+      </fieldset>
+
+      {/* 신뢰 정보 — 판매자 자기신고(무사고·1인소유·비흡연). 카드·상세의 뱃지와 같은 값이다. */}
+      <fieldset className="flex flex-col gap-2 text-sm">
+        <span className={FIELD_LABEL_CLASS}>신뢰 정보</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <label className="flex flex-col gap-1">
+            <span className="sr-only">사고이력</span>
+            <select
+              aria-label="사고이력"
+              value={values.accident_status}
+              onChange={(e) => update('accident_status', e.target.value)}
+              className={FIELD_CONTROL_CLASS}
+            >
+              <option value="">사고이력 전체</option>
+              {LISTING_OPTIONS.accident_status.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* 체크 = "그렇다고 신고한 매물만". 미체크 = 조건 없음(전체) — 체크를 풀었다고 해서
+              "1인소유가 아닌 차"를 찾는 게 아니다. */}
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={values.single_owner === '1'}
+              onChange={(e) => update('single_owner', e.target.checked ? '1' : '')}
+            />
+            <span className={FIELD_LABEL_CLASS}>1인소유</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={values.non_smoker === '1'}
+              onChange={(e) => update('non_smoker', e.target.checked ? '1' : '')}
+            />
+            <span className={FIELD_LABEL_CLASS}>비흡연</span>
+          </label>
         </div>
       </fieldset>
 

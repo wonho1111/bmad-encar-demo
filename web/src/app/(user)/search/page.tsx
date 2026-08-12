@@ -107,6 +107,11 @@ export default async function SearchPage({
   let priceMax = asInt(asStr(sp.price_max));
   let yearMin = asInt(asStr(sp.year_min));
   let yearMax = asInt(asStr(sp.year_max));
+  // 신뢰속성 필터(2026-08-13). 사고이력은 목록 밖 값이면 무시(다른 드롭다운과 같은 규칙),
+  // 두 체크박스는 '1'일 때만 조건이 붙는다(그 외 값은 전부 "조건 없음"으로 떨어진다).
+  const accidentStatus = pickOption(asStr(sp.accident_status), LISTING_OPTIONS.accident_status);
+  const singleOwnerOnly = asStr(sp.single_owner) === '1';
+  const nonSmokerOnly = asStr(sp.non_smoker) === '1';
 
   // 최소>최대로 거꾸로 입력하면(예: 최소 5000~최대 1000) 0건이 나와 혼란 → 둘 다 유효할 때만 값을 맞바꿔(swap) 정상 범위로 보정.
   if (priceMin !== null && priceMax !== null && priceMin > priceMax) {
@@ -119,16 +124,13 @@ export default async function SearchPage({
   // ── 쿼리 빌드 ───────────────────────────────────────────────────
   // 구매자 관점(판매중만) 시작점은 buyerListingsQuery(FR11 단일 출처). 조건은 값이 있을 때만 체이닝한다.
   //
-  // ⚠️ /search는 anon(비로그인)도 여는 열람 경로다(conventions.md §8). anon은 `0011_listings_anon_select.sql`이
-  //   컬럼 단위로 select 권한을 명시한 목록만 읽을 수 있고, 신뢰속성 3컬럼(accident_status·
-  //   is_single_owner·is_non_smoker)은 그 목록에 없다(실측: anon 키로 이 3컬럼을 요청하면
-  //   `42501 permission denied` — select 전체가 실패해 목록 자체가 안 뜬다). fuel은 이미
-  //   0011에 있어 anon도 안전하다.
-  //   신규 GRANT를 추가해 anon에도 열 수 있지만, conventions.md §9.3은 anon 노출 컬럼을
-  //   "넓히는" GRANT 변경을 dev 자율 판단이 아니라 **사용자 승인 필수(b)**로 못박는다 —
-  //   그래서 이 스토리(값이 흐르게 하는 것)에서 임의로 넓히지 않고, 로그인 사용자에게만
-  //   신뢰속성을 함께 조회한다(대장에 등재, 10.2 착수 시 재검토).
-  const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  // ✎ 2026-08-13 — 신뢰속성 3컬럼을 **로그인 여부와 무관하게** 조회한다.
+  //   예전엔 anon에게 이 3컬럼 SELECT 권한이 없어(0011의 컬럼 GRANT 목록 밖) anon일 때만 빼고
+  //   물었다 — 그래서 비로그인 사용자에겐 신뢰 뱃지가 한 번도 안 보였고, 같은 매물이 로그인
+  //   여부에 따라 다른 정보를 보여줬다. `0037_listings_anon_trust_columns.sql`이 그 GRANT를
+  //   열었다(사용자 승인). 필터로 쓰려면 어차피 필수다 — Postgres는 WHERE에 쓰인 컬럼에도
+  //   SELECT 권한을 요구하므로, 권한 없이 필터를 걸면 목록 조회 전체가 42501로 죽는다.
+  const trustColumns = ', accident_status, is_single_owner, is_non_smoker';
   // options는 이미 0011에서 anon GRANT돼 있다(로그인 분기 불필요, conventions §11 — 10.1
   // 신뢰컬럼과 다른 점). 그래서 trustColumns와 달리 로그인 여부와 무관하게 항상 조회한다.
   // SearchFilters에 넘길 초기값(현재 URL 그대로 폼에 반영 → 새로고침해도 유지).
@@ -144,6 +146,9 @@ export default async function SearchPage({
     price_max: priceMax !== null ? String(priceMax) : '',
     year_min: yearMin !== null ? String(yearMin) : '',
     year_max: yearMax !== null ? String(yearMax) : '',
+    accident_status: accidentStatus ?? '',
+    single_owner: singleOwnerOnly ? '1' : '',
+    non_smoker: nonSmokerOnly ? '1' : '',
   };
 
   // 페이지 이동 링크 — **정규화된 필터값**으로 쿼리를 다시 조립한다(원본 sp를 그대로 옮기지 않는다).
@@ -167,7 +172,7 @@ export default async function SearchPage({
   // 제네릭 대신 넘겨받은 빌더를 그대로 돌려주는 얇은 함수다 — 타입은 호출부에서 추론된다.
   function applyFilters<T extends {
     ilike: (c: string, p: string) => T;
-    eq: (c: string, v: string) => T;
+    eq: (c: string, v: string | boolean) => T;
     gte: (c: string, v: number) => T;
     lte: (c: string, v: number) => T;
   }>(builder: T): T {
@@ -184,6 +189,12 @@ export default async function SearchPage({
     if (priceMax !== null) b = b.lte('price', priceMax);
     if (yearMin !== null) b = b.gte('year', yearMin);
     if (yearMax !== null) b = b.lte('year', yearMax);
+    // 신뢰속성 — **뱃지와 같은 컬럼**으로 거른다(사용자 결정: accident_free는 안 쓴다).
+    //   두 체크박스는 `eq(true)`라 값이 NULL(미신고)인 매물은 자연히 빠진다 — 그게 맞다:
+    //   "1인소유라고 신고한 매물"을 찾는 것이지 "1인소유가 아닌 게 아닌 매물"이 아니다.
+    if (accidentStatus) b = b.eq('accident_status', accidentStatus);
+    if (singleOwnerOnly) b = b.eq('is_single_owner', true);
+    if (nonSmokerOnly) b = b.eq('is_non_smoker', true);
     return b;
   }
 

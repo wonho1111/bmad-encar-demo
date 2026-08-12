@@ -75,22 +75,13 @@ function Field({ label, value }: { label: string; value: string }) {
  *   입장에서 "이 차는 무사고인가?"라는 질문에 화면이 **아무 말도 안 하는** 상태가 된다.
  *   빈 제목만 남기는 것과 "왜 없는지 말해 주는 것"은 다르다 — 후자는 정보다.
  *
- * ⚠️ **"없음"의 이유를 두 가지로 구분한다. 합치면 거짓말이 된다.**
- *   · 로그인 사용자에게 값이 없다 → 진짜로 판매자가 입력을 안 한 것이다.
- *   · **비로그인(anon)은 애초에 이 3개 컬럼을 조회하지 않는다**(page.tsx의 trustColumns 분기 —
- *     0011 마이그레이션이 anon에게 연 컬럼 목록에 그 셋이 없어서, 넣으면 select 전체가 42501로
- *     실패한다). 즉 anon 화면의 "없음"은 **판매자가 입력을 안 했다는 뜻이 아니다.** 그래서
- *     anon에게 "판매자가 입력하지 않았어요"라고 쓰면 값이 있는 매물에도 그렇게 보인다.
- *     (anon에게도 보이게 하려면 GRANT 마이그레이션이 필요하다 — 사용자 승인 대기, DW-836.)
+ * ⚠️ **"없음"은 이제 한 가지 뜻뿐이다 — 판매자가 입력하지 않았다.**
+ *   2026-08-13 오전까지는 뜻이 둘이었다: 비로그인은 애초에 이 3컬럼을 조회하지 않아서(0011 GRANT
+ *   목록 밖) 값이 있어도 "없음"으로 왔고, 그래서 로그인 여부에 따라 문구를 갈랐었다. 같은 날
+ *   `0037_listings_anon_trust_columns.sql`이 그 GRANT를 열어 비로그인도 같은 값을 읽는다 —
+ *   갈림이 사라졌으므로 분기도 지웠다(문구가 둘이면 언젠가 한쪽이 틀린 자리에서 나온다).
  */
-export function TrustInfoSection({
-  listing,
-  authed,
-}: {
-  listing: ListingDetailSectionsData;
-  // 비로그인이면 신뢰속성 3컬럼을 조회 자체를 안 했다는 뜻(위 주석) — "없음"의 문구가 갈린다.
-  authed: boolean;
-}) {
+export function TrustInfoSection({ listing }: { listing: ListingDetailSectionsData }) {
   if (hasTrustAttributes(listing)) {
     return (
       <Section title="신뢰정보">
@@ -101,15 +92,9 @@ export function TrustInfoSection({
 
   return (
     <Section title="신뢰정보">
-      {authed ? (
-        <p className="text-body text-ink-muted">
-          판매자가 무사고·1인소유·비흡연 여부를 입력하지 않았어요. 계약 전 직접 확인하세요.
-        </p>
-      ) : (
-        <p className="text-body text-ink-muted">
-          무사고·1인소유·비흡연 정보는 로그인 후에 볼 수 있어요.
-        </p>
-      )}
+      <p className="text-body text-ink-muted">
+        판매자가 무사고·1인소유·비흡연 여부를 입력하지 않았어요. 계약 전 직접 확인하세요.
+      </p>
     </Section>
   );
 }

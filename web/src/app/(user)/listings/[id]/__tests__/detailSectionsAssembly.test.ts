@@ -79,7 +79,7 @@ describe('상세 조립 — SM-C(상세에서 신뢰속성과 옵션이 구분·
       is_non_smoker: true,
     };
 
-    const tree = TrustInfoSection({ listing, authed: true });
+    const tree = TrustInfoSection({ listing });
 
     // 신뢰정보 섹션에서 <TrustAttributes variant="detail">를 지우면 이 단언이 red가 된다.
     const trustNodes = collectNodes(tree).filter((n) => n.type === TrustAttributes);
@@ -90,11 +90,10 @@ describe('상세 조립 — SM-C(상세에서 신뢰속성과 옵션이 구분·
 
   // ✎ 2026-08-13 사용자 지적으로 계약이 **뒤집혔다.** 예전엔 신뢰속성이 하나도 없으면 섹션을
   //   통째로 안 그렸는데(AC1 "빈 섹션 금지"), 그러면 "이 차 무사고인가?"에 화면이 아무 말도 안
-  //   하는 상태가 된다. 이제 섹션은 항상 그리되 **"없음"의 이유를 구분해서** 말한다:
-  //     · 로그인 사용자 → 판매자가 입력을 안 한 것이다.
-  //     · 비로그인 → 애초에 그 컬럼을 조회하지 않았다(0011 anon GRANT 목록 밖). 여기에
-  //       "판매자가 입력하지 않았어요"를 쓰면 값이 **있는** 매물에도 그렇게 보인다 = 거짓말.
-  //   두 문구가 섞이면 조용히 틀리므로, 두 분기를 각각 단언한다.
+  //   하는 상태가 된다. 이제 섹션은 항상 그리되 "판매자가 입력하지 않았다"고 말한다.
+  //   (같은 날 오전엔 로그인/비로그인 문구를 갈랐었다 — 비로그인이 그 컬럼을 아예 조회하지 못해
+  //    "없음"의 뜻이 둘이었기 때문이다. 0037 GRANT로 비로그인도 같은 값을 읽게 되면서 그 갈림이
+  //    사라졌고, 분기도 함께 지웠다.)
   const EMPTY_TRUST: ListingDetailSectionsData = {
     ...BASE,
     accident_status: null,
@@ -102,8 +101,8 @@ describe('상세 조립 — SM-C(상세에서 신뢰속성과 옵션이 구분·
     is_non_smoker: null,
   };
 
-  it('신뢰속성 전무 + 로그인: 섹션은 그리되 "판매자가 입력하지 않았다"고 말한다', () => {
-    const tree = TrustInfoSection({ listing: EMPTY_TRUST, authed: true });
+  it('신뢰속성 전무: 섹션은 그리되 "판매자가 입력하지 않았다"고 말한다', () => {
+    const tree = TrustInfoSection({ listing: EMPTY_TRUST });
     expect(tree, '섹션이 통째로 사라지면 안 된다').not.toBeNull();
 
     // 제목은 남는다 — 다만 `Section`은 이 하네스에서 **확장되지 않는 컴포넌트 노드**라 제목이
@@ -112,23 +111,13 @@ describe('상세 조립 — SM-C(상세에서 신뢰속성과 옵션이 구분·
 
     const text = collectText(tree).join(' ');
     expect(text).toContain('판매자가');
-    expect(text).not.toContain('로그인'); // 조회 못 한 게 아니라 판매자가 안 넣은 것이다
+    // "로그인하면 볼 수 있다" 류 문구가 되살아나면 안 된다 — 비로그인도 이제 같은 값을 읽는다(0037).
+    expect(text).not.toContain('로그인');
 
     // 값이 없으므로 뱃지 컴포넌트는 마운트하지 않는다(빈 뱃지 줄이 남지 않게).
     expect(collectNodes(tree).filter((n) => n.type === TrustAttributes)).toHaveLength(0);
   });
 
-  it('신뢰속성 전무 + 비로그인: "판매자가 입력 안 함"이 아니라 "로그인 후 볼 수 있다"고 말한다', () => {
-    const tree = TrustInfoSection({ listing: EMPTY_TRUST, authed: false });
-    expect(tree).not.toBeNull();
-
-    const text = collectText(tree).join(' ');
-    expect(text).toContain('로그인');
-    expect(
-      text,
-      'anon에게 "판매자가 입력하지 않았어요"라고 하면 값이 있는 매물에도 그렇게 보인다(거짓)',
-    ).not.toContain('판매자가');
-  });
 
   it('옵션 있음: OptionsSection이 옵션을 <li> 칩으로 렌더한다(희소 포함)', () => {
     const listing: ListingDetailSectionsData = {

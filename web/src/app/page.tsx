@@ -81,7 +81,7 @@ export default async function Home() {
   if (user) {
     // ① 인기(view_count desc)·최신(created_at desc) 2단 발췌 그리드 (Story 11.4, FR34).
     //   기존 "최근 매물" 단일 미리보기는 이 함수의 "최신" 단으로 흡수돼 대체됐다(신규 작성이 아니라 이관).
-    const { popular, recent } = await fetchPopularAndRecentListings(supabase, user);
+    const { popular, recent } = await fetchPopularAndRecentListings(supabase);
 
     // 찜 오버레이(Story 10.5) — 두 단의 id를 합쳐 한 번만 조회한다(Always 규칙, 중복 조회 방지).
     const wishedIds = await fetchWishedListingIds(supabase, user.id, [
@@ -118,7 +118,7 @@ export default async function Home() {
   //   비로그인은 신뢰속성 3필드가 select에서 아예 빠지고(anon 화이트리스트, #134 참조 — 이 스토리가
   //   마이그레이션 0021로 view_count 읽기 권한만 추가로 열었다), 찜 오버레이는 로그인 시에만 조회하므로
   //   여기선 항상 빈 Set이다.
-  const { popular, recent } = await fetchPopularAndRecentListings(supabase, null);
+  const { popular, recent } = await fetchPopularAndRecentListings(supabase);
 
   return (
     <>

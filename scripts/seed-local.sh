@@ -7,6 +7,8 @@
 # 무엇을 하나 (3단계):
 #   1) supabase/seed-local/01_accounts.sql — 운영과 "같은 UUID"로 데모 계정 9개 생성
 #   2) supabase/seed-local/02_data.sql     — supabase/seed-local/data/*.json(운영 스냅샷)을 그대로 적재
+#      2b) 03_trust_demo.sql   — 대표 4건에 신뢰속성 데모값(뱃지 네 상태를 눈으로 보려고)
+#      2c) 04_trust_backfill.sql — 아직 비어 있는 나머지 전부를 채움(2026-08-13, 사용자 승인)
 #      (listings→listing_images→chat_rooms→chat_messages→guide_documents 순, embedding 컬럼은 비움)
 #   3) storage.objects — data/storage_objects.json에 적힌 경로들을 운영 공개 버킷에서 내려받아
 #      로컬 버킷에 올린다(캐시 재사용 가능)
@@ -65,6 +67,13 @@ echo "[seed-local] 2b/3 신뢰속성 데모값(Story 10.2, 멱등 UPDATE) 적용
 psql "$LOCAL_DB_URL" \
   -v ON_ERROR_STOP=1 \
   -f "$SEED_LOCAL_DIR/03_trust_demo.sql"
+
+# 03이 대표 4건에만 값을 심는 반면, 04는 **아직 비어 있는 나머지 전부**를 채운다(2026-08-13 사용자
+# 승인). 03 다음에 와야 한다 — 04는 `is null`인 행만 건드리므로, 03이 먼저 심은 대표 4건은 그대로 남는다.
+echo "[seed-local] 2c/3 신뢰속성 잔여 backfill(멱등 UPDATE) 적용 중..."
+psql "$LOCAL_DB_URL" \
+  -v ON_ERROR_STOP=1 \
+  -f "$SEED_LOCAL_DIR/04_trust_backfill.sql"
 
 echo "[seed-local] 3/3 사진 파일 복사 중 (운영 공개 버킷 → 로컬 버킷)..."
 

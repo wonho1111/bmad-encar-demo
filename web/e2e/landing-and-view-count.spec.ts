@@ -135,6 +135,50 @@ test.describe('Epic 11 core — 랜딩·view_count', () => {
     expect(intersection, `랜딩에 sold 매물이 섞여 있음: ${JSON.stringify(intersection)}`).toEqual([]);
   });
 
+  // ✎ 2026-08-13 — 신뢰속성 3컬럼을 비로그인에게도 연 뒤(0037 GRANT) 생긴 계약을 고정한다.
+  //   두 가지가 **함께** 성립해야 한다:
+  //     ⓐ 비로그인이 그 컬럼으로 **필터**해도 목록이 죽지 않는다. Postgres는 WHERE에 쓰인 컬럼에도
+  //        SELECT 권한을 요구해서, GRANT가 빠지면 컬럼 하나가 막히는 게 아니라 **조회 전체가
+  //        42501로 실패**한다(0011 주석이 기록한 함정 그대로). 그러면 화면엔 "매물이 없습니다"가
+  //        떠서 **필터가 잘 동작해 0건인 것처럼 보인다** — 조용히 틀리는 모양이라 검사로 막는다.
+  //     ⓑ 결과가 실제로 걸러진다(전체보다 적고 0건은 아니다). ⓐ만 보면 필터를 통째로 지워도 통과한다.
+  //   이 검사는 2026-08-13에 지운 단위테스트(normalizeAnonTrustColumns — anon이 그 컬럼을 못 읽던
+  //   시절의 정규화 함수)를 대체한다. 그 함수는 GRANT가 열리며 할 일이 없어졌다.
+  test('A6b [desktop] 비로그인이 신뢰속성으로 필터해도 42501 없이 걸러진다 (0037 GRANT)', async ({
+    page,
+  }) => {
+    const badResponses: string[] = [];
+    page.on('response', (res) => {
+      if (res.url().includes('127.0.0.1:55321') && res.status() >= 400) {
+        badResponses.push(`${res.status()} ${res.url()}`);
+      }
+    });
+
+    const totalOf = async () => {
+      const text = await page.getByText(/\d+건의 매물/).first().innerText();
+      const n = Number(text.match(/(\d+)건의 매물/)?.[1]);
+      expect(Number.isInteger(n), `총 건수 문구를 못 읽었다(받은 값: "${text}")`).toBe(true);
+      return n;
+    };
+
+    await page.goto('/search');
+    await page.waitForLoadState('networkidle');
+    const total = await totalOf();
+    expect(total, '전체 매물이 1건 이상이어야 비교가 의미 있음').toBeGreaterThan(0);
+
+    await page.goto('/search?accident_status=%EB%AC%B4%EC%82%AC%EA%B3%A0&single_owner=1');
+    await page.waitForLoadState('networkidle');
+
+    expect(
+      badResponses,
+      '비로그인 신뢰속성 필터에서 4xx/5xx 응답이 있었음 — 0037 GRANT가 빠지면 42501로 목록 전체가 죽고 화면엔 "매물이 없습니다"만 뜬다',
+    ).toEqual([]);
+
+    const filtered = await totalOf();
+    expect(filtered, '신뢰속성 필터 결과가 0건이면 안 됨(시드에 무사고+1인소유 매물이 있다)').toBeGreaterThan(0);
+    expect(filtered, '신뢰속성 필터가 실제로 걸러야 함(전체보다 적어야 함)').toBeLessThan(total);
+  });
+
   test('A6 [desktop] 비로그인 랜딩이 42501 없이 인기 단을 렌더한다 (11-4 AC5, 대장 #134 회귀)', async ({
     page,
   }) => {

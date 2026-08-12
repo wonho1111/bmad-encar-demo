@@ -108,12 +108,11 @@ export default async function ListingDetailPage({
   // 단일 매물 조회 — 구매자 관점(판매중만) 시작점 buyerListingsQuery(FR11 단일 출처) + id 일치.
   //   maybeSingle(): 0건이면 null(존재하지 않음·sold·접근 권한 없음). edit 페이지와 동일 패턴.
   //
-  // ⚠️ 신뢰속성 3컬럼은 **로그인 분기**로만 조회한다(search/page.tsx가 세운 패턴 그대로, 대장 #109).
-  //   anon은 `0011_listings_anon_select.sql`이 컬럼 단위로 명시한 목록만 읽을 수 있고 그 3컬럼은
-  //   목록에 없다 — anon 키로 요청하면 컬럼 하나만 막히는 게 아니라 `42501`로 select 전체가
-  //   실패한다(실측, conventions.md §4.1). anon에도 열려면 새 GRANT 마이그레이션 + 사용자 승인이
-  //   필요한데(§9.3 (b)) 이 스토리 범위가 아니므로 넓히지 않는다.
-  const trustColumns = user ? ', accident_status, is_single_owner, is_non_smoker' : '';
+  // ✎ 2026-08-13 — 신뢰속성 3컬럼을 **로그인 여부와 무관하게** 조회한다. 예전엔 anon에게 그 컬럼
+  //   SELECT 권한이 없어(0011 화이트리스트 밖 — 요청하면 컬럼 하나가 아니라 select 전체가 42501로
+  //   실패한다) 로그인 분기로만 물었고, 그래서 비로그인 방문자에겐 이 화면의 신뢰 뱃지가 한 번도
+  //   안 떴다. `0037_listings_anon_trust_columns.sql`이 그 GRANT를 열었다(사용자 승인).
+  const trustColumns = ', accident_status, is_single_owner, is_non_smoker';
   const { data: listingRow, error } = await buyerListingsQuery(
     supabase,
     `id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status${trustColumns}`,
@@ -126,13 +125,9 @@ export default async function ListingDetailPage({
     console.error('[listings/detail] 매물 상세 조회 실패:', error);
   }
 
-  // anon 경로는 위 select에서 신뢰속성 3컬럼을 아예 안 물었으므로 그 값이 `undefined`(키 자체
-  // 없음)로 온다. 계약(conventions §4)은 "값이 없으면 null"이지 "필드가 없음"이 아니다 — 여기서
-  // 명시적으로 null을 채워 타입 선언(`ListingDetail`)과 런타임 모양을 맞춘다(search/page.tsx와 동일 처리).
-  const listing =
-    listingRow && !user
-      ? { ...listingRow, accident_status: null, is_single_owner: null, is_non_smoker: null }
-      : listingRow;
+  // (예전엔 anon 경로가 그 3컬럼을 안 물어서 `undefined`로 왔고, 계약(§4 "값이 없으면 null")에
+  //  맞추려고 여기서 null을 채워 넣었다. 이제 로그인 여부와 무관하게 조회하므로 그 정규화가 필요 없다.)
+  const listing = listingRow;
 
   const header = (
     <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath={`/listings/${id}`} />
@@ -345,7 +340,7 @@ export default async function ListingDetailPage({
           <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">
             {/* ① 신뢰정보 — TrustInfoSection이 뱃지·긴 면책을 한 몸으로 그린다(Story 10.2, B9).
                 신뢰속성이 전부 없으면(anon 포함) null을 반환해 섹션 자체가 안 그려진다(AC1). */}
-            <TrustInfoSection listing={listing} authed={!!user} />
+            <TrustInfoSection listing={listing} />
 
             {/* ② 차량정보 */}
             <VehicleInfoSection listing={listing} />

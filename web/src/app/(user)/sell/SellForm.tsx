@@ -702,14 +702,17 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         </label>
 
         {/* 두 체크박스는 **체크했을 때만** 신고가 된다. 미체크는 "아니다"가 아니라 "말하지 않음"으로
-            저장되므로(payload의 null 처리), 모르는 것을 부정으로 단정하지 않는다. */}
+            저장되므로(payload의 null 처리), 모르는 것을 부정으로 단정하지 않는다.
+            ✎ 2026-08-13 사용자 지적 — 라벨 뒤 괄호 설명("(등록 이후 소유주 변경 없음)" 등)은 뺐다.
+            그 뜻풀이는 구매자가 보는 상세 "신뢰정보" 카드에 이미 한 줄씩 붙어 있고(TrustAttributes의
+            description), 여기선 판매자가 고르기만 하면 되는 자리라 줄만 길어졌다. */}
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
             checked={form.is_single_owner}
             onChange={(e) => update('is_single_owner', e.target.checked)}
           />
-          <span className={FIELD_LABEL_CLASS}>1인소유 (등록 이후 소유주 변경 없음)</span>
+          <span className={FIELD_LABEL_CLASS}>1인소유</span>
         </label>
         <label className="flex items-center gap-2">
           <input
@@ -717,7 +720,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
             checked={form.is_non_smoker}
             onChange={(e) => update('is_non_smoker', e.target.checked)}
           />
-          <span className={FIELD_LABEL_CLASS}>비흡연 (차량 내 흡연 이력 없음)</span>
+          <span className={FIELD_LABEL_CLASS}>비흡연</span>
         </label>
 
         <p className="text-caption text-ink-muted">

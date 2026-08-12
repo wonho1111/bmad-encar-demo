@@ -181,31 +181,12 @@ export async function fetchListingGalleryUrls(
 // 미리보기의 PREVIEW_COUNT와 동일값 — 새 상수를 도입하는 게 아니라 그 값을 그대로 옮겨온다.
 const POPULAR_RECENT_GRID_COUNT = 4;
 
-// 인기·최신 두 단이 공유하는 select 컬럼. 신뢰속성 3필드(accident_status·is_single_owner·
-// is_non_smoker)는 로그인 사용자에게만 묻는다 — anon은 0011 화이트리스트에 그 컬럼이 없어
-// select 자체가 42501로 죽는다(SearchPage의 trustColumns와 동일 이유, 동일 패턴).
-function popularRecentColumns(authed: boolean): string {
-  const trustColumns = authed ? ', accident_status, is_single_owner, is_non_smoker' : '';
-  return `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`;
-}
-
-/**
- * anon(비로그인) 조회 결과에서 신뢰속성 3필드를 `null`로 명시 정규화한다(순수 함수 — DB 없이 테스트 가능).
- *
- * anon 경로는 위 `popularRecentColumns`가 애초에 그 3컬럼을 select하지 않으므로 값이 `undefined`
- * (키 자체가 없음)로 온다. 계약(ListingCardData)은 "값이 없으면 null"이지 "필드가 없음"이 아니다 —
- * `TrustAttributes`가 `undefined`와 `null`을 다르게 다루면 anon 렌더만 조용히 갈릴 수 있어, 여기서
- * 런타임 모양을 선언한 타입과 맞춘다. `SearchPage`의 `normalizedRows`와 같은 패턴(로직 이원화 금지 —
- * 그쪽은 페이지 안에 인라인으로 있고, 이 함수는 그 계약을 재사용 가능한 순수 함수로 뽑은 것).
- */
-export function normalizeAnonTrustColumns(rows: ListingCardData[], authed: boolean): ListingCardData[] {
-  if (authed) return rows;
-  return rows.map((r) => ({
-    ...r,
-    accident_status: null,
-    is_single_owner: null,
-    is_non_smoker: null,
-  }));
+// 인기·최신 두 단이 공유하는 select 컬럼.
+// ✎ 2026-08-13 — 신뢰속성 3필드를 **로그인 여부와 무관하게** 묻는다. 예전엔 anon에게 그 컬럼
+//   SELECT 권한이 없어(0011 화이트리스트 밖) 빼고 물었고, 그래서 비로그인 랜딩엔 신뢰 뱃지가
+//   한 번도 안 떴다. `0037_listings_anon_trust_columns.sql`이 GRANT를 열었다(사용자 승인).
+function popularRecentColumns(): string {
+  return 'id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options, accident_status, is_single_owner, is_non_smoker';
 }
 
 type CoverImaged<T> = T & { image_url: string | null; image_count: number };
@@ -223,7 +204,6 @@ export type PopularAndRecentListings = {
 
 async function fetchSection(
   supabase: SupabaseClient,
-  authed: boolean,
   orderColumn: 'view_count' | 'created_at',
   label: string,
 ): Promise<PopularRecentSection> {
@@ -232,7 +212,7 @@ async function fetchSection(
   // 통째로 터져 히어로·차종칩·본인정보까지 포함한 Home() 전체가 죽는다 — "이 단만 실패, 나머지는
   // 정상 렌더"라는 intent-contract Always 규칙을 이 함수 하나가 어길 수 있었다(코드리뷰 patch).
   try {
-    const { data, error } = await buyerListingsQuery(supabase, popularRecentColumns(authed))
+    const { data, error } = await buyerListingsQuery(supabase, popularRecentColumns())
       .order(orderColumn, { ascending: false })
       .order('id', { ascending: false })
       .limit(POPULAR_RECENT_GRID_COUNT)
@@ -243,8 +223,7 @@ async function fetchSection(
       return { error: true };
     }
 
-    const normalized = normalizeAnonTrustColumns(data, authed);
-    const listings = await attachCoverImages(supabase, normalized);
+    const listings = await attachCoverImages(supabase, data);
     return { listings };
   } catch (err) {
     console.error(`[listings] ${label} 매물 그리드 조회 실패(예외):`, err);
@@ -262,12 +241,10 @@ async function fetchSection(
  */
 export async function fetchPopularAndRecentListings(
   supabase: SupabaseClient,
-  user: { id: string } | null,
 ): Promise<PopularAndRecentListings> {
-  const authed = !!user;
   const [popular, recent] = await Promise.all([
-    fetchSection(supabase, authed, 'view_count', '인기'),
-    fetchSection(supabase, authed, 'created_at', '최신'),
+    fetchSection(supabase, 'view_count', '인기'),
+    fetchSection(supabase, 'created_at', '최신'),
   ]);
   return { popular, recent };
 }
