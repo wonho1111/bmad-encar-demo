@@ -11,6 +11,7 @@ import { topOptions } from '@/lib/options';
 import ListingCardImage from './ListingCardImage';
 import TrustAttributes from './TrustAttributes';
 import WishButton from './WishButton';
+import { formatPrice } from '@/lib/price';
 
 // 카드에 노출할 옵션 칩 최대 개수(conventions §11.2).
 // **4→3 (사용자 결정 2026-07-29).** 4개는 카드 폭(가장 좁은 데스크톱 4열에서 내용 폭 ≈328px)에
@@ -96,8 +97,7 @@ export default function ListingCard({
 
           {/* ④ 가격 — 카드에서 **시각적으로 가장 큰 요소**(26px/800 vs 차량명 16px/600). */}
           <p className="text-price font-extrabold text-price-emphasis">
-            {listing.price.toLocaleString('ko-KR')}
-            {UNITS.price}
+            {formatPrice(listing.price)}
           </p>
 
           {/* ⑤ 옵션 칩 — 우선순위 상위 3개(희소 우선, 보편은 topOptions의 자연 fallback로

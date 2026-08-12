@@ -38,6 +38,16 @@ const INITIAL_PRICE = 12_345_000;
 const UPDATED_PRICE = 13_999_000;
 const RESTORED_PRICE = 14_500_000; // E6 — 되돌린 뒤 재수정 시 쓰는 값(UPDATED_PRICE와 구분해 실제로 바뀌었는지 명확히 본다).
 
+// 상세 화면에 **실제로 찍히는 글자**(2026-08-13 가격 표기 만원 전환).
+// ⚠️ 여기서 formatPrice()를 부르지 않고 **문자열을 손으로 적는다** — 기대값을 피검사 대상에서
+//    다시 계산하면 그 함수가 어떻게 바뀌든 항상 통과한다(자기일관 단언). 값이 바뀌면 이 줄이
+//    빨개져야 한다.
+//    위 세 값이 우연히 두 분기를 다 밟는다: 12,345,000·13,999,000은 만원 단위로 **안** 떨어져
+//    원 표기 폴백이 걸리고, 14,500,000은 떨어져 만원 표기가 된다 — 한 스펙에서 양쪽이 다 시험된다.
+const INITIAL_PRICE_TEXT = '12,345,000원';
+const UPDATED_PRICE_TEXT = '13,999,000원';
+const RESTORED_PRICE_TEXT = '1,450만원';
+
 // ── 병렬 간섭 분석(정식 config는 fullyParallel: true — 이 파일이 다른 스펙과 동시에 돈다) ──
 // region='서울'·현대·준중형차 매물 1건이 실제 DB에 떠 있고, 그 status는 **두 번** on_sale 구간을
 // 갖는다: (a) E1 등록 ~ E5 구매완료 전, (b) E6이 되돌린 뒤 ~ E6 마지막 재구매완료 전
@@ -153,7 +163,7 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     await cardLink.click();
 
     await page.waitForURL(new RegExp(`/listings/${listingId}$`));
-    await expect(page.getByTestId('detail-price')).toHaveText(`${INITIAL_PRICE.toLocaleString('ko-KR')}원`);
+    await expect(page.getByTestId('detail-price')).toHaveText(INITIAL_PRICE_TEXT);
   });
 
   test('E3 [desktop] 본인 매물 가격 수정이 반영된다', async ({ page }) => {
@@ -171,7 +181,7 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     await page.waitForURL('**/sell');
 
     await page.goto(`/listings/${listingId}`);
-    await expect(page.getByTestId('detail-price')).toHaveText(`${UPDATED_PRICE.toLocaleString('ko-KR')}원`);
+    await expect(page.getByTestId('detail-price')).toHaveText(UPDATED_PRICE_TEXT);
 
     const dbPrice = runPsql(`select price from listings where id='${listingId}';`);
     expect(dbPrice, `DB의 price 값(매물 ${listingId})`).toBe(String(UPDATED_PRICE));
@@ -311,7 +321,7 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     // 코드리뷰 patch — E3와 동일하게 DB뿐 아니라 렌더된 상세 페이지도 확인한다(되돌리기→재수정
     //   경로 전용 캐시/렌더 결함은 E3의 일반 수정 경로로는 못 잡는다).
     await page.goto(`/listings/${listingId}`);
-    await expect(page.getByTestId('detail-price')).toHaveText(`${RESTORED_PRICE.toLocaleString('ko-KR')}원`);
+    await expect(page.getByTestId('detail-price')).toHaveText(RESTORED_PRICE_TEXT);
 
     const restoredPrice = runPsql(`select price from listings where id='${listingId}';`);
     expect(restoredPrice, `되돌리기 후 재수정된 DB price 값(매물 ${listingId})`).toBe(String(RESTORED_PRICE));

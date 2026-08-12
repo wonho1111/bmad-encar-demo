@@ -13,9 +13,10 @@
 //      · 정지/수정 같은 부가 액션은 관리 요구에 없어 넣지 않는다(범위 컷).
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS, type ListingStatus } from '@/lib/constants';
+import { LISTING_STATUS, type ListingStatus } from '@/lib/constants';
 import Badge from '@/components/ui/Badge';
 import ListingAdminActions from './ListingAdminActions';
+import { formatPrice } from '@/lib/price';
 
 // 목록에 보여줄 최소 필드(요약 표시용).
 type AdminListing = {
@@ -77,8 +78,7 @@ export default async function AdminListingsPage() {
                     className="min-w-0 flex-1 truncate hover:underline"
                   >
                     [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
-                    {l.price.toLocaleString('ko-KR')}
-                    {UNITS.price}
+                    {formatPrice(l.price)}
                   </Link>
                   <div className="flex items-center gap-3">
                     {/* 상태 배지: 판매중=active(petrol tint) / 판매완료=neutral(회색). sold도 그대로 보이는 게 핵심(FR11 예외). */}

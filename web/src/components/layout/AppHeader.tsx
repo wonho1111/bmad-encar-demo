@@ -39,16 +39,23 @@ export default async function AppHeader({
     //     들어오므로, 로그인 링크 분기는 애초에 도달 불가능한 코드였을 것이다.
     //   · 그래서 currentPath는 이 분기에서 쓰지 않는다(로그인 링크의 redirectedFrom이 없으니
     //     쓸 자리가 없다) — prop으로는 받되 이 분기 안에서는 미사용이다.
+    // ✎ 2026-08-13 사용자 지적 #8("홈 화면 빼고 퀄리티가 떨어진다") — 이 헤더만 아직 디자인 토큰
+    //   밖이었다(DW-695 잔존 zinc). 관리자 화면에 들어서는 순간 로고가 "중고차 직거래"라는 맨
+    //   텍스트로 바뀌고 테두리·글자색도 다른 팔레트라, 같은 서비스가 아닌 것처럼 보였다.
+    //   **구성은 그대로 두고**(로고 링크·역할 라벨·이메일·로그아웃 4개) 표면만 소비자 헤더와
+    //   같은 토큰(border-hairline·surface-raised·ink-*)으로 맞추고, 텍스트 자리에 공용 Logo를 넣는다.
     return (
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-        <div className="flex items-baseline gap-3 text-sm">
-          <Link href="/" className="font-semibold hover:underline">
-            중고차 직거래
-          </Link>
-          {roleLabel && <span className="font-medium text-zinc-500">{roleLabel}</span>}
-          {email && <span className="text-zinc-500">{email}</span>}
+      <header className="border-b border-border-hairline bg-surface-raised">
+        <div className="flex items-center justify-between gap-4 px-6 py-3">
+          <div className="flex min-w-0 items-center gap-3 text-sm">
+            <Link href="/" aria-label="홈으로 이동" className="shrink-0">
+              <Logo size="sm" />
+            </Link>
+            {roleLabel && <span className="shrink-0 font-medium text-ink-secondary">{roleLabel}</span>}
+            {email && <span className="truncate text-ink-muted">{email}</span>}
+          </div>
+          <LogoutButton />
         </div>
-        <LogoutButton />
       </header>
     );
   }

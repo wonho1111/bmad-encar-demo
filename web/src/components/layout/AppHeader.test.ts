@@ -189,12 +189,16 @@ describe('AppHeader — admin/consumer 분기', () => {
     expect(h.rpcCalls).toEqual(['chat_unread_count']);
   });
 
-  it('admin: SiteNav도 Logo도 없고, roleLabel·email 문자열은 들어 있고, LogoutButton은 반드시 있다 — chat_unread_count()도 호출하지 않는다', async () => {
+  // ✎ 2026-08-13(#8) — admin 헤더가 맨 텍스트 "중고차 직거래" 대신 공용 <Logo>를 쓰게 바뀌었다
+  //   (그 화면만 디자인 토큰 밖이라 다른 서비스처럼 보였다). **Logo는 이제 있어야 한다** — 이
+  //   테스트가 원래 막던 것은 "admin에 소비자 내비(SiteNav)가 새어 들어오는 것"이고, 그건 그대로
+  //   막는다. 로고는 내비가 아니라 홈으로 가는 표식이라 그 금지선과 무관하다.
+  it('admin: SiteNav는 없고 Logo·roleLabel·email·LogoutButton은 있다 — chat_unread_count()도 호출하지 않는다', async () => {
     const tree = await AppHeader({ variant: 'admin', email: 'a@b.c', roleLabel: '관리자' });
     const nodes = collectNodes(tree);
 
     expect(nodes.some((n) => n.type === SiteNav)).toBe(false);
-    expect(nodes.some((n) => n.type === Logo)).toBe(false);
+    expect(nodes.some((n) => n.type === Logo)).toBe(true);
     // 3차 리뷰 지적 P2 — admin은 requireAdmin()을 통과해야만 도달하므로 이 버튼이 로그아웃의
     // 유일한 수단이다. 이게 빠지면 관리자가 관리자 콘솔에서 못 나가는데 lint/tsc/vitest는 몰랐다.
     expect(nodes.some((n) => n.type === LogoutButton)).toBe(true);

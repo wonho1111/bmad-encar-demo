@@ -10,8 +10,8 @@
 //   · force-dynamic — 조회 전용이지만 매 진입 시 최신 대화를 반영해야 하므로 캐시하지 않는다.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { UNITS } from '@/lib/constants';
 import { buttonClasses } from '@/components/ui/Button';
+import { formatPrice } from '@/lib/price';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,7 +109,7 @@ export default async function AdminChatRoomPage({
   const l = room.listings;
   // 매물 임베드 null = 매물이 삭제된 방. 상세 대신 플레이스홀더.
   const summary = l
-    ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
+    ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${formatPrice(l.price)}`
     : '삭제되었거나 조회할 수 없는 매물';
 
   // 보낸 사람 라벨 — sender_id를 방의 buyer/seller와 대조해 "구매자"/"판매자"로, 그 외는 "기타".

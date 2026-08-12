@@ -68,7 +68,9 @@ describe('chatListingSummary', () => {
   it('listings 임베드가 있으면 제조사·모델·연식·가격을 조합한 문구를 만든다', () => {
     expect(
       chatListingSummary({ manufacturer: '현대', model: '싼타페', year: 2020, price: 26700000 }),
-    ).toBe('[현대] 싼타페 · 2020년 · 26,700,000원');
+      // ✎ 2026-08-13(가격 표기 만원 전환) — 표시는 formatPrice()가 만든다(26,700,000원 → 2,670만원).
+      //   DB·입력은 여전히 원이고 바뀐 건 화면 글자뿐이다(web/src/lib/price.ts).
+    ).toBe('[현대] 싼타페 · 2020년 · 2,670만원');
   });
 
   it('임베드가 null이면(sold 트리거·정지 판매자 트리거 둘 다) 동일한 폴백 문구를 낸다', () => {

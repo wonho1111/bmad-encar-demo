@@ -32,6 +32,11 @@ type TrustBadge = {
   key: string;
   label: string;
   tone: 'green' | 'neutral';
+  // 'detail' 자리(상세 아래 "신뢰정보" 카드)에서 라벨 밑에 붙는 한 줄 설명 — 목업 detail-1.html의
+  // `.trust-row-item .t-desc`. **전부 "판매자가 신고했다"는 형태로 쓴다**(CM-C: 우리가 검증했다고
+  // 오도 금지). 이 문장이 있어야 그 카드가 요약 컬럼의 같은 뱃지를 그냥 반복하는 게 아니게 된다
+  // (2026-08-13 사용자 지적 — 모바일에선 요약이 그 카드 바로 위로 내려와 중복이 눈에 띈다).
+  description: string;
 };
 
 export type TrustDisplay = {
@@ -64,17 +69,40 @@ function getTrustBadges(listing: TrustAttributesInput): TrustBadge[] {
   if (typeof accidentStatus === 'string' && VALID_ACCIDENT_STATUSES.has(accidentStatus)) {
     badges.push(
       accidentStatus === '무사고'
-        ? { key: 'accident', label: '무사고', tone: 'green' }
-        : { key: 'accident', label: accidentStatus, tone: 'neutral' },
+        ? {
+            key: 'accident',
+            label: '무사고',
+            tone: 'green',
+            description: '성능점검 기준으로 사고 이력이 없다고 판매자가 신고했습니다.',
+          }
+        : {
+            key: 'accident',
+            label: accidentStatus,
+            tone: 'neutral',
+            description:
+              accidentStatus === '단순교환'
+                ? '사고는 없고 단순 교환 이력만 있다고 판매자가 신고했습니다.'
+                : '사고 이력이 있다고 판매자가 신고했습니다.',
+          },
     );
   }
 
   // is_single_owner/is_non_smoker: true일 때만 칩. null·false는 "아님"으로 그리지 않는다(미표시).
   if (listing.is_single_owner === true) {
-    badges.push({ key: 'single-owner', label: '1인소유', tone: 'green' });
+    badges.push({
+      key: 'single-owner',
+      label: '1인소유',
+      tone: 'green',
+      description: '등록 이후 소유주 변경 없이 한 명이 계속 소유했다고 신고했습니다.',
+    });
   }
   if (listing.is_non_smoker === true) {
-    badges.push({ key: 'non-smoker', label: '비흡연', tone: 'green' });
+    badges.push({
+      key: 'non-smoker',
+      label: '비흡연',
+      tone: 'green',
+      description: '차량 내 흡연 이력이 없다고 판매자가 신고했습니다.',
+    });
   }
 
   return badges;
@@ -166,11 +194,36 @@ export default function TrustAttributes({
     );
   }
 
-  // 상세('detail')와 요약('summary'): 칩 행 아래 면책 문구를 별도 줄로. 문구 길이만 다르다(위 상수).
+  if (variant === 'summary') {
+    // 요약 컬럼: 칩 한 줄 + 짧은 면책 한 줄(목업 `.trust-pills-row` + `.trust-disclaimer-sm`).
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">{badges}</div>
+        <p className="text-meta text-ink-muted">{display.disclaimer}</p>
+      </div>
+    );
+  }
+
+  // 'detail' — 상세 아래 "신뢰정보" 카드: 속성마다 **라벨 + 무슨 뜻인지 한 줄**을 세로로 쌓고
+  // 그 아래 긴 면책(목업 `.trust-row-item` + `.trust-disclaimer-full`).
+  // ✎ 2026-08-13 — 예전엔 여기도 요약과 똑같이 칩 한 줄이었다. 그러면 모바일에서 요약 카드가 이
+  //   카드 바로 위로 내려오면서 **같은 칩을 두 번** 보게 된다(사용자 지적). 설명 줄이 붙으면서
+  //   이 카드는 "그 뱃지가 정확히 무슨 뜻인가"를 답하는 다른 내용이 된다.
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5">{badges}</div>
-      <p className="text-meta text-ink-muted">{display.disclaimer}</p>
+    <div className="flex flex-col">
+      {display.badges.map((badge) => (
+        <div
+          key={badge.key}
+          className="flex items-start gap-3 border-b border-border-hairline py-3 first:pt-0 last:border-0 last:pb-0"
+        >
+          <span className={badgeClassName(badge.tone, variant)}>
+            {badge.tone === 'green' && <span aria-hidden="true">✓</span>}
+            {badge.label}
+          </span>
+          <p className="min-w-0 flex-1 text-meta text-ink-secondary">{badge.description}</p>
+        </div>
+      ))}
+      <p className="border-t border-border-hairline pt-3 text-meta text-ink-muted">{display.disclaimer}</p>
     </div>
   );
 }

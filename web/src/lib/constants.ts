@@ -41,10 +41,19 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   [USER_ROLE.USER]: '회원',
 };
 
-/** 수치 필드 저장 단위 (표시·검색 전 구간 동일, docs/conventions.md §3). */
+/**
+ * 수치 필드 **저장** 단위 (DB·입력 폼·검색 쿼리 전 구간 동일, docs/conventions.md §3).
+ *
+ * ⚠️ `price`는 저장 단위(원)다. **화면에 가격을 찍을 땐 이 값을 직접 붙이지 말고
+ *    `formatPrice()`(@/lib/price)를 쓴다** — 2026-08-13 사용자 결정으로 표시는 만원 표기가 됐고,
+ *    그 규칙이 여러 화면에 흩어지지 않게 함수 하나에 모아 뒀다. 여기 `price`가 아직 남아 있는 건
+ *    입력 폼 라벨("가격 (원)")·검색 가격범위처럼 **정말 원 단위인 자리** 때문이다.
+ */
 export const UNITS = {
   mileage: 'km',
   price: '원',
+  /** 가격 표시 단위(만원) — formatPrice()만 쓴다. */
+  priceMan: '만원',
   displacement: 'cc',
 } as const;
 

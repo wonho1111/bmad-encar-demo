@@ -15,7 +15,7 @@
 //   3) 거의 동시에 두 번 눌려 UNIQUE(23505) 충돌이 나면, 그새 만들어진 방을 다시 조회해 그 id를 돌려준다.
 //   4) 본인 매물에 문의(buyer=seller)면 트리거 후 CHECK(buyer_id<>seller_id) 위반(23514) → 한국어 거부.
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { UNITS } from './constants';
+import { formatPrice } from './price';
 
 // 방을 연 결과 — 성공이면 roomId, 실패면 사용자에게 보여줄 한국어 메시지.
 //   (원본 에러는 호출부가 console.error로만 남기고, 사용자에겐 이 한국어만 보여준다 — ListingActions와 동일 규칙.)
@@ -44,7 +44,7 @@ export type ChatListingSummarySource = {
  */
 export function chatListingSummary(l: ChatListingSummarySource): string {
   return l
-    ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
+    ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${formatPrice(l.price)}`
     : '판매 완료되었거나 조회할 수 없는 매물';
 }
 

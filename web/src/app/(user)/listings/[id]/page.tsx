@@ -31,6 +31,7 @@ import ErrorState from '@/components/ui/ErrorState';
 import { buttonClasses } from '@/components/ui/Button';
 import InquiryCta, { type InquiryCtaMode } from './InquiryCta';
 import SellerInquiryButton from './SellerInquiryButton';
+import { formatPrice } from '@/lib/price';
 import {
   VehicleInfoSection,
   OptionsSection,
@@ -224,7 +225,7 @@ export default async function ListingDetailPage({
   const wished = user ? (await fetchWishedListingIds(supabase, user.id, [listing.id])).has(listing.id) : false;
 
   const title = `[${listing.manufacturer}] ${listing.model}`;
-  const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
+  const priceText = formatPrice(listing.price);
   const inquiryMode = computeInquiryMode(listing, user);
   const loginHref = `/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`;
 
@@ -289,10 +290,10 @@ export default async function ListingDetailPage({
                 <h1 className="text-section font-bold text-ink-primary break-keep">
                   {title} · {listing.year}년
                 </h1>
-                <p className="truncate whitespace-nowrap text-meta font-medium text-ink-muted">
-                  {listing.mileage.toLocaleString('ko-KR')}
-                  {UNITS.mileage} · {listing.region}
-                </p>
+                {/* ✎ 2026-08-13 사용자 지적(중복 점검) — 여기 있던 "주행거리 · 지역" 요약 줄을 뺐다.
+                    바로 아래 주요제원 6칸에 같은 두 값이 있고, 모바일에선 요약 카드가 세로로
+                    쌓이면서 같은 값을 두 줄 간격으로 두 번 읽게 된다. 목업 `.summary-head`에도
+                    제목 아래 별도 요약 줄은 없다(연식만 제목에 붙어 있다). */}
               </div>
               {/* 찜(♡) — 상세에도 하트가 있다(Story 10.5 누락 보완, 2026-07-29).
                   ⚠️ **InquiryCta 안이 아니라 여기(요약 카드 제목 줄)에 둔다.** InquiryCta는 요약 카드

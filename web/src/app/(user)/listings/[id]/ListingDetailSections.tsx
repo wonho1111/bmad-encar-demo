@@ -84,7 +84,6 @@ export function TrustInfoSection({ listing }: { listing: ListingDetailSectionsDa
 /** ② 차량정보 — FR5 표 13행(+판매자 표시명) + 설명. 필드를 새로 만들지도, 빼지도 않는다(AC5). */
 export function VehicleInfoSection({ listing }: { listing: ListingDetailSectionsData }) {
   // 단위·표시 규칙(conventions §3): 천단위 콤마 + 단위.
-  const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
   const mileageText = `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`;
   const displacementText = `${listing.displacement.toLocaleString('ko-KR')}${UNITS.displacement}`;
 
@@ -99,7 +98,10 @@ export function VehicleInfoSection({ listing }: { listing: ListingDetailSections
         <Field label="모델" value={listing.model} />
         <Field label="차종" value={listing.body_type} />
         <Field label="연식" value={`${listing.year}년`} />
-        <Field label="가격" value={priceText} />
+        {/* ✎ 2026-08-13 사용자 지적(중복 점검) — "가격" 행을 뺐다. 같은 값이 요약 카드의 대표 가격과
+            모바일 하단 고정 바에 이미 있고, 모바일에선 요약 카드가 이 표 바로 위로 내려와 **같은
+            숫자를 연달아 세 번** 보게 된다. 목업 detail-1.html의 `.spec-table`에도 가격 행은 없다
+            (가격은 요약 컬럼의 몫). Story 9.5 AC5("필드를 빼지 않는다")보다 이 지적이 나중이다. */}
         <Field label="주행거리" value={mileageText} />
         <Field label="색상" value={listing.color} />
         <Field label="연료" value={listing.fuel} />

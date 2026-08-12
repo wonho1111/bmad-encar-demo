@@ -15,8 +15,9 @@
 //   ③ 상세 링크 — 각 행을 누르면 관리자 매물 상세(/admin/listings/[id])로 이동한다.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import { LISTING_STATUS } from '@/lib/constants';
 import Badge from '@/components/ui/Badge';
+import { formatPrice } from '@/lib/price';
 
 // 목록에 보여줄 최소 필드(요약 표시용) + updated_at(거래일 근사).
 type SoldListing = {
@@ -79,9 +80,7 @@ export default async function AdminTransactionsPage() {
             <div className="flex items-center justify-between gap-3 rounded-card border border-border-hairline bg-brand-petrol/10 px-4 py-3 text-body">
               <span className="text-ink-secondary">총 거래</span>
               <span className="font-medium">
-                {totalCount.toLocaleString('ko-KR')}건 · 거래액 합계{' '}
-                {totalAmount.toLocaleString('ko-KR')}
-                {UNITS.price}
+                {totalCount.toLocaleString('ko-KR')}건 · 거래액 합계 {formatPrice(totalAmount)}
               </span>
             </div>
 
@@ -99,8 +98,7 @@ export default async function AdminTransactionsPage() {
                   >
                     <span className="truncate font-medium">
                       [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
-                      {l.price.toLocaleString('ko-KR')}
-                      {UNITS.price}
+                      {formatPrice(l.price)}
                     </span>
                     {/* ② 거래일(간이) — updated_at 근사. 날짜만 간결히. */}
                     <span className="text-meta text-ink-muted">

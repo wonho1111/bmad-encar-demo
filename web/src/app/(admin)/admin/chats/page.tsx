@@ -9,8 +9,8 @@
 //      방을 삭제하면 0003의 on delete cascade로 그 방의 메시지(chat_messages)도 함께 제거된다(FR25 "방과 메시지가 제거된다").
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { UNITS } from '@/lib/constants';
 import ChatAdminActions from './ChatAdminActions';
+import { formatPrice } from '@/lib/price';
 
 // 방 1건 + 임베디드 매물 요약(PostgREST 조인). listings는 단일 객체(FK 단방향).
 type AdminChatRoom = {
@@ -79,7 +79,7 @@ export default async function AdminChatsPage() {
               const l = room.listings;
               // 매물 임베드가 null = 매물이 삭제된 방(또는 RLS상 조회 불가). 상세 대신 플레이스홀더.
               const summary = l
-                ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
+                ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${formatPrice(l.price)}`
                 : '삭제되었거나 조회할 수 없는 매물';
               // 당사자 식별 = 표시 이름(이메일 @앞부분, 0008). 없으면 UUID 앞자리로 폴백(예전 방·백필 누락 대비).
               const buyerLabel = room.buyer_name ?? shortId(room.buyer_id);

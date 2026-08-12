@@ -10,6 +10,7 @@
 //   · 제목·상태 배지·"문의하기"·삭제·뒤로가기 등 맥락이 다른 요소도 각 페이지가 따로 그린다.
 //   · 여기는 "공통 본문(기본 정보·옵션·설명)"만 담당한다.
 import { UNITS } from '@/lib/constants';
+import { formatPrice } from '@/lib/price';
 
 // 표시에 필요한 매물 필드(FR5 15필드 중 본문에 쓰는 값). seller_id·status 등 페이지별 로직용 필드는 제외.
 export type ListingDetailFieldsData = {
@@ -47,7 +48,7 @@ export default function ListingDetailFields({
   listing: ListingDetailFieldsData;
 }) {
   // 단위·표시 규칙(conventions §3): 천단위 콤마 + 단위.
-  const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
+  const priceText = formatPrice(listing.price);
   const mileageText = `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`;
   const displacementText = `${listing.displacement.toLocaleString('ko-KR')}${UNITS.displacement}`;
   const options = listing.options ?? [];

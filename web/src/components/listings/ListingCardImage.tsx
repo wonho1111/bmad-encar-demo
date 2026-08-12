@@ -16,10 +16,17 @@ export default function ListingCardImage({
   url,
   count,
   alt,
+  variant = 'card',
 }: {
   url?: string | null;
   count?: number | null;
   alt: string;
+  // 'thumb' — /sell "내가 등록한 매물" 행의 작은 썸네일(2026-08-13 #8). 카드와 **같은 실패 처리**를
+  // 쓰되(그게 이 컴포넌트가 존재하는 이유다) 작은 자리에 안 맞는 두 가지만 끈다:
+  //   ① "N장" 배지 — 88px 폭에서는 사진을 거의 덮는다.
+  //   ② 위쪽만 둥근 모서리 — 썸네일은 카드 상단이 아니라 독립 상자라 네 모서리를 다 둥글린다.
+  // 플레이스홀더 문구도 작은 자리에선 아이콘만 남긴다(글자가 안 들어간다).
+  variant?: 'card' | 'thumb';
 }) {
   const [failed, setFailed] = useState(false);
 
@@ -48,7 +55,11 @@ export default function ListingCardImage({
   const photoCount = Math.max(0, count ?? 0);
 
   return (
-    <div className="relative aspect-[5/3] w-full overflow-hidden rounded-t-card bg-placeholder-bg">
+    <div
+      className={`relative aspect-[5/3] w-full overflow-hidden bg-placeholder-bg ${
+        variant === 'thumb' ? 'rounded-chip' : 'rounded-t-card'
+      }`}
+    >
       {showPhoto ? (
         /*
           next/image를 쓴다 (2026-07-29 전환, 대장 DW-541). **여기 적혀 있던 "평범한 <img>를 쓰는
@@ -78,7 +89,7 @@ export default function ListingCardImage({
           src={url as string}
           alt={alt}
           fill
-          sizes="(min-width: 1100px) 264px, (min-width: 640px) 47vw, 100vw"
+          sizes={variant === 'thumb' ? '96px' : '(min-width: 1100px) 264px, (min-width: 640px) 47vw, 100vw'}
           loading="lazy"
           onError={() => setFailed(true)}
           // data-testid: E2E(web/e2e/image-fallback.spec.ts)가 스타일 클래스(object-cover)가 아니라
@@ -103,15 +114,15 @@ export default function ListingCardImage({
             fill="none"
             stroke="currentColor"
             strokeWidth="1.5"
-            className="h-7 w-7"
+            className={variant === 'thumb' ? 'h-5 w-5' : 'h-7 w-7'}
           >
             <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-9Z" />
             <circle cx="12" cy="13" r="3.2" />
           </svg>
-          <span className="text-meta font-medium">사진 준비중</span>
+          {variant === 'card' && <span className="text-meta font-medium">사진 준비중</span>}
         </div>
       )}
-      {photoCount >= 1 && (
+      {variant === 'card' && photoCount >= 1 && (
         /*
           "N장" 배지 — 사진/플레이스홀더 위 우하단. showPhoto 분기 밖에 둔다 — 로드 실패로 사진이
           사라져도(onError) 장수 정보까지 함께 사라지면 안 되기 때문(리뷰에서 지적된 버그).

@@ -137,13 +137,19 @@ test('C3 매물 상세 필수 정보', async ({ page }) => {
   //   색상)이 생겨 같은 라벨이 화면에 2개씩 있다. 그래서 **"차량정보" 섹션 안으로 범위를 좁혀**
   //   찾는다. 페이지 전체에서 찾으면 strict mode 위반으로 죽는데, 그건 "라벨이 사라졌다"가 아니라
   //   "두 군데 있다"는 뜻이라 이 검사가 보려던 것과 다르다.
+  //   그리고 '가격'은 이 목록에서 빠졌다(2026-08-13 중복 정리) — 차량정보 표의 가격 행을 없앴다.
+  //   같은 값이 요약 카드 대표 가격과 모바일 하단 바에 이미 있어서다. 가격이 화면에서 통째로
+  //   사라지는 회귀는 아래 요약 카드 대표 가격(data-testid="detail-price") 단언이 잡는다.
   const vehicleSection = page.locator('section').filter({ hasText: '차량정보' });
-  for (const label of ['가격', '연식', '주행거리', '지역']) {
+  for (const label of ['연식', '주행거리', '지역']) {
     await expect(
       vehicleSection.getByText(label, { exact: true }),
       `상세 화면 "차량정보"에 "${label}" 라벨이 보여야 함`,
     ).toBeVisible();
   }
+
+  // 대표 가격 — 차량정보 표에서 뺀 대신 여기서 본다(위 주석). 값이 아니라 "표시가 있다"만 확인한다.
+  await expect(page.getByTestId('detail-price'), '요약 카드에 대표 가격이 보여야 함').toBeVisible();
 
   // 사진 갤러리 렌더.
   await expect(

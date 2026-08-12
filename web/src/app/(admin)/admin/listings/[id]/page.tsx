@@ -9,13 +9,14 @@
 // 화면 본문(15필드·옵션·설명)은 구매자 상세와 동일하므로 공유 컴포넌트 ListingDetailFields로 그린다.
 //   제목·상태 배지(판매중/판매완료)·삭제·목록 링크처럼 관리자 맥락 요소만 이 페이지가 직접 그린다.
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS, type ListingStatus } from '@/lib/constants';
+import { LISTING_STATUS, type ListingStatus } from '@/lib/constants';
 import ListingDetailFields, {
   type ListingDetailFieldsData,
 } from '@/components/listings/ListingDetailFields';
 import Badge from '@/components/ui/Badge';
 import ListingAdminActions from '../ListingAdminActions';
 import BackButton from './BackButton';
+import { formatPrice } from '@/lib/price';
 
 // 관리자는 매 진입 시 최신 DB 상태를 봐야 한다(다른 관리자가 그새 삭제·판매완료 처리했을 수 있음). 정적화 방지.
 export const dynamic = 'force-dynamic';
@@ -80,7 +81,7 @@ export default async function AdminListingDetailPage({
   }
 
   const isOnSale = listing.status === LISTING_STATUS.ON_SALE;
-  const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
+  const priceText = formatPrice(listing.price);
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">

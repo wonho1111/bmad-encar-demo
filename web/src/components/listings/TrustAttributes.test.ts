@@ -39,7 +39,9 @@ describe('getTrustDisplay — I/O 매트릭스', () => {
   it('무사고 → 초록 뱃지(✓+무사고) + 면책', () => {
     const listing: TrustAttributesInput = { accident_status: '무사고' };
     const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([{ key: 'accident', label: '무사고', tone: 'green' }]);
+    expect(display?.badges).toEqual([
+      { key: 'accident', label: '무사고', tone: 'green', description: expect.any(String) },
+    ]);
     // card variant도 데이터 계층은 면책 문자열을 담아 반환한다(결속 자체는 유지) — 다만 카드
     // 렌더는 이제 이 값을 쓰지 않는다(2026-08-05, 아래 "카드는 면책을 렌더하지 않는다" 참조).
     expect(typeof display?.disclaimer).toBe('string');
@@ -48,25 +50,33 @@ describe('getTrustDisplay — I/O 매트릭스', () => {
   it('단순교환 → 초록이 아닌 중립 상태칩 + 면책', () => {
     const listing: TrustAttributesInput = { accident_status: '단순교환' };
     const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([{ key: 'accident', label: '단순교환', tone: 'neutral' }]);
+    expect(display?.badges).toEqual([
+      { key: 'accident', label: '단순교환', tone: 'neutral', description: expect.any(String) },
+    ]);
   });
 
   it('사고 → 초록이 아닌 중립 상태칩 + 면책', () => {
     const listing: TrustAttributesInput = { accident_status: '사고' };
     const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([{ key: 'accident', label: '사고', tone: 'neutral' }]);
+    expect(display?.badges).toEqual([
+      { key: 'accident', label: '사고', tone: 'neutral', description: expect.any(String) },
+    ]);
   });
 
   it('1인소유=true → 초록 칩', () => {
     const listing: TrustAttributesInput = { is_single_owner: true };
     const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([{ key: 'single-owner', label: '1인소유', tone: 'green' }]);
+    expect(display?.badges).toEqual([
+      { key: 'single-owner', label: '1인소유', tone: 'green', description: expect.any(String) },
+    ]);
   });
 
   it('비흡연=true → 초록 칩', () => {
     const listing: TrustAttributesInput = { is_non_smoker: true };
     const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([{ key: 'non-smoker', label: '비흡연', tone: 'green' }]);
+    expect(display?.badges).toEqual([
+      { key: 'non-smoker', label: '비흡연', tone: 'green', description: expect.any(String) },
+    ]);
   });
 
   it('bool 미상(null) → 그 칩 미표시("아님"으로 단정 안 함)', () => {
@@ -110,11 +120,31 @@ describe('getTrustDisplay — I/O 매트릭스', () => {
     const listing: TrustAttributesInput = { accident_status: '사고', is_non_smoker: true };
     const display = getTrustDisplay(listing, 'detail');
     expect(display?.badges).toEqual([
-      { key: 'accident', label: '사고', tone: 'neutral' },
-      { key: 'non-smoker', label: '비흡연', tone: 'green' },
+      { key: 'accident', label: '사고', tone: 'neutral', description: expect.any(String) },
+      { key: 'non-smoker', label: '비흡연', tone: 'green', description: expect.any(String) },
     ]);
     // 면책은 배지 개수와 무관하게 문자열 하나 — 호출부가 배지마다 반복해 붙이지 않는다.
     expect(typeof display?.disclaimer).toBe('string');
+  });
+
+  // ✎ 2026-08-13 — 뱃지마다 붙는 한 줄 설명(`description`)의 실질 계약. 위 I/O 케이스들은
+  //   `expect.any(String)`으로 **존재**만 보므로, 빈 문자열이나 "차장님이 확인했습니다" 같은
+  //   오도 문구로 바뀌어도 거기선 안 잡힌다. 그 두 가지를 여기서 따로 막는다:
+  //   ① 비어 있지 않다(설명 줄이 있어야 이 카드가 요약 컬럼의 칩 반복이 아니게 된다).
+  //   ② "판매자가 신고/소유했다"는 자기신고 프레임을 유지한다(CM-C — 검증됐다고 오도 금지).
+  it('모든 뱃지 설명은 비어 있지 않고 자기신고 프레임을 유지한다(CM-C)', () => {
+    const listing: TrustAttributesInput = {
+      accident_status: '무사고',
+      is_single_owner: true,
+      is_non_smoker: true,
+    };
+    const badges = getTrustDisplay(listing, 'detail')!.badges;
+    expect(badges).toHaveLength(3);
+    for (const badge of badges) {
+      expect(badge.description.trim(), `${badge.label} 설명이 비어 있음`).not.toBe('');
+      expect(badge.description, `${badge.label} 설명이 자기신고 프레임을 벗어남`).toMatch(/신고|소유/);
+      expect(badge.description, `${badge.label} 설명이 "우리가 검증했다"로 읽힘`).not.toMatch(/차장님이 (확인|검증)/);
+    }
   });
 
   it('detail variant는 상세 전용 문구(UX-DR19)를 그대로 낸다', () => {
