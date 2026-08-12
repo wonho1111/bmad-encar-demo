@@ -24,6 +24,8 @@ import { getOwnStatus, writeRejectionMessage } from '@/lib/auth/status';
 import { optionsChanged, parseOptionsInput, partitionOptions, serializeOptions } from '@/lib/options';
 import Button from '@/components/ui/Button';
 import FocusTrap from '@/components/ui/FocusTrap';
+// 라벨·입력칸 클래스는 /search 필터 폼과 **한 벌을 공유**한다(2026-08-13 사용자 결정).
+import { FIELD_CONTROL_CLASS, FIELD_LABEL_CLASS } from '@/components/ui/formField';
 import OptionPicker from './OptionPicker';
 import PhotoUploader from './PhotoUploader';
 import { type PhotoItem } from './photo-item';
@@ -462,8 +464,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     }
   }
 
-  const inputCls =
-    'rounded border border-border-hairline bg-surface-raised px-3 py-2';
+  // ✎ 2026-08-13 사용자 결정 — `/search` 필터와 **같은 상수**를 쓴다(밀도는 /search 쪽 조밀,
+  //   배경은 흰색). 예전엔 여기만 `px-3 py-2`라 같은 구조의 두 폼이 큼직/조밀로 갈려 있었다.
+  const inputCls = FIELD_CONTROL_CLASS;
 
   return (
     // ✎ 2026-08-13 2차 지적 #4 — `/search`의 필터 폼과 **같은 표면**(카드 테두리 + p-4)을 입힌다.
@@ -478,7 +481,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* 제조사 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">제조사</span>
+          <span className={FIELD_LABEL_CLASS}>제조사</span>
           <select
             value={form.manufacturer}
             onChange={(e) => update('manufacturer', e.target.value)}
@@ -493,7 +496,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 모델 (자유 입력) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">모델</span>
+          <span className={FIELD_LABEL_CLASS}>모델</span>
           <input
             type="text"
             value={form.model}
@@ -505,7 +508,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 차종 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">차종</span>
+          <span className={FIELD_LABEL_CLASS}>차종</span>
           <select
             value={form.body_type}
             onChange={(e) => update('body_type', e.target.value)}
@@ -520,7 +523,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 연식 */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">연식 (년)</span>
+          <span className={FIELD_LABEL_CLASS}>연식 (년)</span>
           <input
             type="number"
             value={form.year}
@@ -534,7 +537,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 가격 (원) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">가격 ({UNITS.price})</span>
+          <span className={FIELD_LABEL_CLASS}>가격 ({UNITS.price})</span>
           <input
             type="number"
             value={form.price}
@@ -547,7 +550,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 주행거리 (km) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">주행거리 ({UNITS.mileage})</span>
+          <span className={FIELD_LABEL_CLASS}>주행거리 ({UNITS.mileage})</span>
           <input
             type="number"
             value={form.mileage}
@@ -560,7 +563,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 색상 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">색상</span>
+          <span className={FIELD_LABEL_CLASS}>색상</span>
           <select
             value={form.color}
             onChange={(e) => update('color', e.target.value)}
@@ -575,7 +578,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 연료 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">연료</span>
+          <span className={FIELD_LABEL_CLASS}>연료</span>
           <select
             value={form.fuel}
             onChange={(e) => update('fuel', e.target.value)}
@@ -590,7 +593,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 변속기 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">변속기</span>
+          <span className={FIELD_LABEL_CLASS}>변속기</span>
           <select
             value={form.transmission}
             onChange={(e) => update('transmission', e.target.value)}
@@ -605,7 +608,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 배기량 (cc) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">배기량 ({UNITS.displacement})</span>
+          <span className={FIELD_LABEL_CLASS}>배기량 ({UNITS.displacement})</span>
           <input
             type="number"
             value={form.displacement}
@@ -618,7 +621,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 인승 */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">인승 (명)</span>
+          <span className={FIELD_LABEL_CLASS}>인승 (명)</span>
           <input
             type="number"
             value={form.seats}
@@ -632,7 +635,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 지역 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">지역</span>
+          <span className={FIELD_LABEL_CLASS}>지역</span>
           <select
             value={form.region}
             onChange={(e) => update('region', e.target.value)}
@@ -653,14 +656,14 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
           checked={form.accident_free}
           onChange={(e) => update('accident_free', e.target.checked)}
         />
-        <span className="text-sm font-medium">무사고 차량</span>
+        <span className={FIELD_LABEL_CLASS}>무사고 차량</span>
       </label>
 
       {/* 옵션 (선택) — 하이브리드 칩 피커(Story 10.4, 대장 #11 후속). form.options는 여전히
           줄바꿈 구분 문자열(폼 코어 불변, A3) — OptionPicker는 순수 표현층이라 parseOptionsInput/
           serializeOptions로 배열 값을 브리지한다. */}
       <div role="group" aria-labelledby={optionsLabelId} className="flex flex-col gap-1">
-        <span id={optionsLabelId} className="text-sm font-medium">옵션 (선택)</span>
+        <span id={optionsLabelId} className={FIELD_LABEL_CLASS}>옵션 (선택)</span>
         <OptionPicker
           value={parseOptionsInput(form.options)}
           onChange={(next) => update('options', serializeOptions(next))}
@@ -669,7 +672,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
       {/* 설명 (선택) */}
       <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">설명 (선택)</span>
+        <span className={FIELD_LABEL_CLASS}>설명 (선택)</span>
         <textarea
           value={form.description}
           onChange={(e) => update('description', e.target.value)}

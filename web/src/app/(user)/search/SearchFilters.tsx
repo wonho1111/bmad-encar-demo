@@ -13,6 +13,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LISTING_OPTIONS, LISTING_RANGES, UNITS } from '@/lib/constants';
 import Button from '@/components/ui/Button';
+// 라벨·입력칸 클래스는 /sell 등록 폼과 **한 벌을 공유**한다(2026-08-13 사용자 결정 — 두 화면이
+// 같은 구조인데 밀도·배경이 달랐다). 자세한 경위는 formField.ts 주석 참조.
+import { FIELD_CONTROL_CLASS, FIELD_LABEL_CLASS } from '@/components/ui/formField';
 
 // 현재 URL 쿼리값(서버가 넘겨준 초기값)으로 폼을 채운다 → 새로고침해도 필터가 유지된다.
 export type SearchFilterValues = {
@@ -63,11 +66,11 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
   function renderSelect(key: keyof SearchFilterValues, label: string, options: readonly string[]) {
     return (
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-secondary">{label}</span>
+        <span className={FIELD_LABEL_CLASS}>{label}</span>
         <select
           value={values[key]}
           onChange={(e) => update(key, e.target.value)}
-          className="rounded border border-border-hairline bg-transparent px-2 py-1.5"
+          className={FIELD_CONTROL_CLASS}
         >
           <option value="">전체</option>
           {options.map((opt) => (
@@ -87,13 +90,13 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
     >
       {/* 키워드(모델명) */}
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-secondary">키워드(모델명)</span>
+        <span className={FIELD_LABEL_CLASS}>키워드(모델명)</span>
         <input
           type="text"
           value={values.q}
           onChange={(e) => update('q', e.target.value)}
           placeholder="예: 아반떼, 쏘렌토"
-          className="rounded border border-border-hairline bg-transparent px-2 py-1.5"
+          className={FIELD_CONTROL_CLASS}
         />
       </label>
 
@@ -108,7 +111,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
 
       {/* 가격 범위(원) */}
       <fieldset className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-secondary">가격({UNITS.price})</span>
+        <span className={FIELD_LABEL_CLASS}>가격({UNITS.price})</span>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -116,7 +119,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.price_min}
             onChange={(e) => update('price_min', e.target.value)}
             placeholder="최소"
-            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
           <span className="text-ink-muted">~</span>
           <input
@@ -125,14 +128,14 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.price_max}
             onChange={(e) => update('price_max', e.target.value)}
             placeholder="최대"
-            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
         </div>
       </fieldset>
 
       {/* 연식 범위(년) */}
       <fieldset className="flex flex-col gap-1 text-sm">
-        <span className="text-ink-secondary">연식(년)</span>
+        <span className={FIELD_LABEL_CLASS}>연식(년)</span>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -141,7 +144,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.year_min}
             onChange={(e) => update('year_min', e.target.value)}
             placeholder="최소"
-            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
           <span className="text-ink-muted">~</span>
           <input
@@ -151,7 +154,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.year_max}
             onChange={(e) => update('year_max', e.target.value)}
             placeholder="최대"
-            className="w-full rounded border border-border-hairline bg-transparent px-2 py-1.5"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
         </div>
       </fieldset>
