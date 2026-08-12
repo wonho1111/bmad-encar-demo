@@ -135,9 +135,23 @@ test.describe('스토리 11-2 상단 내비', () => {
     await expect(page.getByRole('link', { name: '내 차 팔기' })).not.toBeVisible();
     await expect(hamburgerTrigger(page)).toBeVisible();
 
-    // 찜·채팅 아이콘은 뷰포트 무관 상시 노출(intent-contract "Always") — 상단에 그대로 남아 있어야 한다.
-    await expect(page.getByRole('link', { name: '찜한 매물' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '채팅' })).toBeVisible();
+    // ✎ 2026-08-13 2차 지적 #2로 계약이 **뒤집혔다.** 예전 계약은 "찜·채팅 아이콘은 뷰포트 무관
+    //   상시 노출"(spec-11-2 intent-contract "Always")이었는데, 좁은 폭에서 상단바가 꽉 차 보인다는
+    //   지적으로 **찜·채팅·프로필을 전부 햄버거 안으로** 옮겼다. 그래서 이 폭에서는:
+    //     ① 상단바에 그 셋이 보이지 않고,
+    //     ② 햄버거를 열면 패널 안에 있고,
+    //     ③ 안읽음 신호는 닫힌 햄버거 버튼이 대신 말한다(배지가 패널 안으로 숨어버리지 않게).
+    await expect(page.getByRole('link', { name: '찜한 매물' })).not.toBeVisible();
+    await expect(page.getByRole('link', { name: '채팅' })).not.toBeVisible();
+    await expect(profileTrigger(page), '프로필▾는 이 폭에서 안 보여야 함').not.toBeVisible();
+
+    await hamburgerTrigger(page).click();
+    const panel = page.getByRole('dialog', { name: '메뉴' });
+    await expect(panel.getByRole('link', { name: '찜한 매물' })).toBeVisible();
+    await expect(panel.getByRole('link', { name: /채팅/ })).toBeVisible();
+    await expect(panel.getByRole('link', { name: '내 매물 관리' })).toBeVisible();
+    await expect(panel.getByRole('link', { name: '내 정보' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: '로그아웃' })).toBeVisible();
   });
 
   // 홈에 떠 있는 AI 진입(플로팅) 부재 — UX 확정 D12가 *"웹엔 FAB 없어 일관"* 을 **전제로**

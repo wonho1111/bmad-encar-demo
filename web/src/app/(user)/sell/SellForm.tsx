@@ -466,7 +466,15 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     'rounded border border-border-hairline bg-surface-raised px-3 py-2';
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+    // ✎ 2026-08-13 2차 지적 #4 — `/search`의 필터 폼과 **같은 표면**(카드 테두리 + p-4)을 입힌다.
+    //   두 화면은 "폼 + 그 결과 목록"이라는 같은 구조인데, 이쪽만 폼이 배경 위에 맨몸으로 떠 있어
+    //   경계가 없었다(사용자: "필터검색이랑 비슷한 UI인데 내차사기랑 좀 달라서"). 입력 필드 배치·
+    //   검증은 그대로 두고 감싸개만 맞춘다.
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-4 rounded-card border border-border-hairline p-4"
+      noValidate
+    >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* 제조사 (드롭다운) */}
         <label className="flex flex-col gap-1">

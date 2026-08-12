@@ -263,18 +263,24 @@ export default async function ListingDetailPage({
           매물 목록
         </Link>
 
-        {/* 위 2열: 좌 갤러리 / 우 요약 카드(sticky) → 좁아지면 스택 1열. 폭 축소는 **열 수로만** 흡수한다(D5).
+        {/* 2열 × 2행 그리드 — 좌1행 갤러리 / 좌2행 정보 카드 4개 / 우 요약 카드(2행에 걸침, sticky).
+            좁아지면(<1024px) 1열로 스택되어 갤러리 → 요약 → 정보 카드 순이 된다(목업 모바일 프레임과 같은 순서).
             minmax(0,1fr): 좌 컬럼이 긴 텍스트에 밀려 넘치지 않게 최소 폭을 0으로 풀어 준다.
-            ✎ 2026-08-13(#2) — 정보 섹션 카드 4개는 이 2열 **밖으로** 내려 전체 폭을 쓴다(목업의
-            `.section-cards-wrap`). 예전엔 좌 컬럼 안에 있어서 차량정보 13행이 좁은 폭에 갇혀
-            세로로 길게 늘어졌고, 오른쪽 요약 카드는 가격·버튼 둘뿐이라 크게 비어 보였다 —
-            사용자가 지적한 "문의하기 쪽에 아무것도 없고 모든 값이 아래에 있다"가 이 배치다. */}
+
+            ⚠️ **요약 카드가 `row-span-2`인 것이 이 레이아웃의 핵심이다**(2026-08-13 2차 지적 #3).
+            같은 날 오전엔 정보 카드를 이 그리드 **밖**으로 빼 전체 폭을 쓰게 했었는데, 그러면
+            `position: sticky`의 기준 상자(요약이 속한 그리드 영역)가 **갤러리 높이까지**로 줄어든다 —
+            갤러리를 지나치는 순간 요약이 더 못 따라오고 화면 밖으로 밀려 올라갔다(사용자 실측:
+            "2번째 줄까지만 내려오고 막힌다"). 정보 카드를 좌 컬럼 2행으로 다시 넣어 그 상자를
+            페이지 끝까지 늘린다. 전체 폭은 포기하지만(좌 컬럼 ≈788px) 차량정보 표는 그 폭에서도
+            2열로 들어가므로(sm:grid-cols-2) 오전에 고친 "13행이 세로로 늘어지는" 문제는 그대로 해결돼 있다.
+            → **"전체 폭 정보카드"와 "끝까지 따라오는 요약"은 동시에 못 갖는다.** 후자를 골랐다. */}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           {/* key=매물 id — 갤러리의 현재 인덱스·실패기록은 이 매물에만 유효한 상태다.
               지금은 상세→상세 직접 이동 링크가 없어 실제로 밟히지 않지만(진입로는 /search 카드와
               채팅방뿐), 그런 링크가 생기면 React가 같은 자리의 컴포넌트를 재사용해 이전 매물의
               index가 남는다(사진 10장에서 2장짜리로 가면 "8/2"). 한 줄로 그 부류를 닫아 둔다. */}
-          <div className="min-w-0">
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
             <ListingGallery key={listing.id} urls={galleryUrls} title={title} />
           </div>
 
@@ -282,7 +288,7 @@ export default async function ListingDetailPage({
               CTA. 데스크톱에서만 카드 표면(테두리·배경·그림자)을 입히고 sticky로 붙인다. 모바일에선
               갤러리 바로 아래 흐름에 그대로 쌓이고(목업 모바일 프레임과 같은 순서), CTA는
               InquiryCta가 하단 고정 바로 대신 그린다. */}
-          <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-6 lg:self-start lg:rounded-card lg:border lg:border-border-hairline lg:bg-surface-raised lg:p-5 lg:shadow-card lg:dark:shadow-none">
+          <aside className="flex min-w-0 flex-col gap-4 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6 lg:self-start lg:rounded-card lg:border lg:border-border-hairline lg:bg-surface-raised lg:p-5 lg:shadow-card lg:dark:shadow-none">
             <div className="flex items-start justify-between gap-2">
               <div className="flex min-w-0 flex-col gap-1">
                 {/* break-keep: 한국어를 어절 단위로만 끊는다(좁은 요약 컬럼에서 제목이 글자 중간에서
@@ -335,29 +341,30 @@ export default async function ListingDetailPage({
                 모바일 블록은 position:fixed라 이 자리에 있어도 뷰포트 하단에 고정된다(#82 종결). */}
             <InquiryCta mode={inquiryMode} listingId={listing.id} loginHref={loginHref} priceText={priceText} />
           </aside>
+          {/* 좌 컬럼 2행: 정보 섹션 카드 4개(위 그리드 주석 참조 — 여기 있어야 요약이 끝까지 따라온다). */}
+          <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">
+            {/* ① 신뢰정보 — TrustInfoSection이 뱃지·긴 면책을 한 몸으로 그린다(Story 10.2, B9).
+                신뢰속성이 전부 없으면(anon 포함) null을 반환해 섹션 자체가 안 그려진다(AC1). */}
+            <TrustInfoSection listing={listing} authed={!!user} />
+
+            {/* ② 차량정보 */}
+            <VehicleInfoSection listing={listing} />
+
+            {/* ③ 옵션 — 카테고리 분류·희소옵션 강조는 Epic 10.3/10.4의 몫이다. */}
+            <OptionsSection listing={listing} />
+
+            {/* ④ 판매자정보 — 닉네임+가입 시점+다른 매물 N건 3행(FR56, Story 10.6) + 문의 버튼.
+                값이 하나도 없으면 null을 반환해 섹션 자체가 안 그려진다(①과 동일 규칙). */}
+            <SellerInfoSection
+              sellerName={listing.seller_name}
+              joinedAt={sellerSummaryError ? null : sellerSummary?.joined_at}
+              otherOnSaleCount={sellerSummaryError ? null : sellerSummary?.other_on_sale_count}
+              action={
+                <SellerInquiryButton mode={inquiryMode} listingId={listing.id} loginHref={loginHref} />
+              }
+            />
+          </div>
         </div>
-
-        {/* 아래: 정보 섹션 카드 4개 — 전체 폭(목업 `.section-cards-wrap`).
-            ① 신뢰정보 — TrustInfoSection이 뱃지·긴 면책을 한 몸으로 그린다(Story 10.2, B9).
-               신뢰속성이 전부 없으면(anon 포함) null을 반환해 섹션 자체가 안 그려진다(AC1). */}
-        <TrustInfoSection listing={listing} />
-
-        {/* ② 차량정보 */}
-        <VehicleInfoSection listing={listing} />
-
-        {/* ③ 옵션 — 카테고리 분류·희소옵션 강조는 Epic 10.3/10.4의 몫이다. */}
-        <OptionsSection listing={listing} />
-
-        {/* ④ 판매자정보 — 닉네임+가입 시점+다른 매물 N건 3행(FR56, Story 10.6) + 문의 버튼.
-            값이 하나도 없으면 null을 반환해 섹션 자체가 안 그려진다(①과 동일 규칙). */}
-        <SellerInfoSection
-          sellerName={listing.seller_name}
-          joinedAt={sellerSummaryError ? null : sellerSummary?.joined_at}
-          otherOnSaleCount={sellerSummaryError ? null : sellerSummary?.other_on_sale_count}
-          action={
-            <SellerInquiryButton mode={inquiryMode} listingId={listing.id} loginHref={loginHref} />
-          }
-        />
       </main>
     </>
   );

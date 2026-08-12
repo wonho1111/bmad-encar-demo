@@ -210,7 +210,14 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                     {m.content}
                   </div>
                   {m.listings && m.listings.length > 0 && (
-                    <ul className="flex flex-col gap-2">
+                    // ✎ 2026-08-13 2차 지적 #5("AI채팅 매물카드가 너무 크게 나온다") — 세로 1열에서
+                    //   ≥640px 2열로 바꾼다. 예전엔 카드가 대화 폭(max-w-3xl ≈ 768px)을 통째로 차지해
+                    //   사진 하나가 430px 높이로 그려졌다 — 카드 한 장이 화면을 덮어 "몇 건 찾았는지"가
+                    //   안 보였다. 2열이면 카드 폭이 /search 카드와 비슷한 자리로 내려온다.
+                    //   ⚠️ 공용 ResponsiveGrid를 쓰지 않는다: 그건 **뷰포트** 폭(640/1100)으로 열수를
+                    //   가르는데, 여기 컨테이너는 뷰포트가 아니라 768px 고정 대화 칼럼이라 1100px
+                    //   구간에서 4열이 되어 카드가 180px로 뭉개진다(그리드 규칙이 실제 폭과 어긋난다).
+                    <ul className="grid gap-3 sm:grid-cols-2">
                       {m.listings.map((l) => (
                         <li key={l.id}>
                           {/* 매물카드 재사용 — 클릭하면 /listings/[id] 상세로 이동(ListingCard 내장 Link).

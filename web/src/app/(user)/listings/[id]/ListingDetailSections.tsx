@@ -69,14 +69,47 @@ function Field({ label, value }: { label: string; value: string }) {
 
 /**
  * ① 신뢰정보 — TrustAttributes(뱃지+면책, B9)를 "신뢰정보" 섹션 카드에 담는다(Story 10.2).
- * 신뢰속성이 전부 없으면(미입력·계약-외 값) 섹션 자체를 그리지 않는다(AC1 — 빈 섹션 금지).
+ *
+ * ✎ 2026-08-13 사용자 지적 — **값이 없어도 섹션은 그린다.** 예전엔 신뢰속성이 하나도 없으면
+ *   `null`을 반환해 섹션이 통째로 사라졌는데(Story 9.5 AC1 "빈 섹션 금지"), 그러면 구매자
+ *   입장에서 "이 차는 무사고인가?"라는 질문에 화면이 **아무 말도 안 하는** 상태가 된다.
+ *   빈 제목만 남기는 것과 "왜 없는지 말해 주는 것"은 다르다 — 후자는 정보다.
+ *
+ * ⚠️ **"없음"의 이유를 두 가지로 구분한다. 합치면 거짓말이 된다.**
+ *   · 로그인 사용자에게 값이 없다 → 진짜로 판매자가 입력을 안 한 것이다.
+ *   · **비로그인(anon)은 애초에 이 3개 컬럼을 조회하지 않는다**(page.tsx의 trustColumns 분기 —
+ *     0011 마이그레이션이 anon에게 연 컬럼 목록에 그 셋이 없어서, 넣으면 select 전체가 42501로
+ *     실패한다). 즉 anon 화면의 "없음"은 **판매자가 입력을 안 했다는 뜻이 아니다.** 그래서
+ *     anon에게 "판매자가 입력하지 않았어요"라고 쓰면 값이 있는 매물에도 그렇게 보인다.
+ *     (anon에게도 보이게 하려면 GRANT 마이그레이션이 필요하다 — 사용자 승인 대기, DW-836.)
  */
-export function TrustInfoSection({ listing }: { listing: ListingDetailSectionsData }) {
-  if (!hasTrustAttributes(listing)) return null;
+export function TrustInfoSection({
+  listing,
+  authed,
+}: {
+  listing: ListingDetailSectionsData;
+  // 비로그인이면 신뢰속성 3컬럼을 조회 자체를 안 했다는 뜻(위 주석) — "없음"의 문구가 갈린다.
+  authed: boolean;
+}) {
+  if (hasTrustAttributes(listing)) {
+    return (
+      <Section title="신뢰정보">
+        <TrustAttributes variant="detail" listing={listing} />
+      </Section>
+    );
+  }
 
   return (
     <Section title="신뢰정보">
-      <TrustAttributes variant="detail" listing={listing} />
+      {authed ? (
+        <p className="text-body text-ink-muted">
+          판매자가 무사고·1인소유·비흡연 여부를 입력하지 않았어요. 계약 전 직접 확인하세요.
+        </p>
+      ) : (
+        <p className="text-body text-ink-muted">
+          무사고·1인소유·비흡연 정보는 로그인 후에 볼 수 있어요.
+        </p>
+      )}
     </Section>
   );
 }

@@ -288,7 +288,10 @@ export default async function SearchPage({
           {/* 제목은 이 화면에 들어오는 내비 링크("내 차 사기")와 같은 말을 쓴다 — EXPERIENCE.md
               Anti-patterns가 **"매물 탐색"·"탐색"을 개발용어 라벨로 명시 금지**하는데(소비자
               자연어로 치환), 내비만 고치고 도착 화면 제목이 옛 라벨로 남아 있었다. */}
-          <h1 className="text-2xl font-semibold">내 차 사기</h1>
+          {/* ✎ 2026-08-13(#4) — `text-2xl font-semibold`(생 Tailwind)에서 디자인 토큰으로 바꿨다.
+              `/sell`의 제목이 이미 토큰(text-section font-bold text-ink-primary)이라 같은 위계의
+              두 화면 제목이 서로 다른 크기·굵기로 그려지고 있었다. 값이 아니라 토큰을 공유시킨다. */}
+          <h1 className="text-section font-bold text-ink-primary">내 차 사기</h1>
           <p className="text-sm text-ink-muted">
             원하는 조건으로 판매 중인 매물을 검색하세요.
           </p>

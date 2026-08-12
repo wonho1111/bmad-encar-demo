@@ -87,28 +87,33 @@ test('(b) Esc로 닫히고 포커스가 트리거로 복귀한다', async ({ pag
   await expect(hamburgerTrigger(page)).toBeFocused();
 });
 
-test('(c) 프로필▾을 연 상태에서 햄버거를 열면 프로필이 닫힌다(상호배타)', async ({ page }) => {
+// ✎ 2026-08-13 2차 지적 #2로 이 시나리오의 전제가 사라졌다. 원래 (c)는 "390px에서 프로필▾과
+//   햄버거가 **동시에 보이던** 시절"의 상호배타를 봤는데, 이제 프로필▾은 ≥760px 전용이고 좁은
+//   폭에선 프로필 항목이 햄버거 패널 **안에** 있다 — 둘이 함께 열릴 수가 없다.
+//   대신 그 코드가 지금 실제로 막는 것을 본다: **프로필▾을 넓은 폭에서 열어 둔 채 폭을 줄이면,
+//   그 드롭다운은 `display:none`이 되면서도 상태가 살아남아 "보이지 않는 FocusTrap"이 된다.**
+//   그러면 트랩의 전역 focusin 리스너가 포커스를 도로 끌어가 햄버거 패널을 조작할 수 없게 된다.
+//   SiteNav의 matchMedia 핸들러가 그때 프로필을 닫는데, 그 한 줄을 지워도 아무 검사가 없었다.
+test('(c) 프로필▾을 연 채 좁은 폭으로 줄이면 프로필이 닫히고 햄버거를 정상 조작할 수 있다', async ({
+  page,
+}) => {
   await login(page);
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/search');
 
   await profileTrigger(page).click();
   await expect(page.getByRole('link', { name: '내 매물 관리' })).toBeVisible();
 
-  // 마우스 클릭(.click())은 pointerdown도 함께 쏘아 프로필의 "바깥 클릭 닫기" 리스너가
-  // 별도로 반응해 버린다 — 그러면 이 테스트가 실제로는 outside-click 메커니즘만 검증하고
-  // toggleMenu의 명시적 상호배타 한 줄(setProfileOpen(false))은 지워도 통과해 버린다(실측 확인,
-  // 3차 코드리뷰가 지적한 바로 그 사각지대). 키보드 Tab으로 옮기는 것도 안 된다 — 프로필의
-  // FocusTrap이 열려 있는 동안 컨테이너 밖으로 나가는 포커스를 전역 focusin 리스너가 즉시
-  // 도로 끌어오기 때문(실측 확인, FocusTrap.tsx handleFocusIn — 트랩이 열린 동안은 키보드로
-  // 햄버거에 도달하는 것 자체가 불가능하다). 그래서 dispatchEvent('click')로 pointerdown 없이
-  // click DOM 이벤트만 보낸다 — 보조기술이 접근성 API로 직접 활성화하는 경로와 동일하며,
-  // 이게 바로 명시적 상호배타 코드가 지키는 진짜 대상이다.
-  await hamburgerTrigger(page).dispatchEvent('click');
+  await page.setViewportSize({ width: 390, height: 844 });
 
-  await expect(hamburgerPanel(page)).toBeVisible();
-  await expect(page.getByRole('link', { name: '내 매물 관리' })).toHaveCount(0);
+  // 상태 자체가 닫혀야 한다 — "안 보인다"만 보면 CSS(min-[760px]:flex)만으로 충족돼
+  // matchMedia 닫힘을 통째로 지워도 통과한다(실측으로 확인한 함정, D3와 같은 부류).
   await expect(profileTrigger(page)).toHaveAttribute('aria-expanded', 'false');
+
+  // 그리고 실제로 조작 가능한지까지 본다 — 살아남은 트랩이 포커스를 붙들고 있으면 여기서 걸린다.
+  await hamburgerTrigger(page).click();
+  await expect(hamburgerPanel(page)).toBeVisible();
+  await expect(hamburgerPanel(page).getByRole('link', { name: '내 매물 관리' })).toBeVisible();
 });
 
 test('(d) 390px에서 열고 1280px로 리사이즈하면 패널이 사라지고 aria-expanded=false', async ({ page }) => {

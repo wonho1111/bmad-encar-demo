@@ -65,8 +65,12 @@ export default async function SellPage() {
   const listingsWithCover = listings ? await attachCoverImages(supabase, listings) : [];
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6">
-      <section className="flex flex-col gap-2">
+    // ✎ 2026-08-13 2차 지적 #4 — 본문 폭을 `max-w-2xl`(672px) → `max-w-6xl`로 열어 `/search`와
+    //   맞춘다. 이 화면만 폭이 좁아 "모바일 너비에 맞춰 놓은 것 같다"는 지적을 받았다. 폭만 넓히면
+    //   입력칸이 늘어나 더 이상해지므로, 폼은 SearchFilters와 같은 카드 표면 안에 넣고(SellForm)
+    //   그 안에서 2열 그리드를 유지한다 — 두 화면이 "카드 안 폼 + 아래 결과 목록"으로 같아진다.
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+      <section className="flex flex-col gap-1">
         <h1 className="text-section font-bold text-ink-primary">매물 등록</h1>
         <p className="text-sm text-ink-muted">
           차량 정보를 입력해 매물을 등록하면 구매자에게 바로 노출됩니다(관리자 승인 없음).

@@ -3,12 +3,14 @@
 // 소비자용 상단 내비 본체(spec-11-2) — AppHeader(서버 컴포넌트)가 로고 뒤에 배선한다.
 //
 // 구성:
-//   · 데스크톱(≥760px): 가운데 텍스트 링크(내 차 사기·AI로 찾기·내 차 팔기) 상시 노출.
-//     오른쪽은 로그인 상태에 따라 (비로그인) 로그인 텍스트 링크 /
-//     (로그인) 찜♡·채팅🔔 아이콘 + 프로필▾ 드롭다운.
-//   · 모바일(<760px): 텍스트 링크(가운데 3개 + 비로그인용 로그인)가 햄버거(☰)
-//     패널 안으로 접힌다. 찜·채팅 아이콘·프로필▾은 로그인 시 뷰포트와 무관하게 항상 보인다
-//     (intent-contract "Always" — 로그인 사용자가 텍스트 링크에 가려 찜/채팅에 못 닿는 것을 막음).
+//   · 데스크톱(≥760px): 가운데 주요 메뉴 3개(내 차 사기·AI로 찾기·내 차 팔기) — 현재 화면에
+//     밑줄 인디케이터가 켜진다(2026-08-13 #1). 오른쪽은 로그인 상태에 따라
+//     (비로그인) 로그인 텍스트 링크 / (로그인) 찜·채팅 아이콘 + 프로필▾ 드롭다운.
+//   · 모바일(<760px): **오른쪽 전부가 햄버거(☰) 하나로 접힌다** — 주요 메뉴 3개 + 찜·채팅·
+//     내 매물 관리·내 정보·로그아웃(비로그인은 로그인). 안읽음 배지만 햄버거 버튼에 남긴다.
+//     ⚠️ 이건 spec-11-2의 intent-contract "Always"(찜·채팅·프로필은 뷰포트 무관 상시 노출)를
+//     **뒤집은 것**이다 — 2026-08-13 사용자 결정("너무 꽉 차 보인다"). 그 계약이 막으려던
+//     "텍스트 링크에 가려 찜/채팅에 못 닿음"은 패널이 그 항목들을 직접 담아 대신 막는다.
 //
 // 760px은 Tailwind 기본 브레이크포인트가 아니라 mockups/consistency-1.html의 실측치라
 // arbitrary variant(`min-[760px]:`)로 쓴다 — ResponsiveGrid가 640/1100에 쓰는 것과 같은 관례.
@@ -27,6 +29,7 @@
 // aria-label만으로 "여기 팝업이 있다"만 알린다(FocusTrap의 Tab 순환 popover로서는 그걸로 충분).
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import FocusTrap from '@/components/ui/FocusTrap';
 import LogoutButton from '@/components/auth/LogoutButton';
 import { getConsumerNavLinks } from './nav-links';
@@ -93,6 +96,23 @@ function ChevronDownIcon() {
 }
 
 const TEXT_LINK_CLASS = 'text-sm font-medium text-ink-secondary hover:text-ink-primary';
+
+// 가운데 주요 메뉴 3개(내 차 사기·AI로 찾기·내 차 팔기)의 항목 스타일 — 2026-08-13 2차 지적 #1
+// ("구분이 안 되어 있고 영역 너비가 달라 보인다").
+//
+// 무엇이 문제였나: 세 항목이 그냥 텍스트였고 **지금 어디에 있는지 표시가 없었다.** 라벨 길이가
+// 달라 간격만 균일한 상태라, 눈에는 "정렬이 안 맞는 글자 세 덩어리"로 읽혔다.
+//
+// 어떻게 고쳤나(상용 서비스 관례): 항목마다 **같은 좌우 여백(px-3)과 같은 높이(h-11)**를 줘
+// 클릭 영역을 균일하게 만들고, 현재 화면에는 **밑줄 인디케이터**를 켠다. 엔카·카닷컴 등 국내
+// 중고차 서비스와 대다수 커머스 상단바가 쓰는 방식이다 — 칸을 나누는 선을 긋지 않고도(사용자:
+// "선으로 구분하라는 게 아니라") 각 항목이 자기 영역을 갖고, 활성 항목이 또렷해진다.
+// 밑줄은 `after:` 가상요소로 그려 항목 높이에 영향을 주지 않는다(활성/비활성 사이 위치 흔들림 없음).
+const NAV_ITEM_BASE =
+  'relative flex h-11 items-center px-3 text-sm font-medium transition-colors ' +
+  "after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:content-['']";
+const NAV_ITEM_IDLE = `${NAV_ITEM_BASE} text-ink-secondary after:bg-transparent hover:text-ink-primary hover:after:bg-border-hairline`;
+const NAV_ITEM_ACTIVE = `${NAV_ITEM_BASE} font-semibold text-ink-primary after:bg-brand-petrol`;
 const PANEL_LINK_CLASS = 'rounded px-3 py-3 text-sm font-medium text-ink-primary hover:bg-surface-base';
 
 // 안읽음 배지 표기 상한(코드리뷰 patch, FR57) — 99 초과는 "99+"로 눌러 작은 원형 배지가 깨지지
@@ -103,6 +123,21 @@ const PANEL_LINK_CLASS = 'rounded px-3 py-3 text-sm font-medium text-ink-primary
 //    (후속 코드리뷰 patch).
 function formatUnreadBadge(count: number): string {
   return count > 99 ? '99+' : String(count);
+}
+
+/**
+ * 이 nav 항목이 현재 경로에 해당하는가 — 목록뿐 아니라 그 하위 화면에서도 부모 항목이 켜져야 한다
+ * (예: `/listings/[id]` 상세는 "내 차 사기"에서 들어온 흐름이므로 그 항목을 켠다).
+ * AdminSidebar.isActiveHref와 같은 규칙이되, `/search`↔`/listings`처럼 **경로가 다른데 같은 메뉴**인
+ * 짝이 있어 그 대응을 여기서 명시한다.
+ */
+function isActiveNavHref(pathname: string | null, href: string): boolean {
+  if (!pathname) return false;
+  if (pathname === href || pathname.startsWith(`${href}/`)) return true;
+  // 매물 상세는 "내 차 사기"(/search)의 하위 흐름이다 — 상세로 들어가면 상단 메뉴가 통째로
+  // 꺼져 "어디에서 왔는지"가 사라지던 것을 막는다.
+  if (href === '/search' && pathname.startsWith('/listings')) return true;
+  return false;
 }
 
 export default function SiteNav({
@@ -116,6 +151,8 @@ export default function SiteNav({
   // 0 또는 undefined면 배지를 렌더하지 않는다.
   unreadCount?: number;
 }) {
+  // 현재 경로 — 주요 메뉴의 활성 항목 표시에만 쓴다(AdminSidebar와 같은 방식).
+  const pathname = usePathname();
   const [profileOpen, setProfileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // 트리거+패널을 함께 감싸는 컨테이너 — outside-click 판정("이 안을 클릭했나")과 mutual-exclusion에 쓴다.
@@ -159,6 +196,10 @@ export default function SiteNav({
     const mql = window.matchMedia('(min-width: 760px)');
     function handleChange(event: MediaQueryListEvent) {
       if (event.matches) setMenuOpen(false);
+      // ✎ 2026-08-13(#2) — 반대 방향도 닫는다. 프로필▾는 이제 ≥760px 전용이라, 열어 둔 채 폭을
+      //   줄이면 그 FocusTrap이 `display:none`인 채로 살아남는다 — 보이지도 않는 트랩이 문서
+      //   포커스를 도로 끌어가 햄버거 패널을 조작할 수 없게 만든다(FocusTrap의 focusin 리스너).
+      else setProfileOpen(false);
     }
     mql.addEventListener('change', handleChange);
     return () => mql.removeEventListener('change', handleChange);
@@ -185,18 +226,36 @@ export default function SiteNav({
     // 모바일 패널(absolute inset-x-0)의 기준이 되면 패널이 로고만큼 오른쪽으로 밀린다(코드리뷰
     // 지적, 실측: 390px 뷰포트에서 패널 left=117.48px). 포지션 기준은 AppHeader.tsx의 <header>로 옮겼다.
     <div className="flex flex-1 items-center justify-between gap-4">
-      {/* 가운데 3개 링크 — 데스크톱만(모바일은 햄버거 패널 안에). */}
-      <nav aria-label="주요 메뉴" className="hidden items-center gap-6 min-[760px]:flex">
-        {navLinks.map((link) => (
-          <Link key={link.href} href={link.href} className={TEXT_LINK_CLASS}>
-            {link.label}
-          </Link>
-        ))}
+      {/* 가운데 3개 링크 — 데스크톱만(모바일은 햄버거 패널 안에).
+          gap을 6→1로 줄인 대신 항목마다 px-3 여백을 줬다: 간격이 항목 **안쪽**으로 들어가면서
+          클릭 영역이 라벨 길이와 무관하게 균일해 보인다(위 NAV_ITEM_BASE 주석). */}
+      <nav aria-label="주요 메뉴" className="hidden items-center gap-1 min-[760px]:flex">
+        {navLinks.map((link) => {
+          const active = isActiveNavHref(pathname, link.href);
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              // 색·밑줄만이 아니라 aria-current로도 알린다 — 색을 못 보는 사용자에게도 "지금 여기"가 전달된다.
+              aria-current={active ? 'page' : undefined}
+              className={active ? NAV_ITEM_ACTIVE : NAV_ITEM_IDLE}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="ml-auto flex items-center gap-2">
         {email ? (
-          <>
+          // ✎ 2026-08-13 2차 지적 #2 — 찜·채팅·프로필을 **데스크톱 전용**으로 내렸다.
+          //   예전 계약은 "로그인하면 뷰포트와 무관하게 상시 노출"(spec-11-2 intent-contract "Always")
+          //   이었는데, 좁은 폭에서 로고+아이콘3+햄버거가 한 줄에 몰려 "너무 꽉 차 보인다"는 지적을
+          //   받았다(실측: 390px에서 프로필 라벨이 두 줄로 깨져 한 번 손봤던 자리이기도 하다).
+          //   그 계약이 막으려던 것("텍스트 링크에 가려 찜/채팅에 못 닿음")은 아래 햄버거 패널이
+          //   찜·채팅·프로필 항목을 **직접 담아** 대신 막는다. 안읽음 배지는 패널 안으로 숨지 않게
+          //   햄버거 버튼 자체에도 붙인다(아래).
+          <div className="hidden items-center gap-2 min-[760px]:flex">
             <Link href="/wishlist" aria-label="찜한 매물" className={ICON_BUTTON_CLASS}>
               <HeartIcon />
             </Link>
@@ -277,7 +336,7 @@ export default function SiteNav({
                 </FocusTrap>
               )}
             </div>
-          </>
+          </div>
         ) : (
           // 비로그인 데스크톱 — 로그인 링크 하나. <760px에선 숨기고 햄버거로 접는다(아래 모바일 패널이 다시 그린다).
           //
@@ -299,11 +358,30 @@ export default function SiteNav({
             type="button"
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
-            aria-label={menuOpen ? '메뉴 닫기' : '메뉴 열기'}
             onClick={toggleMenu}
-            className={ICON_BUTTON_CLASS}
+            // 안읽음이 있으면 aria-label에도 건수를 싣는다 — 채팅 항목이 패널 안으로 들어가면서
+            // 배지가 "닫혀 있을 땐 안 보이는" 상태가 되므로, 닫힌 버튼이 그 사실을 스스로 말해야 한다.
+            aria-label={
+              menuOpen
+                ? '메뉴 닫기'
+                : unreadCount
+                  ? `메뉴 열기, 안읽음 메시지 ${unreadCount}건`
+                  : '메뉴 열기'
+            }
+            className={`relative ${ICON_BUTTON_CLASS}`}
           >
             <MenuIcon />
+            {/* 햄버거 위 안읽음 배지 — 채팅 아이콘이 패널 안으로 들어갔으므로 배지까지 같이 숨으면
+                "안 읽은 메시지가 있다"는 신호가 좁은 폭에서 통째로 사라진다(#2 결정의 대가를
+                여기서 되산다). 색·상한 규칙은 위 채팅 아이콘 배지와 같다. */}
+            {unreadCount ? (
+              <span
+                aria-hidden
+                className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white"
+              >
+                {formatUnreadBadge(unreadCount)}
+              </span>
+            ) : null}
           </button>
           {menuOpen && (
             <FocusTrap
@@ -329,6 +407,48 @@ export default function SiteNav({
                 <Link href={loginHref} onClick={() => setMenuOpen(false)} className={PANEL_LINK_CLASS}>
                   로그인
                 </Link>
+              )}
+              {/* 로그인 사용자 — 데스크톱에서 상단바에 있던 찜·채팅·프로필 메뉴가 여기로 들어온다(#2).
+                  구분선을 하나 둬 "이동(주요 메뉴)"과 "내 것(계정)"을 나눈다 — 목록이 6개로 늘어
+                  구분 없이 이어 두면 어디까지가 서비스 메뉴인지 안 읽힌다. */}
+              {email && (
+                <>
+                  <span aria-hidden className="my-1 h-px bg-border-hairline" />
+                  <Link
+                    href="/wishlist"
+                    onClick={() => setMenuOpen(false)}
+                    className={`flex items-center gap-2 ${PANEL_LINK_CLASS}`}
+                  >
+                    <HeartIcon />
+                    찜한 매물
+                  </Link>
+                  <Link
+                    href="/chat"
+                    onClick={() => setMenuOpen(false)}
+                    aria-label={unreadCount ? `채팅, 안읽음 메시지 ${unreadCount}건` : '채팅'}
+                    className={`flex items-center gap-2 ${PANEL_LINK_CLASS}`}
+                  >
+                    <ChatIcon />
+                    채팅
+                    {unreadCount ? (
+                      <span
+                        aria-hidden
+                        className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-semibold leading-none text-white"
+                      >
+                        {formatUnreadBadge(unreadCount)}
+                      </span>
+                    ) : null}
+                  </Link>
+                  <Link href="/sell" onClick={() => setMenuOpen(false)} className={PANEL_LINK_CLASS}>
+                    내 매물 관리
+                  </Link>
+                  <Link href="/account" onClick={() => setMenuOpen(false)} className={PANEL_LINK_CLASS}>
+                    내 정보
+                  </Link>
+                  <div className="px-1 pt-1">
+                    <LogoutButton />
+                  </div>
+                </>
               )}
             </FocusTrap>
           )}
