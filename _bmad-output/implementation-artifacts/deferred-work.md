@@ -6839,3 +6839,19 @@ fix_sketch: URL 쿼리(`price_min`/`price_max`)와 서버 조회는 **원 그대
 trigger: 사용자 결정. 결정 나면 `/search` 필터를 손대는 작업에서 한 번에.
 related: [[DW-834]](같은 2026-08-13 상세 점검에서 나온 잔여 건) · `docs/conventions.md §3`(저장 단위 ≠ 표시 단위를 명시한 자리)
 status: open
+
+### DW-836: 앱에서 저장된 세션이 만료되면 "설정 필요" 막다른 화면에 갇힌다 — 로그인 화면으로 못 간다
+
+origin: 2026-08-13 실기기(갤럭시 S21, 무선 디버깅) 확인 중 **우연히 재현**. 오늘 작업의 결함이 아니라 그 전부터 있던 것이다 — 폰에 예전 APK가 남긴 세션이 있는 상태에서 새 APK를 덮어 설치했더니 첫 실행에서 바로 걸렸다.
+location: `app/lib/main.dart:59-70`(`authState.when(error: ...)` → `ConfigErrorScreen`)
+severity: medium
+reason: `authStateProvider`가 **어떤 이유로 error가 되든** "설정 필요" 화면으로 보내고 원본 예외를 그대로 찍는다. 그런데 실기기에서 실제로 걸린 것은 설정 문제가 아니라 **정상적인 세션 만료**였다:
+  `AuthApiException(message: Invalid Refresh Token: Refresh Token Not Found, statusCode: 400, code: refresh_token_not_found)`
+  이 화면엔 로그인으로 가는 길이 없다. 사용자가 할 수 있는 것은 **앱 데이터 삭제뿐**이다(실제로 그렇게 뚫었다).
+  게다가 그 영문 예외 문자열이 그대로 노출된다 — 이 리포는 인증 오류를 한국어로 변환해 보여주는 관례가 있는데(`auth_errors.dart`) 이 경로만 빠져 있다.
+why_it_matters: 세션 만료는 **예외 상황이 아니라 정상 수명주기**다. 데모를 며칠 뒤에 다시 열거나, APK를 새로 설치하거나, 리프레시 토큰이 회수되면 누구나 밟는다 — 그때 앱이 "설정 필요"라고 말하면 사용자는 자기 설정이 잘못된 줄 안다.
+fix_sketch: `error` 분기에서 **세션 관련 오류와 설정 오류를 가른다.** `AuthApiException`(특히 `refresh_token_not_found`·401/400 계열)은 "설정 필요"가 아니라 **저장 세션을 지우고 로그인 화면으로** 보낸다(`supabase.auth.signOut()` 후 `/login`). 나머지(환경변수 누락 등 진짜 설정 문제)만 ConfigErrorScreen에 남긴다. 노출 문구는 `auth_errors.dart`의 한국어 변환을 태운다.
+verification: 재현이 쉽다 — 로그인한 상태에서 Supabase 대시보드로 해당 세션을 폐기하거나, `pm clear` 대신 앱 저장소의 세션만 손상시킨 뒤 실행한다. 고친 뒤에는 같은 조건에서 **로그인 화면**이 떠야 한다.
+trigger: 앱 인증 흐름을 다음에 손대는 스토리. 데모 시연 전이라면 그 전에(시연 중에 밟기 가장 쉬운 결함이다).
+related: [[DW-832]](같은 날 앱 동기화 작업 — 그 작업 중 발견됐다)
+status: open
