@@ -90,7 +90,11 @@ export function VehicleInfoSection({ listing }: { listing: ListingDetailSections
 
   return (
     <Section title="차량정보">
-      <div className="flex flex-col">
+      {/* ✎ 2026-08-13(#2) — 넓은 폭에서 2열로 나눈다(목업 detail-1.html `.spec-table`이
+          `grid-template-columns:1fr 1fr`). 예전엔 어느 폭에서든 1열이라, 전체 폭으로 올라온
+          이 카드에서 13행이 세로로 길게 늘어져 오른쪽이 통째로 비어 보였다.
+          행 자체는 그대로다 — 필드를 새로 만들지도, 빼지도 않는다(AC5). */}
+      <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-x-8">
         <Field label="제조사" value={listing.manufacturer} />
         <Field label="모델" value={listing.model} />
         <Field label="차종" value={listing.body_type} />
@@ -165,14 +169,22 @@ export function SellerInfoSection({
   sellerName,
   joinedAt,
   otherOnSaleCount,
+  action,
 }: {
   sellerName: string | null | undefined;
   joinedAt: string | null | undefined;
   otherOnSaleCount: number | null | undefined;
+  // 카드 맨 아래 문의 버튼(목업 `.seller-contact-btn`) — page.tsx가 <SellerInquiryButton/>을 넣는다.
+  // 여기서 직접 부르지 않는 이유: 그 버튼은 클라이언트 컴포넌트이고 3분기 판정(mode)에 서버가
+  // 들고 있는 user가 필요하다 — 판정은 page.tsx 한 곳에서만 한다(AC7).
+  action?: React.ReactNode;
 }) {
   const joinLabel = formatSellerJoinDate(joinedAt);
   const otherLabel = sellerOtherListingsLabel(otherOnSaleCount);
 
+  // ⚠️ 문의 버튼(action)은 이 판정에 넣지 않는다 — 판매자 정보가 하나도 없을 때 "버튼만 있는
+  //   판매자정보 카드"가 남으면 그게 더 이상하다(AC1 "빈 섹션 금지"의 취지). 그 경우 문의는
+  //   요약 카드·모바일 하단 바 쪽 CTA가 그대로 담당한다.
   if (!sellerName && !joinLabel && !otherLabel) return null;
 
   return (
@@ -182,6 +194,7 @@ export function SellerInfoSection({
         {joinLabel && <p className="text-meta text-ink-muted">{joinLabel}</p>}
         {otherLabel && <p className="text-meta text-ink-muted">{otherLabel}</p>}
       </div>
+      {action}
     </Section>
   );
 }

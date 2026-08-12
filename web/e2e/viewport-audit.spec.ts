@@ -194,11 +194,24 @@ test.describe('관리자 6화면 — 가로스크롤 없음 (spec-15-2, DW-697 �
   test('목록 4 + 상세 2 — 가로스크롤 없음', async ({ page }) => {
     await login(page, ADMIN_USER.email, ADMIN_USER.password);
 
-    for (const path of ['/admin', '/admin/members', '/admin/listings', '/admin/transactions', '/admin/chats']) {
+    // ✎ 2026-08-13(#9) — `/admin`은 이제 대시보드 허브가 아니라 회원관리로 **전달**된다. 그래서
+    //   "요청한 경로에 그대로 있는가"가 아니라 "도착해야 할 경로에 도착했는가"로 본다(둘을 쌍으로
+    //   적어, 리다이렉트 대상이 조용히 바뀌면 여기서 걸리게 한다).
+    const adminPaths: [request: string, expected: string][] = [
+      ['/admin', '/admin/members'],
+      ['/admin/members', '/admin/members'],
+      ['/admin/listings', '/admin/listings'],
+      ['/admin/transactions', '/admin/transactions'],
+      ['/admin/chats', '/admin/chats'],
+    ];
+    for (const [path, expectedPath] of adminPaths) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
-      // ② 로그인 화면으로 튕기지 않고 요청한 관리자 경로에 그대로 있는지 먼저 확인한다.
-      expect(new URL(page.url()).pathname, `${path}: 관리자 경로에 머물러야 함(로그인 리다이렉트 등 아님)`).toBe(path);
+      // ② 로그인 화면으로 튕기지 않고 관리자 경로에 도달했는지 먼저 확인한다.
+      expect(
+        new URL(page.url()).pathname,
+        `${path}: 관리자 경로(${expectedPath})에 도달해야 함(로그인 리다이렉트 등 아님)`,
+      ).toBe(expectedPath);
       await assertNoHorizontalOverflow(page);
     }
 

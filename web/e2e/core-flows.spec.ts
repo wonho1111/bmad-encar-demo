@@ -133,8 +133,16 @@ test('C3 매물 상세 필수 정보', async ({ page }) => {
   await page.goto(`/listings/${listingId}`);
 
   // 핵심 스펙 라벨 — VehicleInfoSection(ListingDetailSections.tsx)의 Field 라벨 그대로.
+  // ✎ 2026-08-13(#2 상세 재구성) — 요약 카드에도 주요 제원 6칸(연식·주행거리·연료·배기량·지역·
+  //   색상)이 생겨 같은 라벨이 화면에 2개씩 있다. 그래서 **"차량정보" 섹션 안으로 범위를 좁혀**
+  //   찾는다. 페이지 전체에서 찾으면 strict mode 위반으로 죽는데, 그건 "라벨이 사라졌다"가 아니라
+  //   "두 군데 있다"는 뜻이라 이 검사가 보려던 것과 다르다.
+  const vehicleSection = page.locator('section').filter({ hasText: '차량정보' });
   for (const label of ['가격', '연식', '주행거리', '지역']) {
-    await expect(page.getByText(label, { exact: true }), `상세 화면에 "${label}" 라벨이 보여야 함`).toBeVisible();
+    await expect(
+      vehicleSection.getByText(label, { exact: true }),
+      `상세 화면 "차량정보"에 "${label}" 라벨이 보여야 함`,
+    ).toBeVisible();
   }
 
   // 사진 갤러리 렌더.

@@ -13,15 +13,18 @@
 // 다른 축이다 — "내비 셸 표시 방식" vs "그리드 열수"라 관리자 화면에 그리드가 없다는 사실과 무관하게
 // 섞지 않는다(spec-15-2 Always).
 //
-// 대시보드 허브의 기존 4개 링크 버튼, 각 상세 화면의 뒤로가기 버튼은 그대로 둔다 — 이 사이드바는
-// 추가되는 내비이지 기존 페이지 내비를 대체하지 않는다(spec-15-2 Always).
+// 각 상세 화면의 뒤로가기 버튼은 그대로 둔다 — 이 사이드바는 추가되는 내비이지 기존 페이지
+// 내비를 대체하지 않는다(spec-15-2 Always). 단 "대시보드 허브의 4개 링크 버튼"은 예외가 됐다 —
+// 그 허브 화면 자체가 2026-08-13(#9)에 없어졌다(app/(admin)/admin/page.tsx 주석 참조).
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import FocusTrap from '@/components/ui/FocusTrap';
 
+// ✎ 2026-08-13 사용자 결정 #9 — 맨 앞의 "대시보드"(/admin)를 뺐다. 그 화면은 여기 있는 4개
+// 목적지로 가는 링크만 있는 허브였는데, 이 사이드바가 생기면서 하는 일이 없어졌다.
+// `/admin`은 이제 /admin/members로 전달만 한다(app/(admin)/admin/page.tsx).
 const ADMIN_NAV_LINKS: { label: string; href: string }[] = [
-  { label: '대시보드', href: '/admin' },
   { label: '회원관리', href: '/admin/members' },
   { label: '매물 관리', href: '/admin/listings' },
   { label: '거래내역', href: '/admin/transactions' },
@@ -40,11 +43,10 @@ const ACTIVE_LINK_CLASS = 'rounded-badge bg-brand-petrol/10 px-3 py-2 text-sm fo
 
 // 현재 경로가 이 nav item에 속하는지 — 목록뿐 아니라 그 상세(/admin/listings/[id],
 // /admin/chats/[roomId])도 같은 항목을 active로 표시해야 하므로 하위 경로까지 startsWith로 포함한다.
-// '/admin'만 예외로 정확히 일치할 때만 active다 — 안 그러면 모든 /admin/* 경로에서 대시보드도 함께
-// active가 된다(대시보드가 항상 켜진 채로 보이는 오표시를 막는다).
+// (예전엔 '/admin' 대시보드 항목만 정확 일치로 빼는 예외가 있었는데, 그 항목이 없어져 예외도 함께
+//  사라졌다 — 남은 4개는 서로의 하위 경로가 아니라 startsWith가 겹칠 일이 없다.)
 function isActiveHref(pathname: string | null, href: string): boolean {
   if (!pathname) return false;
-  if (href === '/admin') return pathname === '/admin';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

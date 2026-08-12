@@ -111,9 +111,11 @@ test.describe.serial('정지된 관리자는 /admin 콘솔에 못 들어간다(D
 
     // (긍정 대조군) 활성 관리자는 홈 진입 시 곧바로 /admin으로 유도되고(page.tsx 편의 랜딩),
     // 콘솔도 정상 렌더된다 — status 조건 추가가 활성 관리자의 기존 동작을 하나도 바꾸지 않았다.
+    // ✎ 2026-08-13(#9) — /admin은 이제 회원관리로 한 번 더 전달된다(허브 화면을 없앴다).
+    //    그래서 최종 경로는 /admin/members이고, 보이는 제목도 "관리자 영역"이 아니라 "회원 관리"다.
     await page.goto('/');
-    await page.waitForURL((url) => url.pathname === '/admin');
-    await expect(page.getByRole('heading', { name: '관리자 영역' })).toBeVisible();
+    await page.waitForURL((url) => url.pathname === '/admin/members');
+    await expect(page.getByRole('heading', { name: '회원 관리' })).toBeVisible();
 
     // 정지시킨다.
     runPsql(`update profiles set status='suspended' where id=(select id from auth.users where email='${sqlLit(email)}');`);

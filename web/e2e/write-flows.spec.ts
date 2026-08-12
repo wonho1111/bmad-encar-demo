@@ -153,7 +153,7 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     await cardLink.click();
 
     await page.waitForURL(new RegExp(`/listings/${listingId}$`));
-    await expect(page.locator('aside').getByText(`${INITIAL_PRICE.toLocaleString('ko-KR')}원`)).toBeVisible();
+    await expect(page.getByTestId('detail-price')).toHaveText(`${INITIAL_PRICE.toLocaleString('ko-KR')}원`);
   });
 
   test('E3 [desktop] 본인 매물 가격 수정이 반영된다', async ({ page }) => {
@@ -171,7 +171,7 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     await page.waitForURL('**/sell');
 
     await page.goto(`/listings/${listingId}`);
-    await expect(page.locator('aside').getByText(`${UPDATED_PRICE.toLocaleString('ko-KR')}원`)).toBeVisible();
+    await expect(page.getByTestId('detail-price')).toHaveText(`${UPDATED_PRICE.toLocaleString('ko-KR')}원`);
 
     const dbPrice = runPsql(`select price from listings where id='${listingId}';`);
     expect(dbPrice, `DB의 price 값(매물 ${listingId})`).toBe(String(UPDATED_PRICE));
@@ -186,9 +186,11 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     await login(page, BUYER.email, BUYER.password);
     await page.goto(`/listings/${listingId}`);
 
-    // 로그인+타인 매물 = mode 'inquiry'. 데스크톱 프로젝트라 aside(sticky)만 보이므로 그 안에서 찾는다
-    // (모바일 하단바 인스턴스도 항상 DOM에 있어 aside로 좁히지 않으면 strict mode 위반).
-    await page.locator('aside').getByRole('button', { name: '문의하기' }).click();
+    // 로그인+타인 매물 = mode 'inquiry'. 문의 버튼은 화면에 셋(요약 카드·모바일 하단 바·판매자정보
+    // 카드)이 DOM에 있고 데스크톱에선 요약 카드 것과 판매자정보 카드 것이 **둘 다 보인다**
+    // (2026-08-13 #2 — 목업의 `.seller-contact-btn` 추가). 요약 카드 쪽을 고른다: 이름이 정확히
+    // "문의하기"인 것은 그쪽뿐이다(판매자정보 카드는 "판매자에게 문의하기").
+    await page.locator('aside').getByRole('button', { name: '문의하기', exact: true }).click();
     await page.waitForURL(/\/chat\/[0-9a-f-]+$/, { timeout: 15_000 });
     roomId = new URL(page.url()).pathname.split('/').pop();
     expect(roomId, '문의하기 클릭 후 이동한 채팅방 URL에서 roomId 추출').toBeTruthy();
@@ -309,7 +311,7 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     // 코드리뷰 patch — E3와 동일하게 DB뿐 아니라 렌더된 상세 페이지도 확인한다(되돌리기→재수정
     //   경로 전용 캐시/렌더 결함은 E3의 일반 수정 경로로는 못 잡는다).
     await page.goto(`/listings/${listingId}`);
-    await expect(page.locator('aside').getByText(`${RESTORED_PRICE.toLocaleString('ko-KR')}원`)).toBeVisible();
+    await expect(page.getByTestId('detail-price')).toHaveText(`${RESTORED_PRICE.toLocaleString('ko-KR')}원`);
 
     const restoredPrice = runPsql(`select price from listings where id='${listingId}';`);
     expect(restoredPrice, `되돌리기 후 재수정된 DB price 값(매물 ${listingId})`).toBe(String(RESTORED_PRICE));

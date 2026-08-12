@@ -5,7 +5,7 @@
 //   lint + vitest뿐, E2E는 로컬 `npm run test:e2e` 전용이 의도된 결정이다). 반면 이 컴포넌트의
 //   원본인 `SiteNav.tsx`는 같은 축(링크 구성·760px 브레이크포인트·44px 히트영역)을 CI에서 도는
 //   `SiteNav.test.ts`로 이미 고정해 두고 있다 — 이식하면서 그 가드는 같이 안 왔다.
-//   게다가 5개 라벨 중 `매물 관리`·`거래내역`은 E2E를 포함해 **어떤 검사도 이름을 부르지 않는다**
+//   게다가 라벨 중 `매물 관리`·`거래내역`은 E2E를 포함해 **어떤 검사도 이름을 부르지 않는다**
 //   (실측: `grep -rn "매물 관리\|거래내역" web/e2e/` → 0건). 지금은 지우거나 href를 바꿔도
 //   tsc·lint·vitest·build가 전부 green이다.
 //
@@ -23,10 +23,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import AdminSidebar from './AdminSidebar';
 
-// 5개 내비 목적지(spec-15-2 Always) — 라벨과 href를 쌍으로 고정한다. 라벨만 고정하면 href가
-// 조용히 바뀌고, href만 고정하면 라벨이 조용히 바뀐다.
+// 4개 내비 목적지(spec-15-2 Always, 2026-08-13 #9로 "대시보드" 제거) — 라벨과 href를 쌍으로
+// 고정한다. 라벨만 고정하면 href가 조용히 바뀌고, href만 고정하면 라벨이 조용히 바뀐다.
 const EXPECTED_LINKS: [label: string, href: string][] = [
-  ['대시보드', '/admin'],
   ['회원관리', '/admin/members'],
   ['매물 관리', '/admin/listings'],
   ['거래내역', '/admin/transactions'],
@@ -35,8 +34,8 @@ const EXPECTED_LINKS: [label: string, href: string][] = [
 
 // 렌더된 <a>를 [라벨, href] 튜플로 뽑는다(코드리뷰 patch). 원래는 `toContain(href)`와
 // `toContain(label)`을 **따로** 걸었는데, 그러면 위 주석이 말하는 "쌍으로 고정"이 실제로는 안 된다 —
-// 두 항목의 href를 서로 바꿔치면(거래내역→/admin/chats, 채팅관리→/admin/transactions) 5개 라벨도
-// 5개 href도 전부 그대로 존재해서 파일 전체가 green이었다(실측: 스왑 후 9/9 통과). 메뉴 이름과
+// 두 항목의 href를 서로 바꿔치면(거래내역→/admin/chats, 채팅관리→/admin/transactions) 라벨도
+// href도 전부 그대로 존재해서 파일 전체가 green이었다(실측: 스왑 후 9/9 통과). 메뉴 이름과
 // 도착 화면이 어긋나는 것은 이 파일이 존재하는 이유 그 자체인데 그걸 못 봤다.
 function renderedNavLinks(html: string): [label: string, href: string][] {
   return [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map((m) => {

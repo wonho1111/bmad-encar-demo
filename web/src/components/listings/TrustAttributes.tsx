@@ -39,8 +39,18 @@ export type TrustDisplay = {
   disclaimer: string;
 };
 
+// 표시 자리 3종. 'detail'=상세 아래 "신뢰정보" 카드(긴 면책), 'summary'=상세 요약 컬럼(짧은 면책),
+// 'card'=목록 카드(사진 위 뱃지만, 면책 렌더 안 함).
+export type TrustVariant = 'card' | 'detail' | 'summary';
+
 const DISCLAIMER_DETAIL =
   '판매자가 직접 입력한 정보예요. 차장님이 검증한 내용은 아니니, 계약 전 꼭 직접 확인하세요.'; // UX-DR19
+
+// 상세 **요약 컬럼**용 짧은 면책 — 목업 detail-1.html의 `.trust-disclaimer-sm` 원문(2026-08-13 #2).
+// 같은 화면 아래쪽 "신뢰정보" 카드가 위 긴 문구를 그대로 다시 보여주므로, 좁은 요약 컬럼에서는
+// 한 줄짜리를 쓴다. **문구가 짧아졌을 뿐 "뱃지엔 반드시 면책이 딸려 나온다"는 결속은 그대로다**
+// (getTrustDisplay가 여전히 한 반환값으로 둘을 함께 낸다 — 이 파일 상단 B9 주석).
+const DISCLAIMER_SUMMARY = '판매자 제공 정보 · 차장님이 검증한 정보가 아닙니다';
 
 // accident_status 계약-외 값 정규화(conventions §4): 3값 밖(빈 문자열 포함)이면 null과 동일.
 const VALID_ACCIDENT_STATUSES = new Set(['무사고', '단순교환', '사고']);
@@ -83,16 +93,15 @@ export function hasTrustAttributes(listing: TrustAttributesInput): boolean {
  */
 export function getTrustDisplay(
   listing: TrustAttributesInput,
-  // 카드/상세 데이터가 다시 갈라질 수 있는 API 자리라 시그니처는 유지한다(2026-08-05 카드
-  // 면책 제거로 지금은 미사용).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  variant: 'card' | 'detail',
+  // 'card'는 데이터 계층에서만 면책을 들고 있고 렌더는 쓰지 않는다(2026-08-05 카드 면책 제거).
+  // 'summary'는 상세 요약 컬럼 — 같은 결속을 유지하되 짧은 문구를 쓴다(2026-08-13 #2).
+  variant: TrustVariant,
 ): TrustDisplay | null {
   const badges = getTrustBadges(listing);
   if (badges.length === 0) return null;
   return {
     badges,
-    disclaimer: DISCLAIMER_DETAIL,
+    disclaimer: variant === 'summary' ? DISCLAIMER_SUMMARY : DISCLAIMER_DETAIL,
   };
 }
 
@@ -111,7 +120,7 @@ export function getTrustDisplay(
 //     흐림 미지원 브라우저에서는 불투명도만 적용되므로(supports-[] 가드) 그때 대비가 가장
 //     약해진다 — 그래서 흰 글자 + semibold + 텍스트 그림자를 남겨 최저선을 지킨다.
 //   detail: 문서 흐름 안이라 기존 불투명 톤(디자인 토큰)을 그대로 쓴다.
-function badgeClassName(tone: 'green' | 'neutral', variant: 'card' | 'detail'): string {
+function badgeClassName(tone: 'green' | 'neutral', variant: TrustVariant): string {
   if (variant === 'card') {
     return tone === 'green'
       ? 'inline-flex items-center gap-1 rounded-badge bg-[#1B6E3D]/45 px-2 py-0.5 text-caption font-semibold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.55)] supports-[backdrop-filter]:backdrop-blur-lg'
@@ -127,7 +136,7 @@ export default function TrustAttributes({
   variant,
 }: {
   listing: TrustAttributesInput;
-  variant: 'card' | 'detail';
+  variant: TrustVariant;
 }) {
   const display = getTrustDisplay(listing, variant);
   if (!display) return null;
@@ -157,7 +166,7 @@ export default function TrustAttributes({
     );
   }
 
-  // 상세: 칩 행 아래 전체 면책 문구(UX-DR19)를 별도 줄로.
+  // 상세('detail')와 요약('summary'): 칩 행 아래 면책 문구를 별도 줄로. 문구 길이만 다르다(위 상수).
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5">{badges}</div>

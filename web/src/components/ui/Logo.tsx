@@ -8,9 +8,12 @@ type LogoSize = "sm" | "md";
 
 // 배지 글자색을 surface-base로 두는 이유: brand-petrol 배지는 라이트=진한 청록/다크=밝은 청록으로
 // 스왑되는데, surface-base는 라이트≈흰색/다크≈검정으로 정반대로 스왑되므로 양 모드 모두 대비가 유지된다.
+// 배지 글자("차")는 **배지 크기의 약 0.43배**로 둔다 — 목업(mockups/detail-1.html의 `.logo-mark`)이
+// 29px 배지에 12.5px 글자를 쓴 비율이다. 예전엔 sm=28px 배지에 16px(0.57배)이라 "차"가 배지를
+// 꽉 채워 어색했다(2026-08-13 사용자 지적 #3). 배지 자체 크기는 그대로 두고 글자만 줄인다.
 const SIZES: Record<LogoSize, { badge: string; word: string }> = {
-  sm: { badge: "h-7 w-7 text-base", word: "text-base" },
-  md: { badge: "h-10 w-10 text-2xl", word: "text-xl" },
+  sm: { badge: "h-7 w-7 text-xs", word: "text-base" },
+  md: { badge: "h-10 w-10 text-lg", word: "text-xl" },
 };
 
 export default function Logo({ size = "md" }: { size?: LogoSize }) {

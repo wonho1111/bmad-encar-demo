@@ -1,28 +1,33 @@
 'use client';
 
-// 매물 상세의 문의 CTA — 데스크톱 sticky aside + 모바일 하단 고정 바 **두 배치를 이 컴포넌트 하나가**
-// 함께 그린다(#82 종결, Story 10.6).
+// 매물 상세의 문의 CTA — **데스크톱 요약 컬럼 안 버튼 + 모바일 하단 고정 바** 두 배치를 이
+// 컴포넌트 하나가 함께 그린다(#82 종결, Story 10.6).
 //
 // 왜 하나로 합쳤나: 예전엔 두 배치에 각각 InquiryButton을 마운트해 busy/error 상태를 따로 들고 있었다
 // (docs/tech-debt.md #82). ≥1024px에서 문의 실패로 에러가 뜬 채 창을 <1024px로 좁히면, 하단 바 쪽은
 // 에러 없는 깨끗한 "문의하기"로 보였다 — 같은 문의가 두 군데서 다르게 보였다는 뜻이다.
-// 여기서는 busy/error state를 이 컴포넌트 최상위에 **한 번만** 두고, 두 블록(desktop aside/mobile bar)이
-// 그 값을 함께 읽어 렌더한다. 모바일 블록은 `position:fixed`라 이 컴포넌트가 grid 안에 있어도 뷰포트
-// 하단에 그대로 고정된다(레이아웃엔 영향 없음).
+// 여기서는 useInquiryAction 훅을 **한 번만** 부르고, 두 블록이 그 값을 함께 읽어 렌더한다.
+//
+// ✎ 2026-08-13(#2 상세 재구성) — 예전엔 이 컴포넌트가 `<aside>` 카드(가격 + 버튼)를 통째로
+//   그렸다. 지금은 **요약 카드 자체를 page.tsx가 그리고**(제목·찜·신뢰뱃지·가격·주요제원 6칸까지
+//   목업 detail-1.html의 `.summary-col` 구성 그대로), 이 컴포넌트는 그 카드 **안에 들어가는 버튼**과
+//   모바일 고정 바만 맡는다. 사용자 지적이 정확히 그 지점이었다 — "문의하기 쪽에 아무것도 없고
+//   모든 값이 아래에 있는데 목업엔 문의하기 쪽에 여러 정보가 있다".
 //
 // mode(anon/owner/inquiry)는 서버(page.tsx, user를 이미 들고 있음)가 계산해 넘긴다 — 상태를 갖는 분기는
 // inquiry뿐이라 클라이언트는 그 계산을 다시 할 필요가 없다(AC7 3분기).
-//
-// 문의 개시 로직(openOrCreateRoom + busy/error) 자체는 옛 InquiryButton.tsx를 그대로 옮겼다
-// (삭제됨 — 유일 사용처가 이 페이지였고 여기로 흡수됨, A3).
-import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { openOrCreateRoom } from '@/lib/chat';
 import Button, { buttonClasses } from '@/components/ui/Button';
+import { useInquiryAction } from './useInquiryAction';
 
 export type InquiryCtaMode = 'anon' | 'owner' | 'inquiry';
+
+// CTA 밑 한 줄 안내(목업 `.cta-helper`) — 분기마다 다음에 무슨 일이 일어나는지 미리 알려준다.
+const HELPER_TEXT: Record<InquiryCtaMode, string> = {
+  anon: '로그인 후 판매자와 바로 채팅할 수 있어요',
+  owner: '내가 등록한 매물이에요',
+  inquiry: '판매자와 1:1 채팅으로 바로 이어져요',
+};
 
 export default function InquiryCta({
   mode,
@@ -35,44 +40,7 @@ export default function InquiryCta({
   loginHref: string;
   priceText: string;
 }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleInquiry() {
-    if (busy) return; // 연타 차단(방이 두 번 열리는 것·이중 이동 방지)
-    setError(null);
-    setBusy(true);
-    try {
-      const supabase = createClient();
-
-      // 현재 로그인 사용자 = 구매자. 방의 buyer_id가 된다.
-      //   getUser()는 Auth 서버에 재검증해 신뢰 가능(쿠키만 믿지 않음).
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        // proxy가 비로그인을 1차로 막지만, 만약을 대비한 방어.
-        setError('로그인이 필요합니다. 다시 로그인해주세요.');
-        return;
-      }
-
-      // 방 열기(생성 또는 재사용) — 규칙은 @/lib/chat 한 곳에서.
-      const result = await openOrCreateRoom(supabase, listingId, user.id);
-      if ('error' in result) {
-        setError(result.error);
-        return;
-      }
-
-      // 성공 → 그 채팅방으로 이동.
-      router.push(`/chat/${result.roomId}`);
-    } catch (err) {
-      console.error('[listings/detail] 문의하기 예외:', err);
-      setError('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
-    } finally {
-      setBusy(false);
-    }
-  }
+  const { busy, error, start } = useInquiryAction(listingId);
 
   // 3분기 중 실제로 "동작"(상태를 갖는 쪽)은 inquiry뿐 — anon/owner는 그냥 링크다(AC7).
   function renderAction() {
@@ -80,7 +48,7 @@ export default function InquiryCta({
       // 비로그인 — 버튼을 숨기지 않는다. 어포던스는 보이고 게이트는 클릭에만 걸린다(FR58, conventions §8).
       return (
         // data-testid: E2E(web/e2e/viewport-audit.spec.ts)가 텍스트·클래스가 아니라 이 안정적인
-        // 훅으로 CTA를 찾는다(코드리뷰 patch, listing-photo와 동일 취지) — 데스크톱 aside·모바일
+        // 훅으로 CTA를 찾는다(코드리뷰 patch, listing-photo와 동일 취지) — 요약 컬럼·모바일
         // 하단 바 두 인스턴스가 DOM에 항상 함께 있으므로(Tailwind가 display로만 전환) 실제로
         // 보이는 쪽만 `:visible`로 골라 쓴다.
         <Link href={loginHref} data-testid="inquiry-cta" className={buttonClasses({ className: 'w-full' })}>
@@ -103,7 +71,7 @@ export default function InquiryCta({
         <Button
           type="button"
           variant="primary"
-          onClick={handleInquiry}
+          onClick={() => void start()}
           loading={busy}
           loadingText="문의 채팅방 여는 중…"
           className="w-full"
@@ -121,16 +89,11 @@ export default function InquiryCta({
 
   return (
     <>
-      {/* 데스크톱 sticky aside — Story 9.5 AC7·D9. ≥1024px에서만(그 아래는 하단 고정 바가 대신한다).
-          top-6: 이 앱의 상단바는 sticky가 아니라 함께 스크롤되므로, 헤더 높이가 아니라 본문
-          여백(p-6)과 같은 값을 띄운다. */}
-      <aside className="hidden lg:block">
-        <div className="sticky top-6 flex flex-col gap-3 rounded-card border border-border-hairline bg-surface-raised p-5 shadow-card dark:shadow-none">
-          {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(30/800, DESIGN.md:42). */}
-          <p className="whitespace-nowrap text-price-lg font-extrabold text-price-emphasis">{priceText}</p>
-          {renderAction()}
-        </div>
-      </aside>
+      {/* 요약 카드 안 CTA — ≥1024px에서만(그 아래는 하단 고정 바가 대신한다). */}
+      <div className="hidden flex-col gap-2 lg:flex">
+        {renderAction()}
+        <p className="text-center text-caption text-ink-muted">{HELPER_TEXT[mode]}</p>
+      </div>
 
       {/* 모바일·태블릿(<1024px) 하단 고정 바 — 가격 + CTA 상시(AC7).
           shadow-float = 떠 있는 요소용 겹 그림자(DESIGN.md:115). 가로 한 줄을 유지하고, 공간이

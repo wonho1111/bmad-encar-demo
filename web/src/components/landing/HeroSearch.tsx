@@ -112,7 +112,15 @@ export default function HeroSearch({ authed }: { authed: boolean }) {
         viewBox="0 0 640 220"
         preserveAspectRatio="xMaxYMid meet"
         aria-hidden="true"
-        className="pointer-events-none absolute -bottom-[6%] -right-[4%] w-[min(58%,640px)] fill-white opacity-[.10]"
+        // ✎ 2026-08-13 사용자 지적 #5("모바일에서 좀 애매하게 보인다") — 두 군데를 고쳤다.
+        //   ① `-bottom-[6%]` → `-bottom-1.5`(고정 6px). bottom의 %는 **컨테이너 높이 기준**이라
+        //      높이가 유동적인 이 <section>에서는 폭마다 다른 만큼 잘렸다 — 390px에서 실측하니
+        //      그려진 높이 약 78px 중 18px(23%)이 밴드 밖으로 나가 바퀴가 뭉텅 잘려 있었다.
+        //      고정 px로 바꾸면 어느 폭에서든 잘리는 양이 같다(목업이 220px 고정 밴드에서 의도한
+        //      "살짝 걸치는" 정도 = 6px 안팎).
+        //   ② 좁은 폭에서 폭을 58%→72%로 키운다. 226px(=390의 58%)로는 차 형태가 안 읽히고
+        //      호(弧)만 보여서 얼룩처럼 느껴졌다. 640px 상한과 sm 이상 58%는 그대로다.
+        className="pointer-events-none absolute -bottom-1.5 -right-[4%] w-[min(72%,640px)] fill-white opacity-[.10] sm:w-[min(58%,640px)]"
       >
         <path d="M6,150 C30,120 74,112 122,110 L168,72 C188,54 224,45 276,45 L398,47 C452,49 496,71 528,110 L590,122 C618,128 634,144 634,168 L634,192 L566,192 A42,42 0 0 0 482,192 L246,192 A42,42 0 0 0 162,192 L26,192 C14,192 6,183 6,170 Z" />
         <circle cx="204" cy="192" r="30" />
@@ -129,11 +137,11 @@ export default function HeroSearch({ authed }: { authed: boolean }) {
         <h1 className="text-[26px] font-extrabold leading-tight text-white break-keep sm:text-display">
           원하는 차를 <span className="text-accent-amber">말</span>로 찾으세요
         </h1>
-        <p className="max-w-xl text-body text-white/75">
-          &ldquo;3천만원대 무사고 흰색 SUV&rdquo;처럼 그냥 말하듯 검색하면, AI가 조건에 맞는 직거래
-          매물을 바로 골라줍니다.
-        </p>
-
+        {/* ✎ 2026-08-13 사용자 지적 #6 — 헤드라인 밑 설명 문단을 **뺐다**. landing-1.html(웹 목업)엔
+            `.hero-sub`가 있었지만 앱 목업(app-home-2.html)엔 없고, 실제로 그려 보니 두 줄로 넘어가
+            헤드라인과 검색창 사이를 갈라놓았다. 무엇을 하는 곳인지는 아래 입력창의 placeholder
+            ("예: 3천만원 이하 하이브리드 세단 추천해줘")가 이미 같은 예시로 알려준다 — 같은 말을
+            두 번 하지 않는다. 되살리려면 한 줄로 줄여서(줄바꿈 없이) 넣을 것. */}
         {/* 검색 pill — D5: 모든 뷰포트에서 가로 1행(아이콘+입력+카운터+버튼) 유지, 세로 스택 금지. */}
         <form
           onSubmit={handleSubmit}

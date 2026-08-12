@@ -15,6 +15,8 @@
 // 이 파일이 보지 않는 것(추측이 아니라 기법상 불가): 실제 브라우저에서 계산된 위치·크기(Tailwind
 // 임의값이 CSS로 컴파일되는지, -bottom-[6%]가 몇 px로 떨어지는지)는 마크업만으로는 알 수 없다.
 // 그건 E2E/육안 몫이며, spec-16-10 코드리뷰 2패스에서 실제 브라우저로 390px·1440px를 실측했다.
+//
+// ⚠️ %가 아니라 고정 px로 바뀐 경위는 아래 클래스 목록의 주석을 볼 것(2026-08-13 #5).
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -70,8 +72,14 @@ describe('HeroSearch — 차 실루엣 배경 장식(spec-16-10)', () => {
         // 배치 = 목업의 **웹** 프레임 규칙(consistency-1.html:170 `.silhouette`) — 앱 프레임의
         // top 기준을 웹에 복사하면 높이가 유동적인 <section>에서 무너진다(2패스 실측: 390px에서
         // 잉크의 25%만 보였다). bottom 기준 + 640px 상한이 그 교정이다.
-        '-bottom-[6%]',
-        'w-[min(58%,640px)]',
+        //
+        // ✎ 2026-08-13(사용자 지적 #5) — bottom도 %를 버리고 **고정 px**(-bottom-1.5)로 바꿨다.
+        //   %는 컨테이너 높이 기준이라 폭마다 잘리는 양이 달라져(390px 실측: 78px 중 18px = 23%가
+        //   밴드 밖으로 나가 바퀴가 잘렸다) "살짝 걸치는" 목업 의도가 폭에 따라 무너졌다.
+        //   폭도 좁은 화면에서만 72%로 키운다(226px로는 차 형태가 안 읽힘) — sm 이상은 58% 그대로.
+        '-bottom-1.5',
+        'w-[min(72%,640px)]',
+        'sm:w-[min(58%,640px)]',
       ]) {
         expect(svgTag).toContain(cls);
       }
