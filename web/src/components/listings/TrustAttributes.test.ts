@@ -47,20 +47,34 @@ describe('getTrustDisplay — I/O 매트릭스', () => {
     expect(typeof display?.disclaimer).toBe('string');
   });
 
-  it('단순교환 → 초록이 아닌 중립 상태칩 + 면책', () => {
+  // ✎ 2026-08-13 사용자 지시 — '사고'·'단순교환'은 **뱃지(칩)로 안 보인다.** 카드·요약은 긍정
+  //   신호만 담는 자리이고, 부정 상태는 상세의 "신뢰정보" 카드(detail)와 "차량정보" 표가 말한다.
+  //   그래서 같은 입력이 variant에 따라 다르게 나온다 — 두 방향을 **함께** 단언해야 한 쪽만
+  //   고쳐지는 드리프트가 잡힌다.
+  it('단순교환 → 카드·요약엔 안 나오고(null), 상세엔 중립 상태칩으로 나온다', () => {
     const listing: TrustAttributesInput = { accident_status: '단순교환' };
-    const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([
+    expect(getTrustDisplay(listing, 'card'), '카드에 부정 상태칩이 뜨면 안 된다').toBeNull();
+    expect(getTrustDisplay(listing, 'summary'), '요약 컬럼에도 뜨면 안 된다').toBeNull();
+    expect(getTrustDisplay(listing, 'detail')?.badges).toEqual([
       { key: 'accident', label: '단순교환', tone: 'neutral', description: expect.any(String) },
     ]);
   });
 
-  it('사고 → 초록이 아닌 중립 상태칩 + 면책', () => {
+  it('사고 → 카드·요약엔 안 나오고(null), 상세엔 중립 상태칩으로 나온다', () => {
     const listing: TrustAttributesInput = { accident_status: '사고' };
-    const display = getTrustDisplay(listing, 'card');
-    expect(display?.badges).toEqual([
+    expect(getTrustDisplay(listing, 'card'), '카드에 부정 상태칩이 뜨면 안 된다').toBeNull();
+    expect(getTrustDisplay(listing, 'summary'), '요약 컬럼에도 뜨면 안 된다').toBeNull();
+    expect(getTrustDisplay(listing, 'detail')?.badges).toEqual([
       { key: 'accident', label: '사고', tone: 'neutral', description: expect.any(String) },
     ]);
+  });
+
+  it('혼합(사고+비흡연) → 카드엔 비흡연만, 상세엔 둘 다', () => {
+    const listing: TrustAttributesInput = { accident_status: '사고', is_non_smoker: true };
+    expect(getTrustDisplay(listing, 'card')?.badges).toEqual([
+      { key: 'non-smoker', label: '비흡연', tone: 'green', description: expect.any(String) },
+    ]);
+    expect(getTrustDisplay(listing, 'detail')?.badges).toHaveLength(2);
   });
 
   it('1인소유=true → 초록 칩', () => {
@@ -170,7 +184,16 @@ describe('면책-뱃지 결속(B9) — "있는지"가 아니라 "결속되는지
     ['혼합', { accident_status: '사고', is_non_smoker: true }],
   ];
 
-  it.each(casesWithBadges)('%s — 뱃지가 있으면 면책(card)도 항상 함께 있다', (_label, listing) => {
+  // card는 긍정 뱃지만 그리므로(2026-08-13) 부정 상태만 있는 케이스는 애초에 뱃지가 0개다 —
+  // 결속(뱃지↔면책)을 볼 수 있는 건 초록 뱃지가 하나라도 있는 케이스뿐이다.
+  const cardCasesWithBadges = casesWithBadges.filter(
+    ([, listing]) =>
+      listing.is_single_owner === true ||
+      listing.is_non_smoker === true ||
+      listing.accident_status === '무사고',
+  );
+
+  it.each(cardCasesWithBadges)('%s — 뱃지가 있으면 면책(card)도 항상 함께 있다', (_label, listing) => {
     const display = getTrustDisplay(listing, 'card');
     expect(display).not.toBeNull();
     expect(display!.badges.length).toBeGreaterThan(0);
@@ -200,7 +223,15 @@ describe('렌더 레이어 결속(P1, 코드리뷰 2026-07-22) — 컴포넌트 
     ['혼합', { accident_status: '사고', is_non_smoker: true }, '사고'],
   ];
 
-  it.each(casesWithBadges)(
+  // card에서 라벨이 실제로 보이는 것은 **초록 뱃지뿐**이다(2026-08-13 — 사고·단순교환은 칩에서 뺐다).
+  const cardCases: Array<[string, TrustAttributesInput, string]> = [
+    ['무사고', { accident_status: '무사고' }, '무사고'],
+    ['1인소유', { is_single_owner: true }, '1인소유'],
+    ['비흡연', { is_non_smoker: true }, '비흡연'],
+    ['혼합(사고+비흡연)', { accident_status: '사고', is_non_smoker: true }, '비흡연'],
+  ];
+
+  it.each(cardCases)(
     '%s(card) — 렌더 트리에 뱃지 라벨이 있다(면책은 카드에서 뺐다, 2026-08-05 사용자 승인)',
     (_label, listing, badgeLabel) => {
       const element = TrustAttributes({ listing, variant: 'card' });
@@ -210,6 +241,17 @@ describe('렌더 레이어 결속(P1, 코드리뷰 2026-07-22) — 컴포넌트 
       expect(text).not.toContain('판매자 제공 정보');
     },
   );
+
+  // 반대편 — 부정 상태 라벨이 카드에 **없어야** 한다. 위 목록은 "있는 것"만 보므로 이게 없으면
+  // 필터를 지워도(사고칩이 되살아나도) 전부 green이다.
+  it.each([
+    ['사고', { accident_status: '사고' } as TrustAttributesInput],
+    ['단순교환', { accident_status: '단순교환' } as TrustAttributesInput],
+  ])('%s(card) — 부정 상태 라벨은 카드 렌더 트리에 없다', (label, listing) => {
+    const element = TrustAttributes({ listing, variant: 'card' });
+    expect(element, '초록 뱃지가 하나도 없으면 카드는 아무것도 안 그린다').toBeNull();
+    void label;
+  });
 
   it.each(casesWithBadges)(
     '%s(detail) — 렌더 트리에 뱃지 라벨과 상세 면책 문구(UX-DR19)가 같이 있다',
@@ -259,26 +301,34 @@ describe('톤 결속(follow-up 코드리뷰 2026-07-22) — 초록의 비색 신
     expect(collectClassNames(element).join(' ')).toContain('trust-green');
   });
 
-  it('중립 케이스(사고, card) — ✓ 없음, 초록 클래스 없음(중립칩이 초록으로 오염되지 않는다)', () => {
-    const element = TrustAttributes({ listing: { accident_status: '사고' }, variant: 'card' });
+  // ✎ 2026-08-13 — 중립칩은 이제 **상세에만** 존재한다(카드·요약에선 뺐다). 그래서 "중립칩이
+  //   초록으로 오염되지 않는가"는 detail에서 본다.
+  it('중립 케이스(사고, detail) — ✓ 없음, 초록 클래스 없음(중립칩이 초록으로 오염되지 않는다)', () => {
+    const element = TrustAttributes({ listing: { accident_status: '사고' }, variant: 'detail' });
     expect(collectText(element).join(' ')).not.toContain('✓');
-    expect(collectClassNames(element).join(' ')).not.toContain('#1B6E3D');
+    expect(collectClassNames(element).join(' ')).not.toContain('trust-green-bg');
   });
 
-  it('중립 케이스(단순교환, card) — ✓ 없음', () => {
-    const element = TrustAttributes({ listing: { accident_status: '단순교환' }, variant: 'card' });
-    expect(collectText(element).join(' ')).not.toContain('✓');
-  });
-
-  it('혼합(사고+비흡연, card) — 초록 칩(비흡연)의 ✓·초록 배경과 중립칩(사고)이 공존한다', () => {
+  it('혼합(사고+비흡연, card) — 초록칩(비흡연)만 남고 중립칩(사고)은 빠진다', () => {
     const element = TrustAttributes({
       listing: { accident_status: '사고', is_non_smoker: true },
       variant: 'card',
     });
     const text = collectText(element).join(' ');
-    expect(text).toContain('사고'); // 중립칩
+    expect(text, '사고는 카드 칩에서 빠져야 한다').not.toContain('사고');
     expect(text).toContain('비흡연'); // 초록칩
     expect(text).toContain('✓'); // 초록칩의 비색 신호
     expect(collectClassNames(element).join(' ')).toContain('#1B6E3D');
+  });
+
+  it('혼합(사고+비흡연, detail) — 초록칩과 중립칩이 함께 있다', () => {
+    const element = TrustAttributes({
+      listing: { accident_status: '사고', is_non_smoker: true },
+      variant: 'detail',
+    });
+    const text = collectText(element).join(' ');
+    expect(text).toContain('사고');
+    expect(text).toContain('비흡연');
+    expect(text).toContain('✓');
   });
 });

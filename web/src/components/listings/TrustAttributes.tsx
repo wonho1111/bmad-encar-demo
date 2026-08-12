@@ -113,6 +113,15 @@ export function hasTrustAttributes(listing: TrustAttributesInput): boolean {
   return getTrustBadges(listing).length > 0;
 }
 
+// ✎ 2026-08-13 사용자 지시 — **'사고'·'단순교환'은 뱃지(칩)로 안 보여준다.**
+//   뱃지는 판매자가 내세우는 긍정 신호("무사고·1인소유·비흡연")의 자리인데, 거기에 부정 상태가
+//   같은 모양으로 섞이면 "뱃지가 붙어 있다 = 좋은 차"라는 읽기가 무너진다.
+//   ⚠️ **정보를 없애는 게 아니라 자리를 옮기는 것이다.** 사고 이력은 상세에서 두 군데가 그대로
+//   말한다: ① "신뢰정보" 카드(variant='detail')는 사고·단순교환을 설명과 함께 **여전히 보여준다**,
+//   ② "차량정보" 표의 `사고이력` 행. 숨기는 것은 **카드·요약의 칩**뿐이다 — 그 두 자리는 좁아서
+//   맥락 없이 단어만 뜨는 곳이라, 부정 상태를 거기 두면 오히려 오해를 만든다.
+const POSITIVE_ONLY_VARIANTS = new Set<TrustVariant>(['card', 'summary']);
+
 /**
  * 면책-뱃지 결속의 실제 자리(B9, 상세 한정 — 위 파일 상단 주석 참조). 뱃지가 하나라도 있으면
  * 반드시 면책 문구를 함께 반환한다 — 이 함수를 거치지 않고 뱃지만 그리는 경로가 없다
@@ -125,7 +134,9 @@ export function getTrustDisplay(
   // 'summary'는 상세 요약 컬럼 — 같은 결속을 유지하되 짧은 문구를 쓴다(2026-08-13 #2).
   variant: TrustVariant,
 ): TrustDisplay | null {
-  const badges = getTrustBadges(listing);
+  const all = getTrustBadges(listing);
+  // 카드·요약은 초록(긍정) 뱃지만 남긴다(위 POSITIVE_ONLY_VARIANTS 주석). 상세는 전부 그대로.
+  const badges = POSITIVE_ONLY_VARIANTS.has(variant) ? all.filter((b) => b.tone === 'green') : all;
   if (badges.length === 0) return null;
   return {
     badges,
