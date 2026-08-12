@@ -404,19 +404,10 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                // 부제 — ✎ 2026-08-10 사용자 지적("웹에는 설명이 있고 앱에는 없다, 통일 필요").
-                // 문장은 웹 `HeroSearch.tsx`의 것과 **글자 그대로 같게** 둔다(두 화면이 갈리지
-                // 않게). 크기만 앱 폭에 맞춰 줄인다.
-                Text(
-                  key: const Key('hero_subtitle'),
-                  '"3천만원대 무사고 흰색 SUV"처럼 그냥 말하듯 검색하면, AI가 조건에 맞는 직거래 매물을 바로 골라줍니다.',
-                  style: TextStyle(
-                    color: AppColors.onPetrol.withValues(alpha: 0.75),
-                    fontSize: 12.5,
-                    height: 1.45,
-                  ),
-                ),
+                // ✎ 2026-08-13 사용자 지적 — 헤드라인 밑 설명 문단을 **뺐다**(web HeroSearch와 함께).
+                //   2026-08-10엔 "웹엔 있고 앱엔 없다"고 해서 맞췄던 자리인데, 이번엔 웹에서 빼기로
+                //   해서 방향이 반대로 정해졌다 — 두 화면을 갈리게 두지 않으려면 여기도 함께 빼야 한다.
+                //   무엇을 하는 곳인지는 아래 검색창 안내문이 같은 예시로 이미 알려준다.
                 const SizedBox(height: 12),
                 // 실 입력 pill — 흰 배경 + amber 검색 버튼(spec-16-8 AC1).
                 Container(

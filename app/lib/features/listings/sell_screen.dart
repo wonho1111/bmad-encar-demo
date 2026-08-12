@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../auth/require_user.dart';
 import 'listing.dart' show ListingDetail;
 import 'listing_filters.dart' show ListingOptions;
@@ -74,7 +75,13 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String? _fuel;
   String? _transmission;
   String? _region;
-  bool _accidentFree = true;
+  // ✎ 2026-08-13 — "무사고 차량" 스위치(기본 켜짐)를 신뢰 정보 3입력으로 교체했다.
+  //   그 스위치는 accident_free 하나만 썼는데, 화면이 뱃지로 보여주는 신뢰속성
+  //   (accident_status·is_single_owner·is_non_smoker)은 **앱에서 넣을 방법이 아예 없었다.**
+  //   게다가 기본이 켜짐이라 아무것도 안 건드리고 등록하면 자동으로 무사고 신고가 됐다.
+  String? _accidentStatus; // null=미선택(필수)
+  bool _isSingleOwner = false; // 체크=신고함. 미체크는 "아니오"가 아니라 미신고(null 저장).
+  bool _isNonSmoker = false;
 
   /// 사진 업로더의 화면 로컬 상태(Story 16.7) — 선택·삭제·재배치는 여기서만 일어나고, 실제
   /// 업로드/삭제/DB 반영은 폼 제출 시점에 한 번에(Design Notes). 등록 모드는 빈 목록으로 시작.
@@ -126,7 +133,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       _fuel = input.fuel;
       _transmission = input.transmission;
       _region = input.region;
-      _accidentFree = input.accidentFree;
+      _accidentStatus = input.accidentStatus.isEmpty ? null : input.accidentStatus;
+      _isSingleOwner = input.isSingleOwner;
+      _isNonSmoker = input.isNonSmoker;
       // 빌드 완료 후 컨트롤러에 수정 모드를 알린다(빌드 중 provider 수정 금지 → 다음 프레임).
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -178,7 +187,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       displacement: _displacement.text,
       seats: _seats.text,
       region: _region ?? '',
-      accidentFree: _accidentFree,
+      accidentStatus: _accidentStatus ?? '',
+      isSingleOwner: _isSingleOwner,
+      isNonSmoker: _isNonSmoker,
       options: _options.text,
       description: _description.text,
     );
@@ -213,7 +224,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       _fuel = null;
       _transmission = null;
       _region = null;
-      _accidentFree = true;
+      _accidentStatus = null;
+      _isSingleOwner = false;
+      _isNonSmoker = false;
       // 등록 성공은 다음 등록을 위한 빈 폼이 원칙이다 — 컨트롤러도 사진을 []로 되돌린다
       // (sell_controller.dart 등록 분기). 실패한 사진이 있었더라도 매물 자체는 이미 저장됐으니
       // "내 매물"에서 다시 열어 재시도할 수 있다(edit_listing_screen.dart가 그 진입점).
@@ -394,14 +407,36 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                SwitchListTile(
-                  key: const Key('sell_accident_free'),
+                // 신뢰 정보 — 구매자가 카드·상세에서 뱃지로 보는 값이다(web SellForm과 같은 구성).
+                _dropdown(
+                  '사고이력',
+                  'sell_accident_status',
+                  _accidentStatus,
+                  ListingOptions.accidentStatus,
+                  (v) => setState(() => _accidentStatus = v),
+                ),
+                CheckboxListTile(
+                  key: const Key('sell_is_single_owner'),
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('무사고 차량'),
-                  value: _accidentFree,
-                  onChanged: busy
-                      ? null
-                      : (v) => setState(() => _accidentFree = v),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('1인소유'),
+                  value: _isSingleOwner,
+                  onChanged: busy ? null : (v) => setState(() => _isSingleOwner = v ?? false),
+                ),
+                CheckboxListTile(
+                  key: const Key('sell_is_non_smoker'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('비흡연'),
+                  value: _isNonSmoker,
+                  onChanged: busy ? null : (v) => setState(() => _isNonSmoker = v ?? false),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    '체크한 항목만 구매자에게 표시돼요. 체크하지 않은 항목은 "아니오"가 아니라 "신고하지 않음"으로 남습니다.',
+                    style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+                  ),
                 ),
 
                 _text(

@@ -35,20 +35,28 @@ const trustDisclaimer =
 
 /// 표시할 뱃지 목록을 계산하는 순수함수(web getTrustBadges 미러). `@visibleForTesting`:
 /// 테스트가 I/O 매트릭스 6행을 이 함수만으로 직접 단언할 수 있게 노출한다.
+///
+/// ✎ 2026-08-13 사용자 지시 — [positiveOnly]가 true면 **'사고'·'단순교환'을 뺀다.**
+///   카드의 칩은 판매자가 내세우는 긍정 신호의 자리인데, 거기에 부정 상태가 같은 모양으로
+///   섞이면 "뱃지가 붙어 있다 = 좋은 차"라는 읽기가 무너진다.
+///   ⚠️ **정보를 없애는 게 아니라 자리를 옮기는 것이다** — 상세의 "신뢰정보" 블록
+///   (TrustAttributesDetailSection)은 설명과 함께 여전히 다 보여주고, 기본정보 표의
+///   `사고여부` 행도 그대로다. 숨기는 것은 맥락 없이 단어만 뜨는 카드 칩뿐이다.
 @visibleForTesting
 List<TrustBadge> getTrustBadges({
   String? accidentStatus,
   bool? isSingleOwner,
   bool? isNonSmoker,
+  bool positiveOnly = false,
 }) {
   final badges = <TrustBadge>[];
 
   if (accidentStatus != null && _validAccidentStatuses.contains(accidentStatus)) {
-    badges.add(
-      accidentStatus == '무사고'
-          ? const TrustBadge(key: 'accident', label: '무사고', tone: TrustTone.green)
-          : TrustBadge(key: 'accident', label: accidentStatus, tone: TrustTone.neutral),
-    );
+    if (accidentStatus == '무사고') {
+      badges.add(const TrustBadge(key: 'accident', label: '무사고', tone: TrustTone.green));
+    } else if (!positiveOnly) {
+      badges.add(TrustBadge(key: 'accident', label: accidentStatus, tone: TrustTone.neutral));
+    }
   }
   if (isSingleOwner == true) {
     badges.add(const TrustBadge(key: 'single-owner', label: '1인소유', tone: TrustTone.green));
@@ -122,10 +130,12 @@ class TrustAttributesCardRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // positiveOnly — 카드 칩은 긍정 신호만(2026-08-13 사용자 지시, getTrustBadges 주석 참조).
     final badges = getTrustBadges(
       accidentStatus: accidentStatus,
       isSingleOwner: isSingleOwner,
       isNonSmoker: isNonSmoker,
+      positiveOnly: true,
     );
     if (badges.isEmpty) return const SizedBox.shrink();
     return Padding(

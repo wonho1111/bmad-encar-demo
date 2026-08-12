@@ -30,19 +30,13 @@ const String buyerVisibleStatus = statusOnSale;
 /// 조용히 렌더되지 않는데, 이 두 select 문자열을 직접 보는 테스트가 없었다(코드리뷰 지적) —
 /// 이 상수를 테스트가 직접 단언한다.
 ///
-/// [authed]로 신뢰속성 3컬럼을 분기한다 — anon(비로그인)이 그 3컬럼을 select하면 `42501
-/// permission denied`로 **select 전체**가 실패한다(§4.1 anon 단서와 동일 근거, web
-/// `popularRecentColumns(authed)`(listings.ts)와 같은 패턴).
-/// ⚠️ 이 파라미터가 왜 필요해졌나(spec-16-6 인수 경위) — 이 주석은 한때 "app_router.dart의
-/// 전역 redirect가 모든 화면을 로그인 필수로 강제해 이 경로에 anon이 닿지 않는다"고 적혀
-/// 있었다(코드리뷰 지적 P15). 그 전제는 16.6이 `/home`을 anon 화이트리스트에 넣으면서
-/// 깨졌다 — 실기기 실측(anon으로 홈 진입 → "지금 인기"·"방금 올라온 매물" 두 섹션이 42501로
-/// 전부 실패, REST로 컬럼 단위 이분 탐색해 원인 확인)으로 드러났다. 상세도 `/home`에서
-/// `Navigator.push`로 열리는 화면이라 같은 문제를 그대로 진다.
+/// ✎ 2026-08-13 — 신뢰속성 3컬럼을 **로그인 여부와 무관하게** 조회한다. 예전엔 anon에게 그 컬럼
+/// SELECT 권한이 없어(0011 화이트리스트 밖 — 요청하면 컬럼 하나가 아니라 select 전체가 42501로
+/// 죽는다) `authed` 분기로만 물었고, 그래서 **비로그인 앱 사용자에겐 신뢰 뱃지가 한 번도 안 떴다.**
+/// `0037_listings_anon_trust_columns.sql`이 그 GRANT를 열었다(사용자 승인, 운영 적용 완료).
 @visibleForTesting
-String listingDetailColumns(bool authed) {
-  final trustColumns =
-      authed ? ', accident_status, is_single_owner, is_non_smoker' : '';
+String listingDetailColumns() {
+  const trustColumns = ', accident_status, is_single_owner, is_non_smoker';
   return 'id, seller_id, manufacturer, model, body_type, year, price, mileage, '
       'color, fuel, transmission, displacement, seats, region, accident_free, '
       'seller_name, options, description, status$trustColumns';
@@ -193,14 +187,10 @@ List<String> buildGalleryUrls(
 /// 모드, 이미 이 리포에서 실측·해소된 패턴). 상수 하나로 합쳐 두 메서드가 실제로 참조하는지를
 /// 테스트가 직접 단언한다.
 ///
-/// [authed]로 신뢰속성 3컬럼을 분기한다 — `listingDetailColumns`와 동일 이유·동일 실측 근거
-/// (spec-16-6 인수 경위: anon으로 홈 진입 시 이 컬럼들 때문에 "지금 인기"·"방금 올라온 매물"
-/// select 전체가 42501로 실패했다). 탐색 화면(`fetchListings`)도 `/home`에서 push로 열려
-/// anon이 닿을 수 있어 같은 분기가 필요하다.
+/// ✎ 2026-08-13 — `listingDetailColumns`와 같은 이유로 `authed` 분기를 없앴다(0037 GRANT).
 @visibleForTesting
-String listingCardColumns(bool authed) {
-  final trustColumns =
-      authed ? ', accident_status, is_single_owner, is_non_smoker' : '';
+String listingCardColumns() {
+  const trustColumns = ', accident_status, is_single_owner, is_non_smoker';
   return 'id, manufacturer, model, year, price, mileage, region, seller_name, '
       'fuel, options$trustColumns';
 }
@@ -209,11 +199,6 @@ class ListingsRepository {
   ListingsRepository({SupabaseClient? client}) : _client = client ?? supabase;
 
   final SupabaseClient _client;
-
-  /// 로그인 여부 — `listingCardColumns`/`listingDetailColumns`의 [authed] 분기에 쓴다.
-  /// anon(비로그인)은 신뢰속성 3컬럼을 select할 수 없다(0011 GRANT 화이트리스트 밖, 42501) —
-  /// web이 `!!user`로 판정하는 것과 동일하게, 여기서는 현재 Supabase 세션 유무로 판정한다.
-  bool get _authed => _client.auth.currentUser != null;
 
   /// 구매자 관점 조회 시작점 — from('listings').select(columns).eq('status','on_sale').
   /// 호출부가 이어서 필터·정렬·단건 조회를 체이닝한다. FR11 규칙이 여기서만 비롯된다.
@@ -227,7 +212,7 @@ class ListingsRepository {
   /// 매물 목록(요약 7필드) — 필터 적용 + created_at desc, id desc 안정 정렬.
   /// 필터는 값이 있을 때만 체이닝(web SearchPage 와 동일). 키워드는 model ilike.
   Future<List<ListingCardData>> fetchListings(ResolvedFilters f) async {
-    var query = _buyerQuery(listingCardColumns(_authed));
+    var query = _buyerQuery(listingCardColumns());
 
     if (f.keyword != null) {
       query = query.ilike('model', '%${f.keyword}%'); // 모델명 부분일치(대소문자 무시).
@@ -237,6 +222,14 @@ class ListingsRepository {
     if (f.fuel != null) query = query.eq('fuel', f.fuel!);
     if (f.transmission != null) query = query.eq('transmission', f.transmission!);
     if (f.region != null) query = query.eq('region', f.region!);
+    // 신뢰속성(2026-08-13) — 뱃지와 **같은 컬럼**으로 거른다(사용자 결정: accident_free는 안 쓴다).
+    // 두 체크박스는 eq(true)라 값이 NULL(미신고)인 매물은 자연히 빠진다 — "1인소유라고 신고한
+    // 매물"을 찾는 것이지 "1인소유가 아닌 게 아닌 매물"이 아니다.
+    if (f.accidentStatus != null) {
+      query = query.eq('accident_status', f.accidentStatus!);
+    }
+    if (f.singleOwnerOnly) query = query.eq('is_single_owner', true);
+    if (f.nonSmokerOnly) query = query.eq('is_non_smoker', true);
     if (f.priceMin != null) query = query.gte('price', f.priceMin!);
     if (f.priceMax != null) query = query.lte('price', f.priceMax!);
     if (f.yearMin != null) query = query.gte('year', f.yearMin!);
@@ -272,7 +265,7 @@ class ListingsRepository {
   /// (_fetchCovers/attachCoverImages 재사용) — 인기 매물도 같은 ListingCard 위젯으로 그려지므로
   /// 계약을 두 조회 경로에서 갈라 두지 않는다.
   Future<List<ListingCardData>> fetchPopularListings({int limit = 4}) async {
-    final rows = await _buyerQuery(listingCardColumns(_authed))
+    final rows = await _buyerQuery(listingCardColumns())
         .order('view_count', ascending: false)
         .order('id', ascending: false)
         .limit(limit);
@@ -317,7 +310,7 @@ class ListingsRepository {
   /// 단일 매물 상세 — 구매자 관점(판매중만) + id 일치. 0건이면 null(없음·sold·삭제).
   /// web listings/[id] 의 maybeSingle 패턴.
   Future<ListingDetail?> fetchListing(String id) async {
-    final row = await _buyerQuery(listingDetailColumns(_authed)).eq('id', id).maybeSingle();
+    final row = await _buyerQuery(listingDetailColumns()).eq('id', id).maybeSingle();
 
     if (row == null) return null;
     final detail = ListingDetail.fromMap(row);
@@ -428,7 +421,7 @@ class ListingsRepository {
   }) async {
     final row = await _client
         .from('listings')
-        .select(listingDetailColumns(_authed))
+        .select(listingDetailColumns())
         .eq('id', id)
         .eq('seller_id', sellerId)
         .maybeSingle();

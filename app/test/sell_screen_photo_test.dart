@@ -162,6 +162,9 @@ Future<void> _fillValidSellForm(WidgetTester tester) async {
   await tester.enterText(find.byKey(const Key('sell_displacement')), '1600');
   await tester.enterText(find.byKey(const Key('sell_seats')), '5');
   await _selectDropdown(tester, 'sell_region', '서울');
+  // ✎ 2026-08-13 — 사고이력이 필수가 됐다(신뢰속성 입력 신설). 안 고르면 검증에서 막혀
+  //   등록이 아예 안 일어나고, 이 파일의 사진 시나리오는 "등록 성공 이후"를 전제로 한다.
+  await _selectDropdown(tester, 'sell_accident_status', '무사고');
 }
 
 void main() {

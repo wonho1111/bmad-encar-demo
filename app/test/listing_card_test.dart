@@ -267,7 +267,9 @@ void main() {
     testWidgets('가격이 26px/800/priceEmphasis이고, 차량명보다 큰 텍스트다(AC④)', (tester) async {
       await _pump(tester, _card());
 
-      final priceFinder = find.text('18,000,000원');
+      // ✎ 2026-08-13 — 가격 표시가 만원 표기로 바뀌었다(웹과 동일 규칙, number_format.wonText).
+      //   18,000,000원 → 1,800만원. DB·입력은 여전히 원이다.
+      final priceFinder = find.text('1,800만원');
       final priceText = tester.widget<Text>(priceFinder);
       expect(priceText.style?.fontSize, 26);
       expect(priceText.style?.fontWeight, FontWeight.w800);
@@ -327,7 +329,7 @@ void main() {
 
       final nameY = tester.getTopLeft(find.text('[현대] 아반떼 · 2021년')).dy;
       final metaY = tester.getTopLeft(find.textContaining('판매자 홍길동')).dy;
-      final priceY = tester.getTopLeft(find.text('18,000,000원')).dy;
+      final priceY = tester.getTopLeft(find.text('1,800만원')).dy;
       final chipsY = tester.getTopLeft(find.text('선루프')).dy;
 
       expect(nameY, lessThan(metaY), reason: '차량명이 meta보다 위에 있어야 한다');

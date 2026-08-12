@@ -1,7 +1,6 @@
 // 신뢰속성 판정 단위테스트(Story 16.3) — spec-16-3 I/O & Edge-Case Matrix 신뢰속성 6행을
 // `getTrustBadges` 순수함수로 직접 단언한다(web TrustAttributes.test.ts 미러).
 // + 위젯 레벨 결속(B9): 상세는 뱃지+면책이 한 위젯에서 함께 나오고, 카드는 면책이 없다.
-import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/listings/listing_trust_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -127,32 +126,44 @@ void main() {
     // 테스트는 전부 '무사고'(초록)거나 전부 null이라, 중립 분기의 `border: Border.all(
     // borderHairline)`이 사라져도(배경이 투명이라 흰 카드 위에서 뱃지 자체가 안 보이게 돼도)
     // 스위트는 green이었다.
-    testWidgets('카드 행 — 비초록(중립) 뱃지는 테두리가 있고 글자색이 inkSecondary다(P6, 흰 카드 위 가독성)',
+    // ✎ 2026-08-13 사용자 지시로 **계약이 뒤집혔다** — '사고'·'단순교환'은 카드 칩에서 뺀다.
+    //   (그전엔 중립칩의 테두리·글자색이 흰 카드 위에서 안 보이지 않는지를 봤다.)
+    //   정보를 없앤 게 아니라 자리를 옮긴 것이라, **상세에는 여전히 나오는지**를 같은 테스트에서
+    //   함께 단언한다 — 한쪽만 보면 "카드에서 뺐다"가 "어디서도 안 보인다"로 조용히 번질 수 있다.
+    testWidgets('카드 행 — 사고·단순교환은 칩으로 안 나온다(상세에는 그대로 나온다)',
         (tester) async {
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: TrustAttributesCardRow(
-              accidentStatus: '사고',
-              isSingleOwner: null,
-              isNonSmoker: null,
+      for (final status in ['사고', '단순교환']) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: TrustAttributesCardRow(
+                accidentStatus: status,
+                isSingleOwner: null,
+                isNonSmoker: null,
+              ),
             ),
           ),
-        ),
-      );
+        );
+        expect(find.text(status), findsNothing,
+            reason: '카드 칩은 긍정 신호의 자리다 — 부정 상태가 같은 모양으로 섞이면 '
+                '"뱃지가 붙어 있다 = 좋은 차"라는 읽기가 무너진다');
 
-      final labelFinder = find.text('사고');
-      expect(labelFinder, findsOneWidget);
-
-      final chipContainer = tester.widget<Container>(
-        find.ancestor(of: labelFinder, matching: find.byType(Container)).first,
-      );
-      final decoration = chipContainer.decoration as BoxDecoration;
-      expect(decoration.border, isNotNull,
-          reason: '테두리가 없으면 배경이 투명이라 흰 카드 표면 위에서 이 칩이 거의 안 보인다');
-
-      final labelText = tester.widget<Text>(labelFinder);
-      expect(labelText.style?.color, AppColors.inkSecondary);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: TrustAttributesDetailSection(
+                  accidentStatus: status,
+                  isSingleOwner: null,
+                  isNonSmoker: null,
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.text(status), findsOneWidget,
+            reason: '상세에서까지 사라지면 구매자가 사고 이력을 알 길이 없다');
+      }
     });
 
     testWidgets('카드 행 — 뱃지 0개면 아무것도(면책도) 그리지 않는다(SizedBox.shrink)', (tester) async {

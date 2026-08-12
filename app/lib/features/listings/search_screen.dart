@@ -38,6 +38,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String? _fuel;
   String? _transmission;
   String? _region;
+  // ✎ 2026-08-13 — 신뢰속성 필터(web /search와 같은 축). 뱃지 기준(accident_status)이다.
+  String? _accidentStatus;
+  bool _singleOwnerOnly = false;
+  bool _nonSmokerOnly = false;
 
   @override
   void initState() {
@@ -91,6 +95,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       fuel: _fuel,
       transmission: _transmission,
       region: _region,
+      accidentStatus: _accidentStatus,
+      singleOwnerOnly: _singleOwnerOnly,
+      nonSmokerOnly: _nonSmokerOnly,
       priceMin: _priceMin.text,
       priceMax: _priceMax.text,
       yearMin: _yearMin.text,
@@ -131,11 +138,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             fuel: _fuel,
             transmission: _transmission,
             region: _region,
+            accidentStatus: _accidentStatus,
+            singleOwnerOnly: _singleOwnerOnly,
+            nonSmokerOnly: _nonSmokerOnly,
             onBodyType: (v) => setState(() => _bodyType = v),
             onColor: (v) => setState(() => _color = v),
             onFuel: (v) => setState(() => _fuel = v),
             onTransmission: (v) => setState(() => _transmission = v),
             onRegion: (v) => setState(() => _region = v),
+            onAccidentStatus: (v) => setState(() => _accidentStatus = v),
+            onSingleOwnerOnly: (v) => setState(() => _singleOwnerOnly = v),
+            onNonSmokerOnly: (v) => setState(() => _nonSmokerOnly = v),
             onSearch: _runSearch,
           ),
           const Divider(height: 1),
@@ -214,11 +227,17 @@ class _FilterPanel extends StatelessWidget {
     required this.fuel,
     required this.transmission,
     required this.region,
+    required this.accidentStatus,
+    required this.singleOwnerOnly,
+    required this.nonSmokerOnly,
     required this.onBodyType,
     required this.onColor,
     required this.onFuel,
     required this.onTransmission,
     required this.onRegion,
+    required this.onAccidentStatus,
+    required this.onSingleOwnerOnly,
+    required this.onNonSmokerOnly,
     required this.onSearch,
   });
 
@@ -232,11 +251,17 @@ class _FilterPanel extends StatelessWidget {
   final String? fuel;
   final String? transmission;
   final String? region;
+  final String? accidentStatus;
+  final bool singleOwnerOnly;
+  final bool nonSmokerOnly;
   final ValueChanged<String?> onBodyType;
   final ValueChanged<String?> onColor;
   final ValueChanged<String?> onFuel;
   final ValueChanged<String?> onTransmission;
   final ValueChanged<String?> onRegion;
+  final ValueChanged<String?> onAccidentStatus;
+  final ValueChanged<bool> onSingleOwnerOnly;
+  final ValueChanged<bool> onNonSmokerOnly;
   final VoidCallback onSearch;
 
   @override
@@ -271,7 +296,24 @@ class _FilterPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        _dropdown('지역', region, ListingOptions.region, onRegion),
+        // ✎ 2026-08-13 — 지역 단독 행에 사고이력을 합쳐 **행 수를 늘리지 않는다.** 이 패널은
+        //   스크롤되지 않는 Column의 자식이고 그 아래 결과 목록이 남은 높이를 나눠 쓰므로,
+        //   행이 하나 늘 때마다 결과가 화면 밖으로 밀린다(실측: 처음에 세로로 쌓았더니 작은
+        //   화면에서 71px 오버플로, 한 줄로 줄여도 첫 카드가 안 보였다).
+        Row(
+          children: [
+            Expanded(child: _dropdown('지역', region, ListingOptions.region, onRegion)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _dropdown(
+                '사고이력',
+                accidentStatus,
+                ListingOptions.accidentStatus,
+                onAccidentStatus,
+              ),
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         Row(
           children: [
@@ -289,13 +331,30 @@ class _FilterPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            key: const Key('search_button'),
-            onPressed: onSearch,
-            child: const Text('검색'),
-          ),
+        // 신뢰 체크박스 2개를 검색 버튼과 **같은 행**에 둔다(위 주석과 같은 이유 — 행을 안 늘린다).
+        Row(
+          children: [
+            _CompactCheck(
+              key: const Key('filter_single_owner'),
+              label: '1인소유',
+              value: singleOwnerOnly,
+              onChanged: onSingleOwnerOnly,
+            ),
+            _CompactCheck(
+              key: const Key('filter_non_smoker'),
+              label: '비흡연',
+              value: nonSmokerOnly,
+              onChanged: onNonSmokerOnly,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                key: const Key('search_button'),
+                onPressed: onSearch,
+                child: const Text('검색'),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -324,6 +383,41 @@ class _FilterPanel extends StatelessWidget {
       controller: c,
       keyboardType: TextInputType.number,
       decoration: InputDecoration(labelText: label, isDense: true),
+    );
+  }
+}
+
+/// 필터 패널의 좁은 체크박스 — `CheckboxListTile`은 한 줄을 통째로 먹고 높이도 커서 이 패널
+/// (스크롤 안 되는 Column의 자식)에 세로로 쌓을 수 없다. 체크박스 + 라벨만 가로로 붙인다.
+class _CompactCheck extends StatelessWidget {
+  const _CompactCheck({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Checkbox(
+          value: value,
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onChanged: (v) => onChanged(v ?? false),
+        ),
+        GestureDetector(
+          onTap: () => onChanged(!value),
+          child: Text(label, style: const TextStyle(fontSize: 13)),
+        ),
+        const SizedBox(width: 4),
+      ],
     );
   }
 }

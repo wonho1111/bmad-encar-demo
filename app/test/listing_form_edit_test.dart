@@ -27,6 +27,8 @@ ListingDetail sampleDetail({
     seats: 5,
     region: '서울',
     accidentFree: true,
+    accidentStatus: '단순교환',
+    isSingleOwner: true,
     status: status,
     options: options,
     description: description,
@@ -49,7 +51,12 @@ void main() {
       expect(input.displacement, '1598');
       expect(input.seats, '5');
       expect(input.region, '서울');
-      expect(input.accidentFree, true);
+      // ✎ 2026-08-13 — 폼은 이제 accidentFree가 아니라 신뢰속성 3개를 되채운다.
+      //   is_non_smoker는 sampleDetail이 null로 두므로 **체크 해제**로 와야 한다 —
+      //   null(미상)을 false("아니다")로 바꾸면 판매자가 하지 않은 신고를 만드는 것이다.
+      expect(input.accidentStatus, '단순교환');
+      expect(input.isSingleOwner, true);
+      expect(input.isNonSmoker, false);
       expect(input.options, '선루프, 후방카메라'); // 배열 → 쉼표 문자열
       expect(input.description, '상태 좋음');
     });
@@ -81,7 +88,14 @@ void main() {
       expect(p['mileage'], 103000);
       expect(p['displacement'], 1598);
       expect(p['seats'], 5);
-      expect(p['accident_free'], true);
+      // ✎ 2026-08-13 — accident_free는 이제 **파생값**이다(accidentStatus == '무사고').
+      //   sampleDetail의 사고이력이 '단순교환'이므로 false가 맞다 — 예전엔 accidentFree를
+      //   그대로 실어 날라 true였다. 신뢰속성 3개가 왕복에서 보존되는지도 함께 본다.
+      expect(p['accident_status'], '단순교환');
+      expect(p['accident_free'], false);
+      expect(p['is_single_owner'], true);
+      // 미신고는 false가 아니라 null로 나가야 한다(판매자가 아무 말도 하지 않았다).
+      expect(p['is_non_smoker'], isNull);
       expect(p['options'], ['선루프', '후방카메라']); // 쉼표 → 다시 배열
       expect(p['description'], '상태 좋음');
     });

@@ -290,7 +290,8 @@ void main() {
     final stickyPriceText = tester.widget<Text>(
       find.descendant(
         of: find.byKey(const Key('detail_sticky_bar')),
-        matching: find.text('20,000,000원'),
+        // ✎ 2026-08-13 — 가격 표시가 만원 표기로 바뀌었다(number_format.wonText, 웹과 같은 규칙).
+        matching: find.text('2,000만원'),
       ),
     );
     expect(stickyPriceText.maxLines, 1);

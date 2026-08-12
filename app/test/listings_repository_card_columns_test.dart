@@ -27,20 +27,20 @@ void main() {
       'is_non_smoker',
       'options',
     ]) {
-      expect(listingCardColumns(true), contains(col), reason: '$col 컬럼이 빠지면 카드에서 그 필드가 사라진다');
+      expect(listingCardColumns(), contains(col), reason: '$col 컬럼이 빠지면 카드에서 그 필드가 사라진다');
     }
   });
 
-  // spec-16-6 인수 경위(실기기 실측) — anon(비로그인)이 신뢰속성 3컬럼을 select하면 그 컬럼만
-  // 빠지는 게 아니라 `42501 permission denied`로 select **전체**가 실패해 "지금 인기"·
-  // "방금 올라온 매물" 두 섹션이 통째로 에러 문구로 바뀐다(REST로 실측 확인). web
-  // `popularRecentColumns(authed)`(listings.ts)와 동일하게, anon 조회는 그 3컬럼을 애초에
-  // select하지 않아야 한다.
-  test('listingCardColumns(authed: false) — 신뢰속성 3컬럼을 select하지 않는다(anon 42501 회피)', () {
-    final cols = listingCardColumns(false);
+  // ✎ 2026-08-13 — 계약이 **뒤집혔다.** 예전엔 anon이 신뢰속성 3컬럼을 select하면 42501로
+  // select 전체가 죽어서(실기기 실측) anon 조회에선 그 3컬럼을 빼야 했다.
+  // `0037_listings_anon_trust_columns.sql`이 GRANT를 열어(사용자 승인, 운영 적용 완료) 이제
+  // **로그인 여부와 무관하게 항상** 조회한다 — 그전엔 비로그인 앱 사용자에게 신뢰 뱃지가
+  // 한 번도 안 떴다. 분기 자체가 사라졌으므로 "anon은 빼야 한다"는 반대 단언도 함께 지운다.
+  test('listingCardColumns — 로그인 여부와 무관하게 신뢰속성 3컬럼을 항상 포함한다(0037)', () {
+    final cols = listingCardColumns();
     for (final col in ['accident_status', 'is_single_owner', 'is_non_smoker']) {
-      expect(cols, isNot(contains(col)),
-          reason: 'anon 조회에 $col이 섞이면 select 전체가 42501로 실패한다(0011 GRANT 화이트리스트 밖)');
+      expect(cols, contains(col),
+          reason: '$col이 빠지면 비로그인 화면에서 그 뱃지가 통째로 사라진다');
     }
     // 나머지 9필드는 anon에게도 열려 있으므로(0011) 그대로 남아야 한다.
     for (final col in [
@@ -94,16 +94,16 @@ void main() {
     final fetchPopularListingsBody =
         content.substring(fetchPopularListingsBodyStart, fetchPopularListingsEnd);
 
-    // spec-16-6 후속 리뷰(verification-gap 렌즈, 실측 확인) — 식별자만 찾으면
-    // `listingCardColumns(true)`로 하드코딩해도(이번에 고친 것과 똑같은 anon 42501 회귀) 계속
-    // 통과한다. 실제로 `(_authed)` 인자가 배선됐는지까지 소스텍스트로 단언한다.
-    final wiredPattern = RegExp(r'listingCardColumns\(_authed\)');
+    // ✎ 2026-08-13 — 예전엔 `listingCardColumns(_authed)`로 **인자까지** 단언했다(그때는
+    // anon 분기가 계약이었고, `(true)`로 하드코딩하는 회귀를 잡아야 했다). 0037 GRANT로 그
+    // 분기가 사라져 함수는 이제 무인자다 — 잡아야 할 회귀도 "인자 하드코딩"이 아니라
+    // **"상수를 안 쓰고 컬럼 문자열을 본문에 다시 인라인하는 것"** 하나로 줄었다.
+    final wiredPattern = RegExp(r'listingCardColumns\(\)');
     expect(wiredPattern.hasMatch(fetchListingsBody), isTrue,
-        reason: 'fetchListings가 listingCardColumns(_authed)로 호출하지 않는다 — '
-            '리터럴 true/false로 하드코딩되면 로그인 상태와 무관하게 항상 같은 컬럼을 select한다');
+        reason: 'fetchListings가 listingCardColumns()를 호출하지 않는다 — 컬럼 문자열을 본문에 '
+            '다시 인라인하면 상수를 고쳐도 이 경로만 옛 컬럼을 select한다');
     expect(wiredPattern.hasMatch(fetchPopularListingsBody), isTrue,
-        reason: 'fetchPopularListings가 listingCardColumns(_authed)로 호출하지 않는다 — '
-            '리터럴 true로 하드코딩되면 anon 조회가 42501로 다시 전체 실패한다');
+        reason: 'fetchPopularListings가 listingCardColumns()를 호출하지 않는다 — 같은 이유');
 
     // fetchPopularListings의 FR11 강제 지점(_buyerQuery = status='on_sale' 강제, AC3 정렬·
     // 건수 계약)을 소스 텍스트로 직접 단언한다 — 지금 이 계약을 지키는 테스트가 하나도 없었다.

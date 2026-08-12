@@ -219,7 +219,8 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
         _row('모델', listing.model),
         _row('차종', listing.bodyType),
         _row('연식', '${listing.year}년'),
-        _row('가격', wonText(listing.price)),
+        // ✎ 2026-08-13 — "가격" 행을 뺐다(web과 같은 정리). 같은 값이 이 화면에 이미 두 번
+        //   더 있다: 제목 밑 요약 줄과 하단 고정 바. 표에까지 두면 한 화면에서 같은 숫자를 세 번 본다.
         _row('주행거리', kmText(listing.mileage)),
         _row('색상', listing.color),
         _row('연료', listing.fuel),

@@ -252,6 +252,9 @@ class _GatedRepo extends ListingsRepository {
 }
 
 /// 검증을 통과하는 최소 입력 — submit()이 실제로 쓰기 단계까지 가야 loading이 켜진다.
+  // ✎ 2026-08-13 — 사고이력이 **필수**가 됐다(신뢰속성 입력 신설). 안 채우면 검증에서 막혀
+  //   INSERT/UPDATE가 아예 일어나지 않으므로, 이 픽스처의 관심사(등록·수정 배선)를 태우려면
+  //   유효값이 있어야 한다.
 const _validSellInput = ListingFormInput(
   manufacturer: '현대',
   model: '아반떼',
@@ -265,6 +268,7 @@ const _validSellInput = ListingFormInput(
   displacement: '1600',
   seats: '5',
   region: '서울',
+  accidentStatus: '무사고',
 );
 
 void main() {

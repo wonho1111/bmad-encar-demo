@@ -12,7 +12,8 @@ void main() {
   });
 
   test('단위 텍스트', () {
-    expect(wonText(25000000), '25,000,000원');
+    // ✎ 2026-08-13 — 만원 표기로 바뀌었다(웹 formatPrice와 같은 규칙).
+    expect(wonText(25000000), '2,500만원');
     expect(kmText(35000), '35,000km');
     expect(ccText(1999), '1,999cc');
   });

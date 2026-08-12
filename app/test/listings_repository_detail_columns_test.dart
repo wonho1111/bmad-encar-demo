@@ -14,19 +14,21 @@ void main() {
   test(
       'listingDetailColumns(authed: true) — 신뢰속성 3컬럼(accident_status·is_single_owner·is_non_smoker)을 포함한다',
       () {
-    expect(listingDetailColumns(true), contains('accident_status'));
-    expect(listingDetailColumns(true), contains('is_single_owner'));
-    expect(listingDetailColumns(true), contains('is_non_smoker'));
+    expect(listingDetailColumns(), contains('accident_status'));
+    expect(listingDetailColumns(), contains('is_single_owner'));
+    expect(listingDetailColumns(), contains('is_non_smoker'));
   });
 
   // spec-16-6 인수 경위(실기기 실측) — anon(비로그인)이 신뢰속성 3컬럼을 select하면
   // `42501 permission denied`로 select **전체**가 실패한다(0011 GRANT 화이트리스트 밖).
   // 상세도 `/home`에서 push로 열려 anon이 닿을 수 있으므로(spec-16-6 FR58) 같은 방어가 필요.
-  test('listingDetailColumns(authed: false) — 신뢰속성 3컬럼을 select하지 않는다(anon 42501 회피)', () {
-    final cols = listingDetailColumns(false);
+  // ✎ 2026-08-13 — 계약이 뒤집혔다(0037 GRANT로 anon도 신뢰속성을 읽는다). 자세한 경위는
+  // listings_repository_card_columns_test.dart의 같은 자리 주석 참조.
+  test('listingDetailColumns — 로그인 여부와 무관하게 신뢰속성 3컬럼을 항상 포함한다(0037)', () {
+    final cols = listingDetailColumns();
     for (final col in ['accident_status', 'is_single_owner', 'is_non_smoker']) {
-      expect(cols, isNot(contains(col)),
-          reason: 'anon 조회에 $col이 섞이면 select 전체가 42501로 실패한다');
+      expect(cols, contains(col),
+          reason: '$col이 빠지면 비로그인 상세에서 그 뱃지가 통째로 사라진다');
     }
     // accident_free(신뢰속성과 별개, NOT NULL bool)는 anon에게도 공개된 컬럼이라 그대로 남아야 한다.
     expect(cols, contains('accident_free'));
@@ -76,19 +78,25 @@ void main() {
         content.substring(fetchOwnListingBodyStart, fetchOwnListingEnd);
 
     // spec-16-6 후속 리뷰(verification-gap 렌즈, 실측 확인) — 식별자만 찾으면
-    // `listingDetailColumns(true)`로 하드코딩해도(이번에 고친 것과 똑같은 anon 42501 회귀) 계속
+    // `listingDetailColumns()`로 하드코딩해도(이번에 고친 것과 똑같은 anon 42501 회귀) 계속
     // 통과한다. 실제로 `(_authed)` 인자가 배선됐는지까지 소스텍스트로 단언한다.
-    final wiredPattern = RegExp(r'listingDetailColumns\(_authed\)');
+    final wiredPattern = RegExp(r'listingDetailColumns\(\)');
     expect(wiredPattern.hasMatch(fetchListingBody), isTrue,
-        reason: 'fetchListing이 listingDetailColumns(_authed)로 호출하지 않는다 — '
+        reason: 'fetchListing이 listingDetailColumns()로 호출하지 않는다 — '
             '리터럴 true로 하드코딩되면 anon 상세 조회가 42501로 다시 전체 실패한다');
     expect(wiredPattern.hasMatch(fetchOwnListingBody), isTrue,
-        reason: 'fetchOwnListing이 listingDetailColumns(_authed)로 호출하지 않는다');
+        reason: 'fetchOwnListing이 listingDetailColumns()로 호출하지 않는다');
 
     // 파일 전체에서 'accident_free' 리터럴이 listingDetailColumns 선언 1곳에만 있어야 한다 —
     // 다른 자리(예: 위 두 메서드 중 하나가 리터럴 select 문자열로 되돌아간 경우)에 또
     // 나타나면 신뢰속성 컬럼이 상수 밖에 인라인됐다는 뜻이다.
-    final accidentFreeOccurrences = 'accident_free'.allMatches(content).length;
+    // ✎ 2026-08-13 — **주석은 빼고 센다.** 이 단언은 "select 리터럴이 상수 밖에 인라인됐나"를
+    //   보는 건데, 소스 텍스트를 그대로 세면 컬럼 이름을 **설명하는 주석**까지 위반으로 잡는다
+    //   (실제로 신뢰속성 필터를 설명하는 주석 한 줄 때문에 red가 났다 — 코드는 멀쩡했다).
+    //   검사가 잡아야 할 것은 코드지 주석이 아니다.
+    final codeOnly =
+        content.split('\n').where((l) => !l.trimLeft().startsWith('//')).join('\n');
+    final accidentFreeOccurrences = 'accident_free'.allMatches(codeOnly).length;
     expect(accidentFreeOccurrences, 1,
         reason: "'accident_free' 문자열이 listingDetailColumns 선언 1곳 밖에서도 발견됐다 — "
             '다른 .select(...) 리터럴에 신뢰속성 컬럼이 다시 인라인됐을 수 있다');

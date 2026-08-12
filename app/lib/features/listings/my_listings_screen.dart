@@ -13,6 +13,7 @@ import 'edit_listing_screen.dart';
 import 'listing.dart';
 import 'listings_repository.dart' show statusOnSale;
 import 'my_listings_controller.dart';
+import '../../core/format/number_format.dart';
 
 class MyListingsScreen extends ConsumerWidget {
   const MyListingsScreen({super.key});
@@ -131,7 +132,7 @@ class MyListingsScreen extends ConsumerWidget {
             const SizedBox(height: 4),
             // 가격은 별도 행에 굵게 — 긴 차명에도 레이아웃이 무너지지 않게(ListingCard 와 동일 구조).
             Text(
-              _won(l.price),
+              wonText(l.price),
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             const SizedBox(height: 8),
@@ -257,14 +258,4 @@ class MyListingsScreen extends ConsumerWidget {
     return res ?? false;
   }
 
-  // 원(KRW) 천단위 콤마(간단). web toLocaleString('ko-KR') 자리.
-  String _won(int v) {
-    final s = v.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
-    }
-    return '${buf.toString()}원';
-  }
 }

@@ -86,6 +86,9 @@ ListingDetail _onSaleDetail() => ListingDetail(
   seats: 5,
   region: '서울',
   accidentFree: true,
+  // ✎ 2026-08-13 — 수정 폼이 되채우는 값이다. 사고이력이 비어 있으면 저장 시 검증에서 막혀
+  //   이 파일이 보려는 "사진 처리 실패 안내" 지점까지 못 간다.
+  accidentStatus: '무사고',
   status: 'on_sale',
 );
 
