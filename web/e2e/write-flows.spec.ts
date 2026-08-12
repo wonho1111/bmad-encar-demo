@@ -137,6 +137,11 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
     await page.getByLabel('배기량 (cc)').fill('1600');
     await page.getByLabel('인승 (명)').fill('5');
     await page.getByLabel('지역').selectOption('서울');
+    // ✎ 2026-08-13 — 신뢰 정보 입력이 새로 생겼다(그전엔 폼에 아예 없어서 저장 자체가 불가능했다).
+    //   사고이력은 **필수**라 안 고르면 여기서 등록이 막힌다. 1인소유는 체크하고 비흡연은 **일부러
+    //   비워 둔다** — 아래에서 "미체크는 false가 아니라 NULL(미신고)"을 실제 DB 값으로 확인하려고.
+    await page.getByLabel('사고이력').selectOption('무사고');
+    await page.getByLabel(/1인소유/).check();
 
     await page.getByRole('button', { name: '매물 등록' }).click();
 
@@ -148,6 +153,23 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
 
     const status = runPsql(`select status from listings where id='${id}';`);
     expect(status, `방금 등록한 매물(${id})의 status`).toBe('on_sale');
+
+    // 신뢰 정보가 **실제로 저장됐는지** DB에서 직접 본다(2026-08-13). 화면에 뱃지가 뜨는지가
+    // 아니라 값이 들어갔는지를 보는 이유: 이 3컬럼은 2026-07에 만들어졌는데 **쓰는 코드가 한 번도
+    // 없었고**, 그걸 잡는 검사도 없어서 "화면엔 기능이 있는데 저장이 안 되는" 상태가 한 달 넘게
+    // 아무에게도 안 보였다. 그 사각지대를 여기서 닫는다.
+    //   ⓐ accident_status = 고른 값 그대로
+    //   ⓑ accident_free = **파생값**(무사고 → true). 이 컬럼은 AI 검색이 쓰므로 계속 채워져야 한다
+    //      (api/app/graph/sql_rag_node.py 지시문이 사고 질문을 이 컬럼으로 판단하라고 명시).
+    //   ⓒ is_single_owner = t(체크함)
+    //   ⓓ is_non_smoker = **NULL**(미체크). f가 아니다 — 판매자는 "비흡연이 아니다"라고 말한 적이
+    //      없다. `is null` 자체를 SQL에서 판정해 문자열 비교의 애매함('' vs 'f')을 피한다.
+    const trust = runPsql(
+      `select accident_status, accident_free, is_single_owner, (is_non_smoker is null) from listings where id='${id}';`,
+    );
+    expect(trust, `등록된 신뢰 정보(매물 ${id}) — 순서: 사고이력|무사고파생|1인소유|비흡연이NULL인가`).toBe(
+      '무사고|t|t|t',
+    );
   });
 
   test('E2 [desktop] 등록한 매물이 검색에 즉시 보이고 입력값이 그대로 보인다', async ({ page }) => {

@@ -42,7 +42,10 @@ export default async function EditListingPage({
   const { data: listing, error } = await supabase
     .from('listings')
     .select(
-      'id, status, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, options, description',
+      // ✎ 2026-08-13 — 신뢰속성 3컬럼을 함께 읽는다. 수정 폼이 그 값을 되채워야 하는데(안 그러면
+      //   매물을 한 번 수정할 때마다 신고했던 신뢰 정보가 조용히 지워진다) 여태 select에 없었다.
+      //   `accident_free`는 이제 폼 입력이 아니라 accident_status에서 파생되므로 여기서 안 읽는다.
+      'id, status, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_status, is_single_owner, is_non_smoker, options, description',
     )
     .eq('id', id)
     .eq('seller_id', user?.id ?? '')

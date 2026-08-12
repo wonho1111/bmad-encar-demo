@@ -45,7 +45,12 @@ type FormState = {
   displacement: string;
   seats: string;
   region: string;
-  accident_free: boolean;
+  // ✎ 2026-08-13 사용자 지적 — 신뢰속성 3개(사고이력·1인소유·비흡연)의 **입력 경로가 아예 없었다.**
+  //   컬럼(0017)과 화면 뱃지(10.2)는 있는데 폼에 필드가 없어서, 판매자가 등록하면 100% 비었다.
+  //   `accident_free`(기존 bool)는 폼 상태에서 **뺐다** — 아래 accident_status에서 파생한다(payload 주석).
+  accident_status: string; // ''(미선택) | 무사고 | 단순교환 | 사고 — 필수
+  is_single_owner: boolean; // 체크=판매자가 신고함(true). 미체크는 false가 아니라 **미신고(null)**로 저장한다.
+  is_non_smoker: boolean; // 위와 같음
   options: string; // 줄바꿈 구분 입력 → 배열 변환(대장 #11 — 쉼표 구분은 값 안의 쉼표를 쪼갠다)
   description: string;
 };
@@ -63,7 +68,12 @@ const INITIAL: FormState = {
   displacement: '',
   seats: '',
   region: '',
-  accident_free: true,
+  // 기본값은 **미선택**이다. 예전 "무사고 차량" 체크박스는 기본이 체크라, 판매자가 아무것도
+  // 건드리지 않고 등록하면 자동으로 "무사고"로 신고됐다 — 사고차를 파는 사람이 그냥 넘기면
+  // 무사고로 올라간다는 뜻이다. 신고는 **고른 사람만** 하는 것이어야 한다.
+  accident_status: '',
+  is_single_owner: false,
+  is_non_smoker: false,
   options: '',
   description: '',
 };
@@ -82,7 +92,10 @@ export type ListingInitialValues = {
   displacement: number;
   seats: number;
   region: string;
-  accident_free: boolean;
+  // 수정 모드에서 기존 값을 되채운다. NULL은 "미상"이므로 체크 해제로 되돌아간다(false로 단정 아님).
+  accident_status: string | null;
+  is_single_owner: boolean | null;
+  is_non_smoker: boolean | null;
   options: string[] | null;
   description: string | null;
 };
@@ -102,7 +115,10 @@ function toFormState(v: ListingInitialValues): FormState {
     displacement: String(v.displacement),
     seats: String(v.seats),
     region: v.region,
-    accident_free: v.accident_free,
+    accident_status: v.accident_status ?? '',
+    // NULL(미상) → 체크 해제. 저장할 때 다시 null로 나가므로 왕복해도 "아니오"로 바뀌지 않는다.
+    is_single_owner: v.is_single_owner === true,
+    is_non_smoker: v.is_non_smoker === true,
     options: serializeOptions(v.options ?? []), // text[] → 줄바꿈 구분 문자열(대장 #11 해소)
     description: v.description ?? '',
   };
@@ -241,6 +257,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     if (!form.fuel) return { ok: false, message: '연료를 선택해주세요.' };
     if (!form.transmission) return { ok: false, message: '변속기를 선택해주세요.' };
     if (!form.region) return { ok: false, message: '지역을 선택해주세요.' };
+    // 사고이력은 **필수**다(2026-08-13). 예전엔 기본 체크된 체크박스라 "안 고른 상태"가 곧
+    // "무사고 신고"였다 — 판매자가 명시적으로 고르게 한다.
+    if (!form.accident_status) return { ok: false, message: '사고이력을 선택해주세요.' };
 
     // 수치 — 정수 변환 + 범위 검증
     const year = Number(form.year);
@@ -298,7 +317,19 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         displacement, // cc(정수)
         seats, // 정수
         region: form.region,
-        accident_free: form.accident_free,
+        accident_status: form.accident_status,
+        // `accident_free`는 이제 **입력값이 아니라 파생값**이다(2026-08-13).
+        //   왜 컬럼을 지우지 않나: AI 검색이 이걸 쓴다 — `api/app/graph/sql_rag_node.py`의 지시문이
+        //   "사고 관련 질문은 accident_status가 아니라 accident_free로 판단하라"고 명시한다(그쪽이 더
+        //   널리 채워져 있어서). 컬럼을 없애면 "무사고 차 추천해줘"가 깨진다. 그래서 남기고 자동으로 채운다.
+        //   값이 이미 있는 62건은 두 컬럼이 100% 일치한다(실측: 무사고↔true, 단순교환·사고↔false) —
+        //   즉 이 파생 규칙은 기존 데이터가 실제로 따르고 있던 규칙을 코드로 옮긴 것이다.
+        accident_free: form.accident_status === '무사고',
+        // 미체크는 **null(미신고)** 이지 false(아니다)가 아니다 — 0017이 못박은 3상태 규칙.
+        //   false로 저장하면 "이 차는 1인소유가 아니다"라고 판매자가 신고한 것이 되는데, 그는
+        //   아무 말도 하지 않았다.
+        is_single_owner: form.is_single_owner ? true : null,
+        is_non_smoker: form.is_non_smoker ? true : null,
         options, // text[]
         description: form.description.trim() || null,
         status: LISTING_STATUS.ON_SALE, // 즉시 노출(기본값과 동일하나 의도 명시)
@@ -649,15 +680,51 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         </label>
       </div>
 
-      {/* 무사고 여부 */}
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={form.accident_free}
-          onChange={(e) => update('accident_free', e.target.checked)}
-        />
-        <span className={FIELD_LABEL_CLASS}>무사고 차량</span>
-      </label>
+      {/* 신뢰 정보 — 2026-08-13 사용자 지적으로 새로 생긴 입력 묶음.
+          예전엔 여기 "무사고 차량" 체크박스 **하나**뿐이었고, 그건 상세 화면이 뱃지로 보여주는
+          신뢰속성(accident_status·is_single_owner·is_non_smoker)과 **다른 컬럼**이었다. 즉 화면에
+          보이는 신뢰 정보를 판매자가 넣을 방법이 아예 없었다. 세 값을 여기서 받는다. */}
+      <fieldset className="flex flex-col gap-3 rounded-card border border-border-hairline p-3">
+        <legend className={`px-1 ${FIELD_LABEL_CLASS}`}>신뢰 정보</legend>
+
+        <label className="flex flex-col gap-1">
+          <span className={FIELD_LABEL_CLASS}>사고이력</span>
+          <select
+            value={form.accident_status}
+            onChange={(e) => update('accident_status', e.target.value)}
+            className={inputCls}
+          >
+            <option value="">선택</option>
+            {LISTING_OPTIONS.accident_status.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </label>
+
+        {/* 두 체크박스는 **체크했을 때만** 신고가 된다. 미체크는 "아니다"가 아니라 "말하지 않음"으로
+            저장되므로(payload의 null 처리), 모르는 것을 부정으로 단정하지 않는다. */}
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.is_single_owner}
+            onChange={(e) => update('is_single_owner', e.target.checked)}
+          />
+          <span className={FIELD_LABEL_CLASS}>1인소유 (등록 이후 소유주 변경 없음)</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.is_non_smoker}
+            onChange={(e) => update('is_non_smoker', e.target.checked)}
+          />
+          <span className={FIELD_LABEL_CLASS}>비흡연 (차량 내 흡연 이력 없음)</span>
+        </label>
+
+        <p className="text-caption text-ink-muted">
+          체크한 항목만 구매자에게 표시돼요. 체크하지 않은 항목은 &ldquo;아니오&rdquo;가 아니라
+          &ldquo;신고하지 않음&rdquo;으로 남습니다.
+        </p>
+      </fieldset>
 
       {/* 옵션 (선택) — 하이브리드 칩 피커(Story 10.4, 대장 #11 후속). form.options는 여전히
           줄바꿈 구분 문자열(폼 코어 불변, A3) — OptionPicker는 순수 표현층이라 parseOptionsInput/

@@ -75,6 +75,10 @@ async function fillListingForm(page: import('@playwright/test').Page, model: str
   await page.getByLabel('배기량 (cc)').fill('1600');
   await page.getByLabel('인승 (명)').fill('5');
   await page.getByLabel('지역').selectOption('서울');
+  // ✎ 2026-08-13 — 신뢰 정보 입력이 새로 생겼고 사고이력은 **필수**다(안 고르면 등록이 막힌다).
+  //   이 스펙의 관심사는 정지 게이트라 값 자체는 아무거나 좋다 — 등록이 통과하기만 하면 된다.
+  //   ("미체크는 NULL로 저장된다" 같은 신뢰 정보 자체의 계약은 write-flows.spec.ts E1이 본다.)
+  await page.getByLabel('사고이력').selectOption('무사고');
 }
 
 // ── A. 관리자 콘솔 게이트 (DW-806) ──────────────────────────────────────
