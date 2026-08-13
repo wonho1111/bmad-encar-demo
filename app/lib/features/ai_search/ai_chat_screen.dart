@@ -221,7 +221,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     // 찜 오버레이 — 카드 진입점 3곳(홈·검색·AI)이 공유하는 단일 provider(spec-16-3 Boundaries).
     final wishedIds = ref.watch(wishedListingIdsProvider).value ?? const <String>{};
     return Scaffold(
-      appBar: AppBar(title: const Text('AI 검색')),
+      // ✎ 2026-08-13 — 웹 상단 메뉴의 같은 목적지 이름("AI로 찾기", nav-links.ts)으로 맞춘다.
+      appBar: AppBar(title: const Text('AI로 찾기')),
       body: Column(
         children: [
           Expanded(

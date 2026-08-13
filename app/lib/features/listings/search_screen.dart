@@ -124,7 +124,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final wishedIds = ref.watch(wishedListingIdsProvider).value ?? const <String>{};
 
     return Scaffold(
-      appBar: AppBar(title: const Text('매물 탐색')),
+      // ✎ 2026-08-13 사용자 지시("웹과 일관성 + 개발용어 제거") — 제목을 웹 상단 메뉴 어휘로
+      // 맞춘다. 웹은 이 화면을 "내 차 사기"라 부르는데(nav-links.ts) 앱만 "매물 탐색"이라
+      // 불러, 같은 화면을 두 이름으로 부르고 있었다.
+      appBar: AppBar(title: const Text('내 차 사기')),
       body: Column(
         children: [
           _FilterPanel(
@@ -274,7 +277,9 @@ class _FilterPanel extends StatelessWidget {
         TextField(
           controller: keyword,
           decoration: const InputDecoration(
-            labelText: '모델명 (부분일치)',
+            // ✎ 2026-08-13 — "부분일치"는 검색 구현 방식(SQL ilike)을 그대로 노출한 개발
+            // 용어였다. 웹 필터의 같은 칸 라벨("키워드(모델명)")로 맞춘다 — 동작은 그대로다.
+            labelText: '키워드(모델명)',
             isDense: true,
           ),
           onSubmitted: (_) => onSearch(),
