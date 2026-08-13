@@ -63,12 +63,17 @@ void main() {
   group(
       '위젯 결속(B9) — 카드 행은 짧은 면책 포함, 상세는 긴 면책 결속(spec-16-9로 카드도 결속 대상에 들어옴)',
       () {
-    testWidgets('카드 행(TrustAttributesCardRow, 구 오버레이 대체) — 뱃지와 짧은 면책이 함께 나온다',
-        (tester) async {
+    // ✎ 2026-08-13 사용자 지적 #4로 **계약이 다시 뒤집혔다** — 카드 칩이 사진 아래 전용 행에서
+    //   **사진 위 오버레이**로 돌아가면서(웹과 같은 자리) 짧은 면책 "판매자 제공 정보"가 빠졌다.
+    //   그전 계약(spec-16-9: 카드도 면책 결속 대상)을 그대로 검사하던 테스트를 이 반대 방향
+    //   단언으로 바꾼다. **면책이 어디에도 없으면 안 되므로**(CM-C) 같은 테스트에서 상세 쪽
+    //   긴 면책이 여전히 나오는지 함께 본다 — 한쪽만 보면 "카드에서 뺐다"가 "어디서도 안 나온다"로
+    //   조용히 번진다.
+    testWidgets('카드 오버레이 — 칩만 나오고 면책은 없다(면책은 상세가 진다)', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: TrustAttributesCardRow(
+            body: TrustAttributesCardOverlay(
               accidentStatus: '무사고',
               isSingleOwner: null,
               isNonSmoker: null,
@@ -77,10 +82,26 @@ void main() {
         ),
       );
       expect(find.text('무사고'), findsOneWidget);
-      // 카드는 상세의 긴 UX-DR19 문구(trustDisclaimer) 대신 짧은 "판매자 제공 정보"만 쓴다
-      // (spec-16-9 Code Map — 상세와 다른 축약판).
-      expect(find.text('판매자 제공 정보'), findsOneWidget);
+      expect(find.text('판매자 제공 정보'), findsNothing,
+          reason: '웹 카드에도 없는 문구다 — 사진 위 좁은 자리에 면책까지 얹지 않는다');
       expect(find.textContaining('판매자가 직접 입력한 정보'), findsNothing);
+
+      // 같은 값을 상세 섹션으로 렌더하면 긴 면책이 반드시 함께 나온다(결속은 상세 한정으로 유지).
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TrustAttributesDetailSection(
+                accidentStatus: '무사고',
+                isSingleOwner: null,
+                isNonSmoker: null,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.textContaining('판매자가 직접 입력한 정보'), findsOneWidget,
+          reason: '카드에서 뺀 면책이 상세에도 없으면 검증됨으로 오도된다(CM-C)');
     });
 
     // 코드리뷰 지적(P6) — 2줄 접힘을 막으려고 Wrap→가로 스크롤(SingleChildScrollView+Row)로
@@ -97,7 +118,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: TrustAttributesCardRow(
+            body: TrustAttributesCardOverlay(
               accidentStatus: '무사고',
               isSingleOwner: true,
               isNonSmoker: true,
@@ -122,7 +143,7 @@ void main() {
 
     // 코드리뷰 지적(P6) — 이 커밋이 `_TrustChip`의 `onCard`(반투명+블러) 분기를 지우고 카드·
     // 상세가 한 스타일을 공유하게 했는데, '단순교환'/'사고' 같은 중립(비초록) 뱃지를 카드 행
-    // 경로(TrustAttributesCardRow)로 렌더하는 테스트가 하나도 없었다. 지금까지 카드 레벨
+    // 경로(TrustAttributesCardOverlay)로 렌더하는 테스트가 하나도 없었다. 지금까지 카드 레벨
     // 테스트는 전부 '무사고'(초록)거나 전부 null이라, 중립 분기의 `border: Border.all(
     // borderHairline)`이 사라져도(배경이 투명이라 흰 카드 위에서 뱃지 자체가 안 보이게 돼도)
     // 스위트는 green이었다.
@@ -136,7 +157,7 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
-              body: TrustAttributesCardRow(
+              body: TrustAttributesCardOverlay(
                 accidentStatus: status,
                 isSingleOwner: null,
                 isNonSmoker: null,
@@ -170,7 +191,7 @@ void main() {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
-            body: TrustAttributesCardRow(
+            body: TrustAttributesCardOverlay(
               accidentStatus: null,
               isSingleOwner: null,
               isNonSmoker: null,
@@ -182,22 +203,25 @@ void main() {
       // 시절 — 그 위젯 자체는 Positioned를 반환하지 않았다). 실제로 뭘 그렸는지(Text 자체가
       // 없어야 함)를 이 위젯의 서브트리로 좁혀 확인한다.
       //
-      // 코드리뷰 지적(P7) — 위 `Wrap` 매처는 그 자체로 또 vacuous였다. `TrustAttributesCardRow`는
+      // 코드리뷰 지적(P7) — 위 `Wrap` 매처는 그 자체로 또 vacuous였다. `TrustAttributesCardOverlay`는
       // 뱃지가 있는 분기(populated branch)에서도 `Wrap`을 렌더한 적이 없다(실제로는
       // `SingleChildScrollView`+`Row` — listing_trust_widgets.dart 참조) — 즉 이
       // `find.byType(Wrap)` → `findsNothing` 단언은 무엇을 해도 항상 참이라 이 위젯을 조금도
       // 검사하지 못했다. populated 분기가 실제로 쓰는 `SingleChildScrollView`로 바꿔야 "0개
       // 분기엔 그 위젯도 없다"가 실제로 의미를 가진다.
+      // populated 분기가 실제로 쓰는 위젯으로 좁힌다 — 2026-08-13에 가로 스크롤 행에서
+      // `Wrap`(사진 위 오버레이)으로 바뀌었으므로 여기도 함께 바꾼다. 안 바꾸면 "있지도 않은
+      // 위젯이 없다"를 단언하는 vacuous 검사로 되돌아간다(P7이 지적했던 바로 그 형태).
       expect(
         find.descendant(
-          of: find.byType(TrustAttributesCardRow),
-          matching: find.byType(SingleChildScrollView),
+          of: find.byType(TrustAttributesCardOverlay),
+          matching: find.byType(Wrap),
         ),
         findsNothing,
       );
       expect(
         find.descendant(
-          of: find.byType(TrustAttributesCardRow),
+          of: find.byType(TrustAttributesCardOverlay),
           matching: find.byType(Text),
         ),
         findsNothing,

@@ -23,6 +23,17 @@ const String statusSold = 'sold';
 /// 구매자에게 노출 가능한 매물 상태 = 판매중. 단일 상수(FR11 단일 출처).
 const String buyerVisibleStatus = statusOnSale;
 
+/// 판매자 공개 요약(FR56, 0019 `get_seller_public_summary` 반환값) — 가입 시점 + 다른 판매중
+/// 매물 수. 둘 다 null 가능(RPC 실패·값 없음)이고, 화면은 null인 행을 숨긴다.
+/// 평판·응답률·인증 배지처럼 **데이터가 없는 지표는 여기 넣지 않는다**(FR56 Never).
+class SellerPublicSummary {
+  const SellerPublicSummary({required this.joinedAt, required this.otherOnSaleCount});
+
+  /// ISO8601 문자열 그대로 — 표시 변환은 화면 쪽 순수함수(`formatSellerJoinDate`)가 한다.
+  final String? joinedAt;
+  final int? otherOnSaleCount;
+}
+
 /// 상세 select 컬럼 — 구매자 상세(`fetchListing`)·본인 상세(`fetchOwnListing`) 둘이 공유한다
 /// (`wishlist_repository.dart`의 `wishlistListingColumns`와 같은 재사용 방식). `@visibleForTesting`:
 /// 신뢰속성 3컬럼(`accident_status`·`is_single_owner`·`is_non_smoker`)이 여기서 빠지면
@@ -364,6 +375,37 @@ class ListingsRepository {
     } catch (e) {
       // ignore: avoid_print
       print('[listings] 조회수 증가 실패($listingId): $e');
+    }
+  }
+
+  /// 판매자 공개 요약(FR56) — 가입 시점 + "이 판매자의 다른 판매중 매물 N건".
+  /// `get_seller_public_summary`(0019) SECURITY DEFINER RPC가 유일한 통로다(profiles는 RLS로
+  /// 막혀 있어 앱이 직접 못 읽는다). anon도 실행 가능(FR58) — web 상세가 쓰는 것과 같은 호출.
+  /// 실패하면 **null을 반환한다**(던지지 않는다) — 판매자 정보는 부가정보라 그것 때문에 매물
+  /// 상세를 죽이지 않는다(`_fetchCovers`·`incrementListingView`와 같은 원칙). 화면은 null이면
+  /// 그 행들을 숨긴다.
+  Future<SellerPublicSummary?> fetchSellerSummary({
+    required String sellerId,
+    required String excludeListingId,
+  }) async {
+    try {
+      final row = await _client.rpc(
+        'get_seller_public_summary',
+        params: {
+          'p_seller_id': sellerId,
+          'p_exclude_listing_id': excludeListingId,
+        },
+      ).maybeSingle();
+      if (row == null) return null;
+      final joinedAt = row['joined_at'];
+      final count = row['other_on_sale_count'];
+      return SellerPublicSummary(
+        joinedAt: joinedAt is String ? joinedAt : null,
+        otherOnSaleCount: count is int ? count : (count is num ? count.toInt() : null),
+      );
+    } catch (e) {
+      debugPrint('판매자 요약 조회 실패($sellerId): $e');
+      return null;
     }
   }
 

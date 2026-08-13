@@ -97,20 +97,14 @@ class ListingCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // 신뢰속성 행 — 사진 바로 아래 전용 행(오버레이 아님, spec-16-9
-                            // DW-760 해소). 우측 여백은 찜 버튼이 사진 바로 아래에서 이 줄까지
-                            // 겹치는 구간(P1) 확보용(web pr-14 미러) — 값이 없으면 이 행 자체가
-                            // 0높이라 이 Padding도 사실상 없는 것과 같다.
-                            Padding(
-                              padding: const EdgeInsets.only(right: 52),
-                              child: TrustAttributesCardRow(
-                                accidentStatus: listing.accidentStatus,
-                                isSingleOwner: listing.isSingleOwner,
-                                isNonSmoker: listing.isNonSmoker,
-                              ),
-                            ),
-                            // 제조사·모델·연식 — 한 줄 요약. 우측 여백은 위와 같은 이유(찜 버튼
-                            // 겹침 구간, 신뢰속성 행이 없을 때는 이 줄이 그 구간의 첫 줄이 된다).
+                            // ✎ 2026-08-13 사용자 지적 #4 — 신뢰속성 칩이 여기(사진 아래 전용
+                            //   행)에 있었는데, 웹은 **사진 위 좌상단 오버레이**라 두 화면이
+                            //   갈려 있었다. 칩은 `_CardPhoto`의 Stack 안으로 옮겼다
+                            //   (listing_trust_widgets.dart `TrustAttributesCardOverlay`).
+                            //   그래서 이제 차량명 줄이 정보 영역의 첫 줄이다 — 찜 버튼이
+                            //   겹치는 구간(오른쪽 52)은 그 줄부터 그대로 유지한다.
+                            // 제조사·모델·연식 — 한 줄 요약. 우측 여백은 찜 버튼이 사진 바로
+                            // 아래에서 이 줄까지 겹치는 구간(P1) 확보용(web pr-14 미러).
                             Padding(
                               padding: const EdgeInsets.only(right: 52),
                               child: Text(
@@ -230,6 +224,19 @@ class _CardPhoto extends StatelessWidget {
             ),
           if (count >= 1)
             Positioned(bottom: 8, right: 8, child: PhotoCountBadge(text: '$count장')),
+          // 신뢰속성 칩 — 사진 좌상단 오버레이(web `variant='card'` 미러, 2026-08-13 지적 #4).
+          // left/right 둘 다 고정해 칩 3개가 다 있어도 사진 폭을 넘지 않고 다음 줄로 접힌다
+          // (web의 `left-2 right-2`와 동일). 우하단 "N장" 배지와는 자리가 겹치지 않는다.
+          Positioned(
+            left: 8,
+            right: 8,
+            top: 8,
+            child: TrustAttributesCardOverlay(
+              accidentStatus: listing.accidentStatus,
+              isSingleOwner: listing.isSingleOwner,
+              isNonSmoker: listing.isNonSmoker,
+            ),
+          ),
         ],
       ),
     );

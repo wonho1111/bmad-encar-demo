@@ -341,41 +341,12 @@ class _AiSearchCtaState extends State<_AiSearchCta> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Eyebrow 라벨 — 헤드라인 위, 이 화면의 유일한 몰입 구간(DESIGN.md)이 무엇인지
-                // 먼저 알린다(spec-16-10 Always, DW-767 해소). consistency-1.html `.eyebrow`
-                // 스타일(반투명 흰 pill·얇은 테두리·점 인디케이터·자간 넓힌 12px)을 새 색 토큰
-                // 없이 기존 AppColors로 구성한다 — 텍스트·테두리=onPetrolMuted, 점=accentAmber.
-                Container(
-                  key: const Key('hero_eyebrow'),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.onPetrol.withValues(alpha: 0.08),
-                    border:
-                        Border.all(color: AppColors.onPetrolMuted.withValues(alpha: 0.35)),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: const BoxDecoration(
-                            shape: BoxShape.circle, color: AppColors.accentAmber),
-                      ),
-                      const SizedBox(width: 7),
-                      const Text(
-                        'AI 매물 검색',
-                        style: TextStyle(
-                            color: AppColors.onPetrolMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.4),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
+                // ✎ 2026-08-13 사용자 지시 — **eyebrow 배지("AI 매물 검색")를 뺐다.**
+                //   spec-16-10(DW-767)이 목업 `consistency-1.html .eyebrow`를 근거로 넣었던
+                //   자리인데, 웹 히어로(HeroSearch.tsx)엔 이 배지가 **없다** — 앱에만 있어서
+                //   두 화면이 갈려 있었고, 라벨 자체도 기능 이름을 그대로 노출한 내부 용어에
+                //   가까웠다. 무엇을 하는 곳인지는 헤드라인("원하는 차를 말로 찾으세요")과
+                //   검색창 안내문이 이미 말한다. 되살릴 일이 생기면 **웹에도 같이** 넣을 것.
                 // 헤드라인 — "말"만 amber 강조(웹·목업 공통 마이크로카피, spec-16-8 AC1).
                 //
                 // ✎ 2026-08-10 사용자 육안 결정 — **24px 한 줄**로 되돌린다.

@@ -360,6 +360,77 @@ void main() {
     });
   });
 
+  // ✎ 2026-08-13 사용자 지적 #2·#3 — 계정 시트(구 PopupMenuButton)와 로그인 화면 탈출구.
+  //   두 결함 다 "로그인 상태를 안 보는 UI"라 같은 그룹에 둔다.
+  group('계정 시트 · 로그인 화면 탈출구(2026-08-13 사용자 지적 #2·#3)', () {
+    testWidgets('🔴 비로그인이 계정 시트를 열면 "내 매물 관리"·"로그아웃"이 없고 로그인 안내만 나온다',
+        (tester) async {
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_avatar')));
+      await tester.pumpAndSettle();
+
+      // 예전 PopupMenuButton은 로그인 상태를 전혀 안 봐서, 비로그인에게도 이 둘이 그대로
+      // 보였다(사용자 스크린샷). 이메일 자리에는 '-' 한 글자만 떴다.
+      expect(find.byKey(const Key('my_listings')), findsNothing,
+          reason: '비로그인에게 "내 매물 관리"를 보여줄 이유가 없다(눌러도 로그인으로 튕긴다)');
+      expect(find.byKey(const Key('logout')), findsNothing,
+          reason: '로그인하지 않았는데 로그아웃 항목이 보이면 상태 표시 자체가 거짓말이 된다');
+      expect(find.byKey(const Key('profile_email')), findsNothing);
+      expect(find.text('-'), findsNothing);
+
+      expect(find.byKey(const Key('account_sheet_guest_title')), findsOneWidget);
+      expect(find.byKey(const Key('account_sheet_login')), findsOneWidget);
+      expect(find.byKey(const Key('account_sheet_signup')), findsOneWidget);
+    });
+
+    testWidgets('로그인 상태에서 계정 시트를 열면 이메일 헤더 + 내 매물 관리 + 로그아웃이 나온다',
+        (tester) async {
+      await tester.pumpWidget(
+        _harness(
+          user: _fakeUser(role: null),
+          extraOverrides: [_recentListings(const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_avatar')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('profile_email')), findsOneWidget);
+      expect(find.byKey(const Key('my_listings')), findsOneWidget);
+      expect(find.byKey(const Key('logout')), findsOneWidget);
+      // 반대편 갈래가 같이 나오면 안 된다(두 갈래가 배타적이라는 것 자체가 계약).
+      expect(find.byKey(const Key('account_sheet_login')), findsNothing);
+    });
+
+    testWidgets('비로그인으로 찜 탭 → 로그인 화면에서 닫기를 누르면 홈으로 돌아온다(막다른 길 방지)',
+        (tester) async {
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('tab_wishlist')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('login_email')), findsOneWidget);
+
+      // redirect는 경로를 **갈아끼우므로** 되돌아갈 스택이 없다 — 그래서 AppBar 자동 ←도,
+      // 시스템 back도 이 화면을 못 벗어난다. 이 닫기 버튼이 유일한 탈출구다.
+      expect(find.byType(BackButton), findsNothing,
+          reason: 'replace라 자동 뒤로가기는 원래 없다 — 이 사실이 바뀌면 이 버튼의 근거도 바뀐다');
+
+      await tester.tap(find.byKey(const Key('login_close')));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byKey(const Key('login_email')), findsNothing);
+    });
+  });
+
   group('매트릭스 2행 — admin 로그인 → /admin-blocked', () {
     testWidgets("role='admin'이면 AdminBlockedScreen이 뜬다(AR9)", (tester) async {
       await tester.pumpWidget(_harness(user: _fakeUser(role: 'admin')));

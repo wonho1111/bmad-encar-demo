@@ -281,84 +281,22 @@ void main() {
   // spec-16-10(DW-767 해소) — 히어로 마감 4축(타이포·eyebrow·검색창 테두리·실루엣) 중 실루엣은
   // 위 그룹에 이미 있다. 여기는 나머지 축 — 헤드라인 관계 크기·eyebrow 위치·검색창 유효 테두리.
   group('히어로 마감(spec-16-10, DW-767 해소) — 타이포·테두리', () {
-    // AC — 헤드라인 위에 eyebrow가 먼저(더 위에) 렌더돼야 한다. 채택 전 eyebrow의
-    // SizedBox(height: 10)를 지워 헤드라인 앞으로 옮기지 않고 그대로 뒀다가(순서 자체를
-    // 바꾸는 뮤테이션으로) red를 확인하고 되돌려 green을 재확인했다(CLAUDE.md B4).
-    testWidgets('eyebrow 라벨 "AI 매물 검색"이 헤드라인보다 위에 있다', (tester) async {
-      await tester.pumpWidget(_harness());
-      await tester.pump();
-
-      final eyebrow = find.byKey(const Key('hero_eyebrow'));
-      final headline = find.byKey(const Key('hero_headline'));
-      expect(eyebrow, findsOneWidget);
-      expect(headline, findsOneWidget);
-      expect(find.text('AI 매물 검색'), findsOneWidget);
-
-      expect(tester.getTopLeft(eyebrow).dy, lessThan(tester.getTopLeft(headline).dy),
-          reason: 'eyebrow가 헤드라인 아래로 밀리면 "먼저 알린다"는 의도가 깨진다');
-    });
-
-    // AC — 새 색 토큰 없이 기존 AppColors만 쓴다(Always). 텍스트·테두리=onPetrolMuted,
-    // 점 인디케이터=accentAmber(Design Notes의 예시 배정을 그대로 코드로 고정). 코드리뷰
-    // 지적 — 처음엔 텍스트·점 색만 보고 pill 테두리(Border.all(onPetrolMuted))는 빠져 있었다
-    // (AC의 "테두리=onPetrolMuted" 절반이 검사 없이 통과할 수 있었다).
-    testWidgets('eyebrow는 새 색 토큰 없이 기존 AppColors(onPetrolMuted·accentAmber)로만 그려진다',
+    // ✎ 2026-08-13 사용자 지시 — eyebrow 배지("AI 매물 검색")를 **제거**했다(웹 히어로엔
+    // 없던 것이고, 기능 이름을 그대로 노출한 내부 용어에 가까웠다). 예전엔 여기 그 배지의
+    // 존재·색·타이포를 고정하는 테스트 3개가 있었다 — 요구가 반대로 뒤집혔으므로 그 셋을
+    // 지우고, **다시 살아나면 red가 나도록** 반대 방향 단언 하나로 대체한다(지우기만 하면
+    // 다음 사람이 "웹에도 넣자"며 되살려도 아무도 안 막는다).
+    testWidgets('히어로에 eyebrow 배지가 없다(웹 HeroSearch와 동일 — 되살리려면 웹도 함께)',
         (tester) async {
       await tester.pumpWidget(_harness());
       await tester.pump();
 
-      final text = tester.widget<Text>(find.text('AI 매물 검색'));
-      expect(text.style?.color, AppColors.onPetrolMuted);
-
-      final pill = tester.widget<Container>(find.byKey(const Key('hero_eyebrow')));
-      final pillBorder = (pill.decoration as BoxDecoration).border as Border;
-      // 코드리뷰 지적(이 패스) — 여기서 alpha까지 못박으면(예전엔 `withValues(alpha: 0.35)`로
-      // 단언했다) 스펙 Always가 "검사도 색을 단언하지 않는다"고 한 이유(목업 간 색조가 갈린다)를
-      // 정면으로 어긴다. 투명도를 조금 조정하는 정당한 변경에도 red가 난다. AC가 실제로 요구하는
-      // 건 "새 색 토큰 없이 기존 팔레트에서 골랐다"는 **출처**뿐이므로, alpha를 빼고 밑색만 본다.
-      expect(pillBorder.top.color.withValues(alpha: 1), AppColors.onPetrolMuted.withValues(alpha: 1),
-          reason: '테두리 색이 기존 AppColors(onPetrolMuted) 계열에서 나와야 한다(농도는 자유)');
-
-      final dot = tester.widget<Container>(
-        find.descendant(
-          of: find.byKey(const Key('hero_eyebrow')),
-          matching: find.byWidgetPredicate((w) =>
-              w is Container &&
-              w.decoration is BoxDecoration &&
-              (w.decoration as BoxDecoration).shape == BoxShape.circle),
-        ),
-      );
-      expect((dot.decoration as BoxDecoration).color, AppColors.accentAmber);
-    });
-
-    // AC — eyebrow는 "자간 넓힌 12px"(스펙 Always가 `DESIGN.md typography.scale.caption`과
-    // 크기가 일치한다고 명시한 값)여야 한다. 코드리뷰 3패스 지적(adversarial, 실측) — 위
-    // 두 테스트는 색과 세로 순서만 봐서 `fontSize: 12 → 26`, `letterSpacing: 1.4 → 0`을
-    // 동시에 넣어도 전 스위트가 green이었다. 즉 이 스토리가 고치려던 바로 그 결함(타이포가
-    // 검사되지 않아 조용히 어긋나는 것)이 새로 만든 요소에 그대로 남아 있었다.
-    //
-    // 크기는 DW-767이 세운 원칙대로 **관계**로 단언한다(eyebrow < 헤드라인) — 스파인의
-    // caption(12)과 display(36)이 나중에 함께 조정돼도 위계는 유지돼야 한다. 자간만 절대값
-    // 방향으로 본다(0보다 크다 = "넓혔다"가 곧 요구사항 자체라 관계로 바꿀 대상이 없다).
-    testWidgets('eyebrow가 헤드라인보다 작고 자간이 넓다(typography.scale.caption 위계)',
-        (tester) async {
-      await tester.pumpWidget(_harness());
-      await tester.pump();
-
-      final eyebrowStyle = tester.widget<Text>(find.text('AI 매물 검색')).style!;
-      final headlineSize = (tester
-              .renderObject<RenderParagraph>(find.byKey(const Key('hero_headline')))
-              .text as TextSpan)
-          .style!
-          .fontSize!;
-
-      expect(eyebrowStyle.fontSize, isNotNull);
-      expect(eyebrowStyle.fontSize!, lessThan(headlineSize),
-          reason: 'eyebrow가 헤드라인만큼 커지면 "먼저 작게 알리고 헤드라인이 주인공"이라는 '
-              '위계가 사라진다 — 목업 .eyebrow는 12px, 헤드라인은 display 스케일이다');
-      expect(eyebrowStyle.letterSpacing, isNotNull);
-      expect(eyebrowStyle.letterSpacing!, greaterThan(0),
-          reason: '스펙 Always가 요구한 "자간 넓힌" 라벨 — 0이면 목업의 pill 라벨 느낌이 사라진다');
+      expect(find.byKey(const Key('hero_eyebrow')), findsNothing);
+      expect(find.text('AI 매물 검색'), findsNothing);
+      // 배지가 사라져도 히어로의 본체(헤드라인·입력창)는 그대로 있어야 한다 — "안 보인다"가
+      // 히어로 자체가 안 그려진 결과일 수도 있으므로 함께 확인한다.
+      expect(find.byKey(const Key('hero_headline')), findsOneWidget);
+      expect(find.byKey(const Key('hero_query_input')), findsOneWidget);
     });
 
     // AC — 헤드라인이 "원하는 차를" / "말로 찾으세요" 2줄로 나타난다. 이건 **스냅샷**이라

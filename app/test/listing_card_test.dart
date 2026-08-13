@@ -296,22 +296,45 @@ void main() {
       );
     });
 
-    testWidgets('신뢰속성 행이 사진 뒤(문서 순서상 아래)에 온다 — 오버레이가 아니다(AC⑥)',
+    // ✎ 2026-08-13 사용자 지적 #4로 **AC⑥이 뒤집혔다** — 웹과 자리를 맞추려고 신뢰속성 칩을
+    //   사진 **아래 전용 행**에서 사진 **위 좌상단 오버레이**로 되돌렸다(웹은 처음부터 오버레이).
+    //   예전 테스트("사진보다 아래에 있어야 한다")를 그대로 두면 이 변경을 막으므로, 같은 좌표
+    //   비교를 반대 방향으로 뒤집어 새 자리를 고정한다.
+    testWidgets('신뢰속성 칩이 사진 위 좌상단에 겹쳐 있다(웹 카드와 같은 자리, 2026-08-13 #4)',
         (tester) async {
       await _pump(
         tester,
         _card(imageUrl: 'https://example.com/photo.jpg', accidentStatus: '무사고'),
       );
 
-      // AspectRatio는 _CardPhoto가 유일하게 쓰는 공개 타입(사진 5:3 셀) — 그 하단 경계보다
-      // 신뢰속성 텍스트가 아래(더 큰 dy)에 있어야 "사진 뒤"다.
-      final photoBottom = tester.getBottomLeft(find.byType(AspectRatio)).dy;
-      final trustTop = tester.getTopLeft(find.text('무사고')).dy;
-      expect(
-        trustTop,
-        greaterThanOrEqualTo(photoBottom),
-        reason: '예전엔 신뢰속성이 사진 좌상단 오버레이라 사진보다 위(작은 dy)에 겹쳐 있었다',
+      // AspectRatio는 _CardPhoto가 유일하게 쓰는 공개 타입(사진 5:3 셀).
+      final photo = tester.getRect(find.byType(AspectRatio));
+      final chip = tester.getRect(find.text('무사고'));
+
+      expect(chip.top, greaterThanOrEqualTo(photo.top),
+          reason: '칩이 사진 위쪽 경계 밖으로 나가면 안 된다');
+      expect(chip.bottom, lessThanOrEqualTo(photo.bottom),
+          reason: '사진 영역 안에 있어야 "겹친 칩"이다 — 아래로 내려가면 예전의 전용 행으로 되돌아간 것');
+      // 좌상단 — 사진 세로 중앙보다 위, 가로 중앙보다 왼쪽(우하단 "N장" 배지와 반대편).
+      expect(chip.center.dy, lessThan(photo.center.dy));
+      expect(chip.center.dx, lessThan(photo.center.dx));
+    });
+
+    // 오버레이가 카드 탭을 잡아먹지 않는지 — `IgnorePointer`를 빼면 칩이 덮은 만큼 상세로
+    // 가는 길이 죽는다(웹의 `pointer-events-none`과 같은 자리). 좌표로 확인하지 않고 실제로
+    // 칩 위를 눌러 onTap이 오는지 본다.
+    testWidgets('신뢰속성 칩 위를 눌러도 카드 탭(상세 이동)이 그대로 동작한다', (tester) async {
+      var tapped = 0;
+      await _pump(
+        tester,
+        _card(imageUrl: 'https://example.com/photo.jpg', accidentStatus: '무사고'),
+        onTap: () => tapped++,
       );
+
+      await tester.tap(find.text('무사고'), warnIfMissed: false);
+      await tester.pump();
+
+      expect(tapped, 1, reason: '칩이 포인터를 가로채면 사진 좌상단이 죽은 영역이 된다');
     });
 
     // 코드리뷰 지적(P3) — spec의 AC는 정보 영역 세로 순서를 사진 → 신뢰속성 행 → 차량명 →

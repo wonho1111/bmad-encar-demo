@@ -24,6 +24,20 @@ final listingDetailProvider =
   return repo.fetchListing(id);
 });
 
+/// 매물 상세의 판매자정보 카드용 요약(FR56, 2026-08-13 상세 재구성) — 가입 시점 + 다른
+/// 판매중 매물 수. 인자는 (판매자 id, 지금 보고 있는 매물 id) 레코드다 — Dart 레코드는 값
+/// 동등성을 가지므로 family 키로 그대로 쓸 수 있다(같은 조합이면 캐시 재사용).
+/// 실패는 레포가 이미 null로 정규화하므로(던지지 않음) 이 provider는 error 상태가 되지 않는다 —
+/// 화면은 "값이 없으면 그 행을 숨긴다"만 신경 쓰면 된다.
+final sellerSummaryProvider = FutureProvider.autoDispose
+    .family<SellerPublicSummary?, ({String sellerId, String listingId})>((ref, arg) async {
+  final repo = ref.watch(listingsRepositoryProvider);
+  return repo.fetchSellerSummary(
+    sellerId: arg.sellerId,
+    excludeListingId: arg.listingId,
+  );
+});
+
 /// 홈 "최근 매물" 미리보기 — 빈 필터(전체 판매중)를 created_at desc 로 받아 상위 몇 건만.
 /// fetchListings 가 이미 최신순 정렬이라 take 만 하면 된다. autoDispose 로 홈을 떠나면 캐시 정리.
 final recentListingsProvider =
