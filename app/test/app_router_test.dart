@@ -407,6 +407,31 @@ void main() {
       expect(find.byKey(const Key('account_sheet_login')), findsNothing);
     });
 
+    // 시트의 버튼들은 **먼저 시트를 닫고** 화면을 옮긴다 — 그 순서 때문에 pop 뒤의 context로
+    // 라우터를 찾으면 조회가 실패할 수 있다(해체 중인 element). 실제로 눌러 도착지까지 확인한다.
+    testWidgets('비로그인 계정 시트의 "로그인"을 누르면 시트가 닫히고 로그인 화면으로 간다',
+        (tester) async {
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('profile_avatar')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('account_sheet_login')));
+      await tester.pumpAndSettle();
+
+      // ⚠️ **이 검사가 안 보는 것**(실측): 코드를 일부러 위험한 순서(pop 먼저 → `context.go`)로
+      //   되돌려 돌려봤더니 **그대로 통과했다.** 위젯 테스트에서는 pop 직후에도 같은 프레임 안이라
+      //   element가 아직 해체되지 않아 조회가 성공한다. 즉 이 테스트가 지키는 것은 "시트에서
+      //   로그인 화면까지 실제로 도착한다"이지 그 **순서**가 아니다 — 순서는 코드 주석으로만
+      //   지켜진다. (그래서 takeException은 남겨 두되 그 근거를 과장하지 않는다.)
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('login_email')), findsOneWidget);
+      expect(find.byKey(const Key('account_sheet_login')), findsNothing,
+          reason: '시트가 로그인 화면 위에 남아 있으면 안 된다');
+    });
+
     testWidgets('비로그인으로 찜 탭 → 로그인 화면에서 닫기를 누르면 홈으로 돌아온다(막다른 길 방지)',
         (tester) async {
       await tester.pumpWidget(

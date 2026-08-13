@@ -626,19 +626,25 @@ class _AccountSheet extends ConsumerWidget {
                 style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.inkMuted),
               ),
               const SizedBox(height: 16),
+              // ⚠️ 라우터를 **pop 하기 전에** 잡는다 — `context.go`는 이 시트 자신의 context에서
+              //   InheritedWidget을 거슬러 올라가 라우터를 찾는데, pop 뒤에는 그 element가
+              //   해체 중이라 조회가 실패할 수 있다(`_signOut`에서 ScaffoldMessenger를 미리
+              //   잡아 두는 것과 같은 이유). 순서를 되돌리지 말 것.
               FilledButton(
                 key: const Key('account_sheet_login'),
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.go('/login');
+                  router.go('/login');
                 },
                 child: const Text('로그인'),
               ),
               TextButton(
                 key: const Key('account_sheet_signup'),
                 onPressed: () {
+                  final router = GoRouter.of(context);
                   Navigator.of(context).pop();
-                  context.push('/signup');
+                  router.push('/signup');
                 },
                 child: const Text('아직 계정이 없으신가요? 회원가입'),
               ),
