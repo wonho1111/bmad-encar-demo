@@ -6864,3 +6864,58 @@ resolution: 2026-08-13 사용자 지시로 즉시 수정. `AuthException`이면 
   일어나지 않았다(토큰 만료까지 최대 1시간). 그래서 고정한 것은 정책(`isExpiredSessionError`)과 복구
   화면의 동작 두 가지이고, 트리거는 최초 기기 관측이 근거다.
 status: done 2026-08-13
+
+### DW-837: 앱 상세의 옵션이 카테고리 없이 한 줄로 나열된다 — 웹은 5개 카테고리로 묶는다
+
+origin: 2026-08-13 사용자 지적 #5(상세 재구성) 작업 중. 상세를 웹 순서로 다시 짜면서 옵션 카드까지 왔는데, 웹의 그룹핑을 그대로 옮기려면 카테고리 표가 필요해 이번 범위에서 뺐다(사용자에게 그 자리에서 보고).
+location: `app/lib/features/listings/listing_detail_screen.dart`(옵션 `_DetailSection`) · 대응 웹 `web/src/app/(user)/listings/[id]/ListingDetailSections.tsx`의 `OptionsSection` · 카테고리 정본 `web/src/lib/options.ts`(`groupByCategory`·`OPTION_CATEGORY_ORDER`)
+severity: low
+reason: 앱 `options.dart`엔 우선순위 목록(`topOptions`)만 있고 **옵션→카테고리 대응표가 없다.** 옵션이 10개를 넘으면 앱에선 칩이 한 덩어리로 뭉쳐 무엇이 어떤 종류인지 안 읽힌다. 웹은 "외관/내장/안전…" 소제목으로 나눠 보여준다.
+fix_sketch: `web/src/lib/options.ts`의 카테고리 대응표를 앱 `options.dart`로 옮기고(값·순서 바이트 일치가 계약), 그 미러가 갈리지 않게 **양쪽 상수를 대조하는 검사**를 함께 넣는다(`categoryChips`가 이미 쓰는 방식 — 자유 문자열이라 오타가 컴파일을 통과한다). 표 자체를 옮기지 않고 앱에서 임의 분류하면 두 화면이 다른 카테고리를 말하게 되므로 금지.
+trigger: 앱 상세 또는 옵션 표시를 다음에 손대는 스토리. 사용자 요청이 오면 그때 바로.
+related: [[DW-833]](같은 "웹에는 있고 앱에는 없는 구조" 축)
+status: open
+
+### DW-838: 안드로이드 홈화면·앱 서랍에 앱 이름이 "app"으로 뜬다
+
+origin: 2026-08-13 v1.1.0 APK 배포 검증 중 `aapt2 dump badging`으로 발견(`application-label:'app'`).
+location: `app/android/app/src/main/AndroidManifest.xml:15`(`android:label="app"`)
+severity: low
+reason: Flutter 기본값이 그대로 남아 있다. 앱 안에서는 로고 lockup이 "차장님"인데 폰 런처에서는 "app"이라, 시연 때 앱 서랍에서 찾기 어렵고 제품이 아니라 빌드 산출물처럼 보인다.
+fix_sketch: `android:label`을 "차장님"으로 바꾼다. 한 줄이지만 **재빌드·재배포가 필요**하고(릴리스 자산 교체) 앱 이름은 사용자에게 보이는 값이라 사용자 결정 사항으로 남겼다. iOS는 대상 아님(Android 전용).
+trigger: 사용자 결정. 결정되면 다음 APK 빌드에 함께 태운다.
+related: [[DW-839]]
+status: open
+
+### DW-839: 앱 "내 매물 관리" 목록이 글자 한 줄뿐이다 — 웹은 2026-08-12에 카드로 고쳤다
+
+origin: 2026-08-13 사용자 지적 5건 처리 후 나머지 화면 전수 점검 중 발견. 사용자가 어제 웹 `/sell` 목록을 보고 *"데모 같다"*고 지적해 카드화했는데, **앱 쪽 같은 화면은 그대로 남아 있었다.**
+location: `app/lib/features/listings/my_listings_screen.dart`(`_row`) · 대응 웹 `web/src/app/(user)/sell/page.tsx`(본인 매물 목록)
+severity: medium
+reason: 제목·가격·버튼뿐이라 사진이 없고, 주행·연료·지역 같은 구분 단서도 없고, 눌러도 상세로 가지 않는다. 매물이 여러 건인 판매자는 자기 매물을 구분할 방법이 사실상 차명뿐이다. 웹은 썸네일 + 제목 + 주행·연료·지역 + 가격 강조 + 상태 + 액션으로 바뀌었다.
+fix_sketch: `OwnListing`에 `mileage`·`fuel`·`region`·대표사진(`image_url`/`image_count`)을 더하고(레포 select와 `fetchOwnListings` 함께), 카드 렌더는 **검색 화면 카드와 같은 코드**를 재사용한다 — 웹이 같은 이유로 사진 실패 처리를 한 벌로 합쳤다(두 벌이면 "사진 깨짐" 처리가 갈린다). 판매중일 때만 상세로 탭 이동(웹과 동일 규칙).
+trigger: 사용자 결정 또는 앱 판매자 화면을 다음에 손대는 스토리.
+related: [[DW-832]](앱이 웹 변경을 안 따라오던 축 — 그 항목은 닫혔지만 이 화면은 그때 범위 밖이었다)
+status: open
+
+### DW-840: 비로그인 상태에서도 채팅 안읽음 RPC를 호출해 매 실행마다 42501이 쌓인다
+
+origin: 2026-08-13 실기기 APK 검증 중 `adb logcat`에서 관측 — `[chat] 안읽음 총합 조회 실패: PostgrestException(message: permission denied for function chat_unread_count, code: 42501)`.
+location: `app/lib/features/chat/chat_repository.dart`(`fetchUnreadTotal`) · 호출부는 셸의 내비 배지(`app_router.dart` `_ChatTabIcon` → `chatUnreadTotalProvider`, non-autoDispose라 어느 탭에 있든 watch)
+severity: low
+reason: 화면엔 영향이 없다(실패하면 0으로 폴백해 배지를 안 그린다). 다만 **비로그인은 결과를 쓸 자리가 없는 요청**을 앱 실행마다 서버로 보내고, 로그엔 권한 거부가 남는다. 탭 활성화 경로(`_kTabBranches`의 chat `onActivate`)는 이미 `currentUserProvider == null`이면 아무것도 무효화하지 않도록 가드가 있는데, provider 자체의 최초 조회에는 같은 가드가 없다.
+fix_sketch: `chatUnreadTotalProvider`(또는 `fetchUnreadTotal`) 진입부에 `if (userId == null) return 0;` 가드를 둔다 — `wishlist_repository.dart`의 `fetchWishlist()`가 이미 같은 형태를 갖고 있다(그 대칭이 이 항목의 근거다). 검사는 "비로그인일 때 RPC 호출이 0회"를 가짜 레포로 세는 쪽이 맞다(로그 문자열을 보는 검사는 깨지기 쉽다).
+trigger: 앱 채팅 배지·인증 가드를 다음에 손대는 스토리.
+related: [[DW-836]](같은 "비로그인/만료 상태에서 앱이 하는 일" 축)
+status: open
+
+### DW-841: 카드 신뢰속성 자리가 DESIGN.md "레이아웃 B"와 어긋난 채로 구현돼 있다(사용자 결정으로 웹에 맞춤)
+
+origin: 2026-08-13 사용자 지적 #4 처리. 사용자가 웹·앱을 나란히 보고 **웹 기준으로 통일**하라고 정했다 — 그 결정이 스파인 문서와 충돌한다.
+location: `app/lib/features/listings/listing_trust_widgets.dart`(`TrustAttributesCardOverlay`) · 충돌 문서 = DESIGN.md "레이아웃 B"(신뢰속성 = 사진 **아래** 일반 블록 + 짧은 면책 "판매자 제공 정보")
+severity: low
+reason: 코드는 지금 웹과 같이 **사진 위 좌상단 오버레이**이고 짧은 면책이 없다. 문서는 여전히 사진 아래 + 면책을 요구한다. 코드 주석에 경위를 남겼지만 **문서 자체는 안 고쳤다** — 다음에 스파인을 근거로 작업하는 사람은 지금 구현을 "회귀"로 읽고 되돌릴 수 있다.
+fix_sketch: DESIGN.md 레이아웃 B 항목에 "2026-08-13 사용자 결정으로 카드 신뢰속성은 웹과 같은 오버레이"를 명시하고, 되돌리려면 웹도 함께 바꿔야 한다는 조건을 붙인다. 문서 수정만이라 코드 변경은 없다.
+trigger: 스파인(DESIGN.md)을 다음에 손대는 작업, 또는 앱 카드 레이아웃 스토리.
+related: [[DW-837]]
+status: open
