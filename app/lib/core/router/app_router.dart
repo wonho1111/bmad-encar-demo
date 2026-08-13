@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/auth/admin_blocked_screen.dart';
+import '../../features/auth/account_drawer.dart';
 import '../../features/auth/auth_controller.dart';
 import '../../features/auth/home_screen.dart';
 import '../../features/auth/login_screen.dart';
@@ -30,7 +31,6 @@ import '../../features/auth/user_role.dart';
 import '../../features/chat/chat_list_screen.dart';
 import '../../features/chat/chat_providers.dart';
 import '../../features/listings/listings_providers.dart';
-import '../../features/listings/my_listings_screen.dart';
 import '../../features/listings/sell_controller.dart';
 import '../../features/listings/sell_screen.dart';
 import '../../features/wishlist/wishlist_providers.dart';
@@ -367,6 +367,12 @@ class _AppShell extends ConsumerWidget {
       },
       child: Scaffold(
         backgroundColor: AppColors.surfaceBase,
+        // 계정·전체메뉴 드로어(2026-08-13 사용자 결정) — 우상단 아바타로만 연다.
+        endDrawer: const AccountDrawer(),
+        // ⚠️ 오른쪽 가장자리 스와이프로는 열지 않는다. 이 앱은 홈의 제안 칩·차종 칩,
+        //   상세 갤러리가 **가로 스크롤**이라, 가장자리 드래그를 드로어가 가져가면 그 스크롤이
+        //   화면 오른쪽 끝에서 드로어 열기로 바뀐다(같은 제스처를 두 기능이 다툰다).
+        endDrawerEnableOpenDragGesture: false,
         // 홈 탭(인덱스 0)만 petrol 배경+로고 lockup(spec-16-9, DW-759 해소) — 목업
         // `consistency-1.html` PART 3이 "상태바→앱바→AI 히어로가 이음새 없이 하나의 petrol
         // 면"으로 규정한다. 다른 3탭(찜·채팅·내차팔기)은 조건이 false라 모든 값이 null로
@@ -484,265 +490,30 @@ class _ChatTabIcon extends ConsumerWidget {
   }
 }
 
-/// 우상단 계정 아바타 — 탭하면 아래에서 계정 시트가 올라온다.
+/// 우상단 계정 아바타 — 탭하면 **오른쪽에서 계정 드로어**가 밀려 들어온다.
 ///
-/// ✎ 2026-08-13 사용자 지적 #2("너무 조잡해") — 예전엔 `PopupMenuButton`이었다. 그 기본
-///   팝업은 위치·여백·구분선이 전부 안드로이드 기본값이라 계정 정보가 "흐린 한 줄"로만
-///   붙고, 시트라기보단 컨텍스트 메뉴로 읽혔다. 상용 앱이 이 자리에 쓰는 관례(계정 헤더
-///   + 항목 리스트를 담은 **모달 바텀시트**)로 바꾼다 — 화면 아래에서 올라와 손가락이
-///   닿는 자리에 항목이 오고, 헤더가 "지금 누구로 로그인했는지"를 먼저 말한다.
+/// ✎ 2026-08-13 이 자리는 하루에 세 번 바뀌었다: 기본 팝업 메뉴 → 모달 바텀시트 →
+///   **엔드 드로어(지금)**. 경위와 근거(사용자가 보내온 쏘카·엔카 레퍼런스)는
+///   `features/auth/account_drawer.dart` 상단에 적어 뒀다. 여기서는 여는 방법만 진다.
 ///
-/// 🔴 같은 지적에서 **비로그인 결함**도 함께 고친다: 예전 메뉴는 로그인 상태를 전혀 안 봐서,
-///   비로그인이 열어도 이메일 자리에 `-` 한 글자만 뜨고 "내 매물 관리"·"로그아웃"이 그대로
-///   보였다(사용자 스크린샷). 지금은 시트가 두 갈래로 갈린다 — 로그인: 계정 헤더 + 내 매물
-///   관리 + 로그아웃 / 비로그인: 안내 + 로그인·회원가입.
-class _ProfileAvatarButton extends ConsumerWidget {
+/// `Builder`로 한 겹 감싸는 이유: `Scaffold.of(context)`는 **그 Scaffold보다 아래에 있는**
+/// context에서만 찾을 수 있다. `_AppShell.build`의 context는 Scaffold를 만드는 쪽이라 거기서
+/// 부르면 "No Scaffold widget found"로 죽는다.
+class _ProfileAvatarButton extends StatelessWidget {
   const _ProfileAvatarButton();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IconButton(
-      key: const Key('profile_avatar'),
-      tooltip: '내 계정',
-      icon: const CircleAvatar(
-        radius: 16,
-        backgroundColor: AppColors.brandPetrol,
-        child: Icon(Icons.person, color: AppColors.onPetrol, size: 18),
-      ),
-      onPressed: () => showModalBottomSheet<void>(
-        context: context,
-        // 셸(AppBar·NavigationBar) 위가 아니라 앱 최상위에 띄운다 — 셸 경계 규칙(파일 상단)과
-        // 같은 이유로, 시트 안에서 화면을 push할 때 그 push가 셸 안에 갇히지 않게 한다.
-        useRootNavigator: true,
-        backgroundColor: AppColors.surfaceRaised,
-        // 위 두 모서리만 둥근 시트(홈 히어로 밴드가 아래 두 모서리만 둥근 것과 짝) — 값은
-        // 이미 쓰는 16을 그대로 재사용한다(새 반경을 만들지 않는다).
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        builder: (_) => const _AccountSheet(),
-      ),
-    );
-  }
-}
-
-/// 계정 시트 본문 — 로그인/비로그인 두 갈래. `ConsumerWidget`이라 시트가 열려 있는 동안
-/// 인증 상태가 바뀌면(다른 경로의 로그아웃·세션 만료) 그 자리에서 반대편 갈래로 다시 그려진다.
-class _AccountSheet extends ConsumerWidget {
-  const _AccountSheet();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider);
-    final loading = ref.watch(authControllerProvider).isLoading;
-
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // 그래버 — "아래로 끌어 닫을 수 있다"는 시트의 관례적 신호. 장식이 아니라
-            // 닫는 법을 알리는 유일한 표시다(시트 밖 탭으로도 닫히지만 보이지 않는다).
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.borderHairline,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (user != null) ...[
-              Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 22,
-                    backgroundColor: AppColors.brandPetrol,
-                    child: Icon(Icons.person, color: AppColors.onPetrol, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          user.email ?? '이메일 없음',
-                          key: const Key('profile_email'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.inkPrimary),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          '이 계정으로 이용 중',
-                          style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Divider(height: 1, color: AppColors.borderHairline),
-              // 내 매물 관리(spec-16-8 patch 1) — 홈 퀵액션 3개(go_my_listings 포함) 제거로 앱
-              // 전체에서 MyListingsScreen에 닿는 길이 없어졌다(코드리뷰 발견, `grep -rn
-              // MyListingsScreen app/lib` 실측 0건). 웹 프로필 메뉴("내 매물 관리")와 같은 자리.
-              _AccountSheetItem(
-                itemKey: const Key('my_listings'),
-                icon: Icons.sell_outlined,
-                label: '내 매물 관리',
-                onTap: () => _openMyListings(context),
-              ),
-              _AccountSheetItem(
-                itemKey: const Key('logout'),
-                icon: Icons.logout,
-                label: '로그아웃',
-                // 로그아웃 진행 중엔 흐리게 비활성화 — 옛 메뉴 항목(enabled: !loading)의 시각
-                // 피드백을 그대로 유지한다(다시 눌러도 반응 없어 보이는 것 방지).
-                enabled: !loading,
-                danger: true,
-                onTap: () => _signOut(context, ref),
-              ),
-            ] else ...[
-              // 비로그인 — 계정 정보가 없으니 헤더 자리에 "왜 로그인하나"를 둔다. 항목
-              // (내 매물 관리·로그아웃)은 아예 그리지 않는다(위 🔴 주석).
-              const Text(
-                '로그인이 필요해요',
-                key: Key('account_sheet_guest_title'),
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.inkPrimary),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '찜·채팅·내 차 팔기는 로그인 후 이용할 수 있어요.\n매물 둘러보기는 지금처럼 계속 가능해요.',
-                style: TextStyle(fontSize: 13, height: 1.5, color: AppColors.inkMuted),
-              ),
-              const SizedBox(height: 16),
-              // ⚠️ 라우터를 **pop 하기 전에** 잡는다 — `context.go`는 이 시트 자신의 context에서
-              //   InheritedWidget을 거슬러 올라가 라우터를 찾는데, pop 뒤에는 그 element가
-              //   해체 중이라 조회가 실패할 수 있다(`_signOut`에서 ScaffoldMessenger를 미리
-              //   잡아 두는 것과 같은 이유). 순서를 되돌리지 말 것.
-              FilledButton(
-                key: const Key('account_sheet_login'),
-                onPressed: () {
-                  final router = GoRouter.of(context);
-                  Navigator.of(context).pop();
-                  router.go('/login');
-                },
-                child: const Text('로그인'),
-              ),
-              TextButton(
-                key: const Key('account_sheet_signup'),
-                onPressed: () {
-                  final router = GoRouter.of(context);
-                  Navigator.of(context).pop();
-                  router.push('/signup');
-                },
-                child: const Text('아직 계정이 없으신가요? 회원가입'),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openMyListings(BuildContext context) {
-    // 시트를 먼저 닫는다 — 안 닫으면 MyListingsScreen 위에 시트가 그대로 남는다.
-    // 그 뒤의 push는 옛 팝업 메뉴가 쓰던 것과 **같은 계약**이다(아래 두 주석 그대로 유지).
-    final container = ProviderScope.containerOf(context, listen: false);
-    final navigator = Navigator.of(context, rootNavigator: true);
-    Navigator.of(context).pop();
-    // ⚠️ await(push) 뒤에 `ref`를 그대로 쓰지 않는다(후속 코드리뷰 spec-16-8 발견) —
-    // MyListingsScreen이 열려 있는 동안 세션이 만료되거나 로그아웃하면 redirect가
-    // 셸을 통째로 갈아치우고, pop이 그 뒤에 도착하면 flutter_riverpod 3.3.2의
-    // `_assertNotDisposed()`가 unmounted element에 대해 진짜 `StateError`를 던진다
-    // (assert가 아니라 모든 빌드 모드에서). 그래서 push 전에 컨테이너를 동기적으로 잡아
-    // 그 참조로 무효화한다.
-    //
-    // .then((_) => ...) — 이 push는 rootNavigator라 pop해도 _TabBranch의 홈 탭
-    // onActivate를 거치지 않으므로, 여기서 직접 무효화하지 않으면 내 매물 관리에서
-    // 구매완료(markSold)·삭제한 결과가 홈 "지금 인기"·"방금 올라온 매물"에 반영되지 않는다.
-    navigator
-        .push(MaterialPageRoute(builder: (_) => const MyListingsScreen()))
-        .then((_) {
-      container.invalidate(recentListingsProvider);
-      container.invalidate(popularListingsProvider);
-    });
-  }
-
-  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    Navigator.of(context).pop();
-    // AuthController.signOut()은 실패 시 rethrow한다 — await 없이 fire-and-forget으로
-    // 부르면 실패가 "눌러도 아무 반응 없는 버튼"으로만 보인다(spec-16-1 Task).
-    try {
-      await ref.read(authControllerProvider.notifier).signOut();
-    } catch (e) {
-      // 원본 예외는 로그에만 남긴다 — 화면엔 고정 한국어 문구만(sell_controller.dart:147과
-      // 같은 규칙: 원본 에러·코드를 화면에 노출하지 않는다. review, spec-16-1 P6).
-      // ignore: avoid_print
-      print('[auth] 로그아웃 실패: $e');
-      // 시트는 이미 닫혔으므로 `context.mounted`가 아니라 미리 잡아 둔 messenger를 쓴다
-      // (닫힌 시트의 context로 ScaffoldMessenger를 찾으면 못 찾는다).
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          const SnackBar(content: Text('로그아웃에 실패했습니다. 잠시 후 다시 시도해주세요.')),
-        );
-    }
-  }
-}
-
-/// 계정 시트의 항목 한 줄 — 아이콘 + 라벨. 높이 52로 터치 타깃(48dp)을 넘긴다.
-class _AccountSheetItem extends StatelessWidget {
-  const _AccountSheetItem({
-    required this.itemKey,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.enabled = true,
-    this.danger = false,
-  });
-
-  final Key itemKey;
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool enabled;
-
-  /// 로그아웃처럼 "되돌리는" 동작 — 색으로 나머지 항목과 구분한다(파괴적 동작은 아니라
-  /// danger 색을 글자에만 쓰고 배경은 그대로 둔다).
-  final bool danger;
-
-  @override
   Widget build(BuildContext context) {
-    final color = !enabled
-        ? AppColors.inkMuted
-        : danger
-            ? AppColors.danger
-            : AppColors.inkPrimary;
-    return InkWell(
-      key: itemKey,
-      onTap: enabled ? onTap : null,
-      child: SizedBox(
-        height: 52,
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(width: 14),
-            Text(label,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color)),
-          ],
+    return Builder(
+      builder: (context) => IconButton(
+        key: const Key('profile_avatar'),
+        tooltip: '전체메뉴',
+        icon: const CircleAvatar(
+          radius: 16,
+          backgroundColor: AppColors.brandPetrol,
+          child: Icon(Icons.person, color: AppColors.onPetrol, size: 18),
         ),
+        onPressed: () => Scaffold.of(context).openEndDrawer(),
       ),
     );
   }

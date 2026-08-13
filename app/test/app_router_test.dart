@@ -69,6 +69,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:app/core/router/app_router.dart';
+import 'package:app/features/auth/account_drawer.dart';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/auth/auth_controller.dart';
@@ -362,8 +363,12 @@ void main() {
 
   // ✎ 2026-08-13 사용자 지적 #2·#3 — 계정 시트(구 PopupMenuButton)와 로그인 화면 탈출구.
   //   두 결함 다 "로그인 상태를 안 보는 UI"라 같은 그룹에 둔다.
-  group('계정 시트 · 로그인 화면 탈출구(2026-08-13 사용자 지적 #2·#3)', () {
-    testWidgets('🔴 비로그인이 계정 시트를 열면 "내 매물 관리"·"로그아웃"이 없고 로그인 안내만 나온다',
+  // ✎ 2026-08-13 — 이 자리는 하루에 세 번 바뀌었다(팝업 메뉴 → 바텀시트 → **엔드 드로어**).
+  //   바뀐 것은 **여는 방식**뿐이고, 이 그룹이 지키는 계약(로그인 상태에 따라 항목이 갈린다·
+  //   로그인 화면에 탈출구가 있다)은 그대로다. 그래서 테스트도 컴포넌트 이름이 아니라 그 계약을
+  //   본다 — 다음에 또 형태가 바뀌어도 여기서 고칠 것은 여는 동작 한 줄이어야 한다.
+  group('계정 드로어 · 로그인 화면 탈출구(2026-08-13 사용자 지적 #2·#3)', () {
+    testWidgets('🔴 비로그인이 계정 드로어를 열면 "내 매물 관리"·"로그아웃"이 없고 로그인 안내만 나온다',
         (tester) async {
       await tester.pumpWidget(
         _harness(user: null, extraOverrides: [_recentListings(const [])]),
@@ -379,15 +384,59 @@ void main() {
           reason: '비로그인에게 "내 매물 관리"를 보여줄 이유가 없다(눌러도 로그인으로 튕긴다)');
       expect(find.byKey(const Key('logout')), findsNothing,
           reason: '로그인하지 않았는데 로그아웃 항목이 보이면 상태 표시 자체가 거짓말이 된다');
+      // 찜·채팅도 비로그인에는 넣지 않는다 — 눌러도 로그인으로 튕겨 방금 닫은 드로어로
+      // 되돌아오는 왕복이 된다(같은 지적의 다른 얼굴).
+      expect(find.byKey(const Key('drawer_wishlist')), findsNothing);
+      expect(find.byKey(const Key('drawer_chat')), findsNothing);
       expect(find.byKey(const Key('profile_email')), findsNothing);
       expect(find.text('-'), findsNothing);
 
-      expect(find.byKey(const Key('account_sheet_guest_title')), findsOneWidget);
-      expect(find.byKey(const Key('account_sheet_login')), findsOneWidget);
-      expect(find.byKey(const Key('account_sheet_signup')), findsOneWidget);
+      expect(find.byKey(const Key('account_drawer_guest_title')), findsOneWidget);
+      expect(find.byKey(const Key('account_login')), findsOneWidget);
+      expect(find.byKey(const Key('account_signup')), findsOneWidget);
     });
 
-    testWidgets('로그인 상태에서 계정 시트를 열면 이메일 헤더 + 내 매물 관리 + 로그아웃이 나온다',
+    testWidgets('드로어는 오른쪽에서 나오고 화면을 꽉 채우지 않는다(사용자 선택)', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _harness(user: null, extraOverrides: [_recentListings(const [])]),
+      );
+      await tester.pumpAndSettle();
+
+      // 셸의 Scaffold가 drawer가 아니라 **endDrawer**로 들고 있어야 오른쪽에서 들어온다.
+      // 셸 Scaffold를 콕 집는다 — 하단 4탭 NavigationBar를 가진 Scaffold는 셸 하나뿐이다
+      // (탭 화면들도 각자 Scaffold를 갖고 있어 `find.byType(Scaffold).first`로는 어느 것이
+      // 잡히는지 보장되지 않는다 — 실제로 그렇게 썼다가 endDrawer가 null인 안쪽 Scaffold를
+      // 집어 실패했다).
+      final scaffold = tester.widget<Scaffold>(
+        find.ancestor(of: find.byType(NavigationBar), matching: find.byType(Scaffold)).first,
+      );
+      expect(scaffold.endDrawer, isNotNull, reason: '오른쪽 드로어여야 한다');
+      expect(scaffold.drawer, isNull, reason: 'drawer(왼쪽)로 들어가면 방향이 뒤집힌다');
+      // 가장자리 스와이프로는 열지 않는다 — 홈의 가로 스크롤 칩·갤러리와 같은 제스처를 다툰다.
+      expect(scaffold.endDrawerEnableOpenDragGesture, isFalse);
+
+      await tester.tap(find.byKey(const Key('profile_avatar')));
+      await tester.pumpAndSettle();
+
+      final drawer = tester.getRect(find.byKey(const Key('account_drawer')));
+      expect(drawer.width, lessThan(390),
+          reason: '꽉 채우면 "임시로 열린 패널"이라는 신호(뒤 화면 비침)가 사라진다');
+      expect(drawer.right, closeTo(390, 0.5), reason: '오른쪽 끝에 붙어 있어야 한다');
+    });
+
+    test('accountDrawerWidth — 화면의 86%를 쓰되 340을 넘지 않는다', () {
+      expect(accountDrawerWidth(390), closeTo(335.4, 0.01));
+      expect(accountDrawerWidth(360), closeTo(309.6, 0.01));
+      // 태블릿·큰 화면에서 비율만 따르면 과하게 넓어진다 — 상한이 그걸 막는다.
+      expect(accountDrawerWidth(800), 340);
+    });
+
+    testWidgets('로그인 상태에서 계정 드로어를 열면 이메일 헤더 + 내 매물 관리 + 로그아웃이 나온다',
         (tester) async {
       await tester.pumpWidget(
         _harness(
@@ -404,12 +453,12 @@ void main() {
       expect(find.byKey(const Key('my_listings')), findsOneWidget);
       expect(find.byKey(const Key('logout')), findsOneWidget);
       // 반대편 갈래가 같이 나오면 안 된다(두 갈래가 배타적이라는 것 자체가 계약).
-      expect(find.byKey(const Key('account_sheet_login')), findsNothing);
+      expect(find.byKey(const Key('account_login')), findsNothing);
     });
 
-    // 시트의 버튼들은 **먼저 시트를 닫고** 화면을 옮긴다 — 그 순서 때문에 pop 뒤의 context로
+    // 드로어의 버튼들은 **먼저 드로어를 닫고** 화면을 옮긴다 — 그 순서 때문에 pop 뒤의 context로
     // 라우터를 찾으면 조회가 실패할 수 있다(해체 중인 element). 실제로 눌러 도착지까지 확인한다.
-    testWidgets('비로그인 계정 시트의 "로그인"을 누르면 시트가 닫히고 로그인 화면으로 간다',
+    testWidgets('비로그인 계정 드로어의 "로그인"을 누르면 드로어가 닫히고 로그인 화면으로 간다',
         (tester) async {
       await tester.pumpWidget(
         _harness(user: null, extraOverrides: [_recentListings(const [])]),
@@ -418,7 +467,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('profile_avatar')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('account_sheet_login')));
+      await tester.tap(find.byKey(const Key('account_login')));
       await tester.pumpAndSettle();
 
       // ⚠️ **이 검사가 안 보는 것**(실측): 코드를 일부러 위험한 순서(pop 먼저 → `context.go`)로
@@ -428,8 +477,8 @@ void main() {
       //   지켜진다. (그래서 takeException은 남겨 두되 그 근거를 과장하지 않는다.)
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('login_email')), findsOneWidget);
-      expect(find.byKey(const Key('account_sheet_login')), findsNothing,
-          reason: '시트가 로그인 화면 위에 남아 있으면 안 된다');
+      expect(find.byKey(const Key('account_login')), findsNothing,
+          reason: '드로어가 로그인 화면 위에 남아 있으면 안 된다');
     });
 
     testWidgets('비로그인으로 찜 탭 → 로그인 화면에서 닫기를 누르면 홈으로 돌아온다(막다른 길 방지)',
