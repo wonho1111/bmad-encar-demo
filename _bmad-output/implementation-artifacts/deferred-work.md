@@ -3852,8 +3852,11 @@ location: `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md`(16.5�
 severity: medium
 reason: api는 이번 스토리(13.4)로 `/ai/search` 응답에 `clarify: {question, chips[]} | null`을 실제로 채워 보내기 시작했다. Flutter 앱은 Story 16.5가 이 필드를 렌더할 예정이지만, 웹은 그 필드를 소비할 스토리가 애초에 카탈로그에 없어 계획조차 안 돼 있었다 — 게다가 `aiSearch.ts`의 `SearchResult` 타입에 그 필드가 아예 없어서, 다음에 이 파일을 여는 사람은 서버가 그런 필드를 보낸다는 사실 자체를 알 방법이 없었다(칩 UI 미구현이 아니라 필드의 존재 자체가 안 보이는 문제). 이번 리뷰에서 `SearchResult`에 `clarify?: { question: string; chips: string[] } | null`을 추가해 최소 가시성만 확보했다(파싱·렌더링 로직은 없음, 범위 밖).
 trigger: 다음 스프린트 플래닝이 웹 AI 검색 UI를 다시 열 때, 또는 에픽 13/16을 완전히 닫힌 것으로 판단하기 전 — 그때 웹 쪽 되묻기 칩 렌더링 스토리를 신설하고 이 항목을 그 스토리로 닫는다.
-status: open
+status: done 2026-08-24
 retarget (2026-08-05 회고): **Epic 15(관리자 웹 UI 통일)**. 서버는 `clarify.chips`를 정확히 보내는데 웹이 안 그린다 — 같은 web 워크스트림이라 Epic 15 인수조건 체크박스로 심는다(A4와 동일 처리).
+resolution (2026-08-24): 사용자가 **실사용에서 발견**해 보고했다("되묻기 태그가 앱에는 뜨는데 웹에선 안 뜬다") — retarget한 Epic 15는 done이 됐는데 이 항목은 그 에픽의 인수조건으로 실제로 심기지 않았다(B5가 경고한 "회고 약속을 문서에만 두면 이행되지 않는다"의 재발 사례). `web/src/components/ai/ChatAssistant.tsx`에 칩 렌더를 추가해 닫는다: ⓐ `ChatMessage` 타입에 `clarify` 필드 추가, ⓑ 응답을 대화에 쌓을 때 `result.clarify`를 함께 담기(그 전엔 `aiSearch.ts`가 파싱·검증까지 끝낸 값을 화면이 그냥 버리고 있었다), ⓒ assistant 버블의 answer와 listings 사이에 칩 행 렌더. 활성 조건은 앱(`ai_chat_screen.dart`)과 동일하게 "이 메시지가 대화의 마지막"이며, 지난 턴 칩은 비활성으로 흐려진다(낡은 칩이 현재 맥락으로 재전송되는 것을 막는다). 칩 문구는 그대로 다음 질의가 된다(타이핑과 동등 경로). 앱의 `usedChipIndex`(고른 칩에 체크 표시)는 옮기지 않았다 — 웹은 칩을 누르는 즉시 그 문구가 user 버블로 나타나 무엇을 골랐는지 이미 드러나고, 같은 이유로 그 메시지가 마지막이 아니게 돼 칩 행 전체가 자동 비활성화된다.
+verification (2026-08-24, 로컬 실측 — 논증 아님): 웹 dev(:3000) + FastAPI(:8000, CLARIFY는 DB를 타지 않아 로컬 DB 불필요)를 띄우고 브라우저로 확인. "가성비 좋은 차 추천해줘" → 되묻기 문구 + 칩 3개(`3천만원 이하`·`SUV`·`전기차`)가 `<ul aria-label="조건 좁히기 제안">`로 렌더됨. "SUV" 칩 클릭 → 그 문구가 질의로 전송되어 "조건에 맞는 매물 5건을 찾았어요." + 카드 5장, **동시에 지난 턴 칩 3개가 전부 `[disabled]`로 전이**되는 것까지 접근성 트리에서 확인. 반대 방향도 같은 세션에서 확인됐다 — SQL 경로 응답(`SUV`)에는 칩 행이 렌더되지 않았다(서버가 `clarify:null`을 보내므로, "항상 뜨는" 회귀가 아니다). 회귀: web lint 0 · vitest 369 passed/2 failed(그 2건은 수정 전과 동일한 Windows CRLF 위양성, DW 별도 축) · tsc `src/` 에러 0(전체 178건은 수정 전후 동일, 전부 `@playwright/test` 미설치로 인한 `e2e/` 기존 에러).
+⚠️ 이 수정이 **닫지 못한 축**(추측이 아니라 실측으로 확인한 한계): 렌더 동작을 고정하는 자동 검사가 없다. 이 리포의 vitest는 `environment:'node'` + `.test.ts`만 포함이라 `.tsx` 렌더를 못 보고(프로젝트 관례), E2E(Playwright)는 로컬 Supabase 스택을 요구해 이 경로에 배선돼 있지 않다. 즉 다음에 누가 이 블록을 지워도 **초록으로 통과한다** — 앱은 `app/test/`가 칩 렌더를 고정하고 있어 웹만 비어 있는 비대칭이 그대로 남는다. 후속으로 등재: [[DW-842]].
 
 ### DW-588: `score_ab.py`의 `doc_hit` 지표가 CLARIFY 항목에 대해 조용히 항상 false가 된다
 
@@ -6918,4 +6921,15 @@ reason: 코드는 지금 웹과 같이 **사진 위 좌상단 오버레이**이�
 fix_sketch: DESIGN.md 레이아웃 B 항목에 "2026-08-13 사용자 결정으로 카드 신뢰속성은 웹과 같은 오버레이"를 명시하고, 되돌리려면 웹도 함께 바꿔야 한다는 조건을 붙인다. 문서 수정만이라 코드 변경은 없다.
 trigger: 스파인(DESIGN.md)을 다음에 손대는 작업, 또는 앱 카드 레이아웃 스토리.
 related: [[DW-837]]
+status: open
+
+### DW-842: 웹 AI 되묻기 칩 렌더를 고정하는 검사가 없다 — 앱만 있고 웹은 지워도 초록이다
+
+origin: [[DW-587]] 해소(2026-08-24) 과정에서 실측 확인한 잔여 gap — 수정 자체는 브라우저로 검증했으나 그 동작을 붙잡아 두는 자동 검사는 만들지 못했다
+location: `web/src/components/ai/ChatAssistant.tsx`(칩 렌더 블록) · `web/vitest.config.ts`(`environment:'node'`, `.test.ts`만 포함) · 대조군 = `app/test/`(앱은 칩 렌더를 이미 고정하고 있다)
+severity: medium
+reason: DW-587이 열려 있던 근본 원인은 "웹이 clarify를 안 그린다"였는데, 그 사실을 **아무 검사도 몰랐다** — 서버는 정확히 보내고 `aiSearch.ts`는 파싱·검증까지 하고 그 값을 화면이 버리는 상태가 몇 달간 초록이었고, 결국 사용자가 실사용에서 발견했다. 지금 고쳤지만 **같은 구멍이 그대로 남아 있다**: 이 리포의 vitest는 `environment:'node'` + `.test.ts`만 포함이라 `.tsx` 렌더에 닿지 못하고(순수 함수만 단위테스트하고 나머지는 E2E로 미루는 프로젝트 관례), E2E(Playwright)는 로컬 Supabase 스택을 요구하는데 AI 검색 경로는 그 스위트에 배선돼 있지 않다. 즉 다음에 누가 칩 블록을 지워도 lint·vitest·tsc·CI가 전부 초록이다. 앱은 `app/test/`가 같은 동작을 고정하고 있어 **웹만 비어 있는 비대칭**이며, 이 비대칭 자체가 DW-587을 만든 조건이었다(앱은 스토리 16.5로 계획·검사됐고 웹은 스토리조차 없었다).
+fix_sketch: 세 갈래 중 택일 — ⓐ `aiSearch.ts`처럼 순수 함수로 뽑아낼 수 있는 판정(예: `isChipRowActive(messageIndex, messagesLength, loading)`)만 분리해 기존 node 환경 vitest로 고정(가장 싸고 관례 안 깨짐, 다만 "실제로 그려지는가"는 여전히 못 봄), ⓑ jsdom+React Testing Library를 도입해 `.tsx` 렌더 테스트를 여는 인프라 투자(관례 변경이라 별도 결정 필요 — 같은 이유로 보류된 선례가 [[DW-465]]·[[DW-466]]에 있다), ⓒ AI 검색 경로를 Playwright 스위트에 배선(로컬 스택 + Gemini 호출 비용/비결정성 문제를 먼저 풀어야 한다 — 응답을 route intercept로 고정하면 비용·흔들림 없이 칩 렌더만 볼 수 있다).
+trigger: 웹 AI 검색 UI를 다음에 손대는 스토리, 또는 jsdom/RTL 도입을 결정하는 순간. 그 전에 이 블록을 건드리는 사람은 **검사가 안 잡는다는 사실을 알고** 손대야 한다(그래서 코드가 아니라 여기에 적는다).
+related: [[DW-587]](이 항목을 낳은 수정) · [[DW-582]](E2E 상시 승격 축)
 status: open

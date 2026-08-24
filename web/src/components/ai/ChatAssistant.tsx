@@ -17,7 +17,7 @@
 //   인증 헤더로 보내야 하므로 'use client'가 필요하다(서버 컴포넌트는 상태·이벤트를 못 가진다).
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { searchAi, type ConversationTurn } from '@/lib/api/aiSearch';
+import { searchAi, type ClarifyPayload, type ConversationTurn } from '@/lib/api/aiSearch';
 import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import { buildWishedIdSet } from '@/lib/wishlist';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
@@ -34,11 +34,15 @@ const MAX_QUERY_LENGTH = 1000; // 질의 최대 1000자(서버 SearchRequest.que
 // 콜드스타트 실측 4.4초보다는 충분히 짧아 기다리는 사람이 이유를 일찍 안다.
 const SLOW_SEARCH_NOTICE_MS = 2500;
 
-// 화면에 쌓이는 대화 한 줄. assistant 턴만 매물카드(listings)를 가질 수 있다.
+// 화면에 쌓이는 대화 한 줄. assistant 턴만 매물카드(listings)·되묻기 칩(clarify)을 가질 수 있다.
 type ChatMessage = {
   role: 'user' | 'assistant';
   content: string; // user=질의, assistant=answer 텍스트
   listings?: ListingCardData[]; // assistant 답변에 딸린 매물카드(없으면 0건)
+  // 되묻기 페이로드(FR46) — 서버가 CLARIFY 경로에서 상한 이내일 때만 채워 보낸다(clarify_node.py).
+  // 상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 전부 null이라, 아래 렌더 조건 하나로
+  // "더 물어볼 때만 칩이 뜬다"가 성립한다(클라 자체 카운터 없이 서버 신호만으로 동작).
+  clarify?: ClarifyPayload | null;
 };
 
 /**
@@ -136,10 +140,15 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
         }
       }
 
-      // 어시스턴트 답변(텍스트 + 매물카드)을 대화에 추가.
+      // 어시스턴트 답변(텍스트 + 매물카드 + 되묻기 칩)을 대화에 추가.
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: result.answer, listings: result.listings },
+        {
+          role: 'assistant',
+          content: result.answer,
+          listings: result.listings,
+          clarify: result.clarify,
+        },
       ]);
     } catch (err) {
       // 화면엔 한국어 안내만 뜨므로(AC5), 원인은 콘솔에 남겨 재현 없이도 진단할 수 있게 한다(DW-659).
@@ -209,6 +218,40 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                   <div className="self-start whitespace-pre-wrap rounded-lg border border-border-hairline px-3 py-2 text-sm">
                     {m.content}
                   </div>
+                  {/* 되묻기 칩(FR46, DW-587) — 서버가 clarify를 채워 보냈을 때만 렌더한다.
+                      상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 서버가 clarify=null로
+                      보내므로 이 조건 하나로 걸러진다(클라가 되묻기 횟수를 따로 세지 않는다).
+
+                      활성 조건이 "이 메시지가 대화의 마지막"인 이유(앱 ai_chat_screen.dart와 동일):
+                      아니면 스크롤을 올려 예전 턴의 낡은 칩을 눌러 **지금 맥락으로** 재전송하게 된다.
+                      loading도 함께 잠근다 — 칩을 누르면 곧바로 user 버블이 붙어 이 메시지가 마지막이
+                      아니게 되므로 실제로 도달하기 어려운 조건이지만, 연타 경합을 렌더 단계에서도
+                      명시적으로 막아 둔다(최종 방어선은 runSearch 첫 줄의 `|| loading` 가드다). */}
+                  {m.clarify && m.clarify.chips.length > 0 && (
+                    <ul className="flex flex-wrap gap-2" aria-label="조건 좁히기 제안">
+                      {m.clarify.chips.map((chip, chipIndex) => {
+                        const tappable = i === messages.length - 1 && !loading;
+                        return (
+                          <li key={`${chipIndex}-${chip}`}>
+                            <button
+                              type="button"
+                              disabled={!tappable}
+                              onClick={() => void runSearch(chip)}
+                              // 칩 탭 = 그 문구를 그대로 다음 질의로 보낸다(타이핑과 동등 경로 —
+                              // clarify_node.py의 칩 문구가 곧 질의가 된다).
+                              className={
+                                tappable
+                                  ? 'shrink-0 whitespace-nowrap rounded-full border border-border-hairline bg-surface-raised px-4 py-2 text-sm font-semibold text-ink-secondary transition-colors hover:border-brand-petrol hover:text-brand-petrol'
+                                  : 'shrink-0 cursor-not-allowed whitespace-nowrap rounded-full border border-border-hairline bg-surface-raised px-4 py-2 text-sm font-semibold text-ink-muted opacity-60'
+                              }
+                            >
+                              {chip}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                   {m.listings && m.listings.length > 0 && (
                     // ✎ 2026-08-13 2차 지적 #5("AI채팅 매물카드가 너무 크게 나온다") — 세로 1열에서
                     //   ≥640px 2열로 바꾼다. 예전엔 카드가 대화 폭(max-w-3xl ≈ 768px)을 통째로 차지해
