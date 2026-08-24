@@ -59,7 +59,7 @@ export default async function EditListingPage({
   // 본인 매물이 아니거나 존재하지 않음 → 수정 폼을 노출하지 않고 한국어 안내(AC4).
   if (!listing) {
     return (
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
         <h1 className="text-section font-bold text-ink-primary">매물 수정</h1>
         <p role="alert" className="text-sm text-danger">
           매물을 찾을 수 없거나 접근 권한이 없습니다. 본인 매물만 수정할 수 있습니다.
@@ -76,7 +76,7 @@ export default async function EditListingPage({
   //   상태 전환(구매완료/되돌리기)은 2-4 소관이라 여기서 다루지 않는다(스코프 침범 금지).
   if (listing.status === LISTING_STATUS.SOLD) {
     return (
-      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
         <h1 className="text-section font-bold text-ink-primary">매물 수정</h1>
         <p role="alert" className="text-sm text-ink-secondary">
           판매완료된 매물은 수정할 수 없습니다.
@@ -111,8 +111,10 @@ export default async function EditListingPage({
   );
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-col gap-8 p-6">
-      <section className="flex flex-col gap-2">
+    // ✎ 2026-08-24 사용자 지적 — 등록(/sell)은 `max-w-6xl`로 넓혔는데 수정만 `max-w-2xl`(672px)로
+    //   남아 "PC에서 열었는데 모바일 너비"로 보였다. 같은 폼을 쓰는 두 화면이니 감싸개 폭도 같게 맞춘다.
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+      <section className="flex flex-col gap-1">
         <h1 className="text-section font-bold text-ink-primary">매물 수정</h1>
         <p className="text-sm text-ink-muted">
           내 매물 정보를 수정합니다. (구매 완료 처리는 별도 기능입니다.)
