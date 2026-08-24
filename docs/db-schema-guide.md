@@ -85,7 +85,7 @@
 | 컬럼 | 자료형 | 제약 | 자료형·설계를 그렇게 정한 이유 |
 |---|---|---|---|
 | `id` | `uuid` | PK, FK→`auth.users.id` | 로그인 계정 ID를 그대로 프로필 ID로 씀(1:1 보장). 계정이 삭제되면 프로필도 같이 삭제(`on delete cascade`). |
-| `role` | `text` | `buyer`/`seller`/`admin`만 허용 | 역할은 정해진 3가지뿐이라 `CHECK` 제약으로 오타·잘못된 값을 DB가 막음. 숫자코드 대신 글자라 읽기 쉬움. |
+| `role` | `text` | 빈 문자열만 금지(`CHECK`), `admin` 값만 특별 취급 | 원래는 `buyer`/`seller`/`admin` 3값만 허용했으나, 역할 통합(Epic 14, Story 14.1 — `0027_role_check_relax.sql`)으로 buyer/seller 구분이 무의미해져 CHECK를 완화. `is_admin()`이 여전히 `role='admin'`만 관리자로 식별. |
 | `status` | `text` | `active`/`suspended`, 기본 `active` | 관리자가 회원을 정지(suspended)할 수 있어 상태값 필요. 역시 두 값만 `CHECK`로 강제. |
 | `created_at` | `timestamptz` | 기본 `now()` | 가입 시각. 시간대 포함형(`timestamptz`)이라 서버·사용자 위치가 달라도 정확. |
 | `name` | `text` | nullable | 화면 표시용 이름 = 이메일의 `@` 앞부분. 관리자가 회원을 UUID 대신 이름으로 식별하려고 추가(0009). |
@@ -144,7 +144,7 @@
 **핵심 설계**
 - **`UNIQUE(listing_id, buyer_id, seller_id)`**: 같은 매물·구매자·판매자 조합은 **방 1개만**. 같은 매물에 다시 문의해도 기존 방을 재사용.
 - **`CHECK(buyer_id <> seller_id)`**: 자기 자신과의 방 금지(내 매물엔 문의 불가).
-- **위조 방지 트리거(0003c)**: 구매자가 보낸 `seller_id`를 무시하고, DB가 **그 매물의 실제 소유자로 강제 교정**합니다. "엉뚱한 사람에게 방 강제 생성" 같은 공격을 원천 차단.
+- **위조 방지 트리거(0016)**: 구매자가 보낸 `seller_id`를 무시하고, DB가 **그 매물의 실제 소유자로 강제 교정**합니다. "엉뚱한 사람에게 방 강제 생성" 같은 공격을 원천 차단.
 - **RLS**: 방의 당사자(buyer/seller)만 조회·생성. 제3자는 0건. 관리자는 전체 열람.
 
 ### 2-4. `chat_messages` — 채팅 메시지
@@ -212,7 +212,7 @@ AI가 DB를 조회할 때 쓰는 별도 권한(롤)을 만들어, **읽기만 �
 | `0001_profiles.sql` | `profiles` 테이블 + 가입 자동 트리거 + 관리자 판별 함수 |
 | `0002_listings.sql` | `listings` 테이블(15필드) + 소유권·판매완료 비노출 RLS |
 | `0003_chat.sql` | `chat_rooms`·`chat_messages` + 참여자 한정 RLS |
-| `0003c_chat_room_integrity.sql` | 채팅방 `seller_id` 위조 방지 트리거 |
+| `0016_chat_room_integrity.sql` | 채팅방 `seller_id` 위조 방지 트리거 |
 | `0004_guide_documents.sql` | `guide_documents` + HNSW 벡터 인덱스 |
 | `0005_admin_policies.sql` | 관리자 전권 교차 RLS 정책 모음 |
 | `0006_readonly_role.sql` | AI 전용 읽기전용 롤 `ai_readonly` |

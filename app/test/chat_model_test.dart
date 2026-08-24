@@ -16,6 +16,33 @@ void main() {
       expect(m!.body, '안녕하세요');
       expect(m.roomId, 'r1');
       expect(m.senderId, 's1');
+      expect(m.clientMessageId, isNull, reason: '컬럼 자체가 없으면(구 행) null');
+    });
+
+    test('client_message_id 포함 → 그대로 파싱(Story 16.4 멱등 전송)', () {
+      final m = ChatMessage.fromMap({
+        'id': 'm1',
+        'room_id': 'r1',
+        'sender_id': 's1',
+        'body': '안녕하세요',
+        'created_at': '2026-06-25T10:00:00+00:00',
+        'client_message_id': 'uuid-1',
+      });
+      expect(m, isNotNull);
+      expect(m!.clientMessageId, 'uuid-1');
+    });
+
+    test('client_message_id 가 문자열이 아니면(예: null) → null 로 흡수', () {
+      final m = ChatMessage.fromMap({
+        'id': 'm1',
+        'room_id': 'r1',
+        'sender_id': 's1',
+        'body': '안녕하세요',
+        'created_at': '2026-06-25T10:00:00+00:00',
+        'client_message_id': null,
+      });
+      expect(m, isNotNull);
+      expect(m!.clientMessageId, isNull);
     });
 
     test('필수 필드 누락/타입 깨짐 → null(그 행 제외)', () {
@@ -88,6 +115,22 @@ void main() {
       expect(ChatRoomSummary.fromMap({...base()}..remove('id')), isNull);
       expect(ChatRoomSummary.fromMap({...base()}..remove('listing_id')), isNull);
       expect(ChatRoomSummary.fromMap('not a map'), isNull);
+    });
+
+    test('last_message_at 포함 → 그대로 파싱(Story 16.4, §12.6 정렬 계약)', () {
+      final r = ChatRoomSummary.fromMap({
+        ...base(),
+        'listings': null,
+        'last_message_at': '2026-08-01T00:00:00+00:00',
+      });
+      expect(r, isNotNull);
+      expect(r!.lastMessageAt, '2026-08-01T00:00:00+00:00');
+    });
+
+    test('last_message_at 없음(구 select) → null', () {
+      final r = ChatRoomSummary.fromMap({...base(), 'listings': null});
+      expect(r, isNotNull);
+      expect(r!.lastMessageAt, isNull);
     });
   });
 }

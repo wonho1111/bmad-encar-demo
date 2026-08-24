@@ -8,36 +8,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../auth/auth_controller.dart';
-import '../auth/user_role.dart';
+import '../auth/require_user.dart';
 import 'edit_listing_screen.dart';
 import 'listing.dart';
 import 'listings_repository.dart' show statusOnSale;
 import 'my_listings_controller.dart';
+import '../../core/format/number_format.dart';
 
 class MyListingsScreen extends ConsumerWidget {
   const MyListingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final role = ref.watch(currentRoleProvider);
-
-    // ── 역할 가드(AC5): 판매자만 ───────────────────────────────────
-    if (role != UserRole.seller) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('내 매물 관리')),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              '판매자만 이용할 수 있습니다.',
-              key: Key('my_listings_role_blocked'),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    // ── 게이트: 로그인만 본다(역할 통합, FR52·FR53) ──────────────────
+    // 옛 가드는 판매자 역할만 통과시켰다. 목록은 seller_id 필터 + RLS로 이미 본인 것만
+    // 돌아오므로, 역할로 한 번 더 막을 이유가 없다.
+    final blocked = requireUser(ref, '내 매물 관리');
+    if (blocked != null) return blocked;
 
     final st = ref.watch(myListingsControllerProvider);
     final notifier = ref.read(myListingsControllerProvider.notifier);
@@ -145,7 +132,7 @@ class MyListingsScreen extends ConsumerWidget {
             const SizedBox(height: 4),
             // 가격은 별도 행에 굵게 — 긴 차명에도 레이아웃이 무너지지 않게(ListingCard 와 동일 구조).
             Text(
-              _won(l.price),
+              wonText(l.price),
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
             ),
             const SizedBox(height: 8),
@@ -166,7 +153,11 @@ class MyListingsScreen extends ConsumerWidget {
                         ? null
                         : () async {
                             // 수정 화면으로 이동 → 수정 성공(true)이면 목록 새로고침.
-                            final changed = await Navigator.of(context).push<bool>(
+                            // rootNavigator: true — spec-16-1 셸 경계 원칙(Code Map)을
+                            // 동일하게 적용한다.
+                            final changed =
+                                await Navigator.of(context, rootNavigator: true)
+                                    .push<bool>(
                               MaterialPageRoute(
                                 builder: (_) =>
                                     EditListingScreen(listingId: l.id),
@@ -267,14 +258,4 @@ class MyListingsScreen extends ConsumerWidget {
     return res ?? false;
   }
 
-  // 원(KRW) 천단위 콤마(간단). web toLocaleString('ko-KR') 자리.
-  String _won(int v) {
-    final s = v.toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
-      buf.write(s[i]);
-    }
-    return '${buf.toString()}원';
-  }
 }

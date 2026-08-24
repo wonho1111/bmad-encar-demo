@@ -29,3 +29,11 @@ jobs:
         with:
           python-version: "3.11"
       - run: python scripts/check_migrations.py
+
+# ✎ 2026-08-06 Actions 장애로 이 워크플로가 "안 돈" 기록 + 재트리거 근거:
+#   Epic 15 병합(988adc2)을 push한 시각에 GitHub Actions가 major_outage였고, 그 push에 대한
+#   실행이 **아예 생성되지 않았다**. 복구돼도 사라진 push 이벤트는 되살아나지 않는다.
+#   먼저 빈 커밋(cebbf10)으로 다시 걸어봤으나 위 paths 필터에 걸리는 변경이 0이라 역시 안 돌았다 —
+#   **이 레포에서 "빈 커밋으로 CI 재트리거"는 통하지 않는다**(workflow_dispatch도 없다).
+#   그래서 paths에 실린 이 파일에 이 주석을 남기는 것이 트리거를 겸한다.
+#   교훈은 #181과 같다: 빨간불보다 "안 돈 것"이 더 안 보인다 — 초록도 빨강도 아니고 그냥 없다.

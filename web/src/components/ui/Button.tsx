@@ -14,12 +14,18 @@ import type { ButtonHTMLAttributes } from 'react';
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'info';
 export type ButtonSize = 'md' | 'sm';
 
-// variant = 색/강조. primary=주버튼(검정), secondary=보조(테두리), danger=삭제(빨강), info=구매완료(파랑).
+// variant = 색/강조. primary=주버튼(petrol), secondary=보조(테두리), danger=삭제(danger), info=구매완료/정지해제(trust-green).
+// 색은 Story 8.1 토큰(globals.css @theme)만 쓴다 — 색 토큰끼리 짝지으면 라이트/다크 스왑을 CSS 변수가
+// 자동으로 하므로 dark: 오버라이드가 필요 없다(Story 15.1, AC5). 단 "자동"은 양쪽이 다 토큰일 때만이다:
+// 리터럴 text-white는 스왑되지 않는데 bg-brand-petrol은 다크에서 오히려 밝아져(#1E6E6A→#4FA39D)
+// 흰 글자 대비가 2.98:1로 AA(4.5:1) 아래로 떨어졌다(코드리뷰 patch, 15.1). 그래서 잉크도 토큰
+// text-surface-base를 쓴다 — 라이트≈흰색/다크≈검정으로 배경과 반대로 스왑돼 양 모드 모두 대비가
+// 유지된다(라이트 5.75:1 / 다크 5.54:1). 리포의 기존 관례와 근거: components/ui/Logo.tsx:9.
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900',
-  secondary: 'border border-zinc-300 dark:border-zinc-700',
-  danger: 'border border-red-300 text-red-700 dark:border-red-800 dark:text-red-300',
-  info: 'border border-blue-300 text-blue-700 dark:border-blue-800 dark:text-blue-300',
+  primary: 'bg-brand-petrol text-surface-base',
+  secondary: 'border border-border-hairline',
+  danger: 'border border-danger text-danger',
+  info: 'border border-trust-green-ink text-trust-green-ink',
 };
 
 // size = 크기. md=기본(폼 제출·검색 등), sm=목록 행의 작은 버튼(구매완료·수정·삭제).

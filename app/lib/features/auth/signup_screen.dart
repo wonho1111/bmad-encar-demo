@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'auth_controller.dart';
 import 'auth_errors.dart';
-import 'user_role.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -17,7 +16,6 @@ class SignupScreen extends ConsumerStatefulWidget {
 class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  UserRole _role = UserRole.buyer;
   String? _error;
   String? _success;
 
@@ -50,7 +48,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     try {
       final notice = await ref
           .read(authControllerProvider.notifier)
-          .signUp(email: email, password: password, role: _role);
+          .signUp(email: email, password: password);
       // notice == null → 즉시 로그인됨(화면 전환은 authStateProvider 가 처리).
       // notice != null → 이메일 확인 필요. 안내 + 로그인 링크 표시.
       if (notice != null && mounted) setState(() => _success = notice);
@@ -91,25 +89,14 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   decoration: const InputDecoration(labelText: '비밀번호 (6자 이상)'),
                 ),
                 const SizedBox(height: 16),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('역할 선택', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-                for (final r in UserRole.signupRoles)
-                  RadioListTile<UserRole>(
-                    key: Key('signup_role_${r.value}'),
-                    value: r,
-                    // ignore: deprecated_member_use
-                    groupValue: _role,
-                    title: Text(r.label),
-                    contentPadding: EdgeInsets.zero,
-                    // ignore: deprecated_member_use
-                    onChanged: loading ? null : (v) => setState(() => _role = v!),
-                  ),
+                // 역할 선택 제거(FR52) — 웹 14.2와 같은 변경이다.
+                // ⚠️ 이게 없으면 앞의 데이터 정리가 헛일이 된다: 앱 가입이 계속
+                // `data: {'role': ...}` 를 보내면 새 계정마다 buyer/seller가 다시 심긴다.
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8),
                   child: Text(
-                    '역할은 가입 시 하나로 고정됩니다. 구매와 판매를 모두 하려면 계정을 2개 만들어주세요.',
+                    '차를 사고파는 건 가입 후 언제든 할 수 있어요.',
+                    key: Key('signup_role_free_notice'),
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ),

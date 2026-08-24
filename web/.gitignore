@@ -13,6 +13,12 @@
 # testing
 /coverage
 
+# playwright (E2E) — 실행 결과물(트레이스·스크린샷)이지 재실행 가능성의 실체가 아니다(#86,
+# spec-11-5). 커밋되는 것은 web/e2e/*.spec.ts + playwright.config.ts뿐이다.
+/test-results/
+/playwright-report/
+/blob-report/
+
 # next.js
 /.next/
 /out/

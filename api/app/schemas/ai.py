@@ -14,15 +14,19 @@ MAX_QUERY_LENGTH = 1000
 
 
 class RouterDecision(BaseModel):
-    """라우터(router_node)의 구조화 출력 — 질의 의도 3분류(FR13).
+    """라우터(router_node)의 구조화 출력 — 질의 의도 4분류(FR13·FR43, 13.2 4분기 라우팅).
 
-    route만 A/B/C로 강제(Literal)해 LLM이 형식을 벗어나지 못하게 한다. reason은 선택(디버깅용).
-      · A = 구조형(가격·차종·연식 등 명시 조건) → 경로 A(Text-to-SQL)
-      · B = 질적·의미형(용도·느낌·추천) → 경로 B(문서 RAG)
-      · C = 매물 무관(잡담·상식 등) → 가드(정중한 거절)
+    route만 REJECT/CLARIFY/SQL/HYBRID로 강제(Literal)해 LLM이 형식을 벗어나지 못하게 한다.
+    reason은 선택(디버깅용).
+      · SQL = 구조형(가격·차종·연식 등 명시 조건만) → 경로 SQL(Text-to-SQL)
+      · HYBRID = 구조 조건 + 의미/느낌 조건이 함께 있는 조합형(신규) → 경로 HYBRID
+        (13.3 전까지는 sql_rag_node로 임시 실행)
+      · CLARIFY = 구조 조건 없이 순수 용도·느낌만 묻는 질의 → 경로 CLARIFY(되묻기)
+        (13.4 전까지는 doc_rag_node로 임시 실행, 기존 B와 동일 경험)
+      · REJECT = 매물 무관(잡담·상식·금융/세금/보험 일반지식 등) → 가드(정중한 거절)
     """
 
-    route: Literal["A", "B", "C"]
+    route: Literal["REJECT", "CLARIFY", "SQL", "HYBRID"]
     reason: str | None = None
 
 
@@ -58,9 +62,9 @@ class SearchRequest(BaseModel):
 
 
 class ListingCard(BaseModel):
-    """매물 카드 — conventions.md §4 확정 계약. 증분 신규 6필드는 전부 nullable
-    (값 채움은 후속 에픽: image_url·image_count=Epic 9, accident_status·is_single_owner·
-    is_non_smoker=Epic 10, view_count=Epic 11)."""
+    """매물 카드 — conventions.md §4 확정 계약. 증분 신규 7필드는 전부 nullable
+    (값 채움은 후속 에픽: image_url·image_count=Epic 9, fuel·accident_status·is_single_owner·
+    is_non_smoker=Epic 10(10.1), view_count=Epic 11)."""
 
     id: str
     manufacturer: str
@@ -69,6 +73,7 @@ class ListingCard(BaseModel):
     price: int       # 원(KRW)
     mileage: int     # km
     region: str
+    fuel: str | None = None  # 연료(가솔린/디젤/하이브리드/전기/LPG) — Story 10.1, 대장 #67
     # ⚠️ image_url은 api가 **채우지 않는다** — api는 사진 URL을 만들지 않기 때문이다
     #    (conventions.md §10, ai_readonly 최소권한 CR2). 대신 아래 image_path(원본 경로)를
     #    보내고, URL 조립은 web·app이 각자 getPublicUrl로 한다. 이 불변식은
@@ -82,11 +87,28 @@ class ListingCard(BaseModel):
     accident_status: Literal["무사고", "단순교환", "사고"] | None = None
     is_single_owner: bool | None = None
     is_non_smoker: bool | None = None
+    options: list[str] | None = None  # 장비 통제어휘 배열(text[]) — Story 10.3, docs/conventions.md §11
+
+
+class ClarifyPayload(BaseModel):
+    """CLARIFY 경로(FR46)의 되묻기 페이로드 — 고정 질문 1개 + 고정 칩 배열.
+
+    route=CLARIFY이고 되묻기 상한 이내일 때만 채워진다(clarify_node.py). 상한 초과 시
+    서버가 doc_rag_node로 강제 폴백하며 이 필드는 None이 된다(칩 없음 = 더 안 묻는다는 신호).
+    """
+
+    question: str
+    chips: list[str]
 
 
 class SearchResponse(BaseModel):
     answer: str
     listings: list[ListingCard] = []
+    # CLARIFY 되묻기 페이로드(FR46, CR5) — additive 필드라 기존 소비처 회귀 없음.
+    clarify: ClarifyPayload | None = None
+    # REJECT 전용 고정 상수 사유 술어 배열(FR47, CR4, Story 13.5) — additive, 기존 소비처 회귀 없음.
+    # REJECT가 아닌 경로(SQL/HYBRID/CLARIFY)는 None.
+    narrowed_by: list[str] | None = None
 
 
 class ErrorBody(BaseModel):

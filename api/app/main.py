@@ -6,6 +6,10 @@
 
 import contextlib
 import logging
+import logging.handlers
+import os
+import sys
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -16,6 +20,32 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import settings
 from .db.readonly import close_pool
 from .routers import ai
+
+# ── 로깅 설정 (DW-659) ──────────────────────────────────────────────
+# logging.basicConfig가 어디에도 없어 루트 로거가 파이썬 기본값 WARNING(30)에 머물러
+# 그래프 노드들의 logger.info(라우팅 결정·생성 SQL·재작성 질의·결과 건수, app/graph/*.py)가
+# 전부 소리 없이 버려졌다. 레벨은 LOG_LEVEL 환경변수로 조절(기본 INFO) — 운영에서 DEBUG를
+# 끌 수 있어야 한다. 표준출력 + 저장소 루트 .logs/api.log(회전) 두 곳에 남긴다.
+#   uvicorn은 자체 dictConfig로 "uvicorn"/"uvicorn.access" 로거만 건드리고 propagate=False로
+#   격리해 두므로(실측 확인) 루트 로거를 여기서 따로 설정해도 uvicorn과 충돌·중복 출력이 없다.
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_LOG_DIR = _REPO_ROOT / ".logs"
+_LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = _LOG_DIR / "api.log"
+
+_log_formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setFormatter(_log_formatter)
+
+_file_handler = logging.handlers.RotatingFileHandler(
+    LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+)
+_file_handler.setFormatter(_log_formatter)
+
+logging.getLogger().setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
+logging.getLogger().addHandler(_stream_handler)
+logging.getLogger().addHandler(_file_handler)
 
 logger = logging.getLogger(__name__)
 

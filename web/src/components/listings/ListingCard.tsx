@@ -7,7 +7,18 @@
 // 상태 없는 표현용 컴포넌트(서버/클라이언트 어디서든 렌더 가능). 스타일은 sell 목록 li와 일관.
 import Link from 'next/link';
 import { UNITS } from '@/lib/constants';
+import { topOptions } from '@/lib/options';
 import ListingCardImage from './ListingCardImage';
+import TrustAttributes from './TrustAttributes';
+import WishButton from './WishButton';
+import { formatPrice } from '@/lib/price';
+
+// 카드에 노출할 옵션 칩 최대 개수(conventions §11.2).
+// **4→3 (사용자 결정 2026-07-29).** 4개는 카드 폭(가장 좁은 데스크톱 4열에서 내용 폭 ≈328px)에
+// 안 들어가 칩이 전부 `truncate`로 잘려 "통…", "파노…"만 보였다 — 칩이 4개 있다는 사실만 알리고
+// 정작 **무슨 옵션인지는 하나도 못 읽는** 상태였다. 몇 개를 못 보여주더라도 보이는 것은 온전히
+// 읽히는 편이 낫다는 판단(§11.2 "3~4개"의 하한을 택함).
+const CARD_OPTION_COUNT = 3;
 
 // ListingCard 필드 계약(conventions §4) — 목록·AI결과 카드가 공유하는 최소 요약 필드.
 export type ListingCardData = {
@@ -19,17 +30,35 @@ export type ListingCardData = {
   mileage: number; // km 정수
   region: string;
   seller_name?: string | null; // 판매자 표시 이름(이메일 @앞부분, 0007 비정규화). 없으면(AI결과 등) 미표시.
-  // 증분 신규 — 전부 optional·nullable(DB 컬럼 아직 없음, 값 채움은 후속 에픽)
+  // 증분 신규 — 전부 optional·nullable(값 채움은 후속 에픽)
   image_url?: string | null; // 대표 사진의 공개 URL. null이면 "사진 준비중" 플레이스홀더 — Epic 9
   view_count?: number | null; // Epic 11
   image_count?: number | null; // Epic 9
-  accident_status?: '무사고' | '단순교환' | '사고' | null; // Epic 10
-  is_single_owner?: boolean | null; // Epic 10
-  is_non_smoker?: boolean | null; // Epic 10
+  fuel?: string | null; // 연료(가솔린/디젤/하이브리드/전기/LPG) — Epic 10(10.1), 대장 #67
+  accident_status?: '무사고' | '단순교환' | '사고' | null; // Epic 10(10.1 컬럼 생성)
+  is_single_owner?: boolean | null; // Epic 10(10.1 컬럼 생성)
+  is_non_smoker?: boolean | null; // Epic 10(10.1 컬럼 생성)
+  options?: string[] | null; // 장비 통제어휘 배열(text[]) — Epic 10(10.3), docs/conventions.md §11
 };
 
-export default function ListingCard({ listing }: { listing: ListingCardData }) {
+export default function ListingCard({
+  listing,
+  wished = false,
+  authed = false,
+}: {
+  listing: ListingCardData;
+  // 찜 여부·로그인 여부 — ListingCardData(wire 계약)에 넣지 않는 sibling prop이다(찜은 wire
+  // 필드가 아니다, docs/conventions.md §4·65). 호출부(page.tsx·search/page.tsx·wishlist/page.tsx)가
+  // 사용자별 오버레이 조회 결과를 여기로 주입한다.
+  wished?: boolean;
+  authed?: boolean;
+}) {
   const title = `[${listing.manufacturer}] ${listing.model} · ${listing.year}년`;
+  // 희소 옵션 우선(topOptions), 상위 CARD_OPTION_COUNT개만 카드에 노출(conventions §11.2).
+  const cardOptions = topOptions(listing.options, CARD_OPTION_COUNT);
+  // 못 보여준 나머지 옵션 수 — "+N" 칩으로 알린다. 안 보여주는 것과 **없는 것**은 다르므로,
+  // 잘린 글자 대신 개수로 정직하게 말한다(옵션 전량은 상세 페이지가 카테고리별로 보여준다).
+  const hiddenOptionCount = (listing.options?.length ?? 0) - cardOptions.length;
 
   return (
     // 루트가 <article>인 이유(AC4): 찜 버튼이 카드 안에 있어야 하는데 `<a>` 안의 `<button>`은
@@ -40,50 +69,93 @@ export default function ListingCard({ listing }: { listing: ListingCardData }) {
         <ListingCardImage url={listing.image_url} count={listing.image_count} alt={title} />
 
         <div className="flex flex-col gap-1 p-[18px]">
-          {/* ② 신뢰속성 행 슬롯 — 값(accident_status·is_single_owner·is_non_smoker)은 Epic 10이 채운다.
-              지금은 항상 비어 있으므로 **아무것도 렌더하지 않는다**(빈 높이·빈 테두리 금지, AC1). */}
-
-          {/* ③ 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5).
+          {/* ② 차량명 — 폭이 좁아도 줄바꿈으로 접지 않고 …으로 자른다(D5).
               pr-14(56px)는 우상단 찜 버튼(44px+오프셋 8px)과 겹치지 않게 이 줄에만 둔 여백이다. */}
           <h3 className="truncate pr-14 text-card-title font-semibold text-ink-primary">{title}</h3>
 
-          {/* ④ meta — **한 줄 가로 유지**. 공간이 부족하면 truncate만(D5, 세로로 접지 않는다).
-              ⚠️ 연료는 ListingCard 계약(conventions §4)에 없는 필드라 뺐다 — 계약 변경은 이 스토리 밖이다.
-              pr-14: 찜 버튼이 이 줄까지 내려오므로 차량명과 같은 여백을 둔다. */}
-          <p className="truncate whitespace-nowrap pr-14 text-meta font-medium text-ink-muted">
-            {listing.mileage.toLocaleString('ko-KR')}
-            {UNITS.mileage} · {listing.region}
-            {listing.seller_name ? ` · ${listing.seller_name}` : ''}
+          {/* ③ meta — **한 줄 가로 유지**. 공간이 부족하면 truncate만(D5, 세로로 접지 않는다).
+              AC 문구대로 `주행 · 연료 · 지역`(+ 있으면 판매자)를 표시한다(대장 #67 해소, Story 10.1).
+              fuel이 없으면(계약-외 값 정규화) 그 마디를 통째로 생략 — 빈 자리("· ·")를 남기지 않는다.
+              ⚠️ fuel은 `isValidListing`(aiSearch.ts)의 필수 7필드 검사 대상이 아니라서 /ai/search가
+              비-string을 보내도 그대로 통과한다 — `typeof` 가드 없이 배열에 넣으면 `[object Object]`가
+              렌더될 수 있다(app `listing.dart`는 fromMap에서 이미 이렇게 방어한다). string일 때만 표시.
+              pr-14: 찜 버튼이 이 줄까지 내려오므로 차량명과 같은 여백을 둔다.
+              data-testid: E2E(web/e2e/viewport-audit.spec.ts)가 스타일 클래스(whitespace-nowrap)가
+              아니라 이 안정적인 훅으로 이 줄을 찾는다 — D5(한 줄 유지) 검사 대상인 클래스 자체가
+              리팩터로 사라지면 셀렉터가 0건 매칭해 검사가 조용히 통과(거짓 양성)해 버리기 때문
+              (코드리뷰 patch, listing-photo와 동일 취지). */}
+          <p data-testid="listing-meta" className="truncate whitespace-nowrap pr-14 text-meta font-medium text-ink-muted">
+            {[
+              `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`,
+              typeof listing.fuel === 'string' ? listing.fuel : null,
+              listing.region,
+              listing.seller_name,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </p>
 
-          {/* ⑤ 가격 — 카드에서 **시각적으로 가장 큰 요소**(26px/800 vs 차량명 16px/600). */}
+          {/* ④ 가격 — 카드에서 **시각적으로 가장 큰 요소**(26px/800 vs 차량명 16px/600). */}
           <p className="text-price font-extrabold text-price-emphasis">
-            {listing.price.toLocaleString('ko-KR')}
-            {UNITS.price}
+            {formatPrice(listing.price)}
           </p>
 
-          {/* ⑥ 옵션 칩 슬롯 — 칩 내용은 Epic 10. 값이 없으므로 렌더하지 않는다(AC1). */}
+          {/* ⑤ 옵션 칩 — 우선순위 상위 3개(희소 우선, 보편은 topOptions의 자연 fallback로
+              채워짐, conventions §11.2) + 나머지 개수를 알리는 "+N". 세로로 접히거나 2줄로 밀지
+              않는다(D5) — `flex-nowrap`이라 줄바꿈 자체가 없다.
+              ⚠️ **`shrink`+`truncate`에서 `shrink-0`으로 바꿨다(2026-07-29).** 예전엔 폭이
+              모자라면 칩들이 나란히 쪼그라들며 전부 `…`로 잘려 **하나도 못 읽는** 상태가 됐다.
+              이제 칩은 제 글자 폭을 지키고, 그래도 넘치는 만큼만 `overflow-hidden`이 잘라낸다 —
+              "일부만 보이되 보이는 건 온전히 읽힌다"로 실패 방향을 뒤집었다.
+              **남는 한계(추측 아니라 실측, 2026-07-29 로컬 시드 93건):** 390px 뷰포트(카드 내용
+              폭 304px)에서 **93건 중 2건**이 17px 넘쳐 잘린다 — 잘리는 건 맨 끝 "+N" 칩이고
+              옵션 이름 3개는 전부 온전히 읽힌다. 가로 페이지 스크롤은 생기지 않는다(D5 유지).
+              800px 이상(카드 내용 폭 328px)에서는 93건 전부 넘침 0건.
+              ⚠️ **옵션이 없어도 슬롯을 렌더한다(2026-08-05, 사용자 승인 방식 A — 빈 자리 예약).**
+              예전엔 `cardOptions.length > 0`일 때만 이 블록을 렌더해서 옵션 없는 매물은 이 줄
+              높이가 0이 되어 카드가 짧아졌다. `border-transparent`로 실제 칩과 같은 박스 높이를
+              내는 자리표시자를 대신 넣는다(테두리 없는 텍스트만 넣으면 border 두께(2px)만큼
+              살짝 낮아져 줄이 안 맞는다). */}
+          <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
+            {cardOptions.length > 0 ? (
+              <>
+                {cardOptions.map((opt) => (
+                  <span
+                    key={opt}
+                    className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-secondary"
+                  >
+                    {opt}
+                  </span>
+                ))}
+                {hiddenOptionCount > 0 && (
+                  <span
+                    aria-label={`옵션 ${hiddenOptionCount}개 더 있음`}
+                    className="shrink-0 whitespace-nowrap rounded-chip border border-border-hairline px-2 py-0.5 text-caption font-medium text-ink-muted"
+                  >
+                    +{hiddenOptionCount}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="shrink-0 whitespace-nowrap rounded-chip border border-transparent px-2 py-0.5 text-caption font-medium text-ink-muted">
+                등록된 옵션 없음
+              </span>
+            )}
+          </div>
         </div>
       </Link>
 
-      {/*
-        찜(♡) — **위치·시각만.** 동작·토글·상태는 Epic 10.5의 몫이라 여기서 만들지 않는다.
-        동작이 없는 컨트롤이므로 스크린리더·키보드가 잡지 않게 disabled + aria-hidden + tabIndex=-1.
-        자리: 사진 밖, **정보 영역 우상단**. 아래 감싸개는 사진과 같은 5:3 비율로 사진 박스 높이를
-        그대로 재현하고, `top-full`로 그 바로 아래(=정보 영역 시작점)에 버튼을 놓는다.
-        터치 타깃 44×44(h-11 w-11) — review-accessibility.md [high].
-      */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[5/3]">
-        <button
-          type="button"
-          disabled
-          aria-hidden="true"
-          tabIndex={-1}
-          className="absolute right-2 top-full mt-1 flex h-11 w-11 items-center justify-center rounded-full bg-surface-raised text-lg text-ink-muted shadow-card"
-        >
-          ♡
-        </button>
-      </div>
+      {/* 신뢰속성 뱃지 — 사진 위 좌상단에 절대배치로 겹친다(사용자 승인, 2026-08-05). 예전엔
+          사진과 제목 사이 일반 블록이라, 값이 없으면 TrustAttributes가 null을 반환해 슬롯 자체가
+          사라지며 카드 높이가 들쭉날쭉했다(판매중 95건 중 4건만 신뢰속성 보유). 본문 흐름 밖으로
+          완전히 빼서 값 유무와 무관하게 카드 본문 높이가 항상 같아지게 한다.
+          자리: 사진 밖(찜 버튼과 동일하게 article 기준 절대배치), 사진 좌상단(찜 버튼은 사진
+          아래쪽에 걸리므로 겹치지 않음 — WishButton.tsx variant='card' 참조). */}
+      <TrustAttributes variant="card" listing={listing} />
+
+      {/* 찜(♡) — 낙관적 토글·로그인 게이트·복귀 자동반영은 WishButton이 전담(Story 10.5).
+          자리: 사진 밖, 정보 영역 우상단(WishButton 내부가 같은 5:3 감싸개 + top-full로 재현). */}
+      <WishButton listingId={listing.id} initialWished={wished} authed={authed} />
     </article>
   );
 }

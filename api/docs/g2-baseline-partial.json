@@ -1,0 +1,47 @@
+{
+  "model": "gemini-3.1-flash-lite",
+  "results": {
+    "A1": [
+      {
+        "route_last": "A",
+        "ids_last": [
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "0e69c5f2-4034-4027-a41d-3367541fe0dc",
+          "1d355749-2a8d-45f1-bbc1-e7c9ac502587",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059",
+          "26572bf4-3e3f-4a8c-aab1-59c0f590d931"
+        ],
+        "answer_last": "조건에 맞는 매물 5건을 찾았어요.",
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 2470.2337119961157
+      }
+    ],
+    "B1": [
+      {
+        "route_last": "B",
+        "ids_last": [
+          "09d273ba-8a48-4408-b87d-b165646abfb3",
+          "bad7df12-de0c-4e6d-8dc7-de367fdc567d",
+          "b336526e-f28b-4d41-ba04-2086d3c9cc8c",
+          "9c4c68b9-8811-42e6-8460-47cd7b07f401",
+          "232262ab-4f7d-47b0-94cc-9e86c5cac059"
+        ],
+        "answer_last": "'초보운전자 첫차로 뭐가 좋아?'에 어울리는 매물 5건을 찾았어요. (참고: 초보 운전자에게 적합한 차종)",
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1674.8295280267484
+      }
+    ],
+    "C1": [
+      {
+        "route_last": "C",
+        "ids_last": [],
+        "answer_last": "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. 대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. 예를 들어 '2천만 원 이하 SUV'처럼요.",
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "latency_ms": 1285.258079005871
+      }
+    ]
+  }
+}

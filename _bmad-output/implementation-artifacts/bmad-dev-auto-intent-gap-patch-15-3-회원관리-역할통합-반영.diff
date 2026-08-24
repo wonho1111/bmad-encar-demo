@@ -1,0 +1,206 @@
+# 저장된 패치 — spec-15-3 intent gap로 인해 되돌려진 DW-669 정지 게이트 구현
+
+## 왜 되돌렸나
+
+`spec-15-3-회원관리-역할통합-반영.md`는 원래 두 가지를 한 번에 다뤘다:
+1. FR61 — 회원관리 화면 역할 표시를 admin/일반 축으로 교체 (커밋됨, 정상 범위)
+2. DW-669 — 정지(suspended) 회원의 매물 등록·수정·삭제를 `listings` RLS로 막는 마이그레이션(0030)
+
+리뷰 단계에서 오케스트레이터가 직접 계획 문서를 재대조한 결과, ②는 Epic 15의 명시적 제약과 충돌한다:
+
+- `_bmad-output/planning-artifacts/epics-increment-2026-07-12.md:1244` — "Epic 15: 관리자 웹 UI 통일(UI-only)... 신규 기능·운영 배관 없음."
+- 같은 파일 1296~1307행 — Story 15.3의 인수조건 원문은 "구매자/판매자 구분 필터가 제거·정리되고 admin/일반 구분으로 표시된다" + "admin 권한 표시·정지/삭제(FR22)가 **유지**된다"뿐이다. DB/RLS 변경 언급이 전혀 없다.
+- 같은 파일 1309~1312행 — Story 15.4에만 명시적으로 "이 에픽의 UI-only 범위를 한 칸 넘는 스토리다 — 마이그레이션 1개(복구 전용 RPC)가 필요하다"는 예외가 선언돼 있다. **15.3은 이 예외 목록에 없다.**
+
+반면 `deferred-work.md`의 DW-669 항목(2026-08-06, Story 14.3 후속 리뷰가 등재)은 "Epic 15 Story 15-3을 착수할 때... 정지가 실제로 무엇을 막는지도 그 자리에서 정한다"고 15-3을 트리거로 지목했다. 이 항목은 epics-increment.md의 UI-only+15.4-단일예외 선언을 **모르거나 반영하지 않은 채** 작성됐다 — 두 정본 문서가 서로 다른 이야기를 한다.
+
+**정하다(decide)와 만들다(implement)는 다르다.** DW-669의 문구는 "정지의 의미를 그 자리에서 정한다"는 것이지 "그 자리에서 구현한다"까지 강제하지 않는다. epics-increment.md가 이미 15.3의 범위를 명시적으로(그리고 15.4와 대비되게) 좁혀 놓았으므로, 이 스토리 자동 실행 세션이 임의로 두 번째 UI-only 예외를 만들 권한은 없다.
+
+이것은 여러 해석이 가능한데 스펙 안에서 고를 근거가 없는 **intent gap**이다 — dev-auto가 자체적으로 풀 수 없으므로 코드는 되돌리고, 사람의 판단을 기다린다.
+
+## 미해결 질문 (사람이 결정할 것)
+
+1. DW-669(정지 게이트 RLS 구현)를 Epic 15의 **두 번째 UI-only 예외**로 15.3에 추가할 것인가 — 그렇다면 epics-increment.md에 15.4와 같은 방식의 명시적 예외 문구를 먼저 추가해야 한다(스코프 정본을 먼저 고치고 스펙이 그걸 인용하게 하는 것이 CLAUDE.md B8 순서).
+2. 아니면 DW-669는 **별도 스토리**(예: Epic 15 밖의 신규 스토리, 또는 다음 증분)로 분리해 구현할 것인가 — 이 경우 아래 저장된 diff/마이그레이션을 그 스토리의 출발점으로 그대로 재사용할 수 있다(코드 자체는 검증 완료 상태).
+3. 어느 쪽이든, 이번 리뷰가 DB 게이트 자체에서 추가로 찾은 실측 결함(관리자용 `listings_delete_admin`은 안 막힘 — 정지된 관리자가 여전히 남의 매물 삭제 가능, `listing_images`/`storage.objects` 쓰기 정책도 안 막힘 — 정지된 판매자가 여전히 사진 추가/삭제 가능)도 그 스토리 범위에 함께 넣을지 판단이 필요하다.
+
+## 검증 완료 상태 (재적용 시 참고)
+
+아래 코드는 구현 세션이 실제로 짜고, 로컬 DB에 실측 적용해 검증했다(vitest 336/336, playwright 전량 73 passed/0 failed, red/green 자체 검증 완료). **다만 위 3번 질문이 지적하는 관리자 delete·사진 경로 구멍은 이 코드에 반영되지 않은 상태**이므로, 재적용하는 스토리는 그 갭도 함께 닫는 것을 고려해야 한다.
+
+### 마이그레이션 (신규 파일로 재생성)
+
+```sql
+-- 0030_listings_suspend_gate.sql — 정지(suspended) 회원의 매물 등록·수정·삭제를 DB에서 막는다 (DW-669)
+-- self-contained: listings 테이블·RLS enable·세 정책(listings_insert_own·listings_update_own·
+--   listings_delete_own)은 0002에서 만들어졌고, listings_update_own은 0015가 이미 한 번
+--   교체했다(sold 불변). 이 파일은 그 흐름 위에 세 정책을 **다시** 교체해 활성 상태 조건만 더한다.
+--
+-- 무엇이 문제였나:
+--   관리자가 회원을 "정지"시켜도(FR22, profiles.status='suspended') 그 회원은 계속 로그인해
+--   매물을 등록·수정·삭제할 수 있었다 — "정지"가 화면(MemberActions)엔 있지만 데이터 계층
+--   어디서도 강제되지 않았다. 클라이언트가 보낸 값(role/status)은 참고지 신뢰가 아니므로
+--   (CLAUDE.md B9), 화면마다 정지 검사를 심으면 새 화면이 생길 때마다 까먹는다. listings RLS
+--   하나에 박으면 등록·수정·삭제 경로 전부(웹뿐 아니라 향후 다른 클라이언트도)가 예외 없이 막힌다.
+--
+-- 정지는 **쓰기 행동만** 막는다 — 로그인·열람(매물 조회)은 그대로 허용한다
+--   (docs/conventions.md §8 "열람이 아니라 행동에만 적용" 원칙과 동일 축). 그래서
+--   listings_select_*(SELECT) 정책은 건드리지 않는다 — 정지된 판매자의 기존 매물도 다른
+--   구매자에게는 계속 보여야 한다.
+--
+-- ⚠️ 재적용 시 반영할 것(코드리뷰 실측 지적, 이 버전엔 미반영):
+--   · listings_delete_admin(0005_admin_policies.sql)은 그대로다 — 정지된 관리자도 남의 매물을
+--     삭제할 수 있다(로컬 DB에서 실제 DELETE 성공 확인됨).
+--   · listing_images_insert_own/update_own/delete_own(0012)과 storage.objects의
+--     listing_images_objects_owner_all(0012)도 그대로다 — 정지된 판매자가 사진은 계속
+--     추가·삭제할 수 있다(로컬 DB에서 실제 INSERT/DELETE 성공 확인됨).
+--
+-- 기존 조건(소유권·update의 status <> 'sold')은 그대로 유지하고, 매 정책에
+--   `exists (select 1 from public.profiles where id = auth.uid() and status = 'active')`
+--   조건만 추가한다.
+
+drop policy if exists "listings_insert_own" on public.listings;
+
+create policy "listings_insert_own" on public.listings
+  for insert to authenticated
+  with check (
+    auth.uid() = seller_id
+    and exists (select 1 from public.profiles where id = auth.uid() and status = 'active')
+  );
+
+drop policy if exists "listings_update_own" on public.listings;
+
+create policy "listings_update_own" on public.listings
+  for update to authenticated
+  using (
+    auth.uid() = seller_id
+    and status <> 'sold'
+    and exists (select 1 from public.profiles where id = auth.uid() and status = 'active')
+  )
+  with check (auth.uid() = seller_id);
+
+drop policy if exists "listings_delete_own" on public.listings;
+
+create policy "listings_delete_own" on public.listings
+  for delete to authenticated
+  using (
+    auth.uid() = seller_id
+    and exists (select 1 from public.profiles where id = auth.uid() and status = 'active')
+  );
+```
+
+### 나머지 코드 변경 (docs/conventions.md · SellForm.tsx · write-flows.spec.ts의 S1)
+
+```diff
+diff --git a/docs/conventions.md b/docs/conventions.md
+index 2b9c004..50dade1 100644
+--- a/docs/conventions.md
++++ b/docs/conventions.md
+@@ -193,6 +193,7 @@ ListingCard 필드를 추가·변경할 때는 아래를 **동시에** 갱신한
+   - `/admin`(관리자)·`/sell`(매물 등록·관리)·`/chat`(문의 인박스)은 페이지 단위로 여전히 `proxy.ts`가 보호한다(anon에게 의미 없는 개인/관리 영역).
+ - **행동 게이트는 사용자 입력을 삼키지 않는다:** 비로그인이 입력을 마친 뒤 게이트를 만나면, 그 입력을 보존했다가 로그인 복귀 시 복원한다(`redirectedFrom`은 **경로만** 나르고 폼 상태는 못 나른다 — 보존은 sessionStorage 등으로 명시 구현). **복원까지만 하고 자동 실행하지 않는다** — 과금 호출의 트리거를 페이지 로드에 매달면 새로고침·뒤로가기가 재과금이 된다. 마지막 실행은 항상 사용자의 클릭이다. (Story 11.3 히어로가 이 패턴의 첫 적용처.)
+ - **신규 진입점 추가 시:** 위 분류 기준으로 먼저 가른다. 열람이면 `proxy.ts`에 넣지 않고 컴포넌트 레벨 행동 게이트만 추가, 행동·개인·관리 영역이면 `proxy.ts`의 `PROTECTED_PREFIXES`에 추가한다.
++- **정지(`profiles.status='suspended'`)도 이 축의 "행동" 게이트다(DW-669):** 막는 것은 매물 등록·수정·삭제(쓰기)뿐이고, 로그인·열람(매물 조회 등)은 막지 않는다. 강제 지점은 앱 코드가 아니라 `listings` RLS(`supabase/migrations/0030_listings_suspend_gate.sql`)다 — 화면마다 심지 않고 데이터 계층 하나로 모든 클라이언트(웹·향후 다른 클라이언트)를 예외 없이 막는다.
+ 
+ ## 9. 마이그레이션 정책 (Story 8.6)
+ 
+diff --git a/web/e2e/write-flows.spec.ts b/web/e2e/write-flows.spec.ts
+index 6089e18..38dbb8c 100644
+--- a/web/e2e/write-flows.spec.ts
++++ b/web/e2e/write-flows.spec.ts
+@@ -235,3 +235,74 @@ test.describe.serial('쓰기 흐름 왕복 — 등록→검색→수정→문의
+     await expect(page.getByRole('status').getByText('매물을 찾을 수 없어요.')).toBeVisible();
+   });
+ });
++
++// ── S1 [desktop] 정지된 계정은 매물 등록이 RLS로 거부된다 (spec-15-3, DW-669 회귀 가드) ──
++// 위 describe.serial(E1~E5)과 독립된 계정·매물을 쓰므로 그 밖에 둔다(공유 listingId 없음).
++// 0030_listings_suspend_gate.sql이 listings_insert_own·listings_update_own·listings_delete_own
++// 세 정책에 더한 `profiles.status='active'` 조건 중 INSERT만 자동 검사한다 — 세 정책이 정확히
++// 같은 조건절을 공유해 실패 모드가 같으므로, 사용자가 가장 먼저 마주치는 경로(신규 등록)에
++// 자동 가드를 걸고 UPDATE·DELETE는 구현 시점에 실측했다(spec-15-3 Design Notes, 0015 선례와 동일 비중).
++// 이 테스트가 만든 계정은 끝에서 직접 지운다(C9와 동일한 원복 관례).
++test('S1 정지된 계정이 /sell에서 매물 등록을 시도하면 RLS로 거부되고 DB에 기록되지 않는다', async ({ page }) => {
++  const email = `e2e-suspend-${Date.now()}@test.local`;
++  const password = 'seller123';
++  const SUSPEND_MODEL = `E2E정지게이트${Date.now()}`;
++
++  try {
++    // 1) 임시 계정 생성 — 역할 선택 없는 가입 플로우(C9와 동일 패턴). 트리거가 status='active'로 만든다.
++    await page.goto('/signup');
++    await page.getByLabel('이메일').fill(email);
++    await page.getByLabel('비밀번호').fill(password);
++    await page.getByRole('button', { name: '가입하기' }).click();
++    await page.waitForURL((url) => url.pathname === '/');
++
++    // 2) 관리자가 정지 처리한 것과 같은 효과를 SQL로 낸다(MemberActions의 UPDATE와 동일 대상 컬럼).
++    runPsql(
++      `update profiles set status='suspended' where id=(select id from auth.users where email='${sqlLit(email)}');`,
++    );
++    const suspendedStatus = runPsql(
++      `select status from profiles where id=(select id from auth.users where email='${sqlLit(email)}');`,
++    );
++    expect(suspendedStatus, '전제: 정지 처리가 실제로 DB에 반영돼야 함').toBe('suspended');
++
++    // 3) 정지된 계정으로 로그인 시도 — 로그인 자체는 막히지 않는다(conventions.md §8 추가분, 정지는
++    //    쓰기 행동만 막는다). 로그인이 막히면 이 테스트는 등록 시도 자체를 못 하게 되므로 여기서 먼저 확인한다.
++    await login(page, email, password);
++    expect(new URL(page.url()).pathname, '정지된 계정도 로그인은 성공해 홈으로 가야 함').toBe('/');
++
++    // 4) /sell에서 등록 시도 — 폼 자체는 렌더된다(등록 게이트는 role이 아니라 auth뿐 — FR52).
++    await page.goto('/sell');
++    await page.getByLabel('제조사').selectOption('현대');
++    await page.getByLabel('모델').fill(SUSPEND_MODEL);
++    await page.getByLabel('차종').selectOption('준중형차');
++    await page.getByLabel('연식 (년)').fill('2021');
++    await page.getByLabel('가격 (원)').fill('10000000');
++    await page.getByLabel('주행거리 (km)').fill('10000');
++    await page.getByLabel('색상').selectOption('흰색');
++    await page.getByLabel('연료').selectOption('가솔린');
++    await page.getByLabel('변속기').selectOption('자동');
++    await page.getByLabel('배기량 (cc)').fill('1600');
++    await page.getByLabel('인승 (명)').fill('5');
++    await page.getByLabel('지역').selectOption('서울');
++    await page.getByRole('button', { name: '매물 등록' }).click();
++
++    // 5) 0030의 새 조건절(profiles.status='active')이 INSERT를 42501로 거부해야 한다 —
++    //    SellForm의 toKoreanError가 정지·명의위조 공통 문구로 안내한다(spec-15-3).
++    //    getByRole('alert')는 안 쓴다 — Next.js `#__next-route-announcer__`가 항상 role="alert"를
++    //    가져 strict mode 위반이 난다(C6·C2와 같은 이유). 문구 자체로 판별한다.
++    await expect(
++      page.getByText(/정지된 계정/),
++      '정지된 계정의 등록 시도는 한국어 거부 안내가 떠야 함',
++    ).toBeVisible();
++
++    // 6) DB에 행이 생기지 않았는지 직접 확인 — 화면 메시지만으로는 "거부됐다고 보이지만 실제로는
++    //    들어갔다"를 구분 못 한다(B4 "재보기 전엔 선언하지 않는다").
++    const inserted = runPsql(`select count(*) from listings where model='${sqlLit(SUSPEND_MODEL)}';`);
++    expect(inserted, 'RLS가 실제로 거부했으면 DB에 행이 생기면 안 됨').toBe('0');
++  } finally {
++    // 이 테스트가 만든 계정만 지운다. profiles는 auth.users FK cascade로 함께 사라진다.
++    runPsql(`delete from auth.users where email='${sqlLit(email)}';`);
++    const leftover = runPsql(`select count(*) from auth.users where email='${sqlLit(email)}';`).trim();
++    expect(leftover, 'S1이 만든 검증 계정이 남으면 안 됨(원복 증명)').toBe('0');
++  }
++});
+diff --git a/web/src/app/(user)/sell/SellForm.tsx b/web/src/app/(user)/sell/SellForm.tsx
+index 7e0c97a..e7ac217 100644
+--- a/web/src/app/(user)/sell/SellForm.tsx
++++ b/web/src/app/(user)/sell/SellForm.tsx
+@@ -121,10 +121,13 @@ function toKoreanError(err: { message: string; code?: string }, mode: 'create' |
+     return '입력값이 허용 목록/범위를 벗어났습니다. 드롭다운 항목과 숫자 범위를 확인해주세요.';
+   }
+   if (code === '42501') {
+-    // 권한/RLS 거부 — 등록은 본인 명의 위조, 수정은 타인 매물 접근.
++    // 권한/RLS 거부 — 수정은 타인 매물 접근. 등록은 본인 명의 위조 **또는** 정지된 계정
++    // (0030_listings_suspend_gate.sql, DW-669) — 둘 다 listings_insert_own 정책의 같은
++    // 42501을 낸다. INSERT 응답만으로는 둘을 구분할 근거가 없으므로(둘 다 0행/거부) 문구를
++    // 두 원인 모두를 포괄하도록 넓힌다.
+     return mode === 'edit'
+       ? '본인 매물만 수정할 수 있습니다. 다시 로그인 후 시도해주세요.'
+-      : '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.';
++      : '본인 명의가 아니거나 정지된 계정이라 매물을 등록할 수 없습니다. 계정 상태를 확인 후 다시 로그인해주세요.';
+   }
+   return mode === 'edit'
+     ? '매물 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+```

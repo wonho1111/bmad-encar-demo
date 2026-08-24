@@ -96,8 +96,14 @@
   --color-accent-amber: #F0A339;
   --color-amber-ink: #1A1E1D;
 
-  /* ── 타이포 (AC2): Pretendard 우선, 실패 시 시스템 한글 폰트로 폴백 ── */
-  --font-sans: "Pretendard Variable", Pretendard, system-ui, -apple-system,
+  /* ── 타이포 (AC2): next/font/local이 만든 --font-pretendard(self-host) 우선, 실패 시 시스템 한글 폰트로 폴백 ──
+     var()에 폴백 인자(system-ui)를 반드시 준다: --font-pretendard가 정의되지 않은 요소에서 인자 없는 var()는
+     선언 전체를 invalid-at-computed-value-time으로 만들어 뒤에 적은 한글 폴백까지 통째로 날린다(실측 확인).
+     이 토큰은 :root에 방출되는데 --font-pretendard는 layout.tsx가 <html>에 붙이는 클래스로만 정의되므로,
+     그 클래스가 없는 트리에서도 스택이 살아 있어야 한다. 그런 트리는 실재한다 — Next 기본 에러 페이지는
+     루트 레이아웃을 거치지 않고 <html id="__next_error__">를 직접 그린다(빌드 산출물 확인). 자체 <html>을
+     그리는 global-error.tsx를 나중에 추가하면 같은 모양이 된다. */
+  --font-sans: var(--font-pretendard, system-ui), system-ui, -apple-system,
     "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 
   /* 타이포 스케일 — 권장 weight는 유틸(font-extrabold=800 등)로 페어링.
@@ -144,7 +150,7 @@ body {
   background: var(--surface-base);
   color: var(--ink-primary);
   /* font-family는 --font-sans(@theme) → Tailwind가 --default-font-family로 상속.
-     Pretendard는 layout.tsx의 CDN dynamic-subset <link>로 로드. */
+     Pretendard는 layout.tsx의 next/font/local self-host로 로드(fonts/PretendardVariable.woff2). */
 }
 
 /* ============================================================================

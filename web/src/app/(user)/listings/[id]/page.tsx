@@ -6,9 +6,10 @@
 //   3) 찾으면 사진 갤러리 + FR5 15필드를 **신뢰정보 → 차량정보 → 옵션 → 판매자정보** 순으로 그린다(Story 9.5 AC1).
 //      못 찾으면 중립 톤 404 안내, 조회 자체가 실패하면 danger 톤 에러 안내(둘을 구분).
 //
-// 섹션 순서(AC1)의 ①신뢰정보·④판매자정보는 **Epic 10이 채울 빈 슬롯**이다. 값이 없는 지금은
-//   **아무것도 렌더하지 않는다** — 빈 제목·빈 테두리·"준비중" 문구를 두면 화면에 의미 없는 잉크가 남는다.
-//   슬롯의 자리는 아래 주석 위치로만 존재한다(목업 detail-1.html은 옛 순서라 이 주석이 정답이다).
+// 섹션 순서(AC1)의 ①신뢰정보·④판매자정보는 원래 Epic 9 골격이 남긴 빈 슬롯이었으나, Epic 10(10.2·10.6)이
+//   차례로 채웠다. 그 값이 전부 없는 경우(신뢰속성 미입력·판매자 요약 RPC 조회 실패 등)엔 지금도
+//   **그 섹션만 아무것도 렌더하지 않는다** — 빈 제목·빈 테두리·"준비중" 문구를 두면 의미 없는 잉크가 남는다.
+//   (목업 detail-1.html은 옛 순서라 이 주석이 정답이다.)
 //
 // 열람: FR58(8.5)부터 /listings는 비로그인(anon)도 열람 가능 — on_sale은 RLS상 누구에게나 공개.
 //   로그인 게이트는 "문의하기" 같은 행동에만 적용된다(아래 InquiryCta 3분기 참조).
@@ -20,13 +21,23 @@ import type { User } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, fetchListingGalleryUrls } from '@/lib/listings';
+import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingGallery from '@/components/listings/ListingGallery';
+import WishButton from '@/components/listings/WishButton';
+import TrustAttributes from '@/components/listings/TrustAttributes';
 import EmptyState from '@/components/ui/EmptyState';
 import ErrorState from '@/components/ui/ErrorState';
 import { buttonClasses } from '@/components/ui/Button';
-import InquiryButton from './InquiryButton';
-import { VehicleInfoSection, OptionsSection } from './ListingDetailSections';
+import InquiryCta, { type InquiryCtaMode } from './InquiryCta';
+import SellerInquiryButton from './SellerInquiryButton';
+import { formatPrice } from '@/lib/price';
+import {
+  VehicleInfoSection,
+  OptionsSection,
+  TrustInfoSection,
+  SellerInfoSection,
+} from './ListingDetailSections';
 
 // CM3 보장: 상세도 매 요청 최신 DB 상태 반영(sold 즉시 비노출). 정적화 방지.
 export const dynamic = 'force-dynamic';
@@ -52,41 +63,22 @@ type ListingDetail = {
   options: string[] | null; // text[]; 빈 배열·null 가능
   description: string | null; // nullable
   status: string;
+  // 신뢰속성 3필드(Story 10.2) — 로그인 사용자만 select에 포함(아래 trustColumns 분기).
+  // anon은 select에서 아예 안 물으므로 undefined로 오는데, 렌더 직전에 null로 정규화한다(§4 계약).
+  accident_status?: '무사고' | '단순교환' | '사고' | null;
+  is_single_owner?: boolean | null;
+  is_non_smoker?: boolean | null;
 };
 
 /**
- * 문의 CTA 3분기 (AC7) — **문의 개시 로직은 Epic 5의 InquiryButton을 그대로 재사용**하고,
- * 여기서 정하는 건 "누구에게 무엇을 보여줄지"뿐이다.
- *
- * 데스크톱 sticky 요약 컬럼과 모바일 하단 고정 바가 **같은 분기**를 써야 하므로 한 자리에 모았다
- * (두 군데에 복붙하면 한쪽만 고쳐져 갈린다).
+ * 문의 CTA 3분기 판정 (AC7) — **상태를 갖는 건 inquiry뿐**이라 판정 자체는 서버(여기)에서 끝내고,
+ * 실제 렌더·busy/error 상태는 클라이언트 컴포넌트 `<InquiryCta>` 하나가 맡는다(#82 종결, Story 10.6).
+ * 데스크톱 sticky 요약 컬럼과 모바일 하단 고정 바가 **같은 판정**을 써야 하므로 한 자리에 모았다.
  */
-function InquiryCta({ listing, user }: { listing: ListingDetail; user: User | null }) {
-  // ① 비로그인 — 버튼을 숨기지 않는다. 어포던스는 보이고 게이트는 클릭에만 걸린다(FR58, conventions §8).
-  if (!user) {
-    return (
-      <Link
-        href={`/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`}
-        className={buttonClasses({ className: 'w-full' })}
-      >
-        로그인하고 문의하기
-      </Link>
-    );
-  }
-
-  // ② 본인 매물 — 자기 자신에게는 문의할 수 없다(DB의 CHECK(buyer_id<>seller_id)와 정합).
-  //    ✎ 9.5에서 바뀐 지점: 전엔 버튼을 **아예 숨겼다**. 판매자가 자기 매물 상세를 열면 아무 행동도
-  //      제안받지 못해 막다른 길이었다 — 대신 판매자 관리 화면으로 보낸다(EXPERIENCE.md 상세 상태 표).
-  if (user.id === listing.seller_id) {
-    return (
-      <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-full' })}>
-        내 매물 관리
-      </Link>
-    );
-  }
-
-  // ③ 로그인 + 타인 매물 — 기존 문의 개시 흐름 그대로(방이 있으면 재사용, 없으면 생성).
-  return <InquiryButton listingId={listing.id} />;
+function computeInquiryMode(listing: ListingDetail, user: User | null): InquiryCtaMode {
+  if (!user) return 'anon'; // 비로그인
+  if (user.id === listing.seller_id) return 'owner'; // 본인 매물
+  return 'inquiry'; // 로그인 + 타인 매물
 }
 
 export default async function ListingDetailPage({
@@ -115,9 +107,15 @@ export default async function ListingDetailPage({
 
   // 단일 매물 조회 — 구매자 관점(판매중만) 시작점 buyerListingsQuery(FR11 단일 출처) + id 일치.
   //   maybeSingle(): 0건이면 null(존재하지 않음·sold·접근 권한 없음). edit 페이지와 동일 패턴.
-  const { data: listing, error } = await buyerListingsQuery(
+  //
+  // ✎ 2026-08-13 — 신뢰속성 3컬럼을 **로그인 여부와 무관하게** 조회한다. 예전엔 anon에게 그 컬럼
+  //   SELECT 권한이 없어(0011 화이트리스트 밖 — 요청하면 컬럼 하나가 아니라 select 전체가 42501로
+  //   실패한다) 로그인 분기로만 물었고, 그래서 비로그인 방문자에겐 이 화면의 신뢰 뱃지가 한 번도
+  //   안 떴다. `0037_listings_anon_trust_columns.sql`이 그 GRANT를 열었다(사용자 승인).
+  const trustColumns = ', accident_status, is_single_owner, is_non_smoker';
+  const { data: listingRow, error } = await buyerListingsQuery(
     supabase,
-    'id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status',
+    `id, seller_id, manufacturer, model, body_type, year, price, mileage, color, fuel, transmission, displacement, seats, region, accident_free, seller_name, options, description, status${trustColumns}`,
   )
     .eq('id', id)
     .maybeSingle<ListingDetail>();
@@ -126,6 +124,10 @@ export default async function ListingDetailPage({
     // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분.
     console.error('[listings/detail] 매물 상세 조회 실패:', error);
   }
+
+  // (예전엔 anon 경로가 그 3컬럼을 안 물어서 `undefined`로 왔고, 계약(§4 "값이 없으면 null")에
+  //  맞추려고 여기서 null을 채워 넣었다. 이제 로그인 여부와 무관하게 조회하므로 그 정규화가 필요 없다.)
+  const listing = listingRow;
 
   const header = (
     <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath={`/listings/${id}`} />
@@ -143,7 +145,7 @@ export default async function ListingDetailPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col items-center gap-4 p-6">
+        <main className="mx-auto flex w-full max-w-2xl flex-col items-center gap-4 p-6">
           {/* 상태 화면에도 h1을 남긴다 — 프리미티브(ErrorState·EmptyState)는 제목을 <p>로만 그리므로
               이게 없으면 이 화면엔 heading이 0개가 되어 문서 개요·heading 탐색이 끊긴다.
               관리자 매물 상세의 같은 분기도 <h1>매물 상세</h1>를 유지한다(리포 일관 패턴). */}
@@ -168,7 +170,7 @@ export default async function ListingDetailPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col items-center gap-2 p-6">
+        <main className="mx-auto flex w-full max-w-2xl flex-col items-center gap-2 p-6">
           {/* 위 에러 분기와 같은 이유로 h1을 남긴다(heading 0개 방지). */}
           <h1 className="text-section font-bold text-ink-primary">매물 상세</h1>
           <EmptyState
@@ -185,8 +187,54 @@ export default async function ListingDetailPage({
   //   (FR11 이미지 축: DB RLS + 호출부 id 좁히기 2층, conventions §6).
   const galleryUrls = await fetchListingGalleryUrls(supabase, listing.id);
 
+  // ④ 판매자정보 — 가입 시점(RLS로 막힘) + "다른 on_sale 매물 N건"(FR11 강제지점)을
+  //   SECURITY DEFINER RPC 하나로 구한다(0019, Story 10.6). anon도 실행 가능(FR58).
+  //   실패하면 서버 콘솔에만 로그하고 null로 정규화 — SellerInfoSection이 그 행만 숨긴다(I/O 매트릭스).
+  const { data: sellerSummary, error: sellerSummaryError } = await supabase
+    .rpc('get_seller_public_summary', {
+      p_seller_id: listing.seller_id,
+      p_exclude_listing_id: listing.id,
+    })
+    .maybeSingle<{ joined_at: string | null; other_on_sale_count: number | null }>();
+
+  if (sellerSummaryError) {
+    console.error('[listings/detail] 판매자 요약 조회 실패:', sellerSummaryError);
+  }
+
+  // 조회수 +1 — 상세 페이지 진입 시 정확히 이 한 곳에서만 호출한다(Story 11.1).
+  //   increment_listing_view RPC가 view_count의 유일한 쓰기 통로다(0020) — authenticated의
+  //   컬럼 직접 UPDATE·INSERT, anon의 직접 쓰기는 DB에서 회수돼 있다. 호출마다 항상 +1(멱등
+  //   아님, 의도된 동작) — 지켜야 하는 건 "호출 지점을 여기 하나로 한정"뿐이다(ListingCard 등
+  //   카드 렌더 경로는 호출하지 않음 — viewCountCallSite.test.ts가 이 불변식을 소스 스캔으로 고정).
+  //   실패해도 페이지 렌더는 막지 않는다(sellerSummaryError와 동일 패턴 — 조회수는 핵심 기능이 아님).
+  const { error: viewCountError } = await supabase.rpc('increment_listing_view', {
+    p_listing_id: listing.id,
+  });
+
+  if (viewCountError) {
+    console.error('[listings/detail] 조회수 증가 실패:', viewCountError);
+  }
+
+  // 찜 여부(Story 10.5의 누락 보완, 2026-07-29) — 카드와 같은 오버레이 조회를 매물 1건에 대해 한다.
+  //   비로그인이면 조회하지 않는다(하트는 그대로 보이고 게이트는 클릭에만 걸린다, FR58·conventions §8).
+  const wished = user ? (await fetchWishedListingIds(supabase, user.id, [listing.id])).has(listing.id) : false;
+
   const title = `[${listing.manufacturer}] ${listing.model}`;
-  const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
+  const priceText = formatPrice(listing.price);
+  const inquiryMode = computeInquiryMode(listing, user);
+  const loginHref = `/login?redirectedFrom=${encodeURIComponent(`/listings/${listing.id}`)}`;
+
+  // 요약 카드의 주요 제원 6칸 — 목업 detail-1.html `.spec-mini-grid`의 항목·순서 그대로
+  // (연식·주행거리·연료·배기량·지역·색상). 전부 아래 "차량정보" 표에도 있는 값이다 — 여기 있는
+  // 이유는 "스크롤 없이 CTA 옆에서 판단할 수 있게"이지 새 정보를 더하려는 게 아니다.
+  const summarySpecs = [
+    { label: '연식', value: `${listing.year}년` },
+    { label: '주행거리', value: `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}` },
+    { label: '연료', value: listing.fuel },
+    { label: '배기량', value: `${listing.displacement.toLocaleString('ko-KR')}${UNITS.displacement}` },
+    { label: '지역', value: listing.region },
+    { label: '색상', value: listing.color },
+  ];
 
   return (
     <>
@@ -194,33 +242,105 @@ export default async function ListingDetailPage({
       {/* pb-28: 모바일 하단 고정 바(아래)가 페이지 끝 콘텐츠를 가리지 않게 비워 두는 자리.
           데스크톱(lg)엔 고정 바가 없으므로 되돌린다. */}
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6 pb-28 lg:pb-6">
-        {/* 제목 — 2열 어느 쪽에도 속하지 않는 페이지 머리. 폭이 좁아도 …로 자른다(D5). */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <h1 className="min-w-0 truncate text-section font-bold text-ink-primary sm:text-display">
-              {title}
-            </h1>
-            <span className="shrink-0 whitespace-nowrap rounded-badge border border-brand-petrol px-2 py-0.5 text-caption font-semibold text-brand-petrol">
-              판매중
-            </span>
-          </div>
-          <p className="truncate whitespace-nowrap text-meta font-medium text-ink-muted">
-            {listing.year}년 · {listing.mileage.toLocaleString('ko-KR')}
-            {UNITS.mileage} · {listing.region}
-          </p>
-        </div>
+        {/* 뒤로가기(breadcrumb) — 목업 detail-1.html `.breadcrumb-row`(2026-08-13 사용자 지적 #2:
+            "뒤로가기 버튼이 없다"). 브라우저 뒤로가기(history)가 아니라 **매물 목록으로 가는 링크**다:
+            상세로 들어오는 길이 목록만이 아니라 채팅방·직접 URL도 있어서, history를 되감으면
+            사람마다 다른 곳으로 간다. 목적지가 늘 같은 링크가 예측 가능하다.
+            예전엔 이 역할을 **페이지 맨 아래 "매물 목록으로" 버튼**이 했는데, 그 자리는 목업 기준
+            문의 버튼 자리라 SellerInquiryButton에 내줬다. */}
+        <Link
+          href="/search"
+          className="inline-flex w-fit items-center gap-1.5 text-meta font-semibold text-ink-secondary hover:text-ink-primary"
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden className="h-3.5 w-3.5">
+            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          매물 목록
+        </Link>
 
-        {/* 2열(좌 갤러리·정보 / 우 요약 sticky) → 좁아지면 스택 1열. 폭 축소는 **열 수로만** 흡수한다(D5).
-            minmax(0,1fr): 좌 컬럼이 긴 텍스트에 밀려 넘치지 않게 최소 폭을 0으로 풀어 준다. */}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="flex min-w-0 flex-col gap-6">
-            {/* key=매물 id — 갤러리의 현재 인덱스·실패기록은 이 매물에만 유효한 상태다.
-                지금은 상세→상세 직접 이동 링크가 없어 실제로 밟히지 않지만(진입로는 /search 카드와
-                채팅방뿐), 그런 링크가 생기면 React가 같은 자리의 컴포넌트를 재사용해 이전 매물의
-                index가 남는다(사진 10장에서 2장짜리로 가면 "8/2"). 한 줄로 그 부류를 닫아 둔다. */}
+        {/* 2열 × 2행 그리드 — 좌1행 갤러리 / 좌2행 정보 카드 4개 / 우 요약 카드(2행에 걸침, sticky).
+            좁아지면(<1024px) 1열로 스택되어 갤러리 → 요약 → 정보 카드 순이 된다(목업 모바일 프레임과 같은 순서).
+            minmax(0,1fr): 좌 컬럼이 긴 텍스트에 밀려 넘치지 않게 최소 폭을 0으로 풀어 준다.
+
+            ⚠️ **요약 카드가 `row-span-2`인 것이 이 레이아웃의 핵심이다**(2026-08-13 2차 지적 #3).
+            같은 날 오전엔 정보 카드를 이 그리드 **밖**으로 빼 전체 폭을 쓰게 했었는데, 그러면
+            `position: sticky`의 기준 상자(요약이 속한 그리드 영역)가 **갤러리 높이까지**로 줄어든다 —
+            갤러리를 지나치는 순간 요약이 더 못 따라오고 화면 밖으로 밀려 올라갔다(사용자 실측:
+            "2번째 줄까지만 내려오고 막힌다"). 정보 카드를 좌 컬럼 2행으로 다시 넣어 그 상자를
+            페이지 끝까지 늘린다. 전체 폭은 포기하지만(좌 컬럼 ≈788px) 차량정보 표는 그 폭에서도
+            2열로 들어가므로(sm:grid-cols-2) 오전에 고친 "13행이 세로로 늘어지는" 문제는 그대로 해결돼 있다.
+            → **"전체 폭 정보카드"와 "끝까지 따라오는 요약"은 동시에 못 갖는다.** 후자를 골랐다. */}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          {/* key=매물 id — 갤러리의 현재 인덱스·실패기록은 이 매물에만 유효한 상태다.
+              지금은 상세→상세 직접 이동 링크가 없어 실제로 밟히지 않지만(진입로는 /search 카드와
+              채팅방뿐), 그런 링크가 생기면 React가 같은 자리의 컴포넌트를 재사용해 이전 매물의
+              index가 남는다(사진 10장에서 2장짜리로 가면 "8/2"). 한 줄로 그 부류를 닫아 둔다. */}
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1">
             <ListingGallery key={listing.id} urls={galleryUrls} title={title} />
+          </div>
 
-            {/* ① 신뢰정보 — Epic 10.2가 채울 빈 슬롯. 값이 없으므로 아무것도 렌더하지 않는다(AC1). */}
+          {/* 요약 카드(목업 `.summary-col`) — 제목·찜 / 신뢰뱃지+짧은 면책 / 가격 / 주요제원 6칸 /
+              CTA. 데스크톱에서만 카드 표면(테두리·배경·그림자)을 입히고 sticky로 붙인다. 모바일에선
+              갤러리 바로 아래 흐름에 그대로 쌓이고(목업 모바일 프레임과 같은 순서), CTA는
+              InquiryCta가 하단 고정 바로 대신 그린다. */}
+          <aside className="flex min-w-0 flex-col gap-4 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6 lg:self-start lg:rounded-card lg:border lg:border-border-hairline lg:bg-surface-raised lg:p-5 lg:shadow-card lg:dark:shadow-none">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-col gap-1">
+                {/* break-keep: 한국어를 어절 단위로만 끊는다(좁은 요약 컬럼에서 제목이 글자 중간에서
+                    갈라지는 것 방지 — HeroSearch 헤드라인과 같은 처리). */}
+                <h1 className="text-section font-bold text-ink-primary break-keep">
+                  {title} · {listing.year}년
+                </h1>
+                {/* ✎ 2026-08-13 사용자 지적(중복 점검) — 여기 있던 "주행거리 · 지역" 요약 줄을 뺐다.
+                    바로 아래 주요제원 6칸에 같은 두 값이 있고, 모바일에선 요약 카드가 세로로
+                    쌓이면서 같은 값을 두 줄 간격으로 두 번 읽게 된다. 목업 `.summary-head`에도
+                    제목 아래 별도 요약 줄은 없다(연식만 제목에 붙어 있다). */}
+              </div>
+              {/* 찜(♡) — 상세에도 하트가 있다(Story 10.5 누락 보완, 2026-07-29).
+                  ⚠️ **InquiryCta 안이 아니라 여기(요약 카드 제목 줄)에 둔다.** InquiryCta는 요약 카드
+                  블록과 모바일 하단 바 **두 블록을 동시에** 렌더하므로, 거기 넣으면 상태를 가진 하트가
+                  두 번 마운트돼 한쪽만 채워지는 불일치가 생긴다(#82와 같은 부류). 이 자리는 두
+                  뷰포트 모두에서 한 번만 그려진다. */}
+              <WishButton listingId={listing.id} initialWished={wished} authed={!!user} variant="inline" />
+            </div>
+
+            {/* 신뢰 뱃지 + **짧은** 면책(목업 `.trust-disclaimer-sm`) — 긴 면책은 아래 "신뢰정보"
+                카드가 그대로 보여준다. 뱃지가 없으면 아무것도 안 그린다. */}
+            <TrustAttributes variant="summary" listing={listing} />
+
+            {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(30/800, DESIGN.md:42).
+                data-testid: 같은 가격 문자열이 모바일 하단 고정 바에도 있어(InquiryCta) 화면 전체에서
+                텍스트로 찾으면 2건이 잡힌다. E2E(write-flows)가 이 대표 가격만 콕 집게 하는 훅이다 —
+                이 요약 블록은 데스크톱·모바일 양쪽에서 항상 보이므로 뷰포트와 무관하게 안정적이다. */}
+            <p
+              data-testid="detail-price"
+              className="whitespace-nowrap text-price-lg font-extrabold text-price-emphasis"
+            >
+              {priceText}
+            </p>
+
+            {/* 주요 제원 6칸(목업 `.spec-mini-grid`) — 아래 "차량정보" 표에 다 있는 값이지만,
+                구매 판단에 가장 먼저 쓰이는 여섯 개를 스크롤 없이 CTA 옆에서 보게 한다. */}
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-border-hairline pt-4">
+              {summarySpecs.map(({ label, value }) => (
+                <div key={label} className="flex min-w-0 flex-col">
+                  <dt className="text-caption font-medium text-ink-muted">{label}</dt>
+                  <dd className="truncate text-body font-bold text-ink-primary" title={value}>
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            {/* CTA — 이 카드 안 버튼(데스크톱)과 모바일 하단 고정 바를 **한 컴포넌트**가 함께 그린다.
+                모바일 블록은 position:fixed라 이 자리에 있어도 뷰포트 하단에 고정된다(#82 종결). */}
+            <InquiryCta mode={inquiryMode} listingId={listing.id} loginHref={loginHref} priceText={priceText} />
+          </aside>
+          {/* 좌 컬럼 2행: 정보 섹션 카드 4개(위 그리드 주석 참조 — 여기 있어야 요약이 끝까지 따라온다). */}
+          <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">
+            {/* ① 신뢰정보 — TrustInfoSection이 뱃지·긴 면책을 한 몸으로 그린다(Story 10.2, B9).
+                신뢰속성이 전부 없으면(anon 포함) null을 반환해 섹션 자체가 안 그려진다(AC1). */}
+            <TrustInfoSection listing={listing} />
 
             {/* ② 차량정보 */}
             <VehicleInfoSection listing={listing} />
@@ -228,38 +348,19 @@ export default async function ListingDetailPage({
             {/* ③ 옵션 — 카테고리 분류·희소옵션 강조는 Epic 10.3/10.4의 몫이다. */}
             <OptionsSection listing={listing} />
 
-            {/* ④ 판매자정보 — Epic 10.6이 채울 빈 슬롯(①과 동일 규칙). */}
+            {/* ④ 판매자정보 — 닉네임+가입 시점+다른 매물 N건 3행(FR56, Story 10.6) + 문의 버튼.
+                값이 하나도 없으면 null을 반환해 섹션 자체가 안 그려진다(①과 동일 규칙). */}
+            <SellerInfoSection
+              sellerName={listing.seller_name}
+              joinedAt={sellerSummaryError ? null : sellerSummary?.joined_at}
+              otherOnSaleCount={sellerSummaryError ? null : sellerSummary?.other_on_sale_count}
+              action={
+                <SellerInquiryButton mode={inquiryMode} listingId={listing.id} loginHref={loginHref} />
+              }
+            />
           </div>
-
-          {/* 우 요약 컬럼 — **sticky**라 긴 섹션을 스크롤해도 문의 CTA가 상시 보인다(D9 "구현 필수").
-              top-6: 이 앱의 상단바는 sticky가 아니라 함께 스크롤되므로, 헤더 높이가 아니라 본문
-              여백(p-6)과 같은 값을 띄운다. ≥1024px에서만 — 그 아래는 하단 고정 바가 대신한다. */}
-          <aside className="hidden lg:block">
-            <div className="sticky top-6 flex flex-col gap-3 rounded-card border border-border-hairline bg-surface-raised p-5 shadow-card dark:shadow-none">
-              {/* 가격 = 상세의 대표 숫자. 카드(26/800)보다 큰 large 변형(30/800, DESIGN.md:42).
-                  9.5 코드리뷰에서 --text-price-lg 토큰을 추가해 임의값 text-[30px]를 걷어냈다. */}
-              <p className="whitespace-nowrap text-price-lg font-extrabold text-price-emphasis">
-                {priceText}
-              </p>
-              <InquiryCta listing={listing} user={user} />
-            </div>
-          </aside>
         </div>
-
-        {backLink}
       </main>
-
-      {/* 모바일·태블릿(<1024px) 하단 고정 바 — 가격 + CTA 상시(AC7).
-          shadow-float = 떠 있는 요소용 겹 그림자(DESIGN.md:115). 가로 한 줄을 유지하고, 공간이
-          부족하면 가격을 …로 자른다(D5 — 세로로 접거나 2줄로 밀지 않는다). */}
-      <div className="fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border-hairline bg-surface-raised px-4 py-3 shadow-float lg:hidden">
-        <p className="truncate whitespace-nowrap text-price font-extrabold text-price-emphasis">
-          {priceText}
-        </p>
-        <div className="shrink-0">
-          <InquiryCta listing={listing} user={user} />
-        </div>
-      </div>
     </>
   );
 }

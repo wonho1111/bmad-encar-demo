@@ -173,8 +173,8 @@
 | `(user)/search/SearchFilters.tsx` | 필터 입력 UI(클라이언트). 입력→URL 갱신. |
 | `(user)/listings/[id]/page.tsx` | `/listings/:id` 매물 상세(서버). |
 | `(user)/listings/[id]/InquiryButton.tsx` | "문의하기" 버튼(클라이언트). 채팅방 생성/이동. |
-| `(user)/sell/page.tsx` | `/sell` 판매자 내 매물 목록(서버). |
-| `(user)/sell/layout.tsx` | sell 영역 판매자 역할 게이트(`requireRole(seller)`). |
+| `(user)/sell/page.tsx` | `/sell` 매물 등록 폼 + 내가 등록한 매물 목록(서버). |
+| `(user)/sell/layout.tsx` | sell 영역 로그인 게이트(`requireUser()`) — 역할이 아니라 소유권 기반(spec-14-3). 본인 매물 여부는 `listings` RLS가 집행. |
 | `(user)/sell/SellForm.tsx` | 매물 등록·수정 15필드 폼(클라이언트, 검증 포함). |
 | `(user)/sell/ListingActions.tsx` | 내 매물 행의 구매완료/수정/삭제 버튼(클라이언트). |
 | `(user)/sell/[id]/edit/page.tsx` | `/sell/:id/edit` 매물 수정 화면(서버: 기존값 로드). |

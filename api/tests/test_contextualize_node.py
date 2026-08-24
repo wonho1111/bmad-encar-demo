@@ -192,6 +192,63 @@ def test_refine_reference_word_keeps_context(monkeypatch):
     assert len(fake.calls) == 1
 
 
+def test_superlative_price_regex_recognizes_price_combo_only():
+    """최상급 부사(제일·가장)는 가격 형용사와 결합했을 때만 REFINE 신호다(DW-611, 코드리뷰 정정).
+
+    13.9 2차 리뷰 전에는 "제일"·"가장"을 통짜로 `_REFINE_MARKERS`에 넣어 "제일 싼 거
+    하나만 알려줘"류(M1.t2)는 잡았지만, 그 대가로 "가장 좋은 자동차보험 알려줘"처럼
+    가격과 무관한 최상급 주제 점프까지 좁히기로 오판했다(P4). 이제 최상급은 가격
+    형용사와 근접했을 때만(`_SUPERLATIVE_PRICE_RE`) REFINE 신호이고, `_REFINE_MARKERS`
+    자체엔 "제일"·"가장"이 없다.
+    """
+    assert "제일" not in contextualize_node._REFINE_MARKERS
+    assert "가장" not in contextualize_node._REFINE_MARKERS
+    assert contextualize_node._SUPERLATIVE_PRICE_RE.search("제일 싼 거 하나만 알려줘")
+    assert contextualize_node._SUPERLATIVE_PRICE_RE.search("가장 저렴한 SUV로 바꿔줘")
+    assert not contextualize_node._SUPERLATIVE_PRICE_RE.search("가장 좋은 자동차보험 알려줘")
+
+
+# ── P2(13.9 3차 리뷰) — `\S{0,4}?`가 0자를 허용해 "가장 싼타페"가 그대로 매칭됐다(실측) ──
+# 가격 형용사 뒤에 한글 음절이 이어지면 매칭하지 않는다(hybrid_rag_node와 동일한 수정).
+@pytest.mark.parametrize(
+    "query",
+    ["가장 싼타페 보여줘", "제일 싼타페 보여줘", "제일 싸지 않은 차", "가장 비싸도 되는 차"],
+)
+def test_superlative_price_re_false_when_price_adjective_continues_into_another_syllable(query):
+    assert not contextualize_node._SUPERLATIVE_PRICE_RE.search(query)
+
+
+def test_is_topic_shift_false_for_superlative_only_query():
+    # 순수 함수 단위 — 최상급만 있는 후속 질의는 주제전환이 아니라 좁히기다(DW-611).
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "3천만원 이하 서울 SUV 보여줘"))
+    assert shift("제일 싼 거 하나만 알려줘", ctx) is False
+
+
+def test_is_topic_shift_true_when_categorical_swap_co_occurs_with_superlative():
+    """카테고리 값 교체가 최상급 어휘와 함께 있으면 리셋이 우선한다(코드리뷰 정정, DW-612류).
+
+    "가장"·"제일"이 `_REFINE_MARKERS`에 있다고 해서 마커 단축 판정이 먼저 걸리면, 직전
+    turn이 다른 차종(준중형차)을 확정한 상태에서 "가장 저렴한 SUV로 바꿔줘"가 좁히기로
+    오판돼 옛 차종 조건이 접힐 수 있다 — 이건 RESET/오염 방지가 정확히 잡아야 하는 값
+    교체(중형→SUV류)다. `_is_topic_shift`가 값 교체를 마커보다 먼저 봐야 한다.
+    """
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "2천만원 이하 준중형차 보여줘"))
+    assert shift("가장 저렴한 SUV로 바꿔줘", ctx) is True
+
+
+def test_superlative_refine_turn_is_not_topic_shift_and_gets_rewritten(monkeypatch):
+    """M1.t2 재현 — 이전 대화(SUV·3천만원·서울) 뒤 "제일 싼 거 하나만 알려줘"는 리셋되지
+    않고 LLM 재작성을 거쳐 앞선 조건을 접은 독립 질의가 된다(DW-611)."""
+    fake = _FakeLLM("3천만원 이하 서울 SUV 중 제일 싼 거")
+    monkeypatch.setattr(contextualize_node, "_llm", lambda: fake)
+    ctx = _ctx(("user", "3천만원 이하 서울 SUV 보여줘"), ("assistant", "○○ 등 5건"))
+    out = contextualize_query("제일 싼 거 하나만 알려줘", ctx)
+    assert out == "3천만원 이하 서울 SUV 중 제일 싼 거"
+    assert len(fake.calls) == 1  # 리셋되지 않고 LLM 재작성을 실제로 거쳤다
+
+
 def test_is_topic_shift_pure_function():
     # 순수 함수 단위 — 값 교체/주제 점프=True, 좁히기/참조어=False.
     shift = contextualize_node._is_topic_shift
@@ -204,6 +261,70 @@ def test_is_topic_shift_pure_function():
     # 모델명(자유값)은 결정적으로 못 잡는다 — 프롬프트(1차)에 맡김(투명 한계).
     ctx2 = _ctx(("user", "아반떼 보여줘"))
     assert shift("쏘렌토는?", ctx2) is False             # 가드는 통과(False), 프롬프트가 처리
+
+
+# ═════════════════════════════════════════════════════════════════════
+# P3/P4 회귀 방지 — `_is_topic_shift` 재정렬(13.9 2차 리뷰, DW-...).
+#   교체 의도(_REPLACEMENT_MARKERS) 없이 REFINE_MARKERS/최상급+가격이 있으면 항상 좁히기다 —
+#   순서를 되돌리면(카테고리 교체 검사를 1단계로 올리면) 아래 "그중" 계열이 다시 True로
+#   깨진다(직접 확인: 카테고리 교체를 최상단으로 올려 재현 → red, 원복 → green).
+# ═════════════════════════════════════════════════════════════════════
+def test_is_topic_shift_reference_word_keeps_context_even_with_categorical_swap():
+    shift = contextualize_node._is_topic_shift
+    assert shift("그중 검정도 있어?", _ctx(("user", "3천만원 이하 흰색 SUV 보여줘"))) is False
+    assert shift("그중 경기 매물도 보여줘", _ctx(("user", "서울 SUV 보여줘"))) is False
+    assert shift("그중 기아 것도 같이 보여줘", _ctx(("user", "현대 SUV 보여줘"))) is False
+
+
+def test_is_topic_shift_true_for_replacement_request_with_body_type():
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "2천만원 이하 준중형차 보여줘"))
+    assert shift("아니 쏘렌토 같은 SUV로 바꿔줘", ctx) is True
+
+
+def test_is_topic_shift_true_for_superlative_price_replacement():
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "2천만원 이하 준중형차 보여줘"))
+    assert shift("가장 저렴한 SUV로 바꿔줘", ctx) is True
+
+
+def test_is_topic_shift_false_for_pure_superlative_price_refine():
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "3천만원 이하 서울 SUV 보여줘"))
+    assert shift("제일 싼 거 하나만 알려줘", ctx) is False
+
+
+# ═════════════════════════════════════════════════════════════════════
+# P1 회귀 방지(13.9 3차 리뷰) — 교체 의도 마커가 REFINE 단축을 이기는 축은 **차종 하나**다.
+#   축을 안 좁히면(=`_REPLACEMENT_MARKERS`만 있으면 무조건 단축을 건너뛰게 하면) 아래 다섯
+#   줄이 전부 True로 뒤집혀, 지역·색상만 좁히는 후속 턴이 직전 턴의 가격상한·차종까지 통째로
+#   버린다 — RESET 규칙이 막으려던 오염의 정반대 방향이다.
+#   (직접 확인: 조건을 `not has_replacement`로 되돌려 재현 → red, 원복 → green.)
+# ═════════════════════════════════════════════════════════════════════
+_P1_PREV = "3천만원 이하 서울 흰색 현대 SUV 보여줘"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "그중 경기 말고 인천",        # 지역 교체 + "말고"(REFINE·REPLACEMENT 양쪽 소속)
+        "그중 검정으로 바꿔줘",       # 색상 교체 + "바꿔"
+        "아까 그거 대신 경기 매물로",  # 지역 교체 + "대신"
+        "위에 거 말고 부산 매물",      # 지역 교체 + "말고"
+        "그럼 기아로 바꿔줘",         # 제조사 교체 + "바꿔"
+    ],
+)
+def test_is_topic_shift_false_for_non_body_type_replacement(query):
+    shift = contextualize_node._is_topic_shift
+    assert shift(query, _ctx(("user", _P1_PREV))) is False
+
+
+def test_is_topic_shift_true_for_non_price_superlative_topic_jump():
+    """P4 — "제일"이 REFINE_MARKERS에서 빠졌으므로 가격과 무관한 최상급 주제 점프는
+    다시 리셋된다(13.9 이전 동작 복원)."""
+    shift = contextualize_node._is_topic_shift
+    ctx = _ctx(("user", "SUV 보여줘"))
+    assert shift("제일 좋은 자동차보험 알려줘", ctx) is True
 
 
 def test_context_content_newlines_flattened_no_prompt_injection(monkeypatch):

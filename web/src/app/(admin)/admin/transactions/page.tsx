@@ -15,7 +15,9 @@
 //   ③ 상세 링크 — 각 행을 누르면 관리자 매물 상세(/admin/listings/[id])로 이동한다.
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { UNITS, LISTING_STATUS } from '@/lib/constants';
+import { LISTING_STATUS } from '@/lib/constants';
+import Badge from '@/components/ui/Badge';
+import { formatPrice } from '@/lib/price';
 
 // 목록에 보여줄 최소 필드(요약 표시용) + updated_at(거래일 근사).
 type SoldListing = {
@@ -52,30 +54,33 @@ export default async function AdminTransactionsPage() {
   const totalAmount = rows.reduce((sum, l) => sum + l.price, 0);
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 p-6">
       <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">거래 내역</h1>
-        <p className="text-sm text-zinc-500">
+        <h1 className="text-section font-bold text-ink-primary">거래 내역</h1>
+        <p className="text-body text-ink-muted">
           판매완료된 매물(거래 내역)을 조회합니다. (조회 전용)
         </p>
       </section>
 
       <section className="flex flex-col gap-3">
         {listingsError ? (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-body text-danger">
             거래 내역을 불러오지 못했습니다. 잠시 후 새로고침 해주세요.
           </p>
         ) : totalCount === 0 ? (
-          <p className="text-sm text-zinc-500">거래 내역이 없습니다.</p>
+          <p className="text-body text-ink-muted">거래 내역이 없습니다.</p>
         ) : (
           <>
             {/* ① 요약 통계 — 총 거래 건수 + 거래액 합계 */}
-            <div className="flex items-center justify-between gap-3 rounded border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="text-zinc-500">총 거래</span>
+            {/* 요약은 아래 개별 행(raised 카드)보다 위에 있어야 한다 — 리스킨 전 요약은 옛 회색 틴트로
+                떠 있고 행은 배경이 없었는데, 둘 다 raised 카드가 되면서 "가장 먼저 봐야 할 집계"가
+                평범한 한 줄로 내려앉았다. petrol 틴트로 되살린다(코드리뷰 patch, 15.1).
+                라벨 잉크를 ink-muted→ink-secondary로 올린 이유는 실측이다: 틴트 위 ink-muted는
+                라이트 4.41:1로 AA 미달, ink-secondary는 라이트 5.48 / 다크 8.37로 통과. */}
+            <div className="flex items-center justify-between gap-3 rounded-card border border-border-hairline bg-brand-petrol/10 px-4 py-3 text-body">
+              <span className="text-ink-secondary">총 거래</span>
               <span className="font-medium">
-                {totalCount.toLocaleString('ko-KR')}건 · 거래액 합계{' '}
-                {totalAmount.toLocaleString('ko-KR')}
-                {UNITS.price}
+                {totalCount.toLocaleString('ko-KR')}건 · 거래액 합계 {formatPrice(totalAmount)}
               </span>
             </div>
 
@@ -83,27 +88,25 @@ export default async function AdminTransactionsPage() {
               {listings!.map((l) => (
                 <li
                   key={l.id}
-                  className="flex items-center justify-between gap-3 rounded border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800"
+                  className="flex items-center justify-between gap-3 rounded-card border border-border-hairline bg-surface-raised px-4 py-3 text-body shadow-card dark:shadow-none"
                 >
                   {/* ③ 요약을 누르면 관리자 매물 상세로 이동(sold 매물도 조회 가능). */}
+                  {/* min-w-0 + truncate: 배지가 shrink-0이라 좁은 폭에서 줄어들 쪽은 요약뿐이다(D5). */}
                   <Link
                     href={`/admin/listings/${l.id}`}
-                    className="flex flex-1 flex-col gap-0.5 hover:underline"
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 hover:underline"
                   >
-                    <span className="font-medium">
+                    <span className="truncate font-medium">
                       [{l.manufacturer}] {l.model} · {l.year}년 ·{' '}
-                      {l.price.toLocaleString('ko-KR')}
-                      {UNITS.price}
+                      {formatPrice(l.price)}
                     </span>
                     {/* ② 거래일(간이) — updated_at 근사. 날짜만 간결히. */}
-                    <span className="text-xs text-zinc-500">
+                    <span className="text-meta text-ink-muted">
                       거래일 {new Date(l.updated_at).toLocaleDateString('ko-KR')}
                     </span>
                   </Link>
-                  {/* 거래 내역은 전부 sold이므로 "판매완료"(회색) 배지만. 조회 전용이라 액션 버튼 없음. */}
-                  <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                    판매완료
-                  </span>
+                  {/* 거래 내역은 전부 sold이므로 "판매완료"(중립) 배지만. 조회 전용이라 액션 버튼 없음. */}
+                  <Badge tone="neutral">판매완료</Badge>
                 </li>
               ))}
             </ul>

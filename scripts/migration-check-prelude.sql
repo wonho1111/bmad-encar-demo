@@ -63,6 +63,25 @@ end $$;
 alter default privileges in schema public
   grant all on tables to anon, authenticated, service_role;
 
+-- auth 스키마 USAGE GRANT (2026-07-29 원격·로컬 동시 실측으로 추가 — Story 12.5의 CI red가 드러냄)
+--   실측: 원격 psrnsasxpkpwqdukjdmt · 로컬 스택 둘 다
+--     has_schema_privilege('authenticated','auth','USAGE') = t (anon도 t)
+--     has_function_privilege('authenticated','auth.uid()','EXECUTE') = t
+--   그런데 이 프렐류드에는 없었다 → **스텁의 결함이지 마이그의 결함이 아니다**(위 :7-9의
+--   "정당한 확장" 기준을 그대로 충족 — 플랫폼에 있는데 여기 빠져 red가 나는 경우).
+--
+--   왜 지금까지 안 터졌나(이게 이 GRANT가 없어도 그동안 초록이던 이유다):
+--     RLS 정책 안의 `auth.uid()`는 정책 평가 경로라 호출자의 스키마 USAGE를 요구하지 않았다.
+--     0024/0025의 `chat_unread_count()`는 **authenticated가 직접 호출하는 SQL 함수**이고
+--     `set search_path = ''`라 `auth.uid()`를 스키마 한정으로 부른다 — 이 경로가 USAGE를 요구한다.
+--     즉 "authenticated가 auth 스키마를 직접 밟는" 첫 마이그레이션이 0024였다.
+--   red→green 확인(2026-07-29): CI와 같은 재료로 일회용 pgvector 컨테이너를 띄워 재현했더니
+--     추가 전 `tests/integration/test_chat_unread_real_db.py` **4 failed**
+--     (`InsufficientPrivilege: permission denied for schema auth`),
+--     이 두 줄 추가 후 같은 컨테이너에서 **10 passed**.
+grant usage on schema auth to anon, authenticated, service_role;
+grant execute on function auth.uid() to anon, authenticated, service_role;
+
 -- ── storage 스키마 최소 스텁 (0012_listing_images가 참조 — 2026-07-16 원격 실측 기반, Story 9.1) ──
 --   실측 근거: information_schema.columns(storage.buckets/objects 전체 컬럼) + pg_class.relrowsecurity를
 --   원격에서 직접 조회(Story 9.1 Task 1). 이 레포 최초의 storage 마이그라 스텁이 아예 없었다.
@@ -82,10 +101,158 @@ create table if not exists storage.buckets (
 create table if not exists storage.objects (
   id         uuid primary key default gen_random_uuid(),
   bucket_id  text,
-  name       text
+  name       text,
+  -- metadata: 2026-08-11 추가(Story 17.1) — 실제 storage.objects의 jsonb 컬럼(파일 크기·mimetype 등을
+  -- Storage 서비스가 채운다). 0012~0014는 안 건드리지만, 17.1의 UPDATE 테스트가 처음으로 이 컬럼에
+  -- 쓴다 — "스텁이 실제로 건드리는 컬럼만" 원칙에 따라 이제 이 컬럼도 스텁 대상이다.
+  metadata   jsonb
 );
 
 -- 원격 실측(2026-07-16): relrowsecurity = true — 플랫폼이 이미 켜둔 상태를 재현.
 -- (0012는 이 문을 스스로 켜지 않는다 — 원격에서 소유자가 아닌 롤이 건드리면 실패할 수 있어서다.)
 alter table storage.objects enable row level security;
--- storage 스텁은 여기까지(Story 9.1, 0012 전용).
+
+-- ── storage 스키마·테이블 GRANT (2026-08-11 로컬 실측으로 추가 — Story 17.1 검증공백 리뷰가 드러냄) ──
+--   실측: 로컬 Supabase Docker 스택(포트 55322)에서
+--     has_schema_privilege('authenticated','storage','USAGE') = t (anon·service_role도 동일)
+--     information_schema.role_table_grants → anon/authenticated/service_role에 storage.objects
+--     INSERT/SELECT/UPDATE/DELETE 테이블 GRANT가 이미 있음(플랫폼 기본).
+--   그런데 이 프렐류드에는 스키마 USAGE도 테이블 GRANT도 없었다 → **스텁의 결함**(위 :7-9 "정당한
+--   확장" 기준 충족 — 플랫폼에 있는 걸 스텁이 빠뜨려 red가 나는 경우, 우회가 아니다).
+--   왜 지금까지 안 터졌나: 0013·0014의 storage.objects RLS 정책을 실제 SQL 세션으로 임퍼소네이션해
+--   쏴 보는 테스트가 이 스토리(17.1, `test_suspended_write_block_real_db.py`) 전까지 저장소에 하나도
+--   없었다 — 그래서 "authenticated가 storage.objects를 직접 쓴다"는 경로 자체가 이 프렐류드로는
+--   한 번도 검증된 적이 없었다.
+--   red→green 확인(2026-08-11): CI와 같은 재료로 일회용 pgvector 컨테이너를 띄워 재현했더니
+--     추가 전 `test_suspended_write_block_real_db.py`의 storage.objects 관련 3개가
+--     `InsufficientPrivilege: permission denied for schema storage`로 실패(나머지 1개는 같은
+--     SQLSTATE 42501을 우연히 공유해 통과), 아래 두 줄 추가 후 4개 전부 RLS 결과로만 통과/실패한다.
+grant usage on schema storage to anon, authenticated, service_role;
+grant select, insert, update, delete on storage.objects to anon, authenticated, service_role;
+-- storage 스텁은 여기까지(Story 9.1 · 17.1).
+
+-- ── realtime 스키마 최소 스텁 (0023_chat_realtime_broadcast가 참조 — 2026-07-28 로컬 스택 실측 기반, Story 12.2) ──
+--   실측 근거: 로컬 Supabase Docker 스택(포트 55322)에 psql로 직접 접속해 확인(원격이 아니라 로컬인 이유는
+--   storage 스텁 때와 달리 이번엔 로컬 스택이 이미 떠 있어 그걸로 충분했기 때문 — 플랫폼 계약면은
+--   로컬·원격이 동일하다, 둘 다 Supabase가 배포하는 같은 realtime 확장이다):
+--     · `\d realtime.messages` → 컬럼(topic/extension/payload/event/private/updated_at/inserted_at/
+--       id/binary_payload), relrowsecurity=t, 정책 0건(플랫폼 기본이 이미 RLS만 켜둔 상태).
+--     · `information_schema.role_table_grants` → anon/authenticated/service_role에 이미
+--       INSERT/SELECT/UPDATE 테이블 GRANT가 있음(플랫폼 기본 — 그래서 0023이 GRANT를 추가하지 않는다).
+--     · `pg_get_functiondef`로 `realtime.broadcast_changes()`·`realtime.send()`·`realtime.topic()`
+--       정의를 그대로 복사(셋 다 `security definer`가 아니다 — `pg_proc.prosecdef=f`, 소유자는
+--       supabase_admin/supabase_realtime_admin). 0023의 트리거 함수가 SECURITY DEFINER인 이유는
+--       이 함수들 자체가 아니라 마이그레이션을 적용하는 postgres 롤의 `rolbypassrls=true` 속성에
+--       있다(실측: `select rolbypassrls from pg_roles where rolname='postgres'` → t).
+--   "정당한 확장" 기준 충족: 실제 Supabase 플랫폼(로컬·원격 공통)에 있는 걸 스텁이 빠뜨려 red가 나는
+--   경우다(우회 아님) — storage 스텁과 동일한 논리.
+--   ⚠️ 실제 realtime.messages는 `inserted_at` 기준 range 파티션 테이블이다. 이 스텁은 평범한(비파티션)
+--   테이블로 단순화한다 — 어느 마이그도 파티션을 **만들거나 참조하지 않기** 때문이다(storage 스텁이
+--   owner 등 미사용 컬럼을 생략한 것과 같은 원칙, "실제로 건드리는 것만 재현").
+--   ⚠️ 다만 **테스트는 다르다**: 실제 플랫폼에서는 그 시각에 해당하는 파티션이 있어야 방송 INSERT가
+--   성공한다(없으면 `realtime.send()`가 예외를 삼켜 방송만 조용히 사라진다). 비파티션 스텁 위에서는
+--   그 실패 모드가 **구조적으로 발생할 수 없어**, 방송 행 개수를 세는 테스트들이 여기선 항상 초록이다.
+--   즉 "파티션 유지가 자동인가"는 이 프렐류드가 답할 수 없는 질문이고, 원격 확인 항목으로 열려 있다
+--   (`docs/tech-debt.md` #195 ②). 스텁을 파티션 테이블로 바꾸려는 다음 사람은 이 문단부터 읽을 것.
+--
+--   ✅ 2026-07-29 원격 실측으로 갱신(#196·#197의 확인 항목 — 위 :7-9 "원격에서 확인한 뒤 주석에 남긴다" 충족).
+--      대상: 원격 프로젝트 psrnsasxpkpwqdukjdmt(운영), MCP execute_sql로 조회. 넣어본 행은 전부 rollback 했다.
+--     ⓐ Realtime 가용: `pg_publication` supabase_realtime 1건, `realtime.broadcast_changes()` 존재,
+--        anon 키로 실제 채널 구독 → `SUBSCRIBED`. → 0023 적용이 chat_messages INSERT를 죽이지 않는다.
+--     ⓑ `realtime.send` 정의가 이 스텁과 동일하고 **`private boolean DEFAULT true`** 다(실측).
+--        → 트리거가 인자 3개만 넘겨도 방송은 private 채널로 나가고, 0023의 RLS가 실제 관문이다.
+--     ⓒ `realtime.messages`는 원격도 range 파티션(`relkind='p'`). **파티션 유지는 "자동"이 아니라
+--        "Realtime 테넌트가 활성일 때 자동"이다** — 확인 시작 시점엔 자식 파티션이 **0개**였고, 그 상태에서
+--        INSERT는 `23514 no partition of relation "messages" found for row`로 실패했다(실측). anon 클라이언트가
+--        한 번 구독하자 Realtime 서비스가 5일치(07-28~08-01)를 만들었고, 그 뒤 같은 INSERT는 1행 성공했다
+--        (`private=t` 확인). → 이 프로젝트는 Realtime을 쓴 적이 없어 비어 있었던 것이며, 실사용이 시작되면
+--        유지된다. 다만 **무활동이 길면 다시 비어 방송만 조용히 사라질 수 있다**(`docs/tech-debt.md` #232).
+--     ⓓ 적용 롤 `postgres`의 `rolbypassrls=t`(rolsuper=f). → 0023의 "INSERT 정책 불필요" 전제가 원격에서도
+--        성립한다(#197의 ⓓ). 이 값이 f로 바뀌면 방송만 조용히 사라지므로, 롤이 바뀌면 다시 확인할 것.
+create schema if not exists realtime;
+
+-- 스키마 USAGE GRANT — 실측: `has_schema_privilege('authenticated', 'realtime'::regnamespace, 'USAGE')`
+-- → t (anon·service_role도 동일). 이게 없으면 authenticated 롤이 realtime.messages를 아예 못 봐
+-- "permission denied for schema realtime"으로 죽는다(테이블 GRANT와 별개 축).
+grant usage on schema realtime to anon, authenticated, service_role;
+
+create table if not exists realtime.messages (
+  id             uuid primary key default gen_random_uuid(),
+  topic          text not null,
+  extension      text not null,
+  payload        jsonb,
+  event          text,
+  private        boolean default false,
+  updated_at     timestamp without time zone not null default now(),
+  inserted_at    timestamp without time zone not null default now(),
+  binary_payload bytea
+);
+
+alter table realtime.messages enable row level security;
+
+grant insert, select, update on realtime.messages to anon, authenticated, service_role;
+
+-- realtime.topic() — 세션 GUC `realtime.topic`을 읽는다(Realtime 서버가 채널 구독 시 이 GUC를
+-- 설정한다). 0023의 RLS 정책이 참조한다.
+create or replace function realtime.topic()
+returns text
+language sql
+stable
+as $$
+  select nullif(current_setting('realtime.topic', true), '')::text
+$$;
+
+-- realtime.send() — broadcast_changes()가 내부에서 호출해 실제로 realtime.messages에 행을 쓴다.
+-- (원본 그대로: private 기본값 true라 chat 트리거처럼 인자 3개만 넘기면 항상 비공개 채널이 된다.)
+create or replace function realtime.send(payload jsonb, event text, topic text, private boolean default true)
+returns void
+language plpgsql
+as $$
+declare
+  generated_id uuid;
+  final_payload jsonb;
+begin
+  begin
+    generated_id := gen_random_uuid();
+    if payload ? 'id' then
+      final_payload := payload;
+    else
+      final_payload := jsonb_set(payload, '{id}', to_jsonb(generated_id));
+    end if;
+    execute format('set local realtime.topic to %L', topic);
+    insert into realtime.messages (id, payload, event, topic, private, extension)
+    values (generated_id, final_payload, event, topic, private, 'broadcast');
+  exception
+    when others then
+      raise warning 'WarnSendingBroadcastMessage: %', sqlerrm;
+  end;
+end;
+$$;
+
+-- realtime.broadcast_changes() — "Broadcast from Database" 패턴의 진입점. 0023의 트리거 함수가
+-- 부른다.
+create or replace function realtime.broadcast_changes(
+  topic_name text, event_name text, operation text, table_name text, table_schema text,
+  new record, old record, level text default 'ROW'
+)
+returns void
+language plpgsql
+as $$
+declare
+  row_data jsonb := '{}'::jsonb;
+begin
+  if level = 'STATEMENT' then
+    raise exception 'function can only be triggered for each row, not for each statement';
+  end if;
+  if operation = 'INSERT' or operation = 'UPDATE' or operation = 'DELETE' then
+    row_data := jsonb_build_object('old_record', old, 'record', new, 'operation', operation, 'table', table_name, 'schema', table_schema);
+    perform realtime.send(row_data, event_name, topic_name);
+  else
+    raise exception 'Unexpected operation type: %', operation;
+  end if;
+exception
+  when others then
+    raise exception 'Failed to process the row: %', sqlerrm;
+end;
+$$;
+-- realtime 스텁은 여기까지(Story 12.2, 0023 전용).

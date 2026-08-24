@@ -13,6 +13,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LISTING_OPTIONS, LISTING_RANGES, UNITS } from '@/lib/constants';
 import Button from '@/components/ui/Button';
+// 라벨·입력칸 클래스는 /sell 등록 폼과 **한 벌을 공유**한다(2026-08-13 사용자 결정 — 두 화면이
+// 같은 구조인데 밀도·배경이 달랐다). 자세한 경위는 formField.ts 주석 참조.
+import { FIELD_CONTROL_CLASS, FIELD_LABEL_CLASS } from '@/components/ui/formField';
 
 // 현재 URL 쿼리값(서버가 넘겨준 초기값)으로 폼을 채운다 → 새로고침해도 필터가 유지된다.
 export type SearchFilterValues = {
@@ -26,6 +29,16 @@ export type SearchFilterValues = {
   price_max: string;
   year_min: string;
   year_max: string;
+  // 신뢰속성 필터(2026-08-13 사용자 요청) — 상세·카드에 뱃지로 보여주던 값으로 거를 수 있게 한다.
+  //   accident_status: ''(전체) | 무사고 | 단순교환 | 사고 — **뱃지 기준**이다(사용자 결정).
+  //     예전 "무사고 차량" 체크박스가 쓰던 accident_free는 필터에서 쓰지 않는다(그건 이제 파생값이고
+  //     소비처가 AI 검색 하나뿐이다).
+  //   single_owner·non_smoker: '1'(신고한 것만) | ''(전체). 체크박스라 두 값뿐이다 —
+  //     "1인소유가 아닌 차만"은 만들지 않는다: 값이 없는 매물은 "아니다"가 아니라 "말하지 않음"이라
+  //     그런 필터는 무엇을 고르는지 스스로도 정의할 수 없다.
+  accident_status: string;
+  single_owner: string;
+  non_smoker: string;
 };
 
 export default function SearchFilters({ initial }: { initial: SearchFilterValues }) {
@@ -54,6 +67,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
     const empty: SearchFilterValues = {
       q: '', body_type: '', color: '', fuel: '', transmission: '', region: '',
       price_min: '', price_max: '', year_min: '', year_max: '',
+      accident_status: '', single_owner: '', non_smoker: '',
     };
     setValues(empty);
     router.push('/search');
@@ -63,11 +77,11 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
   function renderSelect(key: keyof SearchFilterValues, label: string, options: readonly string[]) {
     return (
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
+        <span className={FIELD_LABEL_CLASS}>{label}</span>
         <select
           value={values[key]}
           onChange={(e) => update(key, e.target.value)}
-          className="rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+          className={FIELD_CONTROL_CLASS}
         >
           <option value="">전체</option>
           {options.map((opt) => (
@@ -83,17 +97,17 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
   return (
     <form
       onSubmit={applyFilters}
-      className="flex flex-col gap-4 rounded border border-zinc-200 p-4 dark:border-zinc-800"
+      className="flex flex-col gap-4 rounded-card border border-border-hairline p-4"
     >
       {/* 키워드(모델명) */}
       <label className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">키워드(모델명)</span>
+        <span className={FIELD_LABEL_CLASS}>키워드(모델명)</span>
         <input
           type="text"
           value={values.q}
           onChange={(e) => update('q', e.target.value)}
           placeholder="예: 아반떼, 쏘렌토"
-          className="rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+          className={FIELD_CONTROL_CLASS}
         />
       </label>
 
@@ -108,7 +122,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
 
       {/* 가격 범위(원) */}
       <fieldset className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">가격({UNITS.price})</span>
+        <span className={FIELD_LABEL_CLASS}>가격({UNITS.price})</span>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -116,23 +130,64 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.price_min}
             onChange={(e) => update('price_min', e.target.value)}
             placeholder="최소"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
-          <span className="text-zinc-400">~</span>
+          <span className="text-ink-muted">~</span>
           <input
             type="number"
             min={0}
             value={values.price_max}
             onChange={(e) => update('price_max', e.target.value)}
             placeholder="최대"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
+        </div>
+      </fieldset>
+
+      {/* 신뢰 정보 — 판매자 자기신고(무사고·1인소유·비흡연). 카드·상세의 뱃지와 같은 값이다. */}
+      <fieldset className="flex flex-col gap-2 text-sm">
+        <span className={FIELD_LABEL_CLASS}>신뢰 정보</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <label className="flex flex-col gap-1">
+            <span className="sr-only">사고이력</span>
+            <select
+              aria-label="사고이력"
+              value={values.accident_status}
+              onChange={(e) => update('accident_status', e.target.value)}
+              className={FIELD_CONTROL_CLASS}
+            >
+              <option value="">사고이력 전체</option>
+              {LISTING_OPTIONS.accident_status.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* 체크 = "그렇다고 신고한 매물만". 미체크 = 조건 없음(전체) — 체크를 풀었다고 해서
+              "1인소유가 아닌 차"를 찾는 게 아니다. */}
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={values.single_owner === '1'}
+              onChange={(e) => update('single_owner', e.target.checked ? '1' : '')}
+            />
+            <span className={FIELD_LABEL_CLASS}>1인소유</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={values.non_smoker === '1'}
+              onChange={(e) => update('non_smoker', e.target.checked ? '1' : '')}
+            />
+            <span className={FIELD_LABEL_CLASS}>비흡연</span>
+          </label>
         </div>
       </fieldset>
 
       {/* 연식 범위(년) */}
       <fieldset className="flex flex-col gap-1 text-sm">
-        <span className="text-zinc-600 dark:text-zinc-400">연식(년)</span>
+        <span className={FIELD_LABEL_CLASS}>연식(년)</span>
         <div className="flex items-center gap-2">
           <input
             type="number"
@@ -141,9 +196,9 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.year_min}
             onChange={(e) => update('year_min', e.target.value)}
             placeholder="최소"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
-          <span className="text-zinc-400">~</span>
+          <span className="text-ink-muted">~</span>
           <input
             type="number"
             min={LISTING_RANGES.year.min}
@@ -151,7 +206,7 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
             value={values.year_max}
             onChange={(e) => update('year_max', e.target.value)}
             placeholder="최대"
-            className="w-full rounded border border-zinc-300 bg-transparent px-2 py-1.5 dark:border-zinc-700"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
           />
         </div>
       </fieldset>

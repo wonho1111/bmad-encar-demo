@@ -10,10 +10,13 @@ import 'package:app/features/auth/user_role.dart';
 
 void main() {
   group('UserRole', () {
-    test('가입 가능 역할은 buyer/seller 뿐(admin 제외)', () {
-      expect(UserRole.signupRoles, [UserRole.buyer, UserRole.seller]);
-      expect(UserRole.signupRoles.contains(UserRole.admin), isFalse);
-    });
+    // ✎ 2026-08-06 역할 통합(FR52): '가입 가능 역할 목록(signupRoles)' 검사를 지웠다.
+    //   가입 화면에서 역할 선택을 없애 그 상수의 소비처가 사라졌고, 아무도 안 쓰는 상수를
+    //   지키는 검사는 초록이어도 아무것도 보장하지 않는다.
+    //   ⚠️ 대신 지켜야 할 계약이 바뀌었다 — "앱 가입이 role metadata를 **안 보낸다**".
+    //   그건 전역 supabase 클라이언트를 가로채야 해서 이 단위 테스트 층에서는 못 본다
+    //   (웹은 signupNoRoleMetadata.test.ts가 본다). 실제 확인 자리는 Epic 16-6(앱 통합
+    //   시연 검증)이며 대장에 등재돼 있다.
 
     test('value 는 DB(profiles.role)·web constants 와 일치', () {
       expect(UserRole.buyer.value, 'buyer');

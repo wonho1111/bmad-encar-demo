@@ -1,5 +1,5 @@
 # generated: 2026-06-19T18:28:17
-# last_updated: 2026-07-14T00:00:00Z (dev-story: 8.5 review)
+# last_updated: 2026-07-22T00:00:00Z (dev-story: 10.4 옵션 하이브리드 피커(등록) 구현 — 텍스트에어리어를 인기8칩+아코디언+검색 피커로 교체)
 # project: bmad-encar-demo
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,21 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-06-19T18:28:17
-last_updated: 2026-07-21 (**Epic 9 회고 완료 — epic-9: done**. 회고 문서 `_bmad-output/implementation-artifacts/epic-9-retro-2026-07-21.md`. Epic 8 회고 약속 5건 중 4건 완료·A5(실측 없이 선언 금지)는 진행중 판정(뒤집힌 주장 4건이 있었으나 **전부 스스로/코드리뷰가 잡아 산출물에 남지 않았다** — Epic 8과 달라진 점). **중대 발견 1건 = 마이그 번호**: 에픽 문서 본문이 미래 스토리에 이미 소진된 번호(10.1→0013 등)를 지시하고 있었고 정정은 각주에만 있었다(8.5 삽입 때 9.1이 겪은 사고의 반복) → **표·본문에서 숫자를 걷어내고 "착수 시 파일 목록의 다음 빈 번호"로 교체**(10.1·11.1·12.1·12.2·12.5·14.1), 준수는 8.6 CI 게이트가 본다(B9). 회고 액션 이행: A2 `#56` 재평가 완료(9.0 공개 버킷 전환으로 "회수 불가"→"UI 없음"으로 성격 변경, Epic 16.2로 이관) · A3 대장 합계 줄 삭제(세 번 연속 낡음 — 세는 명령으로 대체) · A4 `#67`→10.1 · `#79`→10.2 · `#82`→10.6 인수조건 체크박스로 실제 심음(B5) · A5 "검사가 잡는지 증명"(변이 심어 red 확인)을 10.1·10.2·10.5 인수조건에 심음. Epic 10 계획 자체를 바꿔야 할 발견은 없음 — 상세 골격의 빈 슬롯이 실재하므로 의존성 충족.)
+last_updated: |
+  2026-08-06 Epic 13 마감 + Epic 14 착수 점검 - 13-10·13-11을 backlog→done, epic-13을 in-progress→done으로 전이한다. **이 전이 자체가 점검에서 나온 것이다**: 두 스토리는 손으로 완주해 커밋(4016420·0258f00)까지 갔는데 이 장부만 backlog로 남아 있었다. 엔진이 돌린 스토리는 dev 세션이 장부를 닫지만 사람이 돌린 스토리는 아무도 안 닫는다 - 그래서 "안 한 것"과 "했는지 모르는 것"이 구별되지 않았다(CLAUDE.md B8). 코드에서 확인하고 닫았다(문서 말고 코드에서 - B5). 착수 전 베이스라인 실측: verify 게이트 6종 전부 초록(env 무결성 통과 - 로컬 DB 권한 허용5축·차단2축 실제 확인, api pytest 490 passed 86 skipped, web lint 0, web vitest 305 passed, flutter analyze 0 issues, flutter test 80 passed). 로컬 Supabase 스택 10컨테이너 healthy. 한도 5시간 2% / 7일 26%. bmad-loop 열린 런 0건(전부 finished·stopped). policy.toml의 review.trigger를 recommended→always로 올렸다(근거는 policy.toml 주석 - Epic 14는 마이그레이션 에픽이고 (d)하이브리드 결정이 그 경우만 always를 켜라고 했다). max_review_cycles는 2 그대로(2026-08-05 사용자 결정).
+  2026-07-29 Epic 12 마감 정합 - 회고 이후 실제로 끝났는데 장부에 열린 채 남아 있던 action_items 4건을 닫는다(B3·B4·B6·B7). 닫기 전에 근거를 코드에서 직접 확인했다(문서 말고 코드에서 - CLAUDE.md B5). B3: scripts/check_env_integrity.sh가 존재하고 .bmad-loop/policy.toml:82의 verify 게이트 첫 자리에 배선돼 있음. B4: policy.toml:10-21에 "유지" 결정과 상향 조건 2가지가 기록돼 있음. B6: docs/tech-debt.md #196·#197 본문에 원격 실측 기반 해소 표시가 있고 조건부 잔여분은 #232로 승계됨. B7: git branch --merged develop에 test/bmad-loop이 있고 develop은 origin과 동일(0 ahead). 남은 열린 항목은 A6(#182 E2E 상시승격, 트리거=#168) - B5(#231 에픽 마지막 스토리 DW 미이관, Epic 13 회고에서 판단) - B8(#229 web CI next build, #168과 함께 판단) 3건이며 전부 트리거가 지정돼 있다. 그리고 앞선 항목(2026-07-29 Story 12-2 마감)의 마지막 문장 "epic-12는 in-progress 유지, 남은 12-3~12-6은 새 런으로 이어간다"는 그 시점 기준이고 **지금은 무효**다 - 12-3~12-6은 그 뒤 전부 done이 됐고 epic-12와 회고도 done이다(커밋 b4b9df1). 경위 줄은 지우지 않고 이 줄로 정정한다.
+  2026-07-29 Story 12-2 사람 인수 마감 -12-2 backlog→done을 **사람이 직접** 기록한다(엔진이 아님). 경위: 12-2는 bmad-loop run 20260728-203648-2fc6에서 dev 1패스 + 후속 코드리뷰 2패스까지 정상 완료했으나 자동 이월·롤백됐다. 원인은 코드가 아니라 환경이었다(대장 #191) - 그 리뷰 세션이 공유 api/.venv에서 `pip uninstall -y -q websockets`를 실행하고 원복하지 않아 [verify]의 첫 게이트(api pytest)가 죽었고, 엔진의 판정 분기가 `_verify_review(task).ok`(=status done + sprint done + verify 통과)라 검증이 빨간불이면 이월된다(engine.py:1631 실측). 같은 상황에서 12-1은 검증이 초록이라 review-budget-committed 경로로 커밋됐다 - 두 스토리의 유일한 차이가 그것이었고, 이월 사유 문구("review did not converge within budget")는 원인을 가린다(대장 #191에 함께 기록). 환경 복구(websockets 15.0.1) 후 보존 브랜치 attempt-preserve/20260728-203648-2fc6-808e3ab1(3커밋 +1,289줄)을 재검증하니 5개 게이트가 전부 초록이었고, 재실행한 dev 세션도 같은 사실을 스스로 발견해 "이미 3패스를 거친 구현을 다시 만들면 중복 작업"이라며 CRITICAL escalation으로 멈췄다(4.2M 토큰). 사용자가 A-1(보존본 채택)을 선택해 커밋 7579712(코드)+43b1c7d(대장 #193~#197 번호충돌 정리 병합)로 얹었다. 그 뒤 `bmad-loop resolve --resume`을 시도했으나 **resolve는 재구동 전에 베이스라인으로 롤백하는 구조**라 얹은 커밋 3개가 지워졌다(reflog·attempt-preserve/20260729-001903-e94c-43b1c7d8로 복구함) - 엔진에는 "이미 있는 작업을 인수하는" 경로가 없다. 그래서 런을 닫고 사람이 이 줄로 마감한다. 검증 실측: api pytest 209 passed / web lint 0 / web vitest 239 passed / flutter analyze 0 issues / flutter test 80 passed / scripts/check_migrations.py 게이트 통과(0023 적용 성공 + 동적 프로브 3종 확인). 스펙 파일 frontmatter는 이미 status: done이었고 이 파일만 backlog로 남아 있어 둘을 일치시킨 것이다. epic-12는 in-progress 유지, 남은 12-3~12-6은 새 런으로 이어간다.
+  2026-07-28 Story 12.1 완료 - 12-1-멱등키-마이그레이션 backlog→done, epic-12 backlog→in-progress(Epic 11에서 스토리 전량 done인데 에픽 전이가 빠졌던 것과 같은 누락을 반복하지 않도록 이번엔 스토리와 함께 전이). 신규 supabase/migrations/0022_chat_idempotency_key.sql - chat_messages에 nullable client_message_id uuid + UNIQUE(room_id, client_message_id), additive만이고 백필·기본값 없음, 재적용 멱등 가드 포함. 신규 api/tests/integration/test_chat_idempotency_real_db.py - 후속 리뷰 패치 후 13건(중복 재전송 수렴, 커밋 경계 넘는 재전송 수렴, ON CONFLICT 없는 평범한 중복은 23505로 거부, 컬럼·제약 이름과 정의 직접 단언, 방 단위 유니크 범위, NULL 다건 허용, NULL이면 중복이 막히지 않는다는 한계 고정, authenticated 롤로 신규 컬럼 쓰기·읽기, 0010 2000자 경계 양쪽, 0003 빈본문, 0016 트리거 짝 확인, additive NULL 읽기). 검증 - check_migrations 게이트 통과, 실DB 통합 13 passed. 후속 코드리뷰(4레이어 독립 세션)에서 patch 12건 적용, defer 3건은 docs/tech-debt.md #186~#188로 등재.
+  2026-07-28 Epic 11 회고 완료 - epic-11 backlog→done(스토리 6건 전량 done인데 에픽 전이가 안 돼 있던 것 정정), epic-11-retrospective optional→done. 회고 문서 epic-11-retro-2026-07-28.md 신규. action_items 절을 이 파일에 처음 신설(Epic 10 3건 + Epic 11 8건, 정본은 여전히 docs/tech-debt.md). 회고 직전에 전수 검사를 실제로 돌렸다 - 총 617건 중 615 통과. 내역: 정식 Playwright 스위트 22 passed 0 failed 14 skipped(스킵은 nav-interactions가 mobile 전용, image-fallback이 desktop 전용인 의도된 프로젝트 가드), 이번 감사용 신규 설계 E2E 31건 전부 통과(폰트 self-host 브라우저 실측으로 jsdelivr 요청 0건과 fonts.check 400/800 true, 상세 진입 시 view_count가 psql 실측으로 정확히 +1 그리고 목록·검색만 열면 불변, 내비 8케이스와 히어로 5케이스, 전반 회귀 7케이스, 등록→검색노출→수정→양쪽계정 채팅송수신→구매완료 쓰기왕복 5케이스 - 쓰기왕복은 9개 지표를 시작·종료에 세어 전부 일치로 원복 증명), web vitest 239 passed, web lint 0, api pytest 단위 206 passed 44 skipped, flutter test 80 passed. 유일한 red는 api 실DB 통합(CI api-db 잡을 일회용 pgvector 컨테이너로 재현) 37 passed 2 failed. 실패 2건 모두 제품 결함이 아니라 테스트-사양 불일치 - (1)test_anon_can_select_whitelisted_columns_but_view_count_still_denied는 11-1이 심은 "anon은 view_count를 못 읽는다" 고정 테스트인데 11-4의 마이그 0021이 그 권한을 의도적으로 열어(#134 해소) 무효화됐고 아무도 갱신하지 않았다 - 11-4가 followup_review_recommended false(점수 4<5)로 후속 리뷰가 스킵된 스토리라 #179가 예고한 위험이 실제 피해로 나타난 사례, 대장 #180 신규 등재. (2)test_anon_can_read_joined_at_despite_profiles_rls는 이미 대장 #138로 등재된 기존 red. 그리고 더 큰 구조적 발견 - tests.yml이 develop·main push와 PR에서만 돌아 test/bmad-loop 브랜치(origin보다 14커밋 앞섬)의 Epic 11 작업은 CI를 한 번도 지나지 않았고, 동시에 develop CI는 2026-07-22부터 6일째 red인데 아무도 보지 않았다(GitHub Actions run 29934287931 로그로 확인, 같은 #138 테스트). 대장 #181 신규 등재. 임시 검증 코드(web/e2e-adhoc/, playwright.adhoc.config.ts)는 커밋하지 않고 삭제했으며 보존본만 세션 scratchpad에 남겼다 - 상시 승격 여부는 대장 #182로 사용자 판단 대기.
+  2026-07-22 Story 10.7 완료 - 10-7 done, epic-10 done. supabase/seed-local/03_trust_demo.sql 수정 - 대표 all-trust 2행에 파노라마선루프를 멱등 append(존재검사, 기존 게이팅·행선택 술어 보존), 로컬 psql로 2회 연속 실행해 재실행 시 UPDATE 0건 및 값 동일함을 확인. web/src/components/listings/__tests__/ListingCard.test.ts 신규 3건 - TrustAttributes(card) 노드가 옵션칩 컨테이너와 별개로 마운트되는지, 칩 순서가 topOptions(options,4)와 일치해 희소옵션이 최상단인지, 옵션 없음과 신뢰속성 NULL 분기를 조립 트리로 단언. red green 실측 완료 - ListingCard의 TrustAttributes 마운트 줄을 임시 제거하자 3건 전부 red, 원복 후 green. topOptions 호출을 slice로 바꾸자 순서 단언 2건 red, 원복 후 green. 실험 후 ListingCard.tsx는 수정 전과 바이트 동일함을 diff로 확인. 검증 - web lint 0경고, tsc noEmit 0에러, vitest 212 passed(기존 205에서 7건 증가 — ListingCard.test 3건 + detailSectionsAssembly.test 4건; 최초 초안의 208은 detailSectionsAssembly 4건 누락이라 코드리뷰 후 실측 정정), next build 통과, api pytest 206 passed 22 skipped(회귀 없음), api tests/integration 17 passed(로컬 DB 대상), check_migrations 게이트 통과(신규 마이그 없음, 무변). 브라우저 실측(로컬 Supabase, buyer 계정 로그인) - 대표 all-trust 매물(싼타페 TM, 아반떼 CN7) 카드와 상세 양쪽에서 초록 체크 무사고 1인소유 비흡연 배지 3개와 판매자 제공 정보 면책이 한 몸으로 표시되고 옵션칩 최상단이 파노라마선루프임을 확인. 상세는 신뢰정보(긴 면책) 다음에 차량정보 다음에 옵션 다음에 판매자정보 순서로 별개 섹션임을 확인. 사고 단순교환 NULL 세 상태도 카드에서 서로 구분됨을 스크린샷으로 확인 - 무사고는 초록 체크 배지, 사고와 단순교환은 체크 없는 중립칩, NULL은 신뢰블록 자체가 렌더되지 않고 빈 여백도 남지 않음. anon 비로그인 조회는 curl로 확인한 결과 신뢰속성 3컬럼이 전혀 노출되지 않음 - 이미 대장 109에 등재된 anon GRANT 미승인 상태 그대로이며 이 스토리가 만든 결함이 아니고 신규 등재하지 않음, 옵션 칩은 anon에게도 정상 노출됨을 curl로 확인. 390px 좁은 폭에서 카드 옵션칩이 개별 말줄임으로 잘리고 외 N개 요약이 없음을 스크린샷으로 재확인했으나 이미 대장 114에 등재돼 있어 번호만 참조하고 UI는 고치지 않음. 상세의 사고이력 이중표시는 대장 112, 커밋 E2E 부재는 대장 106, 이 파일의 인용부호 취약은 대장 115로 그대로 참조. 로컬 스택의 authenticated 롤 테이블 GRANT 공백을 재확인(대장 120과 동일 패턴) - 검증 진행을 위해 세션 전용 grant로 우회(마이그레이션 아님, 커밋 안 됨).
+# 이전: 2026-07-22 (Story 10.6 완료 — 10-6-판매자-정보-섹션: done, epic-10: in-progress. `supabase/migrations/0019_seller_public_summary.sql`(신규) — SECURITY DEFINER 함수 `get_seller_public_summary(p_seller_id, p_exclude_listing_id)`가 가입 시점(profiles.created_at, RLS로 구매자에겐 막혀 있음)과 "다른 on_sale 매물 수(현재 매물 제외)"를 한 번에 구함 — FR11 필터(`status=''on_sale''`)를 함수 안에 강제(B9), 0007 관례(security definer·search_path 고정) 그대로. `grant execute … to anon, authenticated`만 하고 테이블 GRANT는 넓히지 않음(§9.3(b) 승인 게이트 회피). `ListingDetailSections.tsx` — `SellerInfoSection` + 순수 헬퍼 `formatSellerJoinDate`(→"YYYY년 M월 가입")·`sellerOtherListingsLabel`(→"N건"/"없어요") 추가, 값이 하나도 없으면 섹션 자체를 숨김(①신뢰정보와 동일 관례). `InquiryCta.tsx`(신규 `use client`) — 데스크톱 sticky aside + 모바일 하단 고정 바 **두 배치를 한 컴포넌트가 함께 렌더**, `busy`/`error` state를 최상위에 한 번만 둬서 공유(대장 #82 종결). CTA 3분기(anon/owner/inquiry) 판정은 `page.tsx`가 서버에서 `mode`로 계산해 전달. `InquiryButton.tsx` 삭제(유일 사용처가 흡수됨, A3 고아 제거). `page.tsx` — RPC 호출 + `SellerInfoSection` 배선 + 기존 두 CTA 배치를 `<InquiryCta>` 1개로 교체. `__tests__/sellerInfo.test.ts`(신규 11건) — 두 순수 헬퍼의 0건/N건·날짜포맷·null/undefined 분기. `docs/tech-debt.md` `#82`를 `✅ 해소`로 닫음(요약 대시보드 24→23). 검증: `web lint`(0 경고)·`tsc --noEmit`(0 에러)·`vitest`(201 passed — 신규 11건 포함, red/green 실측: 날짜 M월 오프바이원·count<0 분기로 되돌리자 3건 red, 원복 시 201/201 green)·`next build` 통과·`check_migrations.py` 게이트 통과(정적+동적, `0019` 포함 20개 파일 — anon 컬럼 GRANT·차단 프로브 그대로 green). DB 실측(로컬 Supabase, `set local role anon`으로 RPC 호출) — 현재 매물 제외 on_sale 1건 카운트 확인 → 같은 판매자에 sold 매물을 하나 더 추가해도 카운트 불변 확인(FR11 red/green, sold가 안 새는 것을 실측). Playwright 브라우저 실측(로컬 Supabase, 시딩 103건) — anon 열람에서 판매자정보(닉네임·가입월·N건) 정상 표시, buyer@test.com 로그인 열람에서도 동일 표시, 데스크톱(1280px)에서 `chat_rooms` 조회를 일시 차단해 문의하기 에러를 유발한 뒤 390px로 리사이즈 → **모바일 하단 바에 동일 에러 문구가 그대로 보임**(#82 실측 확인, 스크린샷). ⚠️ 이 로컬 Supabase 스택은 `authenticated` 롤의 테이블 기본 GRANT가 이번 세션의 `db reset`으로 초기화되며 비어 있었다(레포 마이그레이션 어디에도 authenticated 테이블 전체 GRANT가 없고 원래 플랫폼 기본 권한에 암묵 의존하던 자리 — 0011 주석과 같은 성격, 이 스토리 이전부터 있던 환경 갭). 브라우저 검증을 위해 세션 전용으로 `grant select/insert/update/delete`를 authenticated에 직접 실행(마이그레이션 아님, 커밋 안 됨) — 실제 운영 Supabase는 플랫폼 기본 권한이 있어 이 갭이 없다.)'
+# 이전: 2026-07-22 (Story 10.5 코드리뷰 패치 5건 + 실측 1건 반영 — 10-5-찜-wishlist: done 유지, epic-10: in-progress. P1: `RemoveWishButton.tsx`(신규 `use client`) — 판매완료 회색 타일에는 찜 해제 수단이 없어(WishButton은 on_sale 카드에만 있음) 영구 클러터였던 것을, `wishlists` delete + `router.refresh()`로 해제 가능하게(연타 차단·세션만료 시 로그인 이동 포함). `BlockedWishTile`에 배선. P2: `(user)/wishlist/page.tsx` — on_sale 그룹을 통째로 먼저·판매완료 그룹을 나중에 렌더해 `fetchWishlist`의 created_at desc 정렬이 그룹 경계에서 깨지던 문제(방금 찜한 sold가 오래전 on_sale보다 아래로 밀림) — `entries`를 원래 순서대로 한 번만 순회하며 그 자리에서 카드/타일을 고르도록 재작성(`attachCoverImages`는 on_sale embed만 모아 한 번에 호출 후 id→ListingCardData Map으로 순서 보존). P3: `WishButton.tsx` — `authed`는 서버 렌더 시점 값이라 세션이 그 사이 만료되면 `applyToggle`의 `getUser()`가 null → "잠시 후 다시" 토스트만 뜨고 진짜 원인(재로그인 필요)을 숨기던 문제 — user가 null이면 롤백 후 토스트 없이 `/login?redirectedFrom=<경로+wish=id>`로 이동(다른 실제 에러는 토스트 유지). P4: `wishlist.ts`의 `isWishedListingBlocked`를 denylist(`status===sold`)에서 allowlist(`status!==on_sale`)로 전환 — status가 select 드리프트로 undefined거나 미래에 3번째 상태가 생기면 "정상 클릭 카드"로 새던 것을 기본 차단으로. P5: `docs/conventions.md` §6 이미지 축 소비처 목록에 `/wishlist` 페이지(on_sale 찜 매물 id만 `attachCoverImages`에 넘김) 한 줄 등재(규칙7). 실측: `docs/tech-debt.md` #117의 "하드삭제 시 cascade로 찜 행이 함께 사라진다"는 선언이 측정 기록 없이 적혀 있던 것을 로컬 Supabase 트랜잭션으로 실측(전용 매물 1건 insert→찜→삭제 전 1행/삭제 후 0행 확인→rollback) 후 #117에 반영. 검증: `web lint`(0 경고)·`vitest`(190 passed — P4 red/green 실측: allowlist를 denylist로 되돌리면 신규 2건 red, 원복 시 190/190 green)·`next build`·`check_migrations.py` 게이트 전부 통과. 브라우저 실측(로컬 Supabase, buyer@test.com): 판매완료 타일 "찜 목록에서 제거" 클릭 → 즉시 목록에서 사라짐 확인(P1), 최근에 찜한 sold 타일이 더 오래전 찜한 on_sale 카드보다 위에 렌더됨을 확인(P2, created_at desc 그룹경계 없이 보존), 쿠키 삭제로 세션 만료를 재현해 클릭 시 토스트 없이 `/login?redirectedFrom=...wish=...`로 이동함을 확인(P3, DB에 잘못된 행 안 생김).)'
+# 이전: 2026-07-22 (Story 10.5 완료 — 10-5-찜-wishlist: done, epic-10: in-progress. `supabase/migrations/0018_wishlists.sql`(신규) — `wishlists(user_id, listing_id, created_at, PK(user_id,listing_id))` + `listing_id` 인덱스 + 본인 전용 RLS 3정책(select/insert/delete, 로그인 전용·GRANT 미명시, epic 지정 스키마 그대로). `web/src/lib/wishlist.ts`(신규) — `fetchWishedListingIds`(카드 초기 오버레이)·`fetchWishlist`(목록 페이지, listings 임베드 조인)·순수 `isWishedListingBlocked`(embed=null 또는 status=sold ⟹ true)·`buildWishedIdSet`(순수, Set 구성). `WishButton.tsx`(신규 `use client`) — 낙관적 토글(누르면 즉시 채워짐→서버 확정, 실패 시 롤백+`role="status"` 조용한 토스트)·비로그인 게이트(`/login?redirectedFrom=<경로+wish=id>`)·로그인 복귀 시 `?wish=` 자동반영(감지/URL정리 effect와 실행 effect를 분리 — 한 effect에서 다 하면 자신이 부르는 `router.replace`가 자기 자신을 재실행시켜 예정된 토글이 cleanup으로 취소되는 버그를 실브라우저로 재현·수정)·`aria-pressed`+라벨전환·44×44 히트영역·진행중 disabled로 연타 차단. `ListingCard.tsx` — 죽은 하트 자리표시자를 `<WishButton>`으로 교체, sibling props `wished?`·`authed?` 추가(`ListingCardData`엔 미추가, 계약 오염 방지). `page.tsx`(홈)·`search/page.tsx` — 로그인 시 찜 오버레이 조회 후 카드에 주입(search는 anon 분기). `(user)/wishlist/page.tsx`(신규) — 찜 목록(최신순), on_sale은 카드+`attachCoverImages`, 판매완료(sold 또는 RLS로 embed=null)는 회색 비활성 타일(상세 링크 없음), 0건은 EmptyState. `proxy.ts`의 `PROTECTED_PREFIXES`에 `/wishlist` 추가. `AppHeader.tsx`에 로그인 시 "찜" 링크. `web/src/lib/__tests__/wishlist.test.ts`(신규 6건) — `isWishedListingBlocked` 3상태·`buildWishedIdSet`. 대장 `#89` 판단 완료 기록(현행 유지 — 재시드는 데모 리셋 전용이라 찜 유실 무해, 고정id 전환은 교차 리팩터라 범위 밖) + 신규 `#116`(공용 토스트 인프라 부재, 2번째 소비처 트리거)·`#117`(찜 목록 "삭제된 매물" 배지 구조적 도달불가 — cascade+PK 설계상 필연, epic 스키마 준수의 대가) 등재. 검증: `web lint`(0 경고)·`vitest`(188 passed, `isWishedListingBlocked` red/green 실측 — 판정식 뒤집어 2건 red 확인 후 원복 green)·`next build` 통과·`check_migrations.py` 게이트 통과(정적+동적, `0018` 포함 19개 파일)·RLS red/green **실측**(로컬 Supabase, MCP 대신 직접 psql — 사용자A 찜을 사용자B 컨텍스트로 조회 시 0행 확인 → `select_own` 정책을 `using(true)`로 임시 무력화한 대조군에서 1행 누수 확인 → rollback으로 원복)·Playwright 실브라우저 E2E(로그인 buyer@test.com, 찜 토글 aria-pressed/라벨 전환 확인, 네트워크 abort로 유도한 insert 실패→롤백+토스트 문구 확인, 비로그인 클릭→`/login?redirectedFrom=...wish=...` 이동 확인, 로그인 복귀 후 `?wish=` 자동반영+URL 정리 확인, `/wishlist` 판매완료 회색 타일 2종(타인소유 RLS차단=embed null/본인소유 sold=제목표시) 확인, `/wishlist` 빈 상태 문구 확인, 390px 가로스크롤 없음 확인) — ⚠️ Playwright의 native `.click()`이 이 버튼에서 간헐적으로 무동작해(기존 대장 `#88`과 동일 패턴, 이 스토리가 만든 결함 아님) React 핸들러 직접 호출로 우회 확인.)'
+# 이전: 2026-07-22 (Story 10.3 완료 — 10-3-옵션-통제어휘-우선순위-상수-저장구조-정비: done, epic-10: in-progress. `docs/conventions.md` §4에 `options` 필드 행 + 신규 §11(옵션 통제어휘·우선순위, 값의 정본) 추가. `web/src/lib/options.ts`(신규) — 시드 71개 distinct 옵션명 전량을 5개 엔카 카테고리(안전·편의/멀티미디어·시트·외관/내장·기타옵션)로 수록한 `CONTROLLED_OPTIONS`·`COMMON_OPTIONS`(18개 보편)·`OPTION_PRIORITY`(36개 희소 high)·`optionPriority`·`topOptions`(카드 상위 3~4, 희소우선·보편fallback은 정렬만으로 자연 충족)·`groupByCategory`(상세 전량, 통제어휘 밖은 기타옵션 폴백)·`partitionOptions`(쓰기 검증 known/unknown)·`parseOptionsInput`/`serializeOptions`(줄바꿈 구분 순수함수, 대장 #11 해소). `ListingCard.tsx`에 `options` 필드+카드 옵션 칩(flex-nowrap+칩별 truncate로 D5 준수, 세로 접힘 없음). `api/schemas/ai.py`의 `ListingCard`+`graph/listing_cards.py`의 `SELECT_COLUMNS`(12필드로 확장)+튜플 매핑(계약-외 값 정규화: 리스트 아니거나 원소 비문자열이면 None). app `listing.dart`(`ListingCardData.options` 타입 파리티+`_asStringList` 방어 파싱, 위젯 렌더는 Epic 16)+`listings_repository.dart`(`fetchListings` select 파리티). 목록 select 3곳(홈 `page.tsx`·`/search`·app `fetchListings`)에 `options` 추가 — anon 이미 GRANT돼 있어 로그인 분기 불필요(10.1 신뢰컬럼과 다른 점). `ListingDetailSections.tsx`의 `OptionsSection`을 `groupByCategory`로 카테고리 그룹핑 렌더(전량, 빈 카테고리 생략). `SellForm.tsx` — 옵션 입력을 쉼표 join/split에서 줄바꿈(`textarea`+`parseOptionsInput`/`serializeOptions`)으로 전환하고, 제출 시 `partitionOptions`로 통제어휘 밖 이름이 있으면 차단+한국어 안내(조용한 드롭 금지). `web/src/lib/__tests__/options.test.ts`(신규, 18건) — 커버리지(시드 distinct 전량 포함 단언)·`topOptions`·`groupByCategory`·`partitionOptions`·#11 라운드트립. 대장 `#11`을 `✅ 해소`로 닫음(web 한정) + 신규 `#113`(app `listing_form.dart`는 같은 결함 그대로, Epic 16 트리거로 이관, B8). api 기존 픽스처(`test_listing_cards.py`·`test_sql_rag_node.py`·`test_doc_rag_node.py`·`test_demo_acceptance.py`)를 12컬럼 튜플로 갱신 + options 정규화 신규 3건 추가. 검증: `#11` red/green 실측(parseOptionsInput을 쉼표 split로 되돌리자 라운드트립 3건 red, 원복 시 18/18 green) · 커버리지 red/green 실측(CONTROLLED_OPTIONS에서 V2L 제거 시 커버리지 1건 red, 원복 시 18/18 green) · web lint/tsc/vitest(157건)/build 전부 통과 · `api pytest`(206 passed, 17 skipped 기존과 동일) · `flutter analyze`(0 issues) · `flutter test`(80 passed) 전부 통과.)'
+# 이전: 2026-07-22 (Story 10.2 코드리뷰 패치 5건 반영 — 10-2-신뢰-뱃지-표시-면책-라벨: done 유지, epic-10: in-progress. P1: 면책-뱃지 결속을 데이터 계층(`getTrustDisplay`)뿐 아니라 **렌더 계층**에서도 검사하는 테스트를 추가(`TrustAttributes` 컴포넌트를 함수로 직접 호출해 반환 React 엘리먼트 트리를 순회, 뱃지 라벨이 있으면 면책 문자열도 트리에 있는지 단언) — 컴포넌트 JSX에서 disclaimer `<span>/<p>`만 지우는 경로(데이터 계층은 안 걸림)를 이걸로 잡는다. 헤더 주석의 "코드상 존재할 수 없다"는 과장을 "호출부 조립 경로는 없다 + 내부 결속은 두 계층 테스트로 고정한다"로 정정. P2: `03_trust_demo.sql`이 `status`를 안 봐서 sold 행에 뱃지가 심길 수 있던 문제 — 세 SELECT 전부에 `status=on_sale` 추가 + 후보 부족 시 RAISE EXCEPTION 가드 신설. P3: `seed.sql`의 신뢰속성 UPDATE 4건에 `GET DIAGNOSTICS`로 실제 갱신 행수를 확인해 1건이 아니면 RAISE EXCEPTION(INSERT 문자열 드리프트 시 조용한 0행 방지). P4: `ListingGallery.tsx`의 썸네일 `scrollIntoView`가 최초 마운트(index=0)에도 발화해 페이지 스크롤 점프를 일으키던 문제 — `hasMountedRef`로 첫 effect 1회를 건너뛰고 실제 index 변경(화살표·썸네일 클릭)에만 스크롤. P5: `title` 속성이 "hover/focus/tap 어느 쪽으로든" 복구한다던 과장(실제로는 마우스 hover만 — `<span>`이 non-focusable) — `ListingDetailSections.tsx` 주석과 `docs/tech-debt.md` #79 종결 문구를 실제 커버리지로 정정. 검증: `TrustAttributes.test.ts` 46건(데이터 계층 red/green 기존대로 + 렌더 계층 신규 12건 red/green 실측 — emit 제거 시 12건 red, 원복 시 134건 전부 green)·web lint/tsc/build 통과·`03_trust_demo.sql` 로컬 psql 2회 실행(멱등, 대상 4건 전부 on_sale 확인) + 게이트 위반 시뮬레이션(트랜잭션 롤백, RAISE EXCEPTION 확인)·`seed.sql`은 트랜잭션+ROLLBACK으로 정상 경로 확인 + 모델명 드리프트 시뮬레이션으로 가드 RAISE EXCEPTION 확인(둘 다 부작용 없음)·`ListingGallery` 초기 마운트 스크롤 미발생 + 이후 네비게이션 스크롤 정상 브라우저 실측.)'
+# 이전: 2026-07-22 (Story 10.2 완료 — 10-2-신뢰-뱃지-표시-면책-라벨: done, epic-10: in-progress. `TrustAttributes.tsx`(신규) — 뱃지/상태칩과 "판매자 제공 정보" 면책을 한 컴포넌트가 같은 반환값으로 emit(B9, 결속을 문법으로 강제). `ListingCard.tsx` 슬롯②·`ListingDetailSections.tsx`의 신규 `TrustInfoSection` 슬롯①에 배선. 상세 select를 `search/page.tsx`와 같은 로그인 분기로 확장(anon은 3컬럼 미조회, GRANT 미승인 유지 — 대장 #109 갱신). `ListingGallery.tsx`에 aria-live 고지 + 썸네일 scrollIntoView, `Field`에 title 복구로 대장 `#79`(갤러리 접근성 3종) 해소. `supabase/seed.sql`·신규 `supabase/seed-local/03_trust_demo.sql`에 대표 4건(무사고+1인소유+비흡연 2건·사고 1건·단순교환 1건) additive 시드, `scripts/seed-local.sh`에 실행 단계 편입. 대장 `#108` 판정 기록((a) 시드값만, 폼 UI는 Epic 10 밖)·`#111` 갱신(상세 select 4번째 소비처로 위험범위 확대, 가드는 계속 defer). 검증: `TrustAttributes.test.ts` 25건(면책-결속 red/green 실측 — emit 제거 시 14건 red, 원복 시 121건 전부 green)·web lint/tsc/build 통과·`03_trust_demo.sql` 로컬 psql 적용 확인(멱등, 재실행 후 대상 행수 불변)·seed.sql은 트랜잭션+ROLLBACK으로 대표 4건 삽입 확인(부작용 없음).)'
+# 이전: 2026-07-22 (Story 10.1 완료 — 10-1-신뢰속성-스키마-락스텝-반영: done, epic-10: in-progress. `0017_listings_trust_attributes.sql`(accident_status·is_single_owner·is_non_smoker nullable+CHECK, additive)을 추가하고 conventions.md §4.1 락스텝(문서→web `ListingCard.tsx`→api `schemas/ai.py`+`listing_cards.py` `SELECT_COLUMNS`+`sql_guard.py` `ALLOWED_COLUMNS`→app `listing.dart`, 목록 select 문자열 3곳)을 한 번에 반영. 대장 `#67`(카드 meta 연료 누락) 해소, 신규 `#108`(쓰기 UI 부재)·`#109`(anon GRANT 미승인) 등재. 코드리뷰 11건(P1~P11) 반영: `rows_to_cards` 컬럼폭 불일치 시 IndexError 대신 SqlGuardError(P1)·accident_status 도메인 밖 값 None 강등(P2)·마이그 `add column if not exists`로 재적용 안전화(P3)·app `listing_card.dart` 위젯에 fuel 실제 렌더(P4)·프롬프트 규칙 7 양방향(accident_free=false)+bool컬럼 필터금지 지시 추가(P5)·`search/page.tsx` anon 경로 신뢰속성 3필드 명시 null 정규화(P6)·web 카드 fuel typeof 가드(P7)·conventions §4.1에 select 3곳·anon GRANT 승인 규칙 추가(P8)·`tests.yml` paths에 `supabase/migrations/**` 추가+api-db 잡 이름·주석 갱신(P9)·`test_trust_attributes_real_db.py` 전역 `_SELLER` 제거+SAVEPOINT로 재설계(P10)·이 파일 갱신(P11). 검증: `check_migrations.py`·`pytest -q`·`pytest tests/integration -q`(TEST_DATABASE_URL)·web lint/tsc/vitest/build·`flutter test` 전부 통과.)'
+# 이전: 2026-07-21 (**Epic 9 회고 완료 — epic-9: done**. 회고 문서 `_bmad-output/implementation-artifacts/epic-9-retro-2026-07-21.md`. Epic 8 회고 약속 5건 중 4건 완료·A5(실측 없이 선언 금지)는 진행중 판정(뒤집힌 주장 4건이 있었으나 **전부 스스로/코드리뷰가 잡아 산출물에 남지 않았다** — Epic 8과 달라진 점). **중대 발견 1건 = 마이그 번호**: 에픽 문서 본문이 미래 스토리에 이미 소진된 번호(10.1→0013 등)를 지시하고 있었고 정정은 각주에만 있었다(8.5 삽입 때 9.1이 겪은 사고의 반복) → **표·본문에서 숫자를 걷어내고 "착수 시 파일 목록의 다음 빈 번호"로 교체**(10.1·11.1·12.1·12.2·12.5·14.1), 준수는 8.6 CI 게이트가 본다(B9). 회고 액션 이행: A2 `#56` 재평가 완료(9.0 공개 버킷 전환으로 "회수 불가"→"UI 없음"으로 성격 변경, Epic 16.2로 이관) · A3 대장 합계 줄 삭제(세 번 연속 낡음 — 세는 명령으로 대체) · A4 `#67`→10.1 · `#79`→10.2 · `#82`→10.6 인수조건 체크박스로 실제 심음(B5) · A5 "검사가 잡는지 증명"(변이 심어 red 확인)을 10.1·10.2·10.5 인수조건에 심음. Epic 10 계획 자체를 바꿔야 할 발견은 없음 — 상세 골격의 빈 슬롯이 실재하므로 의존성 충족.)'
 # 이전: 2026-07-21 (Story 9.7 스토리 생성 — ready-for-dev. 착수 전 원격 실측으로 "100건 전량 시딩"이 문자 그대로는 불가능함을 확인(SEARCH_TERMS가 on_sale 95건 중 16건만 매칭) → 범위 선택지 A/B/C를 스토리에 명시하고 사용자 결정 대기. #54 마이그(0015)·#27 재실행 측정·#73/#80/#83 재측정을 AC로 심음)
 # 이전: 2026-07-20 (Story 9.6 코드리뷰 반영 완료 — done. Decision 2·Patch 16 적용, CI에 실DB FR11 게이트 신설하고 우회를 잡는 것까지 증명. 대장 #85·#86·#87 신규 등재)
 project: bmad-encar-demo
@@ -132,68 +146,400 @@ development_status:
   epic-9-retrospective: done
 
   # --- Epic 10: 신뢰속성·옵션·찜·판매자 정보 ---
-  epic-10: backlog
-  10-1-신뢰속성-스키마-락스텝-반영: backlog
-  10-2-신뢰-뱃지-표시-면책-라벨: backlog
-  10-3-옵션-통제어휘-우선순위-상수-저장구조-정비: backlog
-  10-4-옵션-하이브리드-피커-등록: backlog
-  10-5-찜-wishlist: backlog
-  10-6-판매자-정보-섹션: backlog
-  10-7-신뢰속성-옵션-통합-검증-sm-c: backlog
-  epic-10-retrospective: optional
+  epic-10: done
+  10-1-신뢰속성-스키마-락스텝-반영: done
+  10-2-신뢰-뱃지-표시-면책-라벨: done
+  10-3-옵션-통제어휘-우선순위-상수-저장구조-정비: done
+  10-4-옵션-하이브리드-피커-등록: done
+  10-5-찜-wishlist: done
+  10-6-판매자-정보-섹션: done
+  10-7-신뢰속성-옵션-통합-검증-sm-c: done
+  epic-10-retrospective: done
 
   # --- Epic 11: AI 히어로 랜딩 + 내비 ---
-  epic-11: backlog
-  11-0-pretendard-self-host-전환: backlog
-  11-1-view-count-스키마-increment-rpc-하드닝: backlog
-  11-2-상단-내비-재구성: backlog
-  11-3-ai-히어로-랜딩-히어로-차종-칩: backlog
-  11-4-인기-최신-매물-그리드: backlog
-  11-5-반응형-뷰포트-e2e-감사-sm-b: backlog
-  epic-11-retrospective: optional
+  epic-11: done
+  11-0-pretendard-self-host-전환: done
+  11-1-view-count-스키마-increment-rpc-하드닝: done
+  11-2-상단-내비-재구성: done
+  11-3-ai-히어로-랜딩-히어로-차종-칩: done
+  11-4-인기-최신-매물-그리드: done
+  11-5-반응형-뷰포트-e2e-감사-sm-b: done
+  epic-11-retrospective: done
 
   # --- Epic 12: 실시간 문의 채팅 ---
-  epic-12: backlog
-  12-1-멱등키-마이그레이션: backlog
-  12-2-realtime-broadcast-참가자-인가-rls: backlog
-  12-3-실시간-송수신-전환-폴링-제거: backlog
-  12-4-재연결-배너-갭-보정: backlog
-  12-5-안읽음-배지-방-목록-정렬: backlog
-  12-6-실시간-채팅-검증-sm-e: backlog
-  epic-12-retrospective: optional
+  epic-12: done
+  12-1-멱등키-마이그레이션: done
+  12-2-realtime-broadcast-참가자-인가-rls: done
+  12-3-실시간-송수신-전환-폴링-제거: done
+  12-4-재연결-배너-갭-보정: done
+  12-5-안읽음-배지-방-목록-정렬: done
+  12-6-실시간-채팅-검증-sm-e: done
+  epic-12-retrospective: done
 
   # --- Epic 13: AI 검색 RAG 고도화 ---
-  epic-13: backlog
-  13-1-sql-guard-하이브리드-정비-g2-baseline: backlog
-  13-2-4분기-라우팅: backlog
-  13-3-하이브리드-검색-sql-벡터: backlog
-  13-4-조건-좁혀-되묻기-clarify: backlog
-  13-5-부드러운-거절: backlog
-  13-6-가이드-문서-content-활용-거리-컷오프: backlog
-  13-7-langsmith-트레이싱: backlog
-  13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b: backlog
-  epic-13-retrospective: optional
+  # 2026-08-05 회고: backlog → in-progress. 스토리 9건은 전량 done이지만 **에픽을 닫지 않는다** —
+  # 같은 회고가 13-10·13-11을 새로 만들었기 때문이다(닫은 에픽에 일감을 넣으면 DW-655가 진단한
+  # "trigger가 실재하지 않는 곳을 가리킨다"가 세 번째로 재발한다). 13-11 완료 시 done으로 전이한다.
+  # 회고는 재실행하지 않는다 — 이 회고가 두 스토리를 만들어낸 주체라 재실행할 안건이 없다.
+  # 2026-08-06 done으로 전이. 위 조건("13-11 완료 시")이 충족됐다 — 13-10(4016420)·13-11(0258f00)이
+  # 손으로 완주했고 커밋이 HEAD에 있다. ⚠️ 그런데 그 두 스토리는 **커밋만 되고 이 장부는 backlog로
+  # 남아 있었다**(에픽 14 착수 점검에서 발견). 손으로 돌린 스토리는 엔진이 장부를 안 닫는다 —
+  # "안 한 것"과 "했는지 모르는 것"이 구별되지 않는 상태였다(CLAUDE.md B8).
+  epic-13: done
+  13-1-sql-guard-하이브리드-정비-g2-baseline: done
+  13-2-4분기-라우팅: done
+  13-3-하이브리드-검색-sql-벡터: done
+  13-4-조건-좁혀-되묻기-clarify: done
+  13-5-부드러운-거절: done
+  13-6-가이드-문서-content-활용-거리-컷오프: done
+  13-7-langsmith-트레이싱: done
+  13-8-rag-exit-gate-검증-sm-f-sm-g-g2-cm-b: done
+  # 13-9는 13-8 이후에 착수한다(라우팅을 바꾸면 2026-08-02 기준선의 기준이 흐려진다 — DW-611·612).
+  13-9-라우팅-안정화-최상급-교체요청-맥락재작성: done
+  # 2026-08-05 회고가 신설. 열린 AI 후속 항목들의 trigger가 실재하는 스토리를 가리키도록 "갈 곳"을
+  # 만든 것이다(DW-655). 순서 고정: 13-10 → 13-11. 데이터가 바뀌면 정답 건수와 기준선이 전부
+  # 무효가 되므로 보강을 먼저 해야 라이브 재캡처(유료)를 한 번만 한다.
+  13-10-검색-데이터-보강: done
+  13-11-sql-생성-정비-채점축-확장-재캡처: done
+  epic-13-retrospective: done
 
   # --- Epic 14: 계정 역할 통합 나머지 ---
-  epic-14: backlog
-  14-1-role-check-완화-마이그레이션: backlog
-  14-2-가입-역할선택-제거-트리거-기본-role: backlog
-  14-3-소유권-기반-판매-게이트: backlog
+  # 2026-08-06 backlog → in-progress. 14-1이 done인데 에픽이 backlog로 남아 있던 것을 정정한다
+  # (DW-666 — 이 파일이 스스로 정의한 전이 규칙 "첫 스토리 착수 시 in-progress"를 이 파일이 안 지켰다).
+  # 2026-08-06 in-progress → done. 스토리 3건 전량 done이고, 사용자가 명시한 최종 인수 조건
+  # ("기존 buyer·기존 seller·신규 가입 계정이 전부 /sell에 도달")을 **세 축 모두 실측 확인**했다:
+  #   ① 기존 buyer  = E2E `C8`(core-flows.spec.ts:212) 통과 — psql로 role='buyer'임을 먼저 고정한 뒤
+  #                    /sell에서 '매물 등록' heading이 렌더되는 것을 확인한다.
+  #   ② 기존 seller = E2E `E1~E5`(write-flows.spec.ts) 전부 통과 — 판매자가 /sell로 실제 등록·수정·
+  #                    구매완료까지 왕복한다.
+  #   ③ 신규 가입   = **E2E에 없어서 사람이 실브라우저로 직접 확인**했다(2026-08-06). 가입 화면에
+  #                    역할 선택이 없는 것 확인 → 신규 계정 가입 → DB에서 role='user' ·
+  #                    metadata role 없음 확인 → /sell에서 '매물 등록' 폼 렌더 확인 → 검증 계정 삭제.
+  #                    ⚠️ 이 축은 **자동 검사가 없다** — 14-2는 단위테스트(가입이 role을 안 보낸다)와
+  #                    통합테스트(트리거 기본값)만 만들었고, 그 둘을 합친 "신규 계정이 실제로 /sell에
+  #                    간다"는 아무도 안 본다. 재발 방지는 DW로 남긴다.
+  epic-14: done
+  14-1-role-check-완화-마이그레이션: done
+  # ⚠️ 2026-08-06 **실행 순서를 14-3 → 14-2로 뒤집는다**(사용자 결정). 아래 나열 순서가 곧 큐 순서다.
+  #   경위: 14-2를 먼저 돌렸더니 dev 세션이 `intent gap`으로 CRITICAL 에스컬레이션하고 멈췄다(run 0381).
+  #   스펙 자체가 모순이었다 — `Always`는 신규 가입 기본 role을 `'user'`로 강제하는데 `Never`는
+  #   판매 게이트(`requireRole(SELLER)`, 14.3 범위)를 못 건드리게 막아, **14-2만 끝난 상태에서는
+  #   신규 가입자 전원이 `/sell`에서 튕긴다**(`web/src/lib/auth/guard.ts:37`이 정확일치 비교 +
+  #   `web/src/app/(user)/sell/layout.tsx:14`가 `requireRole(USER_ROLE.SELLER)` — 코드에서 직접 확인).
+  #   이 스토리의 존재 이유인 FR52를 정면으로 어긴다.
+  #   왜 순서 뒤집기인가: 14-3이 게이트를 `requireUser()`로 **먼저** 풀면 14-2가 기본값을 뭘 주든
+  #   막히지 않는다. 14-3의 인수조건을 확인한 결과 14-2에 의존하지 않는다(14-1만 선행이면 되고
+  #   `requireUser()`는 `guard.ts:9`에 이미 존재한다). 스펙 내용·범위·기본값을 하나도 안 바꾸고
+  #   깨지는 중간 상태만 사라진다 — 에스컬레이션이 제시한 3안(기본값을 'seller'로 / 14-2 범위 확대 /
+  #   회귀 창 수용)은 전부 무언가를 바꿔야 했다.
+  #   ⚠️ 순서만 바뀌고 **에픽 문서의 스토리 번호·내용은 그대로다.** 번호로 실행 순서를 유추하면
+  #   안 되는 자리이므로 여기 적어둔다.
+  14-3-소유권-기반-판매-게이트: done
+  14-2-가입-역할선택-제거-트리거-기본-role: done
   epic-14-retrospective: optional
 
   # --- Epic 15: 관리자 웹 UI 통일 (UI-only) ---
-  epic-15: backlog
-  15-1-관리자-6화면-디자인-리스킨: backlog
-  15-2-관리자-반응형: backlog
-  15-3-회원관리-역할통합-반영: backlog
+  # 2026-08-07 backlog → done. 스토리 4건 전량 done이고 마감 검증을 전부 돌렸다.
+  # ⚠️ 엔진은 에픽 전이를 안 해준다 — epic-14도 같은 이유로 backlog에 남아 DW-666이 됐다.
+  # 손으로 닫는다(사람이 돌린 스토리든 엔진이 돌린 스토리든 에픽 줄은 아무도 안 닫는다, B8).
+  # 마감 실측: env ✅ · check_migrations ✅(0030 포함) · api 단위 490 · api 실DB 116 ·
+  #   web lint 0 · vitest 340 · flutter analyze 0 / test 87 · E2E 72 passed.
+  # ⚠️ 회고(`epic-15-retrospective`)는 `optional`이라 안 돌렸다. 에픽 13에서 겪었듯 optional 회고에
+  #   조건을 걸면 조용히 사라지므로, 이 에픽에서 나온 약속은 전부 대장(DW)에 직접 등재했다.
+  epic-15: done
+  15-1-관리자-6화면-디자인-리스킨: done
+  15-2-관리자-반응형: done
+  15-3-회원관리-역할통합-반영: done
+  # DW-391(오조작 sold 복구 불가, high) 해소. 이 에픽의 UI-only 범위를 한 칸 넘는다(마이그레이션 1개).
+  15-4-관리자-판매완료-되돌리기: done
   epic-15-retrospective: optional
 
   # --- Epic 16: Flutter 앱 증분 반영 ---
-  epic-16: backlog
-  16-1-디자인-토큰-미러-하단-4탭-내비: backlog
-  16-2-이미지-카드-재설계-앱: backlog
-  16-3-신뢰속성-찜-앱: backlog
-  16-4-실시간-채팅-앱: backlog
-  16-5-4분기-ai-응답-되묻기-칩-앱: backlog
-  16-6-sm-d-통합-시연-검증-앱: backlog
-  epic-16-retrospective: optional
+  # 2026-08-06 backlog → in-progress. 아래 16-0이 done이 됐기 때문이다(이 파일의 전이 규칙:
+  # 첫 스토리가 착수되면 in-progress). ⚠️ **에픽 16 전체가 시작된 것은 아니다** — 16-1~16-7은
+  # 그대로 backlog이고, 16-0만 앞당겨 실행했다.
+  # ✎ 2026-08-07 갱신 — 위 줄에 있던 *"다음에 돌 에픽은 여전히 Epic 15다"*는 **낡았다**.
+  #   Epic 15는 2026-08-06에 done으로 닫혔다. **다음에 돌 에픽 = Epic 16**이다.
+  #   (이런 "다음은 X" 문구는 X가 끝나는 순간 거짓이 된다 — 상태를 가리키는 줄 옆에 두면
+  #    같이 갱신되지 않는다. 그래서 사실 자체를 여기 한 번만 적고 에픽 이름은 위 목록이 정본이다.)
+  epic-16: done # 2026-08-09 스토리 9건(16-0~16-8) 전량 done 확인 후 종결. 대장 #232가 지적한 '스토리는 다 done인데 에픽만 backlog/in-progress로 남는' 3연속 누락을 여기서는 반복하지 않는다
+  # ✎ 2026-08-10 정정 — 위 "9건"은 **닫은 시점의 사실**이고 지금은 아니다. 이 에픽을 done으로
+  #   닫은 뒤 16-9·16-10·16-11이 새로 생겨 실행됐고(사용자 육안 지적 2건 + 묶음 코드리뷰 1건),
+  #   에픽은 그동안 계속 done이었다 — **실제 스토리는 12건이다.** Epic 13 회고의 A5("에픽 상태
+  #   전이를 명시 단계로")가 겨냥한 것은 "스토리는 다 done인데 에픽이 안 닫히는" 방향이었는데,
+  #   이번엔 **반대 방향(에픽이 닫힌 뒤 스토리가 늘어남)** 으로 어긋났다. 같은 뿌리다 —
+  #   에픽 상태가 스토리 집합의 현재 사실을 반영하지 못한다. 회고 액션 B2가 이 자리를 겨냥한다.
+  # 2026-08-06 신설·완료(사람이 직접 실행, bmad-loop 아님 — 그래서 이 줄을 손으로 닫는다).
+  #   왜 에픽 16에 있는데 지금 했나: 사용자가 "기존 계정의 역할을 없애달라"고 결정했는데(DW-692),
+  #   그걸 안전하게 하려면 **앱의 판매자 게이트를 먼저 풀어야** 한다. 안 그러면 metadata를 지우는
+  #   순간 앱에서 아무도 매물을 못 판다. 14.3 → 14.2에서 배운 것과 같은 순서 문제다.
+  #   왜 Epic 15보다 먼저인가: Epic 15의 `15-3 회원관리 역할통합 반영`이 관리자 화면의 역할 표시를
+  #   다루는데, 데이터 정리가 나중이면 15-3이 낡은 buyer/seller 위에 만들어져 곧 다시 손봐야 한다.
+  #   ⚠️ 실기기 확인은 못 했다(이 환경에 안드로이드 기기·에뮬레이터 없음) — 위젯 테스트 8건으로
+  #   대신 고정했고, 실물 확인 자리는 16-6이다. 그 공백은 DW-692에 적어뒀다.
+  16-0-앱-역할통합-미러링-기존계정-정리: done
+  16-1-디자인-토큰-미러-하단-4탭-내비: done
+  16-2-이미지-카드-재설계-앱: done
+  16-3-신뢰속성-찜-앱: done
+  # ✎ 2026-08-08 backlog → done. **루프가 아니라 사람이 마감한 스토리다.** run 25ed에서 dev와
+  #   리뷰-1(패치 13건, high 1 = "실시간 수신 복구")까지 끝나 검증 초록이었는데, 리뷰-2가 1시간
+  #   10분 일하다 스펙 status를 `done`으로 되돌려놓지 못한 채 세션이 끝났다. 엔진은 "마지막
+  #   리뷰가 done이어야 인정" 규칙에 따라 `rollback-auto`로 앞선 dev 커밋까지 되돌렸다
+  #   (리뷰 예산 2회를 이미 다 쓴 뒤라 재시도 여지가 없었다). 한도 소진이 아니라 세션이
+  #   차례를 넘긴 뒤 못 깨어난 것이 원인이다 — 그 시점 5시간 한도는 44%였다.
+  #   보존 브랜치 `attempt-preserve/20260807-162721-25ed-6f6173e0`의 커밋 2건을 fast-forward로
+  #   복구하고 **직접 재실행해 확인**했다: flutter analyze 0 · flutter test 297 · web lint 0 ·
+  #   vitest 342. 사용자 승인(2026-08-08) 하에 done으로 닫는다.
+  #   ⚠️ 못 받은 것: 리뷰-2의 마지막 패스. 그 미련은 대장에 남아 있다(spec-16-4 출처 항목 6건).
+  #   ⚠️ 실제 소켓·2계정 동시 송수신·진짜 재연결은 위젯테스트 시뮬레이션으로만 검증됐다 —
+  #   실물 확인 자리는 16-6이다(대장 등재됨).
+  16-4-실시간-채팅-앱: done
+  16-5-4분기-ai-응답-되묻기-칩-앱: done
+  # ✎ 2026-08-08 신설 — 사용자 지적("홈화면이 웹과 너무 다르다, 색상이 아니라 전체적으로")에서
+  #   출발해 계획 문서를 전수 확인한 결과 **수정 계획이 없음**을 확인하고 사용자 결정으로 심는다
+  #   (DW-736). 웹 홈은 Epic 11(AI 히어로 랜딩)이 만든 화면인데 Epic 16에 앱 짝이 없었다 —
+  #   16-1이 홈을 언급한 것은 "프로필은 우상단 아바타" 한 줄뿐이고 히어로·제안칩·차종칩·
+  #   인기/최신 2단은 어느 인수조건에도 없다. **16-7과 똑같은 모양**(웹에 있는데 앱 짝이 없어
+  #   계획에서 통째로 빠진 자리)이라, 그때와 같은 방식으로 계획 문서와 여기 양쪽에 심는다.
+  #   ⚠️ 같은 스토리에 Epic 7 잔재 퀵액션 3개 제거가 포함된다 — 16-1이 하단 4탭을 만들면서
+  #   옛 문을 안 닫아 같은 기능에 진입로가 둘이다. 반드시 **같은 커밋**이어야 한다(먼저 지우면
+  #   판매자가 매물 등록에 갈 길이 끊긴다 — DW-728에서 배운 "문 먼저, 그다음 정리").
+  #   새로 디자인할 것은 없다: 목업 app-home-2.html이 최종 구조를 이미 확정했다.
+  16-8-앱-홈-랜딩-미러: done
+  # ✎ 2026-08-07 신설 — 사용자 결정(2026-07-18, DW-352)의 이행이다. Story 9.3을 "web만"으로
+  #   확정하며 "앱 업로더는 Epic 16에 별도 스토리로"라고 정해놨는데 그 스토리가 계획 문서에도
+  #   여기에도 없었다. 대장이 *"문서에 없으면 sprint-planning이 다시 만들어도 또 빠진다"*고
+  #   경고해둔 그대로다. 지금 안 심으면 **앱 판매자는 사진을 영영 못 올린다**(16-2는 읽기 측).
+  #   ⚠️ 순서: 16-2(사진 표시)가 먼저다 — 표시도 못 하는데 올리기부터 만들면 확인할 수가 없다.
+  16-7-앱-사진-업로더: done
+  # ✎ 2026-08-08 순서 변경 — 이 줄은 원래 16-7 **위**에 있었다(문서 순번 그대로). 아래로 내린
+  #   이유: 이 파일의 나열 순서가 곧 루프의 실행 순서다(2026-08-07 `dry-run`으로 실측 확인).
+  #   16-6은 "앱이 웹과 동일 디자인 언어임을 실폰에서 검증"하는 자리인데, 검증 대상 화면
+  #   (홈=16-8, 사진 업로더=16-7)이 아직 없는 상태로 돌면 **검증이 성립하지 않고 나중에 다시
+  #   해야 한다**. 그래서 실행 순서는 16-8 → 16-7 → 16-6이다.
+  #   계획 문서(epics-increment-2026-07-12.md)의 Story 16.6 Given도 같은 날 범위를
+  #   "16.1~16.5 · 16.7 · 16.8"로 정정했다 — 범위를 안 넓히면 16-8이 만든 홈을 아무도 실폰에서
+  #   안 본다(결정은 있는데 인수조건에 안 심겨 조용히 빠지는 그 자리, CLAUDE.md B5).
+  16-6-sm-d-통합-시연-검증-앱: done
+  16-9-앱-ui-정합성-교정: done # 2026-08-09 신설 — 사용자 지적(UI가 목업과 다르다)에서 DW-755·759·760·735를 한 덩어리로 묶은 교정 스토리. 회고보다 먼저 돈다
+  16-10-히어로-검색창-마감: done # 2026-08-09 신설 — 16.9 이후 사용자 육안 평가("퀄리티가 떨어진다")에서 DW-767 + 사용자 지목 3건(테두리·실루엣·곡률)을 묶은 마감 스토리. 묶음 리뷰보다 먼저 돈다
+  16-11-사진-순서-대표-무결성: done # 2026-08-10 신설 — Epic 16 묶음 코드리뷰의 decision-needed D1(고아 행이 대표로 승격)을 사용자가 **근본수정**으로 결정. 같은 무결성 축인 DW-748(sort_order 중복)·DW-751(수정화면 사진 조회 미검증)을 한 덩어리로 묶는다. 회고보다 먼저 돈다
+  epic-16-retrospective: done # 2026-08-10 — epic-16-retro-2026-08-10.md. 이전 회고(Epic 13) 액션 A2 이행/A3·A4 미이행을 코드에서 확인했고, A3 미이행이 DW-779·795를 실제로 만든 것을 실측했다
+
+  # --- Epic 17: 접근 제어 마무리 (backend-only) ---
+  # 2026-08-07 신설(사용자 결정). Epic 15의 "UI-only" 제약을 지키려고 만든 자리다 —
+  # DW-669(정지 회원이 계속 매물을 등록·수정·삭제할 수 있다)를 Epic 15 안에서 하려면
+  # 그 에픽에 DB 예외를 하나 더 뚫어야 하는데(현재 예외는 15.4 하나뿐), 그러면 "UI-only"라는
+  # 깨끗한 제약이 무너진다. 그래서 에픽 밖으로 뺀다. 경위는 DW-717에 전문 기록.
+  # ⚠️ 착수 시 반드시 함께 볼 것 — 15-3 세션이 이미 구현했다가 되돌린 패치가 보존돼 있고
+  #   (`bmad-dev-auto-intent-gap-patch-15-3-*.diff`), 그 코드리뷰가 **그 구현 자체의 결함 2건**을
+  #   실측으로 찾아뒀다: ①정지된 관리자는 `listings_delete_admin`으로 여전히 남의 매물 삭제 가능
+  #   ②`listing_images`·`storage.objects` 쓰기 정책이 없어 정지된 판매자가 사진 추가·삭제 가능.
+  #   패치를 그대로 재사용하면 이 두 구멍을 그대로 안고 간다.
+  # ✎ 2026-08-07 추가 — 17-1과 **같은 마이그레이션 묶음에서** 함께 처리할 것: `0028`의
+  #   buyer/seller 통과 분기를 제거하는 마이그레이션(DW-682). 그 분기는 `metadata.role`이
+  #   'buyer'/'seller'면 그대로 반영하는 하위호환 경로인데, 유일한 공급자였던 Flutter 가입
+  #   화면이 16-0(2026-08-06)에서 role 전송을 멈춰 **도달 경로가 하나도 없다**(웹은 14.2에서
+  #   이미 멈춤). 원래 트리거는 "앱 가입 화면에서 역할 선택을 제거할 때"였는데 그 조건이
+  #   실제로 발동했는데도 이행되지 않아 여기로 옮겼다. 사문화된 분기를 남겨두면 다음 사람이
+  #   "아직 쓰는 데가 있나?" 를 매번 다시 조사한다.
+  # ✎ 2026-08-11 추가 — 17-1의 후속 리뷰가 남긴 대장 4건을 스토리 3개로 묶었다(사용자 지시 "123 다해줘").
+  #   묶음은 오케스트레이터가 임의로 정한 게 아니라 **대장 항목이 스스로 지정한 trigger**를 따랐다:
+  #   · 17-2 = DW-805(조회수 옆문) + DW-803(전수조사 강제검사). DW-805의 trigger가 DW-803의 검사를
+  #     만드는 스토리를 이름으로 지목한다 — 판정을 기계가 읽는 형태로 옮길 때 함께 결정하라고.
+  #   · 17-3 = DW-806(정지 관리자 콘솔) + DW-804(b)(거부 안내 문구). 둘 다 "DB는 막는데 화면이 사유를
+  #     모른다"의 두 표면이고, 해결이 같은 것 하나(본인 status 조회 경로)를 필요로 한다.
+  #   · 17-4 = DW-804(a)(정지 판매자 매물 비노출). **사용자 결정으로 Epic 17의 불변식 후반부
+  #     ("읽기는 줄지 않는다")를 뒤집는 스토리**라 따로 뺐다 — 다른 것과 섞으면 나중에 "왜 읽기가
+  #     좁아졌는지"의 근거가 안 보인다. 2026-08-11 Discord에서 세 선택지(숨김/유지/배지)를 제시하고
+  #     "유지"를 기본값으로 두겠다고 밝힌 뒤 "숨겨야돼" 를 받았다. 근거 정본은 spec-17-4 Intent.
+  # ⚠️ 17-4 착수 시 반드시 볼 것 — 순진하게 짜면 **매물이 전부 사라지고 검사는 초록으로 통과한다.**
+  #   정책 안에서 판매자의 profiles 행을 서브쿼리하면 profiles RLS(본인·관리자만, anon 정책 0건)에
+  #   막혀 exists가 항상 거짓이 된다. is_admin()과 같은 SECURITY DEFINER 판정 함수로 풀고,
+  #   모든 검사에 긍정 대조군(활성 판매자 매물이 계속 보인다)을 짝으로 둔다.
+  # ✎ 2026-08-12 종결. 위 ⚠️ 경고는 **실제로 발동했다** — 오케스트레이터가 완성된 정책의 판정
+  #   함수를 인라인 서브쿼리로 되돌려 심어보니 통합검사 9건이 red가 됐고 그중 6건이 긍정
+  #   대조군이었다. 경고를 스펙 요건(정의자 함수 의무 + 대조군 짝)으로 옮긴 것이 값을 했다.
+  epic-17: done # 2026-08-12 스토리 4건(17-1~17-4) 전량 done + 오케스트레이터 독립 재검증(다른 축 3회 red 증명·빈 DB 마이그레이션 전량 적용·통합 201건·웹 376건·E2E 8건) 후 종결. 남은 것은 스토리가 아니라 사용자 결정 2건(후속 리뷰 23건 처리·원격 적용) — epic-17-retro 8절
+  17-1-정지-회원-쓰기-차단-rls: done
+  17-2-조회수-옆문-차단-전수조사-강제검사: done
+  17-3-정지-관리자-콘솔-차단-거부-안내-구분: done
+  17-4-정지-판매자-매물-비노출: done
+  epic-17-retrospective: done # 2026-08-12 — epic-17-retro-2026-08-12.md. 이전 회고(Epic 16) 액션을 코드에서 확인(B5 이행·B6 미이행)했고, B6 미이행이 단발이 아니라 Epic 13~17에 걸친 23건임을 전수 조사로 실측했다
+
+# 회고에서 나온 액션 아이템. "무엇/상태"의 정본은 여전히 docs/tech-debt.md(대장)이고,
+# 여기는 "어느 에픽 회고가 무엇을 약속했나"의 색인이다 — 대장 번호로 이어붙인다(B8).
+# ⚠️ 이 절은 Epic 11 회고(2026-07-28)에서 처음 만들었다. Epic 10 이전 회고의 액션은
+# 여기 없고 각 회고 문서와 대장에만 있다 — 소급 채워넣지 않았다(없는 기록을 만들지 않는다).
+action_items:
+  - epic: 10
+    action: "세션 timeout 상한 튜닝 검토 (긴 스토리가 엔진 timeout에 걸려 재작업)"
+    owner: "orchestrator"
+    status: done # policy.toml session_timeout_min 120→90 (커밋 c31bf33), 근거=11-1 review-1 실측
+  - epic: 10
+    action: "무인 에픽 비용 베이스라인(weighted 41.7M / 17h / 사람개입 7회)을 다음 에픽과 대조"
+    owner: "orchestrator"
+    status: done # 2026-07-29 이월처(A7)가 닫히며 함께 종결 — Epic 12 회고 §3에서 대조 완료
+                 # (Epic 10 41.7M weighted/7스토리 vs Epic 12 약 82M/6스토리 = 스토리당 2.3배, 원인은 always 리뷰).
+                 # 이월한 항목은 이월처가 닫힐 때 원본도 닫는다 — 안 닫으면 "안 한 것"과 "했는지 모르는 것"이 섞인다(B8)
+  - epic: 10
+    action: "정책변경 2건(max_review_cycles=2, review trigger=recommended)의 실동작 관측"
+    owner: "orchestrator"
+    status: done # 대장 #123 ✅ 해소 (Epic 11 실행 로그로 둘 다 관측). 파생 발견 = #179
+  - epic: 11
+    action: "A1 낡은 테스트 교정 — test_anon_can_select_whitelisted_columns_but_view_count_still_denied를 0021 이후 사양에 맞춤"
+    owner: "orchestrator"
+    status: done # 커밋 95e9232로 고침, CI 4잡 초록 확인. 대장 #180 ✅(2026-07-29 회고에서 뒤늦게 닫음 — 패턴 D)
+  - epic: 11
+    action: "A2 대장 #138 단언을 실제 방어층(권한 vs 정책)에 맞춤 — 원격 anon profiles 권한 실측 선행"
+    owner: "orchestrator"
+    status: done # 원격 실측(anon profiles SELECT=true, RLS가 0행) 후 같은 커밋 95e9232로 교정. 대장 #138 ✅
+  - epic: 11
+    action: "A3 test/bmad-loop(14커밋)을 develop에 병합해 Epic 11이 CI를 처음 지나게 한다"
+    owner: "user"
+    status: done # 사용자 승인 후 0b5c371로 병합, CI 4잡 초록 + 배포 비로그인 실측까지 확인. 대장 #181 ✅(핵심)
+                 # ⚠️ 구조는 그대로다 — Epic 12 12커밋이 또 CI 밖에 있다(Epic 12 회고 B7)
+  - epic: 11
+    action: "A4 대장 정리 — 닫힌 6건 제목줄 ✅ 표기, #168 트리거 확정, #174 거짓문장 각주"
+    owner: "orchestrator"
+    status: done # 대장 #172·#174가 지정한 '다음 정리 시점' = 이번 회고에서 실행
+  - epic: 11
+    action: "A5 #179 (d)하이브리드 첫 적용 — 12-1 멱등키 마이그레이션 런을 review trigger=always로 띄운다"
+    owner: "orchestrator"
+    status: done # policy.toml trigger=always로 Epic 12 전체를 돌렸고 12-2의 교차-방 유출을 그 덕에 잡았다.
+                 # Epic 13은 마이그레이션이 없어 recommended로 되돌림(Epic 12 회고 B1)
+  - epic: 11
+    action: "A6 2026-07-28 감사에서 만든 E2E 31건 중 상시 승격 후보 결정"
+    owner: "user"
+    status: open # 대장 #182 · 트리거 = #168(E2E CI 배선) 스토리
+  - epic: 11
+    action: "A7 Epic 11 비용 실측치를 남겨 Epic 10 베이스라인과 대조 (Epic 10 액션 2 이월)"
+    owner: "orchestrator"
+    status: done # Epic 12 회고 §3에서 대조 완료 — Epic 10 41.7M weighted/7스토리 vs Epic 12 약 82M/6스토리
+                 # (스토리당 2.3배, 원인은 always 리뷰). wall-clock은 17h→5h로 줄었다(한도 대기가 사라져서)
+  - epic: 12
+    action: "B1 리뷰 정책을 recommended로 되돌린다 — Epic 13엔 마이그레이션이 없다"
+    owner: "orchestrator"
+    status: done # 이번 회고에서 실행. #179 (d)하이브리드 유지 — 안 되돌리면 상시 always가 되어 비용이 2.3배로 고정된다
+  - epic: 12
+    action: "B2 epic-12를 done으로 전이 — 스토리 6건 전량 done인데 in-progress로 남아 있었다(Epic 11과 같은 누락 반복)"
+    owner: "orchestrator"
+    status: done # 이번 회고에서 실행
+  - epic: 12
+    action: "B3 '환경도 원복' 규칙을 못 어기는 자리에 박는다 — (a)규칙 문서 vs (b)verify 앞단 환경 무결성 검사"
+    owner: "user"
+    status: done # 2026-07-29 (b) 실행 — scripts/check_env_integrity.sh(8.3KB) 신규 + .bmad-loop/policy.toml:82의
+                 # verify 게이트 **첫 자리**에 배선(커밋 a50465d). 규칙 문서가 아니라 실행되는 검사로 박았다(B9).
+                 # 대장 #191·#211은 경위로 열린 채 둔다 — 이 검사가 그 재발을 잡는다
+  - epic: 12
+    action: "B4 max_review_cycles=2 재검토 — Epic 12 스토리 6/6이 예산 소진 상태로 닫혔고 DW가 5건 쌓였다"
+    owner: "user"
+    status: done # 2026-07-29 (b) 유지로 결정 — max_review_cycles=2 그대로(커밋 a50465d). 근거와 **상향 조건 2가지**를
+                 # .bmad-loop/policy.toml:10-21에 박았다: ① 밀린 DW 5건을 Epic 13에서 소화하고 ② Epic 13에서도
+                 # 전 스토리가 2회를 소진하면 그때 3으로 올린다. 재판단은 Epic 13 회고의 확인 항목
+  - epic: 12
+    action: "B5 에픽 마지막 스토리의 DW가 구조적으로 안 옮겨진다 — 이관이 '다음 스토리'에 의존하는데 마지막엔 그게 없다"
+    owner: "orchestrator"
+    status: open # 대장 #231 등재 완료, 절차 수정 여부는 Epic 13 회고에서 판단
+  - epic: 12
+    action: "B6 원격 전제 확인 — 0023(Realtime RLS)이 기대는 3가지를 원격에서 실제로 물어본다"
+    owner: "orchestrator"
+    status: done # 2026-07-29 원격에 직접 물어 4가지 전부 확인(커밋 2e11d1c, 넣어본 행은 전부 롤백).
+                 # ⓐ Realtime 가용(publication·broadcast_changes 존재, anon 구독 SUBSCRIBED) ⓑ realtime.send가
+                 # 스텁과 동일 + private DEFAULT true → RLS가 실제 관문(#196 ① 기각) ⓒ 파티션은 range가 맞으나
+                 # 유지가 "테넌트 활성일 때만" — 확인 시점 0개였고 23514 무음 실패를 **원격에서 재현**, 이 조건부
+                 # 위험만 대장 #232로 승계 ⓓ 적용 롤 rolbypassrls=t → "INSERT 정책 불필요" 전제 성립(#197 닫힘)
+  - epic: 12
+    action: "B7 test/bmad-loop -> develop 병합 — Epic 12 12커밋이 또 CI 밖에 있다"
+    owner: "user"
+    status: done # 2026-07-29 병합 확인 — `git branch --merged develop`에 test/bmad-loop 포함, develop은 origin과
+                 # 동일(0 ahead). 즉 Epic 12 커밋은 CI 사정거리 안으로 들어왔다. 다만 **구조는 그대로**다
+                 # (tests.yml이 develop·main·PR에서만 돈다) — 그 구조 문제는 대장 #181 경위에 남아 있다
+  - epic: 12
+    action: "B8 web CI에 next build 추가 검토 — RSC 경계 위반이 CI 초록으로 통과한다"
+    owner: "orchestrator"
+    status: open # 대장 #229 · #168(E2E CI 배선)과 함께 판단
+  - epic: 11
+    action: "A8 대장 #121 트리거 재지정 — 'E2E 첫 도입 시'는 11-5로 소진됐는데 조치 안 됨"
+    owner: "orchestrator"
+    status: done # 대장 #121 트리거를 구체 스토리로 교체
+  - epic: 13
+    action: "A1 큐리셋에 모델명 단독 문항 추가 + build_golden_sql에 model_like 지원 — 일부러 '='로 되돌려 red 확인"
+    owner: "orchestrator"
+    status: open # 13-11 인수조건. 근거=DW-657(아반떼 보여줘 0건)이 62문항 스위트의 사각지대였다
+  - epic: 13
+    action: "A2 게이트를 만들 때 '이 검사가 안 보는 것'을 검사 옆에 실측으로 적는다(추측 금지)"
+    owner: "orchestrator"
+    status: open # 13-10·13-11 인수조건. 근거=에픽 13에서 '검사가 아무것도 안 보고 있었다' 26건
+  - epic: 13
+    action: "A3 max_review_cycles 2 → 3"
+    owner: "orchestrator"
+    status: done # Epic 12 회고 B4의 상향조건 ②가 충족됨(에픽 13은 9/9 소진, 조건은 6/6이었다).
+                 # 13-8·13-9는 4패스째에 high를 찾았다 — 2회로는 부족함이 두 에픽 연속 실측 확인
+  - epic: 13
+    action: "A4 #168(DW-468, E2E CI 배선 + CI red 알림)의 trigger를 Epic 15로 재지정하고 15.x 인수조건 체크박스로 심는다"
+    owner: "orchestrator"
+    status: open # Epic 11 회고가 trigger를 'Epic 13 게이트 정비'로 못박았는데 9개 스토리 어디에도 흔적이 없다.
+                 # 가리킬 곳이 없어서가 아니라 가리켰는데 아무도 안 봐서 지나간 유형(DW-655와 다름)
+  - epic: 13
+    action: "A5 에픽 종료 절차에 '에픽 상태 전이'를 명시적 단계로 넣는다"
+    owner: "orchestrator"
+    status: open # Epic 11·12·13 세 번 연속 '스토리 전량 done인데 에픽은 backlog' 누락
+  # ⚠️ 2026-08-12(Epic 17 회고) — 여기서 Epic 14·15·16이 통째로 비어 있는 것을 발견했다.
+  #   Epic 16 회고는 B1~B6을 약속했는데 이 색인에 한 줄도 안 들어왔고, 그래서 **사용자가 직접
+  #   결정한 B6(후속 리뷰 2건 실행)이 미이행인 채로 Epic 17이 시작됐다.** 색인이 비면 "약속했다"와
+  #   "안 했다"가 구별되지 않는다(B8). 아래 Epic 16 항목들은 회고 문서에 있던 것을 뒤늦게 옮긴
+  #   것이며, 상태는 2026-08-12에 **코드에서 재확인한 값**이다(문서를 믿고 옮기지 않았다).
+  #   Epic 14·15는 회고 문서 자체가 없어 옮길 원본이 없다 — 없는 기록을 만들지 않는다.
+  - epic: 16
+    action: "B2 에픽에 스토리를 추가하면 그 에픽의 done을 되돌린다를 절차로 박기"
+    owner: "orchestrator"
+    status: open # 2026-08-12 실측: policy.toml·회고 스킬 어디에도 없음. Epic 13 A5(반대 방향)와 같은 뿌리
+  - epic: 16
+    action: "B3 루프 없이 직접 고칠 때도 스펙·대장 갱신을 같은 커밋에"
+    owner: "orchestrator"
+    status: done # 2026-08-12 실측: Epic 17의 직접 수정(epic-17-context.md 정정)이 스펙 커밋 b47316a에 함께 들어감
+  - epic: 16
+    action: "B4 DW 번호 중복 검사 CI 배선"
+    owner: "orchestrator"
+    status: done # 커밋 ee31d7d. 2026-08-12 재확인: check_dw_numbers.py 통과(481건, 중복 0)
+  - epic: 16
+    action: "B5 17-1 착수 시 DW-782(sold 차단의 파일 쪽 누락)를 같은 마이그레이션에 합치기"
+    owner: "orchestrator"
+    status: done # 2026-08-12 실측: 0032가 storage.objects의 sold 차단 포함, DW-782 status=done 2026-08-11
+  - epic: 16
+    action: "B6 후속 리뷰 2건(DW-779·795) 실행 — 2026-08-10 사용자 명시 결정"
+    owner: "orchestrator"
+    status: open # 2026-08-12 실측: 둘 다 여전히 status=open. 미이행. Epic 17 회고 A1이 이 항목을
+                 # 단발이 아닌 구조 문제로 승격했다 — 같은 형태의 열린 항목이 총 23건(Epic 13~17)
+  - epic: 17
+    action: "A1 후속 리뷰 23건을 '전부 실행 / 기준을 정해 일부 / 일괄 wont-do' 중 하나로 결정하고, 결정과 함께 그 자리(어느 스토리·커밋)를 지정한다"
+    owner: "user"
+    status: done # 2026-08-12 사용자 결정 "후속리뷰 가볍게 해줘" → 같은 날 커밋 1e83d38로 23건 전량 처리.
+                 # '자리 지정' 요건은 미루지 않고 그 자리에서 소진하는 것으로 충족했다(쌓아두는 선택지를 없앤다).
+                 # 깊이는 항목마다 대장에 명시 — DB·인증 축은 실DB 침투 프로브, UI 축은 검사 실행만(의도적).
+                 # 산출: 잠복 권한상승 DW-830(medium) 1건 발견. 남은 '후속 리뷰' 항목 0건
+  - epic: 17
+    action: "A2 정지 → 비노출 → 해제 → 복귀를 도는 브라우저 회귀 검사를 만든다"
+    owner: "orchestrator"
+    status: open # DW-828. 17.4의 화면 확인은 오케스트레이터의 1회성 수동 관찰로만 존재한다
+  - epic: 17
+    action: "A3 웹 채팅 + 관리자 안내를 한 스토리로 묶어 정지 안내를 완성한다"
+    owner: "orchestrator"
+    status: open # DW-813·814·815·816. 17.3의 문구가 '채팅도 제한된다'고 약속하는데 채팅 배선이 0건
+  - epic: 17
+    action: "A4 원격 적용 전에 DW-824의 전제(Data API 노출 스키마 목록에 private이 없음)를 실측한다"
+    owner: "orchestrator"
+    status: done # 2026-08-12 적용 직전 원격에서 실측 — PostgREST가 스스로 답했다:
+                 # PGRST106 "Only the following schemas are exposed: public, graphql_public".
+                 # 긍정 대조군(anon 매물 읽기 200)도 짝으로 뒀고, 적용 후 재측정·RPC 404·
+                 # Supabase 린터 독립 확인까지 3중으로 고정. 기록=deploy-record-2026-08-12-migrations-0027-0036.md
+                 # DW-824 자체는 open 유지(축소) — 남은 것은 config.toml을 매번 보는 CI 정적 검사
+  - epic: 17
+    action: "A5 is_admin·is_admin_active의 search_path를 함께 ''로 좁힌다"
+    owner: "orchestrator"
+    status: open # DW-724 갱신된 trigger. 2026-08-12 실측: 둘 다 search_path=public — 결함이 새 함수에 복제됐다
+  - epic: 17
+    action: "A6 앱(Flutter) 축(DW-812·825)을 한 묶음으로 등재 유지"
+    owner: "orchestrator"
+    status: open # 웹만 고쳐져 앱과 문구가 갈렸다. 앱 테스트가 옛 문구를 초록으로 고정하고 있다

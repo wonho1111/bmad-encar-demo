@@ -12,6 +12,7 @@
 //   router.back()만 쓰면 히스토리가 없을 때 앱 밖으로 튀므로 폴백을 둔다(Amelia 권고).
 //   진입 출처를 쿼리파라미터(?from=)로 넘기지 않는다 — 모든 진입점에 파라미터를 심을 필요가 없어 단순.
 import { useRouter } from 'next/navigation';
+import { buttonClasses } from '@/components/ui/Button';
 
 export default function BackButton({
   fallbackHref,
@@ -36,7 +37,7 @@ export default function BackButton({
     <button
       type="button"
       onClick={handleBack}
-      className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
+      className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}
     >
       {children}
     </button>

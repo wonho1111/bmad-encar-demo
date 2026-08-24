@@ -15,7 +15,12 @@
 --     on_sale → sold 전환 자체가 막힌다. 그건 FR7(구매 완료 처리)을 통째로 죽이는 것이다.
 --   즉 "sold로 바꾸는 것"은 계속 허용하고, "sold가 된 뒤에 고치는 것"만 막는 게 정확한 요구다.
 --   (전이 규칙은 on_sale → sold 단방향이며 되돌리기가 없다 — web ListingActions.tsx ·
---    app listings_repository.dart::markSold 양쪽이 이미 그 전제로 짜여 있다.)
+--    app listings_repository.dart::markSold 양쪽이 이미 그 전제로 짜여 있다.
+--    ⚠️ 2026-08-07(코드리뷰 patch, Story 15.4): 이 RLS 정책 자체는 그대로이나, `0030`이
+--    `admin_restore_sold_listing` SECURITY DEFINER RPC로 "관리자만" 되돌릴 수 있는 좁은
+--    예외를 만들었다 — RLS를 우회하는 RPC라 이 정책의 using/with check와 모순되지 않는다.
+--    "되돌리기가 없다"는 이제 web ListingActions.tsx·app listings_repository.dart(판매자·구매자
+--    경로)에만 여전히 참이다.)
 --
 -- 소비처 영향: web/app 모두 UPDATE 결과 행 수를 보고 0행이면 "권한 없음"으로 안내한다
 --   (SellForm.tsx · ListingActions.tsx · listings_repository.dart). RLS 거부는 에러가 아니라

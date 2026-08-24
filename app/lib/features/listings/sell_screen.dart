@@ -1,29 +1,56 @@
 // 매물 등록 화면(7.3, FR5 재현) — 판매자가 15필드 폼을 채워 listings 를 on_sale 로 생성한다.
-// 사진 없음(업로드 위젯 없음). 검증·INSERT 는 SellController 가 담당, 화면은 입력 수집·표시만.
+// 사진 업로더(Story 16.7, PhotoUploaderWidget) 포함. 검증·INSERT 는 SellController 가 담당,
+// 화면은 입력 수집·표시 + 사진 선택/삭제/재배치의 **로컬 상태 보관**을 맡는다(실제 업로드는
+// 제출 시점에 컨트롤러가 한다, Design Notes).
 //
 // 역할 가드(AC4): 판매자(seller)만 진입. buyer 가 어떻게든 닿으면 입력 대신 안내를 보여준다.
-//   (admin 은 main.dart AuthGate 가 이미 차단 — 모바일 제외 AR9.)
+//   (admin 은 core/router/app_router.dart의 GoRouter redirect가 이미 차단 — 모바일 제외 AR9.)
 // 위젯 패턴은 signup_screen(ConsumerStatefulWidget + SingleChildScrollView + 에러/성공 텍스트)과
 //   search_screen(DropdownButtonFormField)을 따른다.
+//
+// ⚠️ **셸 경계(spec-16-1)**: 이 화면은 두 자리에서 쓰인다 — ① 하단 4탭 셸의 '내차팔기' 브랜치
+//   루트(`app_router.dart`, `showAppBar: false`, 항상 등록 모드) ② `my_listings_screen.dart`의
+//   "수정" 버튼이 셸 밖 루트 Navigator로 여는 단독 화면(`showAppBar: true`, 기본값 — 뒤로가기가
+//   있는 자기 AppBar가 필요). (spec-16-8이 홈의 "매물 등록" 퀵액션을 제거해 그 진입점은 더 이상
+//   없다 — 등록은 이제 ①의 '내차팔기' 탭으로만 들어온다.)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../auth/auth_controller.dart';
-import '../auth/user_role.dart';
+import '../../core/theme/app_theme.dart';
+import '../auth/require_user.dart';
 import 'listing.dart' show ListingDetail;
 import 'listing_filters.dart' show ListingOptions;
 import 'listing_form.dart';
+import 'photo_item.dart';
+import 'photo_uploader_widget.dart';
 import 'sell_controller.dart';
 
 /// 매물 등록/수정 화면(7.3 등록 + 7.4 수정). 같은 15필드 폼을 재사용한다.
 ///   · editDetail == null → 등록 모드(INSERT).
 ///   · editDetail != null → 수정 모드(UPDATE) — 기존 값으로 폼을 채우고, 성공 시 화면을 닫는다(done).
 class SellScreen extends ConsumerStatefulWidget {
-  const SellScreen({super.key, this.editDetail});
+  const SellScreen({
+    super.key,
+    this.editDetail,
+    this.showAppBar = true,
+    this.initialPhotos = const [],
+  });
 
   /// 수정 대상 매물 상세(수정 모드일 때만). null 이면 등록 모드.
   final ListingDetail? editDetail;
+
+  /// 수정 모드 진입 시 이미 저장된 사진(edit_listing_screen.dart가 `listing_images`를 조회해
+  /// 넘긴다, Story 16.7). 등록 모드는 항상 빈 목록(기본값).
+  final List<PhotoItem> initialPhotos;
+
+  /// 하단 4탭 셸의 '내차팔기' 브랜치 루트로 쓰일 때는 셸이 이미 공통 AppBar(제목+프로필
+  /// 아바타)를 그리므로 이 화면 자신의 AppBar를 끈다(app_router.dart가 false로 넘긴다).
+  /// 기본값 true — my_listings_screen.dart의 "수정" 버튼이 여는 단독 화면(editDetail 채워짐,
+  /// EditListingScreen 경유)처럼 단독으로 열릴 때는 뒤로가기가 있는 자기 AppBar가 그대로
+  /// 필요하다(후속 코드리뷰 spec-16-8 2차 리뷰 P8 — 홈의 "매물 등록" 퀵액션은 spec-16-8에서
+  /// 이미 제거됐다. 지금은 이 기본값을 쓰는 단독 진입점이 "수정" 하나뿐이다).
+  final bool showAppBar;
 
   bool get isEdit => editDetail != null;
 
@@ -48,11 +75,46 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   String? _fuel;
   String? _transmission;
   String? _region;
-  bool _accidentFree = true;
+  // ✎ 2026-08-13 — "무사고 차량" 스위치(기본 켜짐)를 신뢰 정보 3입력으로 교체했다.
+  //   그 스위치는 accident_free 하나만 썼는데, 화면이 뱃지로 보여주는 신뢰속성
+  //   (accident_status·is_single_owner·is_non_smoker)은 **앱에서 넣을 방법이 아예 없었다.**
+  //   게다가 기본이 켜짐이라 아무것도 안 건드리고 등록하면 자동으로 무사고 신고가 됐다.
+  String? _accidentStatus; // null=미선택(필수)
+  bool _isSingleOwner = false; // 체크=신고함. 미체크는 "아니오"가 아니라 미신고(null 저장).
+  bool _isNonSmoker = false;
+
+  /// 사진 업로더의 화면 로컬 상태(Story 16.7) — 선택·삭제·재배치는 여기서만 일어나고, 실제
+  /// 업로드/삭제/DB 반영은 폼 제출 시점에 한 번에(Design Notes). 등록 모드는 빈 목록으로 시작.
+  late List<PhotoItem> _photos;
+
+  /// 사진의 **저장 기준선** — "지금 DB에 저장돼 있는 사진이 무엇인가"(무엇을 지웠는지 판단하는
+  /// 근거, web SellForm.tsx의 baseline과 동일 역할). 제출이 끝날 때마다 "그 시점에 실제로
+  /// 저장된 것"으로 갱신한다(post-frame 콜백, 아래).
+  late List<PhotoItem> _baseline;
+
+  /// 이 화면 인스턴스의 식별자. 공유 sellControllerProvider 의 상태가 "내가 시작한 것"인지
+  /// 판정하는 데 쓴다 — editingId 만으로는 부족하다(후속 코드리뷰 spec-16-8 2차 리뷰 P8로
+  /// 갱신: "등록 모드 화면이 동시에 둘" 뜨던 옛 경로(go_sell 퀵액션)는 spec-16-8에서 사라졌지만,
+  /// '/sell' 탭 루트(등록, editingId=null, IndexedStack으로 영구 마운트)와 my_listings의
+  /// "수정" 버튼이 rootNavigator로 여는 수정 화면(editingId=해당 매물 id)이 여전히 같은
+  /// sellControllerProvider를 공유한 채 **동시에** 마운트될 수 있다 — 둘의 editingId는
+  /// 지금은 다르지만(null vs 실제 id), 우연히 값이 갈리는 데 기대지 않고 인스턴스 식별자로
+  /// 명시 구분한다. SellState.owner 주석 참조).
+  final Object _owner = Object();
+
+  /// 이미 **소비한** 제출 결과(SellState 인스턴스). 아래 post-frame 콜백은 `success != null`인
+  /// 동안 매 build마다 다시 예약되므로, "이 결과를 처리했는가"를 기억하지 않으면 사용자가
+  /// 사진을 만들 때마다(=리빌드) 결과 처리가 다시 돌아 사용자의 조작을 덮어쓴다.
+  /// SellController는 상태를 바꿀 때마다 새 SellState를 만들므로 인스턴스 동일성으로 충분하다
+  /// (review 발견, spec-16-7 후속 리뷰).
+  SellState? _handledResult;
 
   @override
   void initState() {
     super.initState();
+    // 사진 초기 상태 — 수정 모드는 기존 저장 사진(=이 시점의 저장 기준선), 등록 모드는 빈 목록.
+    _photos = List.of(widget.initialPhotos);
+    _baseline = List.of(widget.initialPhotos);
     // 수정 모드: 기존 값으로 화면 입력 + 컨트롤러(startEdit)를 채운다.
     final detail = widget.editDetail;
     if (detail != null) {
@@ -71,12 +133,28 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       _fuel = input.fuel;
       _transmission = input.transmission;
       _region = input.region;
-      _accidentFree = input.accidentFree;
+      _accidentStatus = input.accidentStatus.isEmpty ? null : input.accidentStatus;
+      _isSingleOwner = input.isSingleOwner;
+      _isNonSmoker = input.isNonSmoker;
       // 빌드 완료 후 컨트롤러에 수정 모드를 알린다(빌드 중 provider 수정 금지 → 다음 프레임).
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ref.read(sellControllerProvider.notifier).startEdit(detail.id, input);
         }
+      });
+    } else {
+      // 등록 모드 새 진입 — sellControllerProvider는 하단 4탭 셸의 '/sell' 브랜치가
+      // 영구 마운트하는 인스턴스와 같은 것을 공유한다(수정 화면도 이 provider를 쓴다).
+      // 그래서 이전에 다른 화면 인스턴스가 남긴 success/error가 이 새 등록 화면에
+      // 유령 배너로 새어 보일 수 있다 — 열자마자 지운다(review, spec-16-1 P3). 빌드 중
+      // provider 수정은 금지라 위 수정 모드와 같은 방식으로 다음 프레임에 미룬다.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // 다른 화면의 제출이 진행 중이면 건드리지 않는다 — 무효화하면 새 컨트롤러의
+        // loading 이 false 라 그쪽 버튼이 다시 눌려 같은 매물이 두 번 INSERT 될 수 있다
+        // (app_router.dart의 탭 활성화 무효화와 같은 이유).
+        if (!mounted) return;
+        if (ref.read(sellControllerProvider).loading) return;
+        ref.invalidate(sellControllerProvider);
       });
     }
   }
@@ -109,15 +187,24 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       displacement: _displacement.text,
       seats: _seats.text,
       region: _region ?? '',
-      accidentFree: _accidentFree,
+      accidentStatus: _accidentStatus ?? '',
+      isSingleOwner: _isSingleOwner,
+      isNonSmoker: _isNonSmoker,
       options: _options.text,
       description: _description.text,
     );
     final notifier = ref.read(sellControllerProvider.notifier);
     notifier.updateInput(input);
-    // 수정 모드면 대상 id 를 명시 전달 — 컨트롤러의 editingId 가 (post-frame startEdit 가 아직 안 돈) 첫 프레임에
-    //   null 이더라도 등록(INSERT)로 새지 않고 반드시 수정(UPDATE)으로 가게 한다(중복 등록 사고 방지).
-    notifier.submit(editingIdOverride: widget.editDetail?.id);
+    // 등록/수정 모드는 항상 이 화면의 생성자 인자(widget.editDetail)로만 정한다 — 컨트롤러의
+    // state.editingId로 폴백하지 않는다(spec-16-1). '/sell' 탭이 하단 셸에 영구 마운트되면서
+    // sellControllerProvider의 autoDispose가 무력화됐고, 예전엔 submit()이 state.editingId로
+    // 폴백해 직전 수정 대상 id가 다음 등록에 새어 UPDATE로 잘못 나갔다(실측된 데이터 손상 버그).
+    notifier.submit(
+      editingId: widget.editDetail?.id,
+      owner: _owner,
+      photos: _photos,
+      baseline: _baseline,
+    );
   }
 
   /// 등록 성공 시 폼 입력 위젯을 비운다(컨트롤러는 입력을 초기화했지만 화면 컨트롤러도 맞춘다).
@@ -137,60 +224,107 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       _fuel = null;
       _transmission = null;
       _region = null;
-      _accidentFree = true;
+      _accidentStatus = null;
+      _isSingleOwner = false;
+      _isNonSmoker = false;
+      // 등록 성공은 다음 등록을 위한 빈 폼이 원칙이다 — 컨트롤러도 사진을 []로 되돌린다
+      // (sell_controller.dart 등록 분기). 실패한 사진이 있었더라도 매물 자체는 이미 저장됐으니
+      // "내 매물"에서 다시 열어 재시도할 수 있다(edit_listing_screen.dart가 그 진입점).
+      _photos = [];
+      _baseline = [];
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final role = ref.watch(currentRoleProvider);
-
     final isEdit = widget.isEdit;
     final title = isEdit ? '매물 수정' : '매물 등록';
 
-    // ── 역할 가드(AC5): 판매자만 등록/수정 화면 사용 ─────────────────
-    if (role != UserRole.seller) {
-      return Scaffold(
-        appBar: AppBar(title: Text(title)),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              '판매자만 이용할 수 있습니다.',
-              key: Key('sell_role_blocked'),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    // ── 게이트: 로그인만 본다(역할 통합, FR52·FR53) ──────────────────
+    // 옛 가드는 `role != UserRole.seller`로 막았다 — 웹 14.3이 requireRole(SELLER) →
+    // requireUser()로 완화한 것을 앱에 미러링한다. 등록자 본인만 수정/삭제하는 것은
+    // 계정 역할이 아니라 소유권(RLS)이 강제한다.
+    final blocked = requireUser(ref, title, showAppBar: widget.showAppBar);
+    if (blocked != null) return blocked;
 
     final sell = ref.watch(sellControllerProvider);
+    // 이번 상태(성공/에러/진행중)가 "이 화면이 시작한 것"인지 **인스턴스 식별자**로 판정한다.
+    // sellControllerProvider가 등록 탭 루트와 수정 화면(my_listings_screen.dart → 이 화면을
+    // editDetail 채워 여는 경로) 사이에 공유되므로(등록 탭은 셸 브랜치 영구 마운트, 수정
+    // 화면은 그 위에 rootNavigator push라 동시에 마운트될 수 있다), 남의 결과에 반응하면
+    // 사고가 난다.
+    //
+    // ⚠️ 예전엔 editingId로 판정했는데 그걸론 **등록 화면 둘**을 구분하지 못했다(옛 홈
+    // 퀵액션 go_sell이 push한 두 번째 등록 화면과 '/sell' 탭 루트 — 둘 다 editingId==null).
+    // 실측: 한쪽에서 등록에 성공하면 다른 쪽의 미저장 초안이 지워지고 유령 성공 배너가 떴다
+    // (review, spec-16-1 후속 리뷰). go_sell은 spec-16-8에서 제거돼 그 특정 경로는 지금
+    // 재현되지 않지만(후속 코드리뷰 spec-16-8 2차 리뷰 P8), 인스턴스 식별자 판정 자체는
+    // 등록 탭 루트·수정 화면이 여전히 같은 provider를 동시에 공유한다는 사실 때문에 그대로
+    // 필요하다 — editingId가 우연히 갈리는 데(null vs 실제 id) 기대지 않는다.
+    final mine = sell.owner != null && sell.owner == _owner;
+    // 진행중(loading)도 같은 기준으로 거른다 — 안 그러면 남의 제출이 도는 동안 이 화면의
+    // 등록 버튼이 "등록 중…"으로 잠기고, SellController.submit()의 `if (state.loading) return`
+    // 때문에 눌러도 아무 일이 안 일어난다(실측 재현).
+    final busy = mine && sell.loading;
 
     if (sell.success != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        // build() 시점에 캡처한 `sell`이 아니라 지금 시점의 최신 상태를 다시 읽는다 —
+        // 이 콜백이 실행되기 전에 다른 화면의 제출이 이미 상태를 더 바꿔놨을 수 있다.
+        final current = ref.read(sellControllerProvider);
+        if (current.success == null) return; // 이미 다른 화면이 소비/초기화했다.
+        final currentMine = current.owner != null && current.owner == _owner;
+        if (!currentMine) return;
+        // 이 결과는 **한 번만** 소비한다. 안 그러면 리빌드마다 콜백이 다시 돌아
+        // (a) 수정 분기는 사용자의 사진 조작을 컨트롤러 목록으로 되돌리고,
+        // (b) 등록 분기는 다음 매물용으로 방금 고른 사진을 _resetFields()로 지운다.
+        // 둘 다 "사진을 만지면 리빌드된다"는 사실 때문에 생기며, 사용자에겐 조작이
+        // 그냥 사라지는 것으로 보인다(review 발견, spec-16-7 후속 리뷰).
+        if (identical(current, _handledResult)) return;
+        _handledResult = current;
         if (isEdit) {
           // 수정 성공 → 화면을 닫고 목록으로 복귀(true 를 돌려줘 목록이 새로고침하게).
-          if (sell.done && Navigator.of(context).canPop()) {
+          if (current.done && Navigator.of(context).canPop()) {
             Navigator.of(context).pop(true);
+            return;
+          }
+          // done이 아니면 사진 처리 중 일부가 실패해 화면에 남아 있다(sell_controller.dart) —
+          // 실제로 저장된 상태로 로컬 업로더를 갱신해 재시도할 수 있게 한다. 기준선도 "지금
+          // 실제로 저장된 것"으로 옮긴다(저장된 항목만 — rowId가 있는 것 = DB에 행이 있는 것).
+          // 위 `_handledResult` 가드가 이 병합을 결과당 한 번으로 묶는다 — 그 뒤 사용자가
+          // 삭제·재정렬·재시도를 하면 그 조작이 화면에 그대로 남는다(안 그러면 안내가 시킨
+          // 복구 동작이 다음 프레임에 되돌려져 빠져나갈 수 없다).
+          final incoming = current.photos;
+          if (incoming != null && mounted) {
+            setState(() {
+              _photos = incoming;
+              _baseline = _photos.where((p) => p.rowId != null).toList();
+            });
           }
         } else {
-          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비).
-          if (_model.text.isNotEmpty) _resetFields();
+          // 등록 성공 → 화면 입력을 비운다(연속 등록 대비, 사진 포함). 결과당 한 번만 돈다
+          // (위 가드) — 안 그러면 다음 매물용으로 고른 사진이 다음 프레임에 지워진다.
+          _resetFields();
         }
       });
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: widget.showAppBar ? AppBar(title: Text(title)) : null,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: SingleChildScrollView(
-            // 하단 패딩에 시스템 내비바 높이를 더해(edge-to-edge) 등록 버튼이 가리지 않게.
+            // 하단 패딩: `viewPadding.bottom`이 아니라 `MediaQuery.paddingOf(context).bottom`을
+            // 쓴다 — 탭 루트로 쓰일 때 셸의 NavigationBar가 이미 그 시스템 인셋을 흡수하므로,
+            // 원본 viewPadding을 또 더하면 하단 여백이 이중으로 커진다(spec-16-1 Task).
             padding: EdgeInsets.fromLTRB(
-                20, 20, 20, 20 + MediaQuery.of(context).viewPadding.bottom),
+              20,
+              20,
+              20,
+              20 + MediaQuery.paddingOf(context).bottom,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -202,65 +336,148 @@ class _SellScreenState extends ConsumerState<SellScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                _dropdown('제조사', 'sell_manufacturer', _manufacturer,
-                    ListingOptions.manufacturer, (v) => setState(() => _manufacturer = v)),
+                _dropdown(
+                  '제조사',
+                  'sell_manufacturer',
+                  _manufacturer,
+                  ListingOptions.manufacturer,
+                  (v) => setState(() => _manufacturer = v),
+                ),
                 const SizedBox(height: 12),
                 _text('모델', 'sell_model', _model, hint: '예: 아반떼 CN7'),
                 const SizedBox(height: 12),
-                _dropdown('차종', 'sell_body_type', _bodyType, ListingOptions.bodyType,
-                    (v) => setState(() => _bodyType = v)),
+                _dropdown(
+                  '차종',
+                  'sell_body_type',
+                  _bodyType,
+                  ListingOptions.bodyType,
+                  (v) => setState(() => _bodyType = v),
+                ),
                 const SizedBox(height: 12),
                 _number('연식 (년)', 'sell_year', _year, hint: '예: 2021'),
                 const SizedBox(height: 12),
                 _number('가격 (원)', 'sell_price', _price, hint: '예: 29800000'),
                 const SizedBox(height: 12),
-                _number('주행거리 (km)', 'sell_mileage', _mileage, hint: '예: 103000'),
+                _number(
+                  '주행거리 (km)',
+                  'sell_mileage',
+                  _mileage,
+                  hint: '예: 103000',
+                ),
                 const SizedBox(height: 12),
-                _dropdown('색상', 'sell_color', _color, ListingOptions.color,
-                    (v) => setState(() => _color = v)),
+                _dropdown(
+                  '색상',
+                  'sell_color',
+                  _color,
+                  ListingOptions.color,
+                  (v) => setState(() => _color = v),
+                ),
                 const SizedBox(height: 12),
-                _dropdown('연료', 'sell_fuel', _fuel, ListingOptions.fuel,
-                    (v) => setState(() => _fuel = v)),
+                _dropdown(
+                  '연료',
+                  'sell_fuel',
+                  _fuel,
+                  ListingOptions.fuel,
+                  (v) => setState(() => _fuel = v),
+                ),
                 const SizedBox(height: 12),
-                _dropdown('변속기', 'sell_transmission', _transmission,
-                    ListingOptions.transmission, (v) => setState(() => _transmission = v)),
+                _dropdown(
+                  '변속기',
+                  'sell_transmission',
+                  _transmission,
+                  ListingOptions.transmission,
+                  (v) => setState(() => _transmission = v),
+                ),
                 const SizedBox(height: 12),
-                _number('배기량 (cc)', 'sell_displacement', _displacement,
-                    hint: '예: 1598 (전기차는 0)'),
+                _number(
+                  '배기량 (cc)',
+                  'sell_displacement',
+                  _displacement,
+                  hint: '예: 1598 (전기차는 0)',
+                ),
                 const SizedBox(height: 12),
                 _number('인승 (명)', 'sell_seats', _seats, hint: '예: 5'),
                 const SizedBox(height: 12),
-                _dropdown('지역', 'sell_region', _region, ListingOptions.region,
-                    (v) => setState(() => _region = v)),
+                _dropdown(
+                  '지역',
+                  'sell_region',
+                  _region,
+                  ListingOptions.region,
+                  (v) => setState(() => _region = v),
+                ),
                 const SizedBox(height: 12),
 
-                SwitchListTile(
-                  key: const Key('sell_accident_free'),
+                // 신뢰 정보 — 구매자가 카드·상세에서 뱃지로 보는 값이다(web SellForm과 같은 구성).
+                _dropdown(
+                  '사고이력',
+                  'sell_accident_status',
+                  _accidentStatus,
+                  ListingOptions.accidentStatus,
+                  (v) => setState(() => _accidentStatus = v),
+                ),
+                CheckboxListTile(
+                  key: const Key('sell_is_single_owner'),
                   contentPadding: EdgeInsets.zero,
-                  title: const Text('무사고 차량'),
-                  value: _accidentFree,
-                  onChanged: sell.loading
-                      ? null
-                      : (v) => setState(() => _accidentFree = v),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('1인소유'),
+                  value: _isSingleOwner,
+                  onChanged: busy ? null : (v) => setState(() => _isSingleOwner = v ?? false),
+                ),
+                CheckboxListTile(
+                  key: const Key('sell_is_non_smoker'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('비흡연'),
+                  value: _isNonSmoker,
+                  onChanged: busy ? null : (v) => setState(() => _isNonSmoker = v ?? false),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    '체크한 항목만 구매자에게 표시돼요. 체크하지 않은 항목은 "아니오"가 아니라 "신고하지 않음"으로 남습니다.',
+                    style: TextStyle(fontSize: 12, color: AppColors.inkMuted),
+                  ),
                 ),
 
-                _text('옵션 (쉼표로 구분, 선택)', 'sell_options', _options,
-                    hint: '예: 선루프, 후방카메라, 내비게이션'),
+                _text(
+                  '옵션 (쉼표로 구분, 선택)',
+                  'sell_options',
+                  _options,
+                  hint: '예: 선루프, 후방카메라, 내비게이션',
+                ),
                 const SizedBox(height: 12),
-                _text('설명 (선택)', 'sell_description', _description,
-                    hint: '차량 상태·이력 등을 자유롭게', maxLines: 3),
+                _text(
+                  '설명 (선택)',
+                  'sell_description',
+                  _description,
+                  hint: '차량 상태·이력 등을 자유롭게',
+                  maxLines: 3,
+                ),
                 const SizedBox(height: 16),
 
-                if (sell.error != null)
+                // 사진(선택, Story 16.7) — 대표는 순서 0번(AC1). 실제 업로드는 제출 시점.
+                PhotoUploaderWidget(
+                  items: _photos,
+                  onChanged: (next) => setState(() => _photos = next),
+                  disabled: busy,
+                ),
+                const SizedBox(height: 16),
+
+                // `mine`이 아닌 error/success는 안 그린다 — 등록 탭 루트와 수정 화면이
+                // sellControllerProvider를 공유하므로, 안 걸러내면 남의(다른 editingId)
+                // 결과 배너가 이 화면에도 유령처럼 보인다(review, spec-16-1 P3).
+                if (mine && sell.error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
                       sell.error!,
                       key: const Key('sell_error'),
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
-                if (sell.success != null)
+                if (mine && sell.success != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
@@ -272,9 +489,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
 
                 FilledButton(
                   key: const Key('sell_submit'),
-                  onPressed: sell.loading ? null : _submit,
+                  onPressed: busy ? null : _submit,
                   child: Text(
-                    sell.loading
+                    busy
                         ? (isEdit ? '수정 중…' : '등록 중…')
                         : (isEdit ? '수정 완료' : '매물 등록'),
                   ),
@@ -288,29 +505,52 @@ class _SellScreenState extends ConsumerState<SellScreen> {
   }
 
   // ── 입력 위젯 헬퍼 ───────────────────────────────────────────────
-  Widget _text(String label, String keyName, TextEditingController c,
-      {String? hint, int maxLines = 1}) {
+  Widget _text(
+    String label,
+    String keyName,
+    TextEditingController c, {
+    String? hint,
+    int maxLines = 1,
+  }) {
     return TextField(
       key: Key(keyName),
       controller: c,
       maxLines: maxLines,
-      decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+      ),
     );
   }
 
-  Widget _number(String label, String keyName, TextEditingController c, {String? hint}) {
+  Widget _number(
+    String label,
+    String keyName,
+    TextEditingController c, {
+    String? hint,
+  }) {
     return TextField(
       key: Key(keyName),
       controller: c,
       keyboardType: TextInputType.number,
       // 숫자만 입력 가능(소수점·부호 차단) — 정수 저장 규칙을 입력 단계부터 돕는다.
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-      decoration: InputDecoration(labelText: label, hintText: hint, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        isDense: true,
+      ),
     );
   }
 
-  Widget _dropdown(String label, String keyName, String? value, List<String> options,
-      ValueChanged<String?> onChanged) {
+  Widget _dropdown(
+    String label,
+    String keyName,
+    String? value,
+    List<String> options,
+    ValueChanged<String?> onChanged,
+  ) {
     return DropdownButtonFormField<String?>(
       key: Key(keyName),
       initialValue: value,
@@ -318,7 +558,9 @@ class _SellScreenState extends ConsumerState<SellScreen> {
       decoration: InputDecoration(labelText: label, isDense: true),
       items: [
         const DropdownMenuItem<String?>(value: null, child: Text('선택')),
-        ...options.map((o) => DropdownMenuItem<String?>(value: o, child: Text(o))),
+        ...options.map(
+          (o) => DropdownMenuItem<String?>(value: o, child: Text(o)),
+        ),
       ],
       onChanged: onChanged,
     );

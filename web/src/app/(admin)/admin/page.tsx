@@ -1,37 +1,17 @@
-// 관리자 영역 홈 — 운영 기능 진입 허브.
-// 접근 제어는 상위 (admin)/layout.tsx의 requireRole(admin)이 담당하므로 이 화면엔 인증 로직이 없다.
-// 회원 관리(6-2)·매물 관리(6-3)·거래 내역(6-4)·채팅 관리(6-5) 전부 구현 완료 → 진입 링크 노출.
-import Link from 'next/link';
-import { buttonClasses } from '@/components/ui/Button';
+// 관리자 영역 진입점 — **회원 관리로 곧장 보낸다**(2026-08-13 사용자 결정 #9).
+//
+// 예전엔 여기가 링크 4개(회원 관리·매물 관리·거래 내역·채팅 관리)만 있는 "대시보드 허브"였다.
+// Story 15.2가 같은 4개 목적지를 **상시 사이드바**로 옮긴 뒤로는 그 허브가 하는 일이 사라졌다 —
+// 관리자는 로그인하자마자 아무것도 없는 화면을 한 번 거쳐 다시 클릭해야 했다. 그래서 허브를
+// 없애고 첫 화면이 곧 회원 관리가 되게 한다.
+//
+// 라우트를 **지우지 않고 리다이렉트로 남기는** 이유: `/admin`은 홈(app/page.tsx)이 관리자를
+// 보내는 목적지이자 북마크·기존 링크가 가리키는 주소다. 지우면 404가 되므로 전달만 한다.
+//
+// 접근 제어는 상위 (admin)/layout.tsx의 requireRole(admin)이 그대로 담당한다 — 관리자가 아니면
+// 이 리다이렉트가 어디로 보내든 layout이 다시 홈으로 돌려보낸다(권한이 여기서 새지 않는다).
+import { redirect } from 'next/navigation';
 
 export default function AdminHomePage() {
-  return (
-    // 정렬 통일(2026-06-24): 구매자·판매자 홈(page.tsx)과 동일하게 상단 정렬.
-    //   기존엔 min-h-screen+justify-center로 세로 중앙이라 역할 간 톤이 어긋났다.
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">관리자 영역</h1>
-        <p className="text-sm text-zinc-500">운영 기능을 선택하세요.</p>
-      </div>
-
-      <nav className="flex flex-col gap-3">
-        {/* 회원 관리(FR22) — 전체 회원 조회 + 정지/삭제 */}
-        <Link href="/admin/members" className={buttonClasses({ variant: 'primary' })}>
-          회원 관리
-        </Link>
-        {/* 매물 관리(FR23) — 판매완료 포함 전체 매물 조회 + 삭제 */}
-        <Link href="/admin/listings" className={buttonClasses({ variant: 'primary' })}>
-          매물 관리
-        </Link>
-        {/* 거래 내역(FR24) — 판매완료(sold) 매물 조회 전용 */}
-        <Link href="/admin/transactions" className={buttonClasses({ variant: 'primary' })}>
-          거래 내역
-        </Link>
-        {/* 채팅 관리(FR25) — 전체 채팅방 조회 + 대화 열람 + 방 삭제 */}
-        <Link href="/admin/chats" className={buttonClasses({ variant: 'primary' })}>
-          채팅 관리
-        </Link>
-      </nav>
-    </main>
-  );
+  redirect('/admin/members');
 }

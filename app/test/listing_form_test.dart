@@ -17,7 +17,9 @@ ListingFormInput validInput({
   String displacement = '1598',
   String seats = '5',
   String region = '서울',
-  bool accidentFree = true,
+  String accidentStatus = '무사고',
+  bool isSingleOwner = false,
+  bool isNonSmoker = false,
   String options = '선루프, 후방카메라',
   String description = '상태 좋음',
 }) {
@@ -34,7 +36,9 @@ ListingFormInput validInput({
     displacement: displacement,
     seats: seats,
     region: region,
-    accidentFree: accidentFree,
+    accidentStatus: accidentStatus,
+    isSingleOwner: isSingleOwner,
+    isNonSmoker: isNonSmoker,
     options: options,
     description: description,
   );
@@ -164,6 +168,45 @@ void main() {
       final r = validateAndBuildListing(validInput(manufacturer: '없는제조사'));
       expect(r.isOk, isFalse);
       expect(r.message, contains('제조사'));
+    });
+  });
+
+  // ✎ 2026-08-13 신설 — 신뢰속성 저장 계약. 앱은 이 3컬럼을 **한 번도 저장한 적이 없었고**
+  //   그걸 잡는 검사도 없어서, "화면엔 뱃지가 있는데 앱으로 등록하면 안 채워지는" 상태가
+  //   아무에게도 안 보였다(web에서 같은 구멍을 먼저 발견했다). 그 사각지대를 여기서 닫는다.
+  group('신뢰속성 저장 계약(2026-08-13)', () {
+    test('사고이력 미선택은 거절한다 — 예전엔 기본 켜진 스위치라 "안 고름"이 곧 무사고 신고였다', () {
+      final r = validateAndBuildListing(validInput(accidentStatus: ''));
+      expect(r.isOk, isFalse);
+      expect(r.message, contains('사고이력'));
+    });
+
+    test('accident_free는 입력이 아니라 사고이력에서 파생된다 — 무사고면 true', () {
+      final r = validateAndBuildListing(validInput(accidentStatus: '무사고'));
+      expect(r.isOk, isTrue);
+      expect(r.payload!['accident_status'], '무사고');
+      expect(r.payload!['accident_free'], true);
+    });
+
+    test('무사고가 아니면 accident_free는 false다', () {
+      for (final status in ['단순교환', '사고']) {
+        final r = validateAndBuildListing(validInput(accidentStatus: status));
+        expect(r.isOk, isTrue, reason: '$status 는 유효한 값이다');
+        expect(r.payload!['accident_free'], false,
+            reason: '$status 인데 accident_free가 true면 웹 필터(사고이력 기준)와 '
+                'AI 검색(accident_free 기준)이 서로 다른 결과를 낸다');
+      }
+    });
+
+    test('체크 안 한 항목은 false가 아니라 null(미신고)로 저장된다', () {
+      final r = validateAndBuildListing(
+        validInput(accidentStatus: '무사고', isSingleOwner: true, isNonSmoker: false),
+      );
+      expect(r.isOk, isTrue);
+      expect(r.payload!['is_single_owner'], true);
+      // false로 저장하면 "이 차는 비흡연이 아니다"라고 판매자가 신고한 것이 되는데,
+      // 그는 아무 말도 하지 않았다(0017이 못박은 3상태 규칙).
+      expect(r.payload!['is_non_smoker'], isNull);
     });
   });
 }

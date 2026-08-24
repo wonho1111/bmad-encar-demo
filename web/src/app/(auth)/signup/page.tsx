@@ -1,21 +1,18 @@
 'use client';
 
-// 회원가입 화면 (FR1) — 이메일·비밀번호 + 역할(구매자/판매자) 선택.
+// 회원가입 화면 (FR1) — 이메일·비밀번호만 받는다.
 // 제출하면 Supabase Auth 계정이 생기고, DB 트리거(handle_new_user)가 profiles 행을
-// role·status='active'로 함께 만든다. 역할은 options.data.role로 전달되어 트리거가 읽는다.
+// role='user'·status='active'로 함께 만든다(Story 14.2 — FR52 "로그인만 하면 누구나 사고팔
+// 수 있다"와 충돌하던 역할 선택 UI를 제거했다. role은 options.data에 아예 싣지 않고 트리거의
+// 기본값에 위임한다 — 0028은 coalesce가 아니라 화이트리스트 IF라, buyer/seller가 아닌 값은
+// 누락이든 'admin'이든 전부 'user'로 강제된다).
+// 이 "role을 안 보낸다"가 이 화면의 계약이며, __tests__/signupNoRoleMetadata.test.ts가 강제한다.
 // 로그인/로그아웃은 Story 1.3 범위라 여기서는 다루지 않는다.
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { USER_ROLE, type UserRole } from '@/lib/constants';
 import Button from '@/components/ui/Button';
-
-// 가입 경로에서 고를 수 있는 역할은 구매자/판매자뿐(admin 제외 — 서버 트리거도 admin을 차단).
-const SIGNUP_ROLES: { value: UserRole; label: string }[] = [
-  { value: USER_ROLE.BUYER, label: '구매자' },
-  { value: USER_ROLE.SELLER, label: '판매자' },
-];
 
 // Supabase 인증 에러를 사용자용 한국어 메시지로 변환한다(원본 메시지/코드는 화면에 직접 노출하지 않음).
 // 중복 판정은 status(422)가 아니라 에러 code/메시지로 좁힌다 — 422는 약한 비밀번호 등에도 쓰이기 때문.
@@ -37,7 +34,6 @@ export default function SignupPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<UserRole>(USER_ROLE.BUYER);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -65,7 +61,7 @@ export default function SignupPage() {
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
-        options: { data: { role } }, // → auth.users.raw_user_meta_data.role (트리거가 읽음)
+        // role metadata를 보내지 않는다 — 트리거(handle_new_user)가 기본값 'user'로 채운다(14.2).
       });
 
       if (signUpError) {
@@ -104,8 +100,8 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">회원가입</h1>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-6">
+      <h1 className="text-section font-bold text-ink-primary">회원가입</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
         <label className="flex flex-col gap-1">
@@ -116,7 +112,7 @@ export default function SignupPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-border-hairline px-3 py-2 bg-surface-raised"
           />
         </label>
 
@@ -129,42 +125,26 @@ export default function SignupPage() {
             required
             minLength={6}
             autoComplete="new-password"
-            className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-border-hairline px-3 py-2 bg-surface-raised"
           />
         </label>
 
-        <fieldset className="flex flex-col gap-2">
-          <legend className="text-sm font-medium">역할 선택</legend>
-          <div className="flex gap-4">
-            {SIGNUP_ROLES.map((r) => (
-              <label key={r.value} className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="role"
-                  value={r.value}
-                  checked={role === r.value}
-                  onChange={() => setRole(r.value)}
-                />
-                <span>{r.label}</span>
-              </label>
-            ))}
-          </div>
-          <p className="text-xs text-zinc-500">
-            역할은 가입 시 하나로 고정됩니다. 구매와 판매를 모두 하려면 계정을 2개 만들어주세요.
-          </p>
-        </fieldset>
+        <p className="text-xs text-ink-muted">차를 사고파는 건 가입 후 언제든 할 수 있어요.</p>
 
         {error && (
-          <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          // 같은 폼 안에서 성공 문구는 상자(bg-trust-green-bg)를 유지하는데 오류만 맨 텍스트로 두면
+          // 더 급한 쪽이 더 조용해진다. 상자를 되돌린다(코드리뷰 patch, 15.1). 대비 실측:
+          // danger/10 틴트 위 text-danger = 라이트 4.51 / 다크 5.72 (둘 다 AA 통과).
+          <p role="alert" className="rounded bg-danger/10 px-3 py-2 text-sm text-danger">
             {error}
           </p>
         )}
         {success && (
           <div className="flex flex-col gap-2">
-            <p role="status" className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+            <p role="status" className="rounded bg-trust-green-bg px-3 py-2 text-sm text-trust-green-ink">
               {success}
             </p>
-            <Link href="/login" className="text-sm font-medium text-zinc-900 underline dark:text-zinc-100">
+            <Link href="/login" className="text-sm font-medium text-ink-primary underline">
               로그인하러 가기
             </Link>
           </div>

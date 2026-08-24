@@ -46,7 +46,14 @@ class ListingFormInput {
     this.displacement = '',
     this.seats = '',
     this.region = '',
-    this.accidentFree = true, // 무사고 기본 true(web 기본값 동일).
+    // ✎ 2026-08-13 — 신뢰속성 3개를 폼이 직접 받는다(web SellForm과 같은 계약).
+    //   예전엔 `accidentFree`(bool, 기본 true) 하나뿐이었다: 상세·카드가 뱃지로 보여주는
+    //   accident_status·is_single_owner·is_non_smoker를 **앱에서는 넣을 방법이 아예 없었고**,
+    //   기본이 true라 아무것도 안 건드리고 등록하면 자동으로 "무사고"로 신고됐다.
+    //   `accidentFree`는 이제 폼 입력이 아니라 accidentStatus에서 **파생**한다(buildListingPayload).
+    this.accidentStatus = '', // ''(미선택) | 무사고 | 단순교환 | 사고 — 필수
+    this.isSingleOwner = false, // 체크=신고함(true). 미체크는 false가 아니라 **null(미신고)** 로 저장.
+    this.isNonSmoker = false, // 위와 같음
     this.options = '', // 쉼표 구분 입력 → 배열 변환.
     this.description = '',
   });
@@ -63,7 +70,9 @@ class ListingFormInput {
   final String displacement;
   final String seats;
   final String region;
-  final bool accidentFree;
+  final String accidentStatus;
+  final bool isSingleOwner;
+  final bool isNonSmoker;
   final String options;
   final String description;
 
@@ -84,7 +93,10 @@ class ListingFormInput {
       displacement: d.displacement.toString(),
       seats: d.seats.toString(),
       region: d.region,
-      accidentFree: d.accidentFree,
+      // NULL(미상)은 체크 해제로 되돌린다 — 저장 때 다시 null로 나가므로 왕복해도 "아니오"가 되지 않는다.
+      accidentStatus: d.accidentStatus ?? '',
+      isSingleOwner: d.isSingleOwner == true,
+      isNonSmoker: d.isNonSmoker == true,
       // 옵션 배열 → 쉼표 구분 문자열(등록 폼이 다시 쉼표로 split 하므로 왕복 일관).
       options: (d.options ?? const <String>[]).join(', '),
       description: d.description ?? '',
@@ -104,7 +116,9 @@ class ListingFormInput {
     String? displacement,
     String? seats,
     String? region,
-    bool? accidentFree,
+    String? accidentStatus,
+    bool? isSingleOwner,
+    bool? isNonSmoker,
     String? options,
     String? description,
   }) {
@@ -121,7 +135,9 @@ class ListingFormInput {
       displacement: displacement ?? this.displacement,
       seats: seats ?? this.seats,
       region: region ?? this.region,
-      accidentFree: accidentFree ?? this.accidentFree,
+      accidentStatus: accidentStatus ?? this.accidentStatus,
+      isSingleOwner: isSingleOwner ?? this.isSingleOwner,
+      isNonSmoker: isNonSmoker ?? this.isNonSmoker,
       options: options ?? this.options,
       description: description ?? this.description,
     );
@@ -177,6 +193,11 @@ ListingFormResult validateAndBuildListing(ListingFormInput form) {
   if (form.region.isEmpty) {
     return const ListingFormResult.error('지역을 선택해주세요.');
   }
+  // 사고이력은 **필수**다(2026-08-13, web과 같은 규칙). 예전엔 기본 켜진 스위치라
+  // "안 고른 상태"가 곧 "무사고 신고"였다 — 판매자가 명시적으로 고르게 한다.
+  if (form.accidentStatus.isEmpty) {
+    return const ListingFormResult.error('사고이력을 선택해주세요.');
+  }
 
   // ── 드롭다운 값이 정말 목록 안인지 한 번 더(방어) ────────────────
   // UI 가 ListingOptions 로만 채우므로 정상 경로에선 통과하나, 목록 밖 값이 흘러들면 DB CHECK 전에 막는다.
@@ -194,6 +215,9 @@ ListingFormResult validateAndBuildListing(ListingFormInput form) {
   }
   if (!ListingOptions.transmission.contains(form.transmission)) {
     return const ListingFormResult.error('변속기 선택값이 올바르지 않습니다. 목록에서 다시 선택해주세요.');
+  }
+  if (!ListingOptions.accidentStatus.contains(form.accidentStatus)) {
+    return const ListingFormResult.error('사고이력 선택값이 올바르지 않습니다. 목록에서 다시 선택해주세요.');
   }
   if (!ListingOptions.region.contains(form.region)) {
     return const ListingFormResult.error('지역 선택값이 올바르지 않습니다. 목록에서 다시 선택해주세요.');
@@ -249,7 +273,18 @@ ListingFormResult validateAndBuildListing(ListingFormInput form) {
     'displacement': displacement, // cc(정수)
     'seats': seats, // 정수
     'region': form.region,
-    'accident_free': form.accidentFree,
+    'accident_status': form.accidentStatus,
+    // `accident_free`는 **파생값**이다(2026-08-13, web SellForm과 같은 규칙).
+    //   컬럼을 안 지우는 이유: AI 검색이 이걸 쓴다(api/app/graph/sql_rag_node.py 지시문 —
+    //   "사고 관련 질문은 accident_status가 아니라 accident_free로 판단하라"). 없애면
+    //   "무사고 차 추천해줘"가 깨진다. 그래서 남기고 자동으로 채운다.
+    //   ⚠️ 앱이 이 파생을 안 하면 **웹 필터(accident_status 기준)와 AI 검색(accident_free 기준)이
+    //   서로 다른 결과를 내는 행**이 앱 등록마다 쌓인다 — 그게 이 줄이 존재하는 이유다.
+    'accident_free': form.accidentStatus == '무사고',
+    // 미체크는 false가 아니라 null(미신고). false는 "1인소유가 아니다"라는 신고인데
+    // 판매자는 아무 말도 하지 않았다(0017이 못박은 3상태 규칙).
+    'is_single_owner': form.isSingleOwner ? true : null,
+    'is_non_smoker': form.isNonSmoker ? true : null,
     'options': options, // text[]
     'description': description, // null 가능
     'status': 'on_sale', // 즉시 노출(기본값과 같으나 의도 명시 — FR7)

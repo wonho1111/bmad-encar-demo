@@ -141,10 +141,33 @@ _CATEGORICAL_VOCAB: dict[str, tuple[str, ...]] = {
 }
 
 # 후속·참조 표현 — 이게 보이면 "좁히기(refine)"로 보고 절대 리셋하지 않는다(보수적: 오인 리셋 방지).
+# ⚠️ "제일"·"가장"은 여기 없다(코드리뷰 정정, 13.9 2차 리뷰) — 이 단어 자체를 통짜로 REFINE
+#   마커에 넣으면 "가장 좋은 자동차보험 알려줘"처럼 가격과 무관한 최상급 주제 점프까지 좁히기로
+#   오판한다. 최상급이 REFINE 신호가 되는 건 "가격 정렬"과 결합했을 때뿐이므로 아래
+#   `_SUPERLATIVE_PRICE_RE`(최상급 부사 + 가격 형용사 근접)로 따로 잡는다.
 _REFINE_MARKERS: tuple[str, ...] = (
     "그중", "그 중", "그거", "그것", "그 차", "그차", "아까", "방금", "그럼",
     "말고", "중에서", "다른", "비슷", "같은 거", "같은거", "이전", "위에", "더 싼", "더싼",
 )
+
+# 교체 의도 표현 — 이게 있고 **동시에 차종(body_type) 값이 통째로 바뀌었을 때만** "값 교체"가
+# REFINE_MARKERS·최상급 신호보다 우선한다(아래 `_is_topic_shift` 1단계 참조).
+# ⚠️ 축을 body_type으로 좁힌 이유(코드리뷰 정정, 13.9 3차): 이 목록의 존재만으로 모든 카테고리
+#   축에서 단축을 건너뛰게 하면, "그중 경기 말고 인천"·"그중 검정으로 바꿔줘"처럼 **좁히기**인
+#   턴까지 리셋돼 직전 턴의 가격상한·지역·차종이 통째로 날아간다(실측: 전부 False→True로 뒤집힘).
+#   "말고"가 _REFINE_MARKERS에도 들어 있어 피해가 더 넓었다. DW-612가 실제로 다룬 축은
+#   차종 교체(준중형 → SUV) 하나뿐이므로, 단축 무력화도 그 축으로만 제한한다.
+_REPLACEMENT_MARKERS: tuple[str, ...] = ("바꿔", "말고", "대신", "아니")
+
+# 최상급 부사(제일·가장) + 가격 형용사가 근접해 있을 때만 "가격 정렬 좁히기" 신호로 본다
+# (hybrid_rag_node._has_superlative와 같은 모양 — 부사만 있고 가격 형용사가 없는 "가장 좋은",
+# "가장 인기있는" 류는 REFINE 신호가 아니다. 이걸 넓게 잡으면 그 최상급이 딸린 비-SQL 주제
+# 점프(예: "가장 좋은 자동차보험 알려줘")까지 좁히기로 오판해 리셋을 못 한다).
+# 가격 형용사 뒤 음절 경계 `(?![가-힣])`의 이유는 hybrid_rag_node 쪽 주석 참조("싼타페"의 "싼"
+# 오탐 차단). `저렴`만 경계를 빼는 것도 같다("저렴한"이 정상 표기).
+# ⚠️ 두 파일의 패턴은 완전히 동일해야 한다 — 주석이 아니라
+#   tests/test_hybrid_rag_node.py::test_superlative_price_re_identical_in_both_modules가 강제한다.
+_SUPERLATIVE_PRICE_RE = re.compile(r"(제일|가장)\s*\S{0,4}?((싼|싸|비싼|비싸)(?![가-힣])|저렴)")
 
 # 숫자형 조건 신호(가격·주행거리·연식) — 있으면 "조건 추가(좁히기)"로 보고 비-SQL 주제 점프로 안 친다.
 _NUMERIC_CUE = re.compile(r"\d|천만원|만원|만\s*km|km|년식|연식|이하|이상|미만|초과")
@@ -175,20 +198,44 @@ def _recent_user_text(context: list) -> str:
 def _is_topic_shift(query: str, context: list) -> bool:
     """현재 질의가 직전 맥락과 "다른 새 검색"이면 True(→ 맥락 버리고 원 질의 사용).
 
-    판정 순서(보수적):
-      1) 참조·후속 표현이 있으면 좁히기 → False(리셋 안 함).
+    판정 순서(보수적, 코드리뷰 정정 — 13.9 3차 리뷰로 재정립):
+      1) 참조·후속 표현(REFINE_MARKERS) 또는 "최상급+가격형용사"(_SUPERLATIVE_PRICE_RE)가
+         있으면 → False(좁히기, 리셋 안 함). 단 **교체 의도 표현(_REPLACEMENT_MARKERS)이
+         있으면서 동시에 차종(body_type) 값이 통째로 바뀐 경우**(예: "가장 저렴한 SUV로
+         바꿔줘" — 직전이 준중형차)만 이 단축을 건너뛰고 아래 2)로 넘어간다. 그 조합은
+         표면상 참조 표현을 달고 있어도 실제로는 차종 교체 요청이라, 여기서 먼저 False를
+         내면 옛 차종이 안 접혀 오염된다(DW-612).
+         ⚠️ 색상·지역·연료·제조사 교체는 여기 해당하지 않는다 — "그중 경기 말고 인천"은
+         지역을 바꾸는 **좁히기**이고, 이걸 리셋으로 보면 가격상한까지 같이 날아간다.
       2) 같은 카테고리 차원에서 값이 통째로 교체되면(예: 중형→SUV, 현대→기아) → True.
-      3) 새 질의에 카테고리·숫자 조건 신호가 전혀 없고(=용도·인물 등 새 주제),
-         직전이 SQL성 검색(조건 보유)이었다면 → True(예: "…중형세단" 뒤 "초보 첫차 추천").
+      3) 새 질의에 카테고리·숫자 조건 신호가 전혀 없고(=용도·인물 등 새 주제) — REFINE_MARKERS도
+         `_SUPERLATIVE_PRICE_RE`도 없고 — 직전이 SQL성 검색(조건 보유)이었다면 → True
+         (예: "…중형세단" 뒤 "초보 첫차 추천").
       그 외에는 조건 추가(좁히기)로 보고 False.
+
+    왜 차종 교체만 참조 표현을 이기는가: "그중 기아 것도 보여줘"(추가 요청, REFINE)와
+    "아니 쏘렌토 같은 SUV로 바꿔줘"(차종 교체, RESET)는 둘 다 참조 표현처럼 보이는 낱말을
+    담을 수 있지만 의미가 반대다. 다만 이 뒤집기를 모든 축에 열어 주면 반대 방향 사고가
+    난다 — "그중 경기 말고 인천"은 지역만 좁히는 후속 턴인데도 리셋돼 가격·차종까지
+    사라진다(실측). 그래서 단축을 건너뛰는 조건을 "교체 의도 + 차종 값 교체"로 못박는다.
     """
     low = query.lower()
-    if any(m in low for m in _REFINE_MARKERS):
-        return False  # 참조 표현 → 좁히기로 확정, 리셋하지 않는다.
 
     prev_text = _recent_user_text(context)
     prev_dims = _categorical_dims(prev_text)
     new_dims = _categorical_dims(low)
+
+    has_refine = any(m in low for m in _REFINE_MARKERS)
+    has_superlative_price = bool(_SUPERLATIVE_PRICE_RE.search(low))
+    has_replacement = any(m in low for m in _REPLACEMENT_MARKERS)
+    # 차종(body_type)만 통째로 갈아끼운 경우 — 단축(1)을 건너뛰게 하는 유일한 축(DW-612).
+    _prev_body, _new_body = prev_dims.get("body_type"), new_dims.get("body_type")
+    body_type_swap = bool(_prev_body and _new_body and not (_prev_body & _new_body))
+
+    # (1) 참조·후속 표현 또는 최상급+가격형용사 → 좁히기로 확정
+    #     (단, "교체 의도 + 차종 값 교체"가 함께 있으면 단축하지 않고 2)로 내려간다).
+    if (has_refine or has_superlative_price) and not (has_replacement and body_type_swap):
+        return False
 
     # (2) 같은 차원 값 교체 — 새 질의가 그 차원에 직전과 겹치지 않는 값을 들고 옴.
     for dim, new_vals in new_dims.items():
@@ -196,8 +243,8 @@ def _is_topic_shift(query: str, context: list) -> bool:
         if prev_vals and not (prev_vals & new_vals):
             return True
 
-    # (3) 새 질의에 SQL 조건 신호가 전혀 없음(카테고리·숫자 모두 없음) = 비-SQL 주제로 점프.
-    if not new_dims and not _NUMERIC_CUE.search(low):
+    # (3) 새 질의에 SQL 조건 신호가 전혀 없음(카테고리·숫자·참조·최상급 전부 없음) = 비-SQL 주제 점프.
+    if not new_dims and not _NUMERIC_CUE.search(low) and not has_refine and not has_superlative_price:
         if prev_dims or _NUMERIC_CUE.search(prev_text):  # 직전이 SQL성 검색일 때만 오염 대상
             return True
 

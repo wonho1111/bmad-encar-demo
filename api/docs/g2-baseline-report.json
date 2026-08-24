@@ -1,0 +1,892 @@
+{
+  "baseline_summary": {
+    "name": "gemini-3.1-flash-lite",
+    "result_mean": 0.9542087542087543,
+    "result_n": 33,
+    "routing_correct": 57,
+    "routing_total": 57,
+    "doc_hit_n": 12,
+    "doc_hit_total": 13,
+    "clarify_ok_n": 9,
+    "clarify_total": 9,
+    "clarify_chips_unobserved": 0,
+    "flaky_n": 0,
+    "flaky_measured": false,
+    "contamination": 0,
+    "soft_obs": 0,
+    "deadend": 0,
+    "gate_pass": true,
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "tokens_measured": false,
+    "cost_usd": 0.0,
+    "latency_ms_mean": 2061.396509169928,
+    "errored_n": 0,
+    "coverage": {
+      "queryset_total": 47,
+      "scored_n": 47,
+      "errored_n": 0,
+      "missing_n": 0,
+      "missing_ids": []
+    },
+    "is_partial": false
+  },
+  "detail": {
+    "gemini-3.1-flash-lite": [
+      {
+        "id": "S1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.21739130434782608,
+          "jaccard": 0.21739130434782608,
+          "returned_n": 5,
+          "golden_n": 23
+        }
+      },
+      {
+        "id": "S2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        }
+      },
+      {
+        "id": "S3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.4166666666666667,
+          "jaccard": 0.4166666666666667,
+          "returned_n": 5,
+          "golden_n": 12
+        }
+      },
+      {
+        "id": "S4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.7142857142857143,
+          "jaccard": 0.7142857142857143,
+          "returned_n": 5,
+          "golden_n": 7
+        }
+      },
+      {
+        "id": "S5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        }
+      },
+      {
+        "id": "S6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 5,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "S7",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "topn",
+          "result": 1.0,
+          "returned_n": 1,
+          "golden_n": 1
+        }
+      },
+      {
+        "id": "S8",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 5,
+          "golden_n": 5
+        }
+      },
+      {
+        "id": "S9",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "jaccard": 0.5,
+          "returned_n": 5,
+          "golden_n": 10
+        }
+      },
+      {
+        "id": "S10",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 0.3333333333333333,
+          "jaccard": 0.3333333333333333,
+          "returned_n": 5,
+          "golden_n": 15
+        }
+      },
+      {
+        "id": "S11",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 3,
+          "golden_n": 3
+        }
+      },
+      {
+        "id": "S12",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "f1",
+          "result": 1.0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "jaccard": 1.0,
+          "returned_n": 4,
+          "golden_n": 4
+        }
+      },
+      {
+        "id": "H1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 36
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 11
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 42
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 9
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 14
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H6",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "SQL",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.0,
+          "precision": 0.0,
+          "returned_n": 5,
+          "golden_n": 6
+        },
+        "doc_hit": false
+      },
+      {
+        "id": "H7",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 14
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H8",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 30
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H9",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 8
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H10",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 33
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H11",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 0.8,
+          "precision": 0.8,
+          "returned_n": 5,
+          "golden_n": 9
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "H12",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "HYBRID",
+        "route_ok": true,
+        "score": {
+          "mode": "hybrid_precision",
+          "result": 1.0,
+          "precision": 1.0,
+          "returned_n": 5,
+          "golden_n": 12
+        },
+        "doc_hit": true
+      },
+      {
+        "id": "CL1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "CL7",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "CLARIFY",
+        "route_ok": true,
+        "clarify_chips": [
+          "3천만원 이하",
+          "SUV",
+          "전기차"
+        ],
+        "clarify_ok": true
+      },
+      {
+        "id": "R1",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R2",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R3",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R4",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R5",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R6",
+        "category": "clean",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R7",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "R8",
+        "category": "gray",
+        "kind": "single",
+        "flaky": false,
+        "route": "REJECT",
+        "route_ok": true,
+        "redirect": true
+      },
+      {
+        "id": "M1",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "jaccard": 1.0,
+              "returned_n": 3,
+              "golden_n": 3
+            }
+          },
+          {
+            "turn": 2,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 1.0,
+              "returned_n": 1,
+              "golden_n": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "M2",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.38461538461538464,
+              "jaccard": 0.38461538461538464,
+              "returned_n": 5,
+              "golden_n": 13
+            }
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "jaccard": 0.4166666666666667,
+              "returned_n": 5,
+              "golden_n": 12
+            }
+          },
+          {
+            "turn": 2,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "topn",
+              "result": 1.0,
+              "returned_n": 5,
+              "golden_n": 1
+            }
+          }
+        ]
+      },
+      {
+        "id": "M3",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.35714285714285715,
+              "jaccard": 0.35714285714285715,
+              "returned_n": 5,
+              "golden_n": 14
+            }
+          },
+          {
+            "turn": 1,
+            "route": "CLARIFY",
+            "route_ok": true,
+            "clarify_chips": [
+              "3천만원 이하",
+              "SUV",
+              "전기차"
+            ],
+            "clarify_ok": true
+          }
+        ]
+      },
+      {
+        "id": "M4",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "CLARIFY",
+            "route_ok": true,
+            "clarify_chips": [
+              "3천만원 이하",
+              "SUV",
+              "전기차"
+            ],
+            "clarify_ok": true
+          },
+          {
+            "turn": 1,
+            "route": "HYBRID",
+            "route_ok": true,
+            "score": {
+              "mode": "hybrid_precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "returned_n": 5,
+              "golden_n": 10
+            },
+            "doc_hit": true
+          }
+        ]
+      },
+      {
+        "id": "M5",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "HYBRID",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 0.4444444444444445,
+              "precision": 0.4,
+              "recall": 0.5,
+              "jaccard": 0.2857142857142857,
+              "returned_n": 5,
+              "golden_n": 4
+            }
+          },
+          {
+            "turn": 1,
+            "route": "HYBRID",
+            "route_ok": true,
+            "score": {
+              "mode": "f1",
+              "result": 0.4444444444444445,
+              "precision": 0.4,
+              "recall": 0.5,
+              "jaccard": 0.2857142857142857,
+              "returned_n": 5,
+              "golden_n": 4
+            }
+          }
+        ]
+      },
+      {
+        "id": "M6",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.625,
+              "jaccard": 0.625,
+              "returned_n": 5,
+              "golden_n": 8
+            }
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.02631578947368421,
+              "jaccard": 0.02631578947368421,
+              "returned_n": 1,
+              "golden_n": 38
+            }
+          }
+        ]
+      },
+      {
+        "id": "M7",
+        "category": "clean",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          },
+          {
+            "turn": 1,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.21739130434782608,
+              "jaccard": 0.21739130434782608,
+              "returned_n": 5,
+              "golden_n": 23
+            }
+          }
+        ]
+      },
+      {
+        "id": "M8",
+        "category": "gray",
+        "kind": "multiturn",
+        "flaky": false,
+        "turns": [
+          {
+            "turn": 0,
+            "route": "SQL",
+            "route_ok": true,
+            "score": {
+              "mode": "precision",
+              "result": 1.0,
+              "precision": 1.0,
+              "recall": 0.8333333333333334,
+              "jaccard": 0.8333333333333334,
+              "returned_n": 5,
+              "golden_n": 6
+            }
+          },
+          {
+            "turn": 1,
+            "route": "REJECT",
+            "route_ok": true
+          }
+        ]
+      }
+    ]
+  }
+}

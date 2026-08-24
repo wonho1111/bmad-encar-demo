@@ -41,7 +41,7 @@ end $$;
 -- 두 가지 필수 포인트:
 --   1) auth.users + auth.identities 둘 다 있어야 이메일+비밀번호 로그인이 동작한다.
 --      identities가 없으면 계정은 보여도 로그인이 실패한다(GoTrue가 identities를 참조).
---   2) auth.users insert 시 트리거가 profiles 행을 buyer로 만든다 →
+--   2) auth.users insert 시 트리거가 profiles 행을 만든다(0028 이후 기본 role='user') →
 --      insert 후 profiles.role을 'admin'으로 승격(UPDATE)해야 한다.
 --
 -- ⚠️ 데모 전용 계정이다. 이메일: admin@test.com
@@ -94,7 +94,7 @@ begin
     );
   end if;
 
-  -- 트리거가 만든 profiles(기본 buyer)를 admin으로 승격한다.
+  -- 트리거가 만든 profiles(0028 이후 기본 role='user')를 admin으로 승격한다.
   --   계정이 이미 있던 경우(재실행)에도 admin 보장 → 멱등.
   update public.profiles
      set role = 'admin'
@@ -129,7 +129,10 @@ end $$;
 -- 두 단계로 구성:
 --   1) 시드 전용 판매자 계정(seller-seed@test.com) — 매물 seller_id가 가리킬 유효한 판매자.
 --      가입 흐름 밖에서 만들므로 admin 시드(위)와 같은 auth.users+auth.identities 패턴을 쓴다.
---      단 admin과 달리 role은 'seller'로 승격(트리거가 만든 buyer를 UPDATE).
+--      ✎ 2026-08-06 역할 통합(0029): 이 계정을 더 이상 'seller'로 승격하지 않는다.
+--      매물의 주인은 `listings.seller_id`가 정하지 `profiles.role`이 정하지 않는다 —
+--      그래서 승격은 원래도 불필요했고, 이제는 통합 상태를 깨뜨리는 부작용만 남는다.
+--      트리거 기본값('user', 0028)을 그대로 둔다.
 --   2) 그 판매자 명의로 매물 39건 INSERT.
 --
 -- 멱등성(중요): 재실행 시 매물이 누적되지 않도록, "시드 전용 판매자 소유 매물만 삭제 후 재삽입"한다.
@@ -142,9 +145,10 @@ end $$;
 -- ⚠️ 데모 전용 계정: seller-seed@test.com (비밀번호는 세션 변수 app.seed_password 로 주입).
 do $$
 declare
-  v_email     text := 'seller-seed@test.com';
-  v_password  text := current_setting('app.seed_password', true);
-  v_seller_id uuid;
+  v_email      text := 'seller-seed@test.com';
+  v_password   text := current_setting('app.seed_password', true);
+  v_seller_id  uuid;
+  v_trust_rows int; -- 신뢰속성 데모값 UPDATE의 실제 갱신 행수(P3 가드 — GET DIAGNOSTICS 대상)
 begin
   -- ── 1) 시드 전용 판매자 계정 (멱등) ──────────────────────────────
   if not exists (select 1 from auth.users where email = v_email) then
@@ -163,7 +167,7 @@ begin
       extensions.crypt(v_password, extensions.gen_salt('bf')),  -- bcrypt 해시
       now(),
       '{"provider":"email","providers":["email"]}'::jsonb,
-      '{"role":"seller"}'::jsonb,   -- 가입 메타: 트리거(handle_new_user)가 이 값으로 profiles를 seller로 생성 → 아래 UPDATE는 대개 no-op(안전망). admin 블록은 메타 없이 buyer로 생성된 뒤 UPDATE로 승격하는 점과 다름.
+      '{"role":"seller"}'::jsonb,   -- ✎ 정정(Story 17.1, 0033_remove_legacy_role_passthrough.sql, DW-682): 이 메타는 더 이상 트리거에 반영되지 않는다 — handle_new_user()가 metadata.role을 읽는 통과 분기 자체를 지웠고(도달 경로 0이라 제거), 이제 무엇을 보내든 profiles.role은 항상 'user'다(바로 아래 "역할 승격 없음 — 0029 역할 통합" 주석과 동일하게, 이 seller-seed 계정도 role='user'로 남는다). 이 값은 역사적 흔적일 뿐 지금은 아무 효과가 없다 — 매물 소유는 listings.seller_id가 정하므로(0029) 동작에는 영향 없다.
       '', '', '', '',
       now(), now()
     );
@@ -180,12 +184,11 @@ begin
 
   -- 판매자 id 확정(신규/기존 공통). 트리거가 만든 profiles를 seller로 승격(멱등).
   select id into v_seller_id from auth.users where email = v_email;
-  update public.profiles set role = 'seller'
-   where id = v_seller_id and role <> 'seller';
+  -- (역할 승격 없음 — 0029 역할 통합. 트리거 기본값 'user'를 그대로 둔다.)
 
   -- (안전장치) seller 프로필이 실제로 존재하는지 확인 — 없으면 조용한 실패 대신 즉시 멈춤.
   if not exists (
-    select 1 from public.profiles where id = v_seller_id and role = 'seller'
+    select 1 from public.profiles where id = v_seller_id
   ) then
     raise exception '[seed] 시드 판매자 준비 실패: % 의 seller 프로필이 없습니다 '
       '(트리거/마이그레이션 0001 확인).', v_email;
@@ -369,6 +372,38 @@ begin
      '2022년식 스포티지 NQ5 가솔린입니다. 세련된 디자인과 넓은 실내가 인기인 모델입니다. 1만9천km 신차급이었으며 거래 완료되었습니다.')
   ;
 
+  -- 신뢰속성 데모값(Story 10.2, additive) — 대표 소수만 채우고 나머지는 NULL 유지(10.1 원칙 보존).
+  --   무사고+1인소유+비흡연: 아반떼 CN7(2021)·K5 DL3(2022) / 사고: 스파크(2018).
+  --   '단순교환' 대표는 아래 Phase A 확장 블록(트레일블레이저)에 있다 — 두 블록에 나눠 심어야
+  --   네 시각 상태(초록 뱃지·중립칩 2종·미표시)가 이 do 블록 하나에 몰리지 않고 고루 보인다.
+  --   ⚠️ 코드리뷰 2026-07-22 P3: 위 INSERT 문자열(manufacturer/model/year)이 나중에 드리프트하면
+  --   아래 UPDATE는 매칭 행이 없어 **에러 없이 조용히 0행**을 갱신한다("에러 없음"이 "정상"이
+  --   아니다 — 대장 #27이 이미 겪은 실패 모드와 같은 성격). GET DIAGNOSTICS로 실제 갱신 행수를
+  --   확인해 기대(각 1행)와 다르면 크게 실패시킨다.
+  update public.listings set accident_status = '무사고', is_single_owner = true, is_non_smoker = true
+   where seller_id = v_seller_id and manufacturer = '현대' and model = '아반떼 CN7' and year = 2021;
+  get diagnostics v_trust_rows = row_count;
+  if v_trust_rows <> 1 then
+    raise exception '[seed] 신뢰속성 데모값(무사고, 아반떼 CN7 2021) 대상이 1건이 아닙니다(실제 %건) — '
+      '위 INSERT의 manufacturer/model/year 문자열이 바뀌었는지 확인하세요.', v_trust_rows;
+  end if;
+
+  update public.listings set accident_status = '무사고', is_single_owner = true, is_non_smoker = true
+   where seller_id = v_seller_id and manufacturer = '기아' and model = 'K5 DL3' and year = 2022;
+  get diagnostics v_trust_rows = row_count;
+  if v_trust_rows <> 1 then
+    raise exception '[seed] 신뢰속성 데모값(무사고, K5 DL3 2022) 대상이 1건이 아닙니다(실제 %건) — '
+      '위 INSERT의 manufacturer/model/year 문자열이 바뀌었는지 확인하세요.', v_trust_rows;
+  end if;
+
+  update public.listings set accident_status = '사고'
+   where seller_id = v_seller_id and manufacturer = '쉐보레' and model = '스파크' and year = 2018;
+  get diagnostics v_trust_rows = row_count;
+  if v_trust_rows <> 1 then
+    raise exception '[seed] 신뢰속성 데모값(사고, 스파크 2018) 대상이 1건이 아닙니다(실제 %건) — '
+      '위 INSERT의 manufacturer/model/year 문자열이 바뀌었는지 확인하세요.', v_trust_rows;
+  end if;
+
   raise notice '[seed] 샘플 매물 준비 완료: 판매자 % / 매물 %건',
     v_email, (select count(*) from public.listings where seller_id = v_seller_id);
 end $$;
@@ -384,6 +419,7 @@ declare
   v_emails text[] := array['seller-seed2@test.com','seller-seed3@test.com'];
   v_email  text;
   v_s2 uuid; v_s3 uuid;
+  v_trust_rows int; -- 신뢰속성 데모값 UPDATE의 실제 갱신 행수(P3 가드 — GET DIAGNOSTICS 대상)
 begin
   foreach v_email in array v_emails loop
     if not exists (select 1 from auth.users where email = v_email) then
@@ -397,14 +433,16 @@ begin
         'authenticated', 'authenticated', v_email,
         extensions.crypt(current_setting('app.seed_password', true), extensions.gen_salt('bf')), now(),
         '{"provider":"email","providers":["email"]}'::jsonb,
+        -- ✎ 정정(Story 17.1, 0033_remove_legacy_role_passthrough.sql, DW-682): 위 :170과 같다 —
+        --   handle_new_user()가 metadata.role 통과 분기를 잃어 이 값은 아무 효과가 없다.
+        --   무엇을 보내든 profiles.role은 항상 'user'이며, 이 시드의 최종 기대 role도 그대로다.
         '{"role":"seller"}'::jsonb, '', '', '', '', now(), now()
       );
       insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
       select id::text, id, jsonb_build_object('sub', id::text, 'email', v_email), 'email', now(), now(), now()
         from auth.users where email = v_email;
     end if;
-    update public.profiles set role='seller'
-     where id=(select id from auth.users where email=v_email) and role<>'seller';
+    -- (역할 승격 없음 — 0029 역할 통합.)
   end loop;
 
   select id into v_s2 from auth.users where email='seller-seed2@test.com';
@@ -474,6 +512,16 @@ begin
   (v_s3, 'sold', '기아', '쏘렌토', 'SUV', 2020, 27500000, 69000, '흰색', '디젤', '자동', 2151, 7, '서울', true, array['후방카메라','통풍시트','내비게이션','어댑티브크루즈'], '2020년식 쏘렌토 디젤 7인승으로 주행 6만9천km의 무사고 차량입니다. 넉넉한 3열 공간과 디젤의 경제성으로 패밀리 SUV로 인기가 높습니다. 서울 지역 차량으로 관리가 잘 되어 있습니다.'),
   (v_s3, 'sold', '테슬라', '모델3', '준중형차', 2021, 38000000, 41000, '회색', '전기', '자동', 0, 5, '경기', true, array['오토파일럿','파노라마선루프','후방카메라','급속충전지원','내비게이션'], '2021년식 테슬라 모델3로 주행 4만1천km의 무사고 전기차입니다. 오토파일럿과 긴 주행거리로 인기가 높은 모델입니다. 경기 지역 차량으로 충전 효율과 가속력이 뛰어납니다.'),
   (v_s3, 'sold', '현대', '캐스퍼', '경차', 2022, 12800000, 24000, '빨강', '가솔린', '자동', 998, 4, '서울', true, array['후방카메라','스마트키','열선시트','크루즈컨트롤'], '2022년식 캐스퍼로 주행 2만4천km의 무사고 차량입니다. 개성 있는 디자인과 알찬 옵션으로 도심 운전에 최적인 경SUV입니다. 서울 지역 차량으로 깨끗한 상태를 자랑합니다.');
+
+  -- 신뢰속성 데모값(Story 10.2, additive) — '단순교환' 대표 1건(위 첫 do 블록 주석 참조).
+  --   ⚠️ P3 가드(위 do 블록과 같은 사유) — INSERT 문자열이 드리프트하면 조용히 0행 갱신될 수 있다.
+  update public.listings set accident_status = '단순교환'
+   where seller_id = v_s2 and manufacturer = '쉐보레' and model = '트레일블레이저' and year = 2021;
+  get diagnostics v_trust_rows = row_count;
+  if v_trust_rows <> 1 then
+    raise exception '[seed] 신뢰속성 데모값(단순교환, 트레일블레이저 2021) 대상이 1건이 아닙니다'
+      '(실제 %건) — 위 INSERT의 manufacturer/model/year 문자열이 바뀌었는지 확인하세요.', v_trust_rows;
+  end if;
 
   raise notice '[seed] Phase A 확장 매물 준비 완료: seller2/3 합계 %건',
     (select count(*) from public.listings where seller_id in (v_s2, v_s3));

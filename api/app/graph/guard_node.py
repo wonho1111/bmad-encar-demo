@@ -1,4 +1,4 @@
-"""가드 노드 — 경로 C(매물 무관) 정중한 거절(FR16, CM1).
+"""가드 노드 — 경로 C(매물 무관) 정중한 거절(FR16·FR47, CM1).
 
 라우터가 "C"(중고차 매물 검색과 무관한 잡담·상식·다른 주제)로 분류한 질의를 받아,
 순수 상식 Q&A를 제공하지 않고(FR16) 정중히 거절하면서 매물 검색으로 자연스럽게 유도한다.
@@ -9,28 +9,37 @@
 
 4.5는 이 함수를 그래프(graph.py)의 경로 C 노드로 쓴다. 시그니처는 다른 경로 노드와 통일
   (query 받아 {"answer", "listings"} 반환)해 answer_node가 동일하게 받아 계약을 보장한다.
-[Source: story 4.5 guard_node 설계; FR16; conventions CM1]
+
+13.5: 답변 문구를 EXPERIENCE.md Voice 표("AI 거절(FR47, 고정)")와 글자 그대로 일치시키고,
+  `narrowed_by`(REJECT 전용 고정 상수, CR4 저장단위 정규화 술어 형식)를 함께 반환한다.
+  `query`를 읽어 값을 바꾸지 않는다(무상태·결정론 — CLARIFY의 `_CLARIFY_CHIPS`와 동일 철학).
+[Source: story 4.5 guard_node 설계; spec-13-5-부드러운-거절.md; FR16·FR47; conventions CM1]
 """
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-# 정중한 거절 + 매물 검색 유도 — 매물과 무관한 질의(C)에 항상 이 문구로 답한다(FR16/CM1).
-# 상식·잡담·금융/세금 일반지식에 직접 답하지 않되(FR16), "막다른 길"로 끝내지 않고
-# 사용자가 잘하는 쪽(예산·용도로 매물 찾기)으로 다시 데려오는 "갈림길" 멘트로 답한다.
-# (party-mode 2026-06-23: dead-end 0% 원칙 — 거절이 곧 다음 행동 제안이 되게.)
+# 정중한 거절 + 매물 검색 유도 — 매물과 무관한 질의(C)에 항상 이 문구로 답한다(FR16/FR47/CM1).
+# EXPERIENCE.md Voice 표("AI 거절(FR47, 고정)")와 글자 그대로 일치시킨 정본 문구다(13.5) —
+# LLM 재작성 없음, 질의 내용과 무관하게 항상 동일(무상태·결정론).
+# ⚠️ "매물을 찾아드릴게요" 부분 문자열을 반드시 포함해야 한다 — api/scripts/score_ab.py의
+#   REDIRECT_MARKERS(is_redirect(), G1류 dead-end 게이트)가 이 문자열로 판정한다.
 _GUARD_ANSWER = (
-    "세금·할부·보험 계산이나 일반 상식은 제 전문이 아니에요. "
-    "대신 예산·차종·용도를 알려주시면 그에 맞는 중고차 매물을 찾아드릴게요. "
-    "예를 들어 '2천만 원 이하 SUV'처럼요."
+    "저는 중고차 찾기를 도와드리는 차장님이에요 🚗 "
+    "그건 답하기 어렵지만, 원하는 차 조건을 말씀해 주시면 딱 맞는 매물을 찾아드릴게요."
 )
+
+# REJECT 전용 고정 상수 — CR4 저장단위 정규화 술어 형식(CLARIFY 3축과 동일 계열).
+# query/context를 읽어 값을 바꾸지 않는다(무상태 — LLM 호출 없음, CR5와 동일 철학의 REJECT 버전).
+_GUARD_NARROWED_BY = ("price<=30000000", "body_type=SUV", "fuel=전기")
 
 
 def guard_node(query: str) -> dict:
-    """매물 무관 질의(경로 C)에 정중한 거절 + 검색 유도 answer를 반환한다(FR16).
+    """매물 무관 질의(경로 C)에 정중한 거절 + 검색 유도 answer를 반환한다(FR16·FR47).
 
     listings는 항상 빈 목록([])이다. LLM/DB를 호출하지 않으므로 키·네트워크 없이도 동작한다.
+    narrowed_by는 항상 동일한 고정 상수 3개다(무상태·결정론, 13.5).
     """
     logger.info("guard_node 질의=%r → 정중한 거절(경로 C)", query)
-    return {"answer": _GUARD_ANSWER, "listings": []}
+    return {"answer": _GUARD_ANSWER, "listings": [], "narrowed_by": list(_GUARD_NARROWED_BY)}

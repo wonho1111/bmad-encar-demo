@@ -39,8 +39,12 @@ def test_strip_sql_plain_passthrough():
 
 
 def test_to_cards_maps_tuple_positions_and_casts_int():
-    # run_select 튜플 순서: id, manufacturer, model, year, price, mileage, region
-    rows = [("uuid-1", "현대", "싼타페", "2020", "26700000", "62000", "강원")]
+    # run_select 튜플 순서: id, manufacturer, model, year, price, mileage, region,
+    #   fuel, accident_status, is_single_owner, is_non_smoker, options (Story 10.1·10.3 — 12필드)
+    rows = [
+        ("uuid-1", "현대", "싼타페", "2020", "26700000", "62000", "강원",
+         "가솔린", "무사고", True, False, ["선루프"])
+    ]
     cards = _to_cards(rows)
     assert len(cards) == 1
     c = cards[0]
@@ -48,6 +52,11 @@ def test_to_cards_maps_tuple_positions_and_casts_int():
     # 문자열로 와도 int로 캐스팅돼야 한다.
     assert c.year == 2020 and c.price == 26700000 and c.mileage == 62000
     assert c.region == "강원"
+    assert c.fuel == "가솔린"
+    assert c.accident_status == "무사고"
+    assert c.is_single_owner is True
+    assert c.is_non_smoker is False
+    assert c.options == ["선루프"]
 
 
 def test_to_cards_empty():
@@ -64,7 +73,8 @@ import app.graph.sql_rag_node as node  # noqa: E402
 
 _LISTING_ID = "55555555-5555-4555-8555-555555555555"
 _SAFE_SQL = (
-    "SELECT id, manufacturer, model, year, price, mileage, region "
+    "SELECT id, manufacturer, model, year, price, mileage, region, "
+    "fuel, accident_status, is_single_owner, is_non_smoker, options "
     "FROM listings WHERE status = 'on_sale' LIMIT 5"
 )
 
@@ -83,7 +93,8 @@ def test_cards_carry_cover_image_from_shared_helper(monkeypatch):
         node,
         "run_select",
         lambda sql, params=None: [
-            (_LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원")
+            (_LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원",
+             "가솔린", None, None, None, None)
         ],
     )
     # 사진 조회는 listing_cards 모듈의 run_select를 탄다 — 노드 모듈만 패치하면
@@ -100,3 +111,104 @@ def test_cards_carry_cover_image_from_shared_helper(monkeypatch):
     assert card.image_path == "u/l/cover.webp", "사진 부착 헬퍼를 통과하지 않았다(AC1 배선 유실)"
     assert card.image_count == 4
     assert card.image_url is None  # api는 URL을 만들지 않는다(conventions.md §10)
+    assert card.fuel == "가솔린"  # Story 10.1 — fuel이 실제로 채워진다(대장 #67)
+    assert card.accident_status is None  # 신뢰속성 3필드는 NULL이면 None(미상)
+
+
+# --- 코드리뷰 P1: 컬럼 폭이 안 맞는 LLM 응답이 노드 전체를 500으로 죽이지 않는다 ------------
+# 단위 테스트(test_listing_cards.py)는 rows_to_cards가 SqlGuardError를 던지는 것까지만 본다.
+# 여기서는 그 예외가 sql_rag_node의 **기존 재생성(retry) 루프**에 실제로 잡혀, IndexError가
+# 위로 새서 `/ai/search`를 500으로 만들지 않는다는 것까지 배선을 따라 확인한다.
+
+
+def test_short_row_from_llm_retries_instead_of_crashing(monkeypatch):
+    """LLM이 프롬프트 규칙 1을 어기고 옛 7컬럼 SQL을 내면, IndexError가 아니라 SqlGuardError로
+    끝난다(2회 재시도 모두 같은 SQL을 내도록 가짜 LLM을 고정해 최종 실패 경로까지 확인)."""
+    from app.db.sql_guard import SqlGuardError
+
+    short_cols_sql = (
+        "SELECT id, manufacturer, model, year, price, mileage, region "
+        "FROM listings WHERE status = 'on_sale' LIMIT 5"
+    )
+
+    class _StaleLLM:
+        def invoke(self, messages):
+            return type("Msg", (), {"content": short_cols_sql})()
+
+    monkeypatch.setattr(node, "_llm", lambda: _StaleLLM())
+    monkeypatch.setattr(
+        node,
+        "run_select",
+        lambda sql, params=None: [
+            (_LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원")  # 7개뿐
+        ],
+    )
+
+    try:
+        node.sql_rag_node("아무 조건")
+        assert False, "컬럼 폭이 안 맞는데 예외 없이 성공했다"
+    except SqlGuardError:
+        pass  # 기대한 경로 — 400으로 사용자에게 안내된다(routers/ai.py).
+    except IndexError:
+        assert False, "IndexError가 sql_rag_node 밖으로 샜다 — /ai/search가 500이 된다(P1 회귀)"
+
+
+# --- Story 10.1: 시스템 프롬프트에 신뢰속성 스키마·프롬프트 회귀 지시문이 있는지 ------------
+# 프롬프트만 늘리면 "무사고 차량 찾아줘"에 LLM이 accident_status='무사고'(대부분 NULL이라
+# 0건)를 쓸 수 있다(Design Notes "프롬프트 회귀 주의"). 그 지시문이 실제로 프롬프트에
+# 들어있는지를 여기서 못박아, 나중에 프롬프트를 고치다 조용히 빠지는 걸 막는다.
+
+
+def test_system_prompt_includes_trust_attribute_columns():
+    from app.graph.sql_rag_node import _SYSTEM_PROMPT
+
+    assert "accident_status" in _SYSTEM_PROMPT
+    assert "is_single_owner" in _SYSTEM_PROMPT
+    assert "is_non_smoker" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_instructs_accident_free_for_no_accident_queries():
+    from app.graph.sql_rag_node import _SYSTEM_PROMPT
+
+    assert "accident_free" in _SYSTEM_PROMPT
+    # accident_status는 대부분 NULL이라 그것으로 "무사고"를 거르면 0건이 난다는 지시가 있어야 한다.
+    assert "NULL" in _SYSTEM_PROMPT
+    assert "accident_free = true" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_instructs_accident_free_bidirectionally():
+    """코드리뷰 P5: "무사고" 방향만 유도하면 "사고 있는 차" 요청이 accident_status(전 건 NULL)로
+    새어 0건이 된다 — 반대 방향도 accident_free로 유도하는 지시가 프롬프트에 있어야 한다."""
+    from app.graph.sql_rag_node import _SYSTEM_PROMPT
+
+    assert "accident_free = false" in _SYSTEM_PROMPT
+
+
+def test_system_prompt_allows_filtering_by_trust_attribute_bool_columns():
+    """13-11 A-4(사용자 명시 승인) — 코드리뷰 P5가 넣은 "is_single_owner·is_non_smoker는
+    전부 NULL이니 필터로 쓰지 마라"는 지시는 13-10이 그 전제(1인소유 50건·비흡연 49건
+    실채움)를 깼으므로 폐기했다. 이제 프롬프트는 그 반대 — 사용자가 요구하면 두 컬럼을
+    정상 필터 조건으로 쓰라고 지시해야 한다. 옛 금지 문구가 되살아나면(회귀) 이 테스트가
+    잡는다."""
+    from app.graph.sql_rag_node import _SYSTEM_PROMPT
+
+    assert "필터 조건으로 쓰지 마라" not in _SYSTEM_PROMPT
+    assert "is_single_owner = true" in _SYSTEM_PROMPT
+    assert "is_non_smoker = true" in _SYSTEM_PROMPT
+
+
+# --- Story 13.3: _DOMAIN_RULES 추출(경로 A·하이브리드 공유) 리팩터가 순서를 보존하는지 -----
+# 13.3 리뷰가 실측: _SYSTEM_PROMPT의 [단위 정규화]·[차형 용어 매핑]·[옵션 필터] 블록이
+# [불변 규칙] "뒤"에 있어야 하는데(리팩터 전 순서), 처음 구현은 [불변 규칙] "앞"으로 옮겨진
+# 채였다(내용은 그대로여도 LLM 입력 순서가 바뀌는 실제 리스크). 아래가 그 순서를 못박는다.
+def test_system_prompt_preserves_original_block_order():
+    from app.graph.sql_rag_node import _SYSTEM_PROMPT
+
+    schema_idx = _SYSTEM_PROMPT.index("[스키마:")
+    invariant_idx = _SYSTEM_PROMPT.index("[불변 규칙")
+    unit_idx = _SYSTEM_PROMPT.index("[단위 정규화")
+    body_type_idx = _SYSTEM_PROMPT.index("[차형 용어 매핑]")
+    option_idx = _SYSTEM_PROMPT.index("[옵션 필터")
+    output_idx = _SYSTEM_PROMPT.rindex("출력: SQL 텍스트 한 줄만.")
+
+    assert schema_idx < invariant_idx < unit_idx < body_type_idx < option_idx < output_idx

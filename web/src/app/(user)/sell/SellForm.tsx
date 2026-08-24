@@ -15,12 +15,18 @@
 //   · seller_id는 등록 시 현재 로그인 user.id로 명시(INSERT RLS with check가 위조 차단 — 2-1).
 //   · 단위(원·km·cc·년·명)는 입력란 라벨에 표기, 저장은 정수.
 //   · DB CHECK/RLS 위반은 한국어로 변환해 노출(원본·코드는 콘솔에만).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
 import { LISTING_OPTIONS, LISTING_RANGES, LISTING_STATUS, UNITS } from '@/lib/constants';
+import { getOwnStatus, writeRejectionMessage } from '@/lib/auth/status';
+import { optionsChanged, parseOptionsInput, partitionOptions, serializeOptions } from '@/lib/options';
 import Button from '@/components/ui/Button';
 import FocusTrap from '@/components/ui/FocusTrap';
+// 라벨·입력칸 클래스는 /search 필터 폼과 **한 벌을 공유**한다(2026-08-13 사용자 결정).
+import { FIELD_CONTROL_CLASS, FIELD_LABEL_CLASS } from '@/components/ui/formField';
+import OptionPicker from './OptionPicker';
 import PhotoUploader from './PhotoUploader';
 import { type PhotoItem } from './photo-item';
 import { syncListingPhotos } from './photo-sync';
@@ -39,8 +45,13 @@ type FormState = {
   displacement: string;
   seats: string;
   region: string;
-  accident_free: boolean;
-  options: string; // 쉼표 구분 입력 → 배열 변환
+  // ✎ 2026-08-13 사용자 지적 — 신뢰속성 3개(사고이력·1인소유·비흡연)의 **입력 경로가 아예 없었다.**
+  //   컬럼(0017)과 화면 뱃지(10.2)는 있는데 폼에 필드가 없어서, 판매자가 등록하면 100% 비었다.
+  //   `accident_free`(기존 bool)는 폼 상태에서 **뺐다** — 아래 accident_status에서 파생한다(payload 주석).
+  accident_status: string; // ''(미선택) | 무사고 | 단순교환 | 사고 — 필수
+  is_single_owner: boolean; // 체크=판매자가 신고함(true). 미체크는 false가 아니라 **미신고(null)**로 저장한다.
+  is_non_smoker: boolean; // 위와 같음
+  options: string; // 줄바꿈 구분 입력 → 배열 변환(대장 #11 — 쉼표 구분은 값 안의 쉼표를 쪼갠다)
   description: string;
 };
 
@@ -57,7 +68,12 @@ const INITIAL: FormState = {
   displacement: '',
   seats: '',
   region: '',
-  accident_free: true,
+  // 기본값은 **미선택**이다. 예전 "무사고 차량" 체크박스는 기본이 체크라, 판매자가 아무것도
+  // 건드리지 않고 등록하면 자동으로 "무사고"로 신고됐다 — 사고차를 파는 사람이 그냥 넘기면
+  // 무사고로 올라간다는 뜻이다. 신고는 **고른 사람만** 하는 것이어야 한다.
+  accident_status: '',
+  is_single_owner: false,
+  is_non_smoker: false,
   options: '',
   description: '',
 };
@@ -76,7 +92,10 @@ export type ListingInitialValues = {
   displacement: number;
   seats: number;
   region: string;
-  accident_free: boolean;
+  // 수정 모드에서 기존 값을 되채운다. NULL은 "미상"이므로 체크 해제로 되돌아간다(false로 단정 아님).
+  accident_status: string | null;
+  is_single_owner: boolean | null;
+  is_non_smoker: boolean | null;
   options: string[] | null;
   description: string | null;
 };
@@ -96,8 +115,11 @@ function toFormState(v: ListingInitialValues): FormState {
     displacement: String(v.displacement),
     seats: String(v.seats),
     region: v.region,
-    accident_free: v.accident_free,
-    options: (v.options ?? []).join(', '), // text[] → 쉼표 구분 문자열(입력 UI 규칙과 일치)
+    accident_status: v.accident_status ?? '',
+    // NULL(미상) → 체크 해제. 저장할 때 다시 null로 나가므로 왕복해도 "아니오"로 바뀌지 않는다.
+    is_single_owner: v.is_single_owner === true,
+    is_non_smoker: v.is_non_smoker === true,
+    options: serializeOptions(v.options ?? []), // text[] → 줄바꿈 구분 문자열(대장 #11 해소)
     description: v.description ?? '',
   };
 }
@@ -113,16 +135,28 @@ type SellFormProps = {
 
 // Postgres/Supabase 에러를 사용자용 한국어 메시지로 변환(원본 메시지·코드는 화면에 직접 노출하지 않음).
 //   23514 = check_violation(목록 밖 값·범위 위반), 42501 = insufficient_privilege(RLS 거부).
-function toKoreanError(err: { message: string; code?: string }, mode: 'create' | 'edit'): string {
+//
+// 42501은 소유권 위조(등록) 또는 정지(17.1의 with check 거부, 등록 경로가 42501로 오는 유일한
+// 사유 — 스토리 17-3 Design Notes 실측표 참고)의 두 사유가 합류하는 자리다. 거부가 난 "뒤에"
+// 본인 status를 조회해 구분한다(spec-17-3 Always — 사전 검사로 쓰지 않는다).
+async function toKoreanError(
+  supabase: SupabaseClient,
+  err: { message: string; code?: string },
+  mode: 'create' | 'edit',
+): Promise<string> {
   const code = err.code ?? '';
   if (code === '23514') {
     return '입력값이 허용 목록/범위를 벗어났습니다. 드롭다운 항목과 숫자 범위를 확인해주세요.';
   }
   if (code === '42501') {
-    // 권한/RLS 거부 — 등록은 본인 명의 위조, 수정은 타인 매물 접근.
-    return mode === 'edit'
-      ? '본인 매물만 수정할 수 있습니다. 다시 로그인 후 시도해주세요.'
-      : '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.';
+    const status = await getOwnStatus(supabase);
+    // 권한/RLS 거부 — 등록은 본인 명의 위조 또는 정지, 수정은 타인 매물 접근 또는 정지.
+    return writeRejectionMessage(
+      status,
+      mode === 'edit'
+        ? '본인 매물만 수정할 수 있습니다. 다시 로그인 후 시도해주세요.'
+        : '본인 명의로만 매물을 등록할 수 있습니다. 다시 로그인 후 시도해주세요.',
+    );
   }
   return mode === 'edit'
     ? '매물 수정 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
@@ -151,6 +185,8 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   const [success, setSuccess] = useState<string | null>(null);
   // 이탈 확인 다이얼로그(AC7). null이면 닫힘, 값이 있으면 "확인 후 갈 곳".
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  // 옵션 필드 그룹 라벨("옵션 (선택)" 헤딩)과 role="group" 컨테이너를 aria-labelledby로 연결(코드리뷰).
+  const optionsLabelId = useId();
 
   // 사진의 **저장 기준선** — "지금 DB에 저장돼 있는 사진이 무엇인가". 두 가지에 함께 쓴다:
   //   ① 무엇을 지웠는지 판단(syncListingPhotos의 네 번째 인자)
@@ -169,9 +205,18 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
   // dirty = 초기값 대비 폼 필드가 바뀌었거나, 사진을 추가/삭제/순서변경했는가(AC7).
   // 사진은 key 나열을 비교한다 — 추가·삭제뿐 아니라 **순서 변경도 잡아야** 하기 때문
   // (순서가 곧 대표라서, 순서만 바꾸고 나가면 사용자가 한 일이 통째로 사라진다).
-  const formDirty = (Object.keys(initialForm) as (keyof FormState)[]).some((k) => form[k] !== initialForm[k]);
+  // ⚠️ 'options'는 이 일반 비교에서 제외한다(아래 optionsDirty가 대신 본다) — OptionPicker에서
+  // 옵션을 껐다 다시 켜면 배열 끝에 append돼 원래와 SET은 같아도 줄바꿈 문자열의 순서가 달라져,
+  // 그대로 비교하면 net-zero 변경에도 dirty가 참이 된다(코드리뷰: 허위 이탈경고).
+  const formDirty = (Object.keys(initialForm) as (keyof FormState)[]).some(
+    (k) => k !== 'options' && form[k] !== initialForm[k],
+  );
+  // options는 순서 무관 SET 비교 — 같은 옵션 집합이면(순서만 달라도) dirty가 아니다.
+  // 비교 로직은 options.ts의 순수 헬퍼로 빼 단위테스트가 고정한다(코드리뷰: SET 비교가 회귀하면
+  // 옵션만 편집한 이탈경고가 조용히 사라지거나 허위로 뜨는데, 이전엔 그걸 잡는 검사가 없었다).
+  const optionsDirty = optionsChanged(parseOptionsInput(form.options), parseOptionsInput(initialForm.options));
   const photosDirty = photos.length !== baseline.length || photos.some((p, i) => p.key !== baseline[i]?.key);
-  const dirty = formDirty || photosDirty;
+  const dirty = formDirty || optionsDirty || photosDirty;
 
   // 새로고침·탭 닫기·주소 직접 입력만 여기서 막힌다.
   // ⚠️ Next.js App Router에는 <Link> 내부 이동을 가로채는 공식 API가 없다 —
@@ -212,6 +257,9 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     if (!form.fuel) return { ok: false, message: '연료를 선택해주세요.' };
     if (!form.transmission) return { ok: false, message: '변속기를 선택해주세요.' };
     if (!form.region) return { ok: false, message: '지역을 선택해주세요.' };
+    // 사고이력은 **필수**다(2026-08-13). 예전엔 기본 체크된 체크박스라 "안 고른 상태"가 곧
+    // "무사고 신고"였다 — 판매자가 명시적으로 고르게 한다.
+    if (!form.accident_status) return { ok: false, message: '사고이력을 선택해주세요.' };
 
     // 수치 — 정수 변환 + 범위 검증
     const year = Number(form.year);
@@ -239,11 +287,20 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       return { ok: false, message: `인승은 ${LISTING_RANGES.seats.min}~${LISTING_RANGES.seats.max}명 사이로 입력해주세요.` };
     }
 
-    // options: 쉼표 구분 → 공백 제거 → 빈 항목 제외한 배열
-    const options = form.options
-      .split(',')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    // options: 줄바꿈 구분 → 공백 제거 → 빈 줄 제외 → 중복 제거(parseOptionsInput, 대장 #11 해소 —
+    // 쉼표 split이 아니므로 한 원소 안의 쉼표가 살아남는다).
+    const options = parseOptionsInput(form.options);
+    // 통제어휘 밖 이름은 조용히 버리지 않고 제출을 막는다(docs/conventions.md §11.3, I/O 매트릭스
+    // "쓰기 검증"). OptionPicker(Story 10.4)가 칩/체크로는 통제어휘 밖 입력을 구조적으로 못
+    // 만들게 막지만, 레거시 비표준값(수정 진입 시 요약바가 보존·노출하는 값)은 여전히 있을 수
+    // 있어 이 백스톱은 심층 방어로 남긴다.
+    const { unknown } = partitionOptions(options);
+    if (unknown.length > 0) {
+      return {
+        ok: false,
+        message: `표준 옵션명이 아닙니다: ${unknown.join(', ')}`,
+      };
+    }
 
     return {
       ok: true,
@@ -260,7 +317,19 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         displacement, // cc(정수)
         seats, // 정수
         region: form.region,
-        accident_free: form.accident_free,
+        accident_status: form.accident_status,
+        // `accident_free`는 이제 **입력값이 아니라 파생값**이다(2026-08-13).
+        //   왜 컬럼을 지우지 않나: AI 검색이 이걸 쓴다 — `api/app/graph/sql_rag_node.py`의 지시문이
+        //   "사고 관련 질문은 accident_status가 아니라 accident_free로 판단하라"고 명시한다(그쪽이 더
+        //   널리 채워져 있어서). 컬럼을 없애면 "무사고 차 추천해줘"가 깨진다. 그래서 남기고 자동으로 채운다.
+        //   값이 이미 있는 62건은 두 컬럼이 100% 일치한다(실측: 무사고↔true, 단순교환·사고↔false) —
+        //   즉 이 파생 규칙은 기존 데이터가 실제로 따르고 있던 규칙을 코드로 옮긴 것이다.
+        accident_free: form.accident_status === '무사고',
+        // 미체크는 **null(미신고)** 이지 false(아니다)가 아니다 — 0017이 못박은 3상태 규칙.
+        //   false로 저장하면 "이 차는 1인소유가 아니다"라고 판매자가 신고한 것이 되는데, 그는
+        //   아무 말도 하지 않았다.
+        is_single_owner: form.is_single_owner ? true : null,
+        is_non_smoker: form.is_non_smoker ? true : null,
         options, // text[]
         description: form.description.trim() || null,
         status: LISTING_STATUS.ON_SALE, // 즉시 노출(기본값과 동일하나 의도 명시)
@@ -319,12 +388,19 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         if (updateError) {
           console.error('[sell] listings update 실패:', updateError);
-          setError(toKoreanError(updateError, 'edit'));
+          setError(await toKoreanError(supabase, updateError, 'edit'));
           return;
         }
         if (!updated || updated.length === 0) {
-          // RLS로 막혀 0행 — 본인 매물이 아니거나 이미 삭제됨.
-          setError('본인 매물만 수정할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)');
+          // RLS로 막혀 0행 — 본인 매물이 아니거나 이미 삭제됐거나 행위자가 정지됨(17.1). 거부
+          // 뒤에 status를 조회해 정지 사유만 구분한다(spec-17-3 Always).
+          const status = await getOwnStatus(supabase);
+          setError(
+            writeRejectionMessage(
+              status,
+              '본인 매물만 수정할 수 있습니다. (매물을 찾을 수 없거나 접근 권한이 없습니다.)',
+            ),
+          );
           return;
         }
 
@@ -362,7 +438,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       if (insertError || !created) {
         // 원본 에러·코드는 콘솔에만(디버깅), 사용자에겐 한국어.
         console.error('[sell] listings insert 실패:', insertError);
-        setError(toKoreanError(insertError ?? { message: 'insert 결과 없음' }, 'create'));
+        setError(await toKoreanError(supabase, insertError ?? { message: 'insert 결과 없음' }, 'create'));
         return;
       }
 
@@ -419,15 +495,24 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
     }
   }
 
-  const inputCls =
-    'rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900';
+  // ✎ 2026-08-13 사용자 결정 — `/search` 필터와 **같은 상수**를 쓴다(밀도는 /search 쪽 조밀,
+  //   배경은 흰색). 예전엔 여기만 `px-3 py-2`라 같은 구조의 두 폼이 큼직/조밀로 갈려 있었다.
+  const inputCls = FIELD_CONTROL_CLASS;
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+    // ✎ 2026-08-13 2차 지적 #4 — `/search`의 필터 폼과 **같은 표면**(카드 테두리 + p-4)을 입힌다.
+    //   두 화면은 "폼 + 그 결과 목록"이라는 같은 구조인데, 이쪽만 폼이 배경 위에 맨몸으로 떠 있어
+    //   경계가 없었다(사용자: "필터검색이랑 비슷한 UI인데 내차사기랑 좀 달라서"). 입력 필드 배치·
+    //   검증은 그대로 두고 감싸개만 맞춘다.
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-4 rounded-card border border-border-hairline p-4"
+      noValidate
+    >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {/* 제조사 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">제조사</span>
+          <span className={FIELD_LABEL_CLASS}>제조사</span>
           <select
             value={form.manufacturer}
             onChange={(e) => update('manufacturer', e.target.value)}
@@ -442,7 +527,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 모델 (자유 입력) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">모델</span>
+          <span className={FIELD_LABEL_CLASS}>모델</span>
           <input
             type="text"
             value={form.model}
@@ -454,7 +539,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 차종 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">차종</span>
+          <span className={FIELD_LABEL_CLASS}>차종</span>
           <select
             value={form.body_type}
             onChange={(e) => update('body_type', e.target.value)}
@@ -469,7 +554,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 연식 */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">연식 (년)</span>
+          <span className={FIELD_LABEL_CLASS}>연식 (년)</span>
           <input
             type="number"
             value={form.year}
@@ -483,7 +568,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 가격 (원) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">가격 ({UNITS.price})</span>
+          <span className={FIELD_LABEL_CLASS}>가격 ({UNITS.price})</span>
           <input
             type="number"
             value={form.price}
@@ -496,7 +581,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 주행거리 (km) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">주행거리 ({UNITS.mileage})</span>
+          <span className={FIELD_LABEL_CLASS}>주행거리 ({UNITS.mileage})</span>
           <input
             type="number"
             value={form.mileage}
@@ -509,7 +594,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 색상 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">색상</span>
+          <span className={FIELD_LABEL_CLASS}>색상</span>
           <select
             value={form.color}
             onChange={(e) => update('color', e.target.value)}
@@ -524,7 +609,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 연료 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">연료</span>
+          <span className={FIELD_LABEL_CLASS}>연료</span>
           <select
             value={form.fuel}
             onChange={(e) => update('fuel', e.target.value)}
@@ -539,7 +624,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 변속기 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">변속기</span>
+          <span className={FIELD_LABEL_CLASS}>변속기</span>
           <select
             value={form.transmission}
             onChange={(e) => update('transmission', e.target.value)}
@@ -554,7 +639,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 배기량 (cc) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">배기량 ({UNITS.displacement})</span>
+          <span className={FIELD_LABEL_CLASS}>배기량 ({UNITS.displacement})</span>
           <input
             type="number"
             value={form.displacement}
@@ -567,7 +652,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 인승 */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">인승 (명)</span>
+          <span className={FIELD_LABEL_CLASS}>인승 (명)</span>
           <input
             type="number"
             value={form.seats}
@@ -581,7 +666,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
 
         {/* 지역 (드롭다운) */}
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">지역</span>
+          <span className={FIELD_LABEL_CLASS}>지역</span>
           <select
             value={form.region}
             onChange={(e) => update('region', e.target.value)}
@@ -595,31 +680,69 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
         </label>
       </div>
 
-      {/* 무사고 여부 */}
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={form.accident_free}
-          onChange={(e) => update('accident_free', e.target.checked)}
-        />
-        <span className="text-sm font-medium">무사고 차량</span>
-      </label>
+      {/* 신뢰 정보 — 2026-08-13 사용자 지적으로 새로 생긴 입력 묶음.
+          예전엔 여기 "무사고 차량" 체크박스 **하나**뿐이었고, 그건 상세 화면이 뱃지로 보여주는
+          신뢰속성(accident_status·is_single_owner·is_non_smoker)과 **다른 컬럼**이었다. 즉 화면에
+          보이는 신뢰 정보를 판매자가 넣을 방법이 아예 없었다. 세 값을 여기서 받는다. */}
+      <fieldset className="flex flex-col gap-3 rounded-card border border-border-hairline p-3">
+        <legend className={`px-1 ${FIELD_LABEL_CLASS}`}>신뢰 정보</legend>
 
-      {/* 옵션 (쉼표 구분, 선택) */}
-      <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">옵션 (쉼표로 구분, 선택)</span>
-        <input
-          type="text"
-          value={form.options}
-          onChange={(e) => update('options', e.target.value)}
-          placeholder="예: 선루프, 후방카메라, 내비게이션"
-          className={inputCls}
+        <label className="flex flex-col gap-1">
+          <span className={FIELD_LABEL_CLASS}>사고이력</span>
+          <select
+            value={form.accident_status}
+            onChange={(e) => update('accident_status', e.target.value)}
+            className={inputCls}
+          >
+            <option value="">선택</option>
+            {LISTING_OPTIONS.accident_status.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </label>
+
+        {/* 두 체크박스는 **체크했을 때만** 신고가 된다. 미체크는 "아니다"가 아니라 "말하지 않음"으로
+            저장되므로(payload의 null 처리), 모르는 것을 부정으로 단정하지 않는다.
+            ✎ 2026-08-13 사용자 지적 — 라벨 뒤 괄호 설명("(등록 이후 소유주 변경 없음)" 등)은 뺐다.
+            그 뜻풀이는 구매자가 보는 상세 "신뢰정보" 카드에 이미 한 줄씩 붙어 있고(TrustAttributes의
+            description), 여기선 판매자가 고르기만 하면 되는 자리라 줄만 길어졌다. */}
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.is_single_owner}
+            onChange={(e) => update('is_single_owner', e.target.checked)}
+          />
+          <span className={FIELD_LABEL_CLASS}>1인소유</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={form.is_non_smoker}
+            onChange={(e) => update('is_non_smoker', e.target.checked)}
+          />
+          <span className={FIELD_LABEL_CLASS}>비흡연</span>
+        </label>
+
+        <p className="text-caption text-ink-muted">
+          체크한 항목만 구매자에게 표시돼요. 체크하지 않은 항목은 &ldquo;아니오&rdquo;가 아니라
+          &ldquo;신고하지 않음&rdquo;으로 남습니다.
+        </p>
+      </fieldset>
+
+      {/* 옵션 (선택) — 하이브리드 칩 피커(Story 10.4, 대장 #11 후속). form.options는 여전히
+          줄바꿈 구분 문자열(폼 코어 불변, A3) — OptionPicker는 순수 표현층이라 parseOptionsInput/
+          serializeOptions로 배열 값을 브리지한다. */}
+      <div role="group" aria-labelledby={optionsLabelId} className="flex flex-col gap-1">
+        <span id={optionsLabelId} className={FIELD_LABEL_CLASS}>옵션 (선택)</span>
+        <OptionPicker
+          value={parseOptionsInput(form.options)}
+          onChange={(next) => update('options', serializeOptions(next))}
         />
-      </label>
+      </div>
 
       {/* 설명 (선택) */}
       <label className="flex flex-col gap-1">
-        <span className="text-sm font-medium">설명 (선택)</span>
+        <span className={FIELD_LABEL_CLASS}>설명 (선택)</span>
         <textarea
           value={form.description}
           onChange={(e) => update('description', e.target.value)}
@@ -633,12 +756,15 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
       <PhotoUploader items={photos} onChange={setPhotos} disabled={loading} />
 
       {error && (
-        <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        // 바로 아래 성공 문구는 상자(bg-trust-green-bg)를 유지하는데 오류만 맨 텍스트면 더 급한 쪽이
+        // 더 조용해진다. 상자를 되돌린다(코드리뷰 patch, 15.1). 대비 실측: danger/10 틴트 위
+        // text-danger = 라이트 4.51 / 다크 5.72 (둘 다 AA 통과).
+        <p role="alert" className="rounded bg-danger/10 px-3 py-2 text-sm text-danger">
           {error}
         </p>
       )}
       {success && (
-        <p role="status" className="rounded bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+        <p role="status" className="rounded bg-trust-green-bg px-3 py-2 text-sm text-trust-green-ink">
           {success}
         </p>
       )}
@@ -671,7 +797,7 @@ export default function SellForm({ mode = 'create', listingId, initialValues, in
             role="dialog"
             aria-modal="true"
             aria-labelledby="leave-guard-title"
-            className="w-full max-w-sm rounded bg-white p-5 shadow-lg dark:bg-zinc-900"
+            className="w-full max-w-sm rounded-card bg-surface-raised p-5 shadow-card dark:shadow-none"
           >
             <p id="leave-guard-title" className="text-sm">
               저장하지 않고 나가시겠어요? 작성한 내용이 사라져요.

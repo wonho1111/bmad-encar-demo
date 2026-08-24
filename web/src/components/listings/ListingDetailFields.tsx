@@ -10,6 +10,7 @@
 //   · 제목·상태 배지·"문의하기"·삭제·뒤로가기 등 맥락이 다른 요소도 각 페이지가 따로 그린다.
 //   · 여기는 "공통 본문(기본 정보·옵션·설명)"만 담당한다.
 import { UNITS } from '@/lib/constants';
+import { formatPrice } from '@/lib/price';
 
 // 표시에 필요한 매물 필드(FR5 15필드 중 본문에 쓰는 값). seller_id·status 등 페이지별 로직용 필드는 제외.
 export type ListingDetailFieldsData = {
@@ -34,8 +35,8 @@ export type ListingDetailFieldsData = {
 // 라벨-값 한 줄. 단위·표시는 호출부에서 이미 한국어 문자열로 만들어 넘긴다.
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4 border-b border-zinc-100 py-2 text-sm last:border-0 dark:border-zinc-800">
-      <span className="text-zinc-500">{label}</span>
+    <div className="flex justify-between gap-4 border-b border-border-hairline py-2 text-body last:border-0">
+      <span className="text-ink-muted">{label}</span>
       <span className="text-right font-medium">{value}</span>
     </div>
   );
@@ -47,7 +48,7 @@ export default function ListingDetailFields({
   listing: ListingDetailFieldsData;
 }) {
   // 단위·표시 규칙(conventions §3): 천단위 콤마 + 단위.
-  const priceText = `${listing.price.toLocaleString('ko-KR')}${UNITS.price}`;
+  const priceText = formatPrice(listing.price);
   const mileageText = `${listing.mileage.toLocaleString('ko-KR')}${UNITS.mileage}`;
   const displacementText = `${listing.displacement.toLocaleString('ko-KR')}${UNITS.displacement}`;
   const options = listing.options ?? [];
@@ -56,7 +57,7 @@ export default function ListingDetailFields({
     <>
       {/* 기본 정보(15필드 중 수치·고정목록 필드) */}
       <section className="flex flex-col">
-        <h2 className="mb-1 text-lg font-semibold">기본 정보</h2>
+        <h2 className="mb-1 text-card-title font-semibold text-ink-primary">기본 정보</h2>
         <Field label="제조사" value={listing.manufacturer} />
         <Field label="모델" value={listing.model} />
         <Field label="차종" value={listing.body_type} />
@@ -76,15 +77,15 @@ export default function ListingDetailFields({
 
       {/* 옵션(text[]) — 빈 배열이면 안내 */}
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">옵션</h2>
+        <h2 className="text-card-title font-semibold text-ink-primary">옵션</h2>
         {options.length === 0 ? (
-          <p className="text-sm text-zinc-500">등록된 옵션이 없습니다.</p>
+          <p className="text-body text-ink-muted">등록된 옵션이 없습니다.</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
             {options.map((opt, i) => (
               <li
                 key={`${opt}-${i}`}
-                className="rounded border border-zinc-200 px-2 py-0.5 text-xs dark:border-zinc-700"
+                className="rounded-chip border border-border-hairline px-2 py-0.5 text-caption text-ink-secondary"
               >
                 {opt}
               </li>
@@ -95,13 +96,13 @@ export default function ListingDetailFields({
 
       {/* 설명(nullable) — 비면 안내, 있으면 줄바꿈 보존 */}
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">설명</h2>
+        <h2 className="text-card-title font-semibold text-ink-primary">설명</h2>
         {listing.description && listing.description.trim() !== '' ? (
-          <p className="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
+          <p className="whitespace-pre-wrap text-body text-ink-secondary">
             {listing.description}
           </p>
         ) : (
-          <p className="text-sm text-zinc-500">등록된 설명이 없습니다.</p>
+          <p className="text-body text-ink-muted">등록된 설명이 없습니다.</p>
         )}
       </section>
     </>

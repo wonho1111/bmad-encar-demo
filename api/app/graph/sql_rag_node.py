@@ -29,33 +29,30 @@ logger = logging.getLogger(__name__)
 # ListingCard 7필드 — SELECT 컬럼 순서는 공유 헬퍼(listing_cards)에 단일출처로 둔다(경로 B와 공유).
 _SELECT_COLUMNS = SELECT_COLUMNS
 
-# 시스템 프롬프트 — 스키마·허용값·단위 정규화·불변 규칙을 LLM에 그대로 박는다.
-# 허용값은 0002_listings.sql CHECK 목록과 정확히 일치(단일출처, drift 금지).
-_SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL 생성기다. listings 테이블만 조회한다.
-
-[스키마: listings 테이블 — 아래 컬럼과 허용값만 사용]
+# 도메인 규칙(스키마·허용값 / 단위 정규화·차형 용어 매핑·옵션 필터) — 경로 A(sql_rag_node)·
+# 조합형(hybrid_rag_node, 13.3)이 공유하는 순수 리팩터 추출. 문자열 내용은 그대로이고
+# _SYSTEM_PROMPT가 f-string으로 포함한다(drift 방지 — hybrid_rag_node가 재사용). 허용값은
+# 0002_listings.sql CHECK 목록과 정확히 일치(단일출처, drift 금지).
+# 두 조각(스키마 / 단위·차형·옵션)으로 나눈 이유: _SYSTEM_PROMPT는 원래(리팩터 전) 이 둘
+# 사이에 경로 A 전용 [불변 규칙] 블록이 끼어 있었다 — 리팩터로 이미 운영 중인 이 프롬프트의
+# 블록 순서(=LLM 입력)가 바뀌면 SQL 생성 품질이 조용히 변할 위험이 있어(review 발견), 아래
+# _SYSTEM_PROMPT 조립에서 원래 순서를 문자 그대로 복원한다. hybrid_rag_node는 [불변 규칙]이
+# 없으므로 _DOMAIN_RULES(둘을 합친 것)를 그대로 한 덩어리로 재사용한다.
+_SCHEMA_RULES = """[스키마: listings 테이블 — 아래 컬럼과 허용값만 사용]
 - id, manufacturer(제조사), model(모델·자유값), year(연식·정수), price(가격·원), mileage(주행거리·km),
   region(지역), body_type(차종), color(색상), fuel(연료), transmission(변속기),
   displacement(배기량·cc), seats(인승), accident_free(무사고 여부·boolean), status(상태),
-  options(옵션 목록·text 배열. 예: ['후방카메라','스마트키','통풍시트','내비게이션','파노라마선루프'])
+  options(옵션 목록·text 배열. 예: ['후방카메라','스마트키','통풍시트','내비게이션','파노라마선루프']),
+  accident_status(사고이력 자기신고·'무사고'/'단순교환'/'사고'/NULL), is_single_owner(1인소유 자기신고·boolean/NULL),
+  is_non_smoker(비흡연 자기신고·boolean/NULL)
 - manufacturer ∈ (현대,기아,제네시스,쉐보레,르노코리아,KG모빌리티,BMW,벤츠,아우디,폭스바겐,토요타,혼다,렉서스,테슬라,기타)
 - body_type ∈ (경차,소형차,준중형차,중형차,대형차,스포츠카,SUV,RV,경승합차,승합차,화물차,기타)
 - color ∈ (흰색,검정,회색,은색,파랑,빨강,갈색,녹색,기타)
 - fuel ∈ (가솔린,디젤,하이브리드,전기,LPG)
 - transmission ∈ (자동,수동)
-- region ∈ (서울,부산,대구,인천,광주,대전,울산,세종,경기,강원,충북,충남,전북,전남,경북,경남,제주)
+- region ∈ (서울,부산,대구,인천,광주,대전,울산,세종,경기,강원,충북,충남,전북,전남,경북,경남,제주)"""
 
-[불변 규칙 — 반드시 지켜라]
-1. 반드시 `SELECT {_SELECT_COLUMNS} FROM listings` 로 시작한다.
-2. WHERE 절에 `status = 'on_sale'` 을 항상 포함한다.
-3. 조건은 AND 로만 결합한다. OR 는 절대 쓰지 않는다.
-4. 특별히 더 많이 보여달라는 요청이 없으면 끝에 `LIMIT {DEFAULT_LIMIT}` 을 붙인다(최대 {MAX_LIMIT}).
-5. SQL 한 문장만 출력한다. 설명·코드펜스(```)·세미콜론·주석을 붙이지 않는다.
-6. id 는 UUID다. 비교(>,<,=)·정렬(ORDER BY)·페이지네이션(OFFSET)에 id 를 쓰지 마라
-   (UUID를 숫자와 비교하면 DB 오류가 난다). "지금 것 말고 다른 거/더 보여줘"처럼 페이지네이션을
-   요구해도, id 로 거르거나 OFFSET을 만들지 말고 기존 검색 조건을 그대로 유지해 조회한다.
-
-[단위 정규화 — 자연어를 저장 단위(정수)로 변환]
+_UNIT_AND_FILTER_RULES = """[단위 정규화 — 자연어를 저장 단위(정수)로 변환]
 - 주행거리: "만km" → ×10000 (예: "10만km 이하" → mileage <= 100000)
 - 가격: "천만원"=10000000, "만원"=10000 (예: "3천만원 이하" → price <= 30000000)
 - 방향: "이하/미만" → <= / < , "이상/초과" → >= / >
@@ -69,7 +66,56 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL �
 [옵션 필터 — options 배열]
 - 사용자가 특정 옵션(예: 스마트키·통풍시트·후방카메라·내비게이션·파노라마선루프 등)을 요구하면
   `'<옵션명>' = ANY(options)` 형태로 정확히 거른다. 예: "스마트키 있는 거" → '스마트키' = ANY(options)
-- 옵션이 여러 개면 각각의 `= ANY(options)` 조건을 AND 로 결합한다. 옵션명은 사용자 표현 그대로 쓴다.
+- 옵션이 여러 개면 각각의 `= ANY(options)` 조건을 AND 로 결합한다. 옵션명은 사용자 표현 그대로 쓴다."""
+
+# hybrid_rag_node가 재사용하는 단일 덩어리(순서: 스키마 → 단위·차형·옵션, [불변 규칙] 없음).
+_DOMAIN_RULES = f"{_SCHEMA_RULES}\n\n{_UNIT_AND_FILTER_RULES}"
+
+# 시스템 프롬프트 — 도메인 규칙 + 경로 A 전용 불변 규칙을 LLM에 그대로 박는다(리팩터 전과
+# 문자 그대로 동일한 순서: 스키마 → 불변 규칙 → 단위·차형·옵션 → 출력).
+_SYSTEM_PROMPT = f"""너는 중고차 매물 DB를 검색하는 PostgreSQL SQL 생성기다. listings 테이블만 조회한다.
+
+{_SCHEMA_RULES}
+
+[불변 규칙 — 반드시 지켜라]
+1. 반드시 `SELECT {_SELECT_COLUMNS} FROM listings` 로 시작한다.
+2. WHERE 절에 `status = 'on_sale'` 을 항상 포함한다.
+3. 조건은 AND 로만 결합한다. OR 는 절대 쓰지 않는다.
+4. 특별히 더 많이 보여달라는 요청이 없으면 끝에 `LIMIT {DEFAULT_LIMIT}` 을 붙인다(최대 {MAX_LIMIT}).
+   단, "제일"·"가장"·"최고"·"최저"처럼 최상급 표현이 정렬 가능한 축(가격·연식·주행거리 등)의
+   형용사와 함께 있으면, 그 축으로 `ORDER BY`를 걸고 `LIMIT 1`을 붙인다(개수를 5로 늘리지
+   않는다) — 단 사용자가 "5개"처럼 개수를 직접 밝히면 최상급이어도 그 개수를 LIMIT으로 쓴다.
+   예: "제일 싼 차 뭐야?" → `ORDER BY price ASC LIMIT 1`
+   예: "가장 비싼 매물 하나 보여줘" → `ORDER BY price DESC LIMIT 1`
+   예: "가장 최신 연식인 차" → `ORDER BY year DESC LIMIT 1`
+   예: "주행거리 제일 적은 차" → `ORDER BY mileage ASC LIMIT 1`
+   예: "제일 싼 거 5개 보여줘" → `ORDER BY price ASC LIMIT 5` (사용자가 개수를 밝혔으므로 5)
+5. SQL 한 문장만 출력한다. 설명·코드펜스(```)·세미콜론·주석을 붙이지 않는다.
+6. id 는 UUID다. 비교(>,<,=)·정렬(ORDER BY)·페이지네이션(OFFSET)에 id 를 쓰지 마라
+   (UUID를 숫자와 비교하면 DB 오류가 난다). "지금 것 말고 다른 거/더 보여줘"처럼 페이지네이션을
+   요구해도, id 로 거르거나 OFFSET을 만들지 말고 기존 검색 조건을 그대로 유지해 조회한다.
+7. accident_free·accident_status·is_single_owner·is_non_smoker 는 전부 실제로 채워진 값이
+   있는 정상 필터 조건이다(일부 매물은 여전히 NULL일 수 있고, 조건에 넣으면 그 매물은
+   자연히 제외된다 — 정상 동작이다).
+   - 사고이력을 묻는 요청은 방향에 관계없이 accident_status 가 아니라 accident_free(더 널리
+     채워져 있음)로 판단해라: "무사고 차량 찾아줘"→`accident_free = true`,
+     "사고 있는 차"/"사고차"/"사고이력 있는 차"→`accident_free = false`. accident_status는
+     사용자가 "단순교환"처럼 accident_free 로는 구분 못 하는 값을 직접 언급할 때만 써라
+     (예: "단순교환 이력만 있는 차" → `accident_status = '단순교환'`).
+   - is_single_owner·is_non_smoker(1인소유·비흡연)는 사용자가 "1인소유 차량"·"비흡연 차량"
+     처럼 요구하면 그대로 `is_single_owner = true`·`is_non_smoker = true` 조건으로 걸어라.
+   - 신뢰속성 여러 개가 동시에 요구되면(예: "무사고에 1인소유인 차") 각각을 AND로 결합한다.
+8. model(모델명) 조건은 정확일치(`=`)가 아니라 `model ILIKE '%<모델명>%'` 형태의 부분일치로
+   만든다 — 실제 데이터는 `아반떼 MD`·`아반떼 CN7`·`쏘렌토 MQ4`처럼 모델명 뒤에 세부
+   트림/차대 코드가 붙어 있어, `model = '아반떼'`는 그 세부 트림들을 못 잡고 0건이 되거나
+   일부만 잡는다.
+   예: "아반떼 보여줘" → `model ILIKE '%아반떼%'`
+   예: "쏘렌토 있어?" → `model ILIKE '%쏘렌토%'`
+9. "A 같은 B" 형태(다른 차/모델을 예시로 들며 B 조건을 요청)에서는 B만 조건으로 쓰고 A(예시로
+   든 차/모델)는 조건에 넣지 않는다 — A는 비유일 뿐 실제로 찾는 조건이 아니다.
+   예: "아니 쏘렌토 같은 SUV로 바꿔줘" → `body_type = 'SUV'`만(model 조건 없음)
+
+{_UNIT_AND_FILTER_RULES}
 
 출력: SQL 텍스트 한 줄만."""
 

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# .githooks/post-checkout — 브랜치를 옮기면 웹·앱의 DB 접속 설정을 자동으로 맞춘다.
+#
+# 왜: web/.env.local · app/.env.json 은 git이 추적하지 않아 브랜치를 바꿔도 그대로 남는다.
+#   그래서 develop에서 로컬 DB로 작업하다 main으로 가도 계속 로컬을 보고, 반대도 마찬가지다.
+#   사람 기억에 맡기면 언젠가 틀리므로 체크아웃 시점에 자동으로 맞춘다(CLAUDE.md B9).
+#
+# 켜는 법(한 번만): git config core.hooksPath .githooks
+#
+# git이 넘겨주는 인자: $1=이전 HEAD  $2=새 HEAD  $3=1이면 브랜치 이동, 0이면 파일 체크아웃
+
+set -euo pipefail
+
+# 파일 단위 체크아웃(`git checkout -- 어떤파일`)에는 반응하지 않는다.
+[ "${3:-0}" = "1" ] || exit 0
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+[ -f "$REPO_ROOT/scripts/use-env.sh" ] || exit 0
+
+# 훅이 실패해도 체크아웃 자체를 막지는 않는다(작업 흐름을 인질로 잡지 않는다).
+bash "$REPO_ROOT/scripts/use-env.sh" auto || echo "[post-checkout] use-env.sh 실행 실패 — 수동으로 확인하세요." >&2

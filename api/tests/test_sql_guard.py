@@ -141,6 +141,117 @@ def test_sold_filter_does_not_satisfy():
     assert _code(sql) == "missing_status_filter"
 
 
+# ── status='on_sale' 부정/거짓 판정 우회 차단 (DW-557, 13.2 — review-2 구조적 검사) ──────
+# 최초 구현(문자열 존재 검사)·review-1(부정 연산자 정규식 나열)이 둘 다 실측으로 뚫렸다.
+# review-2는 그 정규식 나열 접근 자체를 폐기하고 sqlparse 구조적 검사로 교체했다 — 아래는
+# 지금까지 나온 모든 우회(최소 7개: 원본 2형태 + review-1의 3형태 + review-2의 2형태)를
+# 전부 커버한다. 표현 형태를 나열하는 게 아니라 구조(부정됐는가)를 보므로, 아직 실측되지
+# 않은 새 변형도 원리상 함께 막힌다(Design Notes).
+def test_not_status_on_sale_rejected():
+    sql = "SELECT id FROM listings WHERE NOT status = 'on_sale' LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_not_parenthesized_status_on_sale_rejected():
+    sql = "SELECT id FROM listings WHERE NOT (status = 'on_sale') LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_is_not_true_rejected():
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' IS NOT TRUE LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_is_false_rejected():
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' IS FALSE LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_not_double_nested_parens_status_on_sale_rejected():
+    """review-1 실측 재현 — 괄호 2겹 이상."""
+    sql = "SELECT id FROM listings WHERE NOT ((status = 'on_sale')) LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_equals_false_rejected():
+    """review-1 실측 재현 — 맨 불리언 리터럴 `= false`와의 재비교."""
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') = false LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_not_equal_true_rejected():
+    """review-1 실측 재현 — `<> true`와의 재비교."""
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') <> true LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_bang_equal_true_rejected():
+    """review-3 지적 — `!=true`도 `<>true`와 동일하게 구조적으로 막혀야 한다(전용 테스트 신설,
+    이전엔 구조적으로는 막히지만 전용 회귀 테스트가 없어 B4 "재보기 전엔 선언하지 않는다" 위반 소지)."""
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') != true LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_is_distinct_from_true_rejected():
+    """review-3 지적 — `IS DISTINCT FROM TRUE`도 실제로 거부되는지 전용으로 확인한다.
+
+    ⚠️ 실측 결과가 예상과 다르다: `missing_status_filter`가 아니라 `forbidden_table`로
+    거부된다. 원인은 이 형태 자체가 아니라 **이 스토리 밖의 기존 코드**에 있다 — 테이블
+    화이트리스트 검사가 쓰는 `\\b(?:from|join)\\s+([a-zA-Z_][\\w.]*)` 정규식이 "IS DISTINCT
+    FROM TRUE"의 "FROM TRUE"를 두 번째 FROM절로 오인해 "TRUE"를 미허용 테이블로 잡아버린다
+    (`re.findall`로 직접 재현: `['listings', 'TRUE']`). 즉 이 형태가 막히는 건 우연이지
+    이번 스토리가 짠 구조적 검사가 의도한 방어가 아니다(Design Notes review-2 문단이 이미
+    이 사실을 언급했다). 정확한 사유를 그대로 단언한다 — 틀린 사유를 옳은 것처럼 주장하지 않는다.
+    """
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') IS DISTINCT FROM TRUE LIMIT 5"
+    assert _code(sql) == "forbidden_table"
+
+
+def test_status_on_sale_equals_quoted_boolean_string_rejected():
+    """review-2 실측 재현 — PostgreSQL은 따옴표 문자열 'f'도 불리언으로 해석한다.
+    문자열 형태를 나열하지 않는 구조적 검사라 이 형태도 별도 정규식 없이 막힌다."""
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') = 'f' LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_equals_parenthesized_boolean_rejected():
+    """review-2 실측 재현 — 불리언 리터럴 자체를 괄호로 감싼 재비교."""
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') = (false) LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_status_on_sale_and_price_filter_still_passes():
+    # 정상 형태(AND 결합)는 회귀 없이 통과해야 한다.
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' AND price < 30000000"
+    out = validate_select_sql(sql)
+    assert f"LIMIT {DEFAULT_LIMIT}" in out
+
+
+def test_status_on_sale_grouping_parens_still_passes():
+    """순수 그룹핑 괄호(NOT 등으로 감싸이지 않은)는 최상위로 인정되어 통과해야 한다."""
+    sql = "SELECT id FROM listings WHERE (status = 'on_sale') AND price < 30000000"
+    out = validate_select_sql(sql)
+    assert f"LIMIT {DEFAULT_LIMIT}" in out
+
+
+def test_whole_where_clause_wrapped_in_outer_paren_still_passes():
+    """review-3 실측 재현 — WHERE절 전체를 바깥 괄호 하나로 감싼 형태(Gemini가 종종 쓰는
+    방어적 스타일)가 정상 통과해야 한다. 개별 결합항이 아니라 AND 표현 전체를 감싼
+    괄호라 이전 구현은 이 형태를 missing_status_filter로 오탈락시켰다(과잉 차단 회귀)."""
+    sql = "SELECT id, price FROM listings WHERE (status='on_sale' AND price < 30000000) LIMIT 5"
+    out = validate_select_sql(sql)
+    # 입력에 이미 LIMIT 5가 있으므로 가드는 원문을 그대로 돌려준다 — 부분문자열 검사는
+    # 아무것도 구별하지 못해(LIMIT 50에도 매치) 공허했다. 원문 보존을 그대로 못박는다.
+    assert out == sql
+
+
+def test_whole_where_clause_wrapped_and_negated_still_rejected():
+    """위 정상 케이스의 대조군 — 같은 괄호 모양이라도 NOT으로 감싸면 여전히 거부돼야
+    한다(과잉 차단을 고치다 부정 우회 차단까지 함께 뚫으면 안 된다)."""
+    sql = "SELECT id FROM listings WHERE NOT (status='on_sale' AND price < 30000000) LIMIT 5"
+    assert _code(sql) == "missing_status_filter"
+
+
 # ── LIMIT 상한 ─────────────────────────────────────────────────────
 def test_limit_over_cap_rejected():
     sql = f"SELECT id FROM listings WHERE status='on_sale' LIMIT {MAX_LIMIT + 1}"
@@ -245,3 +356,412 @@ def test_allowed_tables_is_exactly_listings():
     from app.db.sql_guard import ALLOWED_TABLES
 
     assert ALLOWED_TABLES == {"listings"}
+
+
+# ── 하이브리드 벡터 절 화이트리스트 (13.1 — I/O 매트릭스 6행) ─────
+# `ALLOWED_COLUMNS`/`_SQL_KEYWORDS`는 건드리지 않는다(1차 리뷰 패스가 되돌린 블랭킷 추가
+# 방식 대신, `ORDER BY embedding <=> ...::vector` 모양을 위치-스코프로 통째 제거한다).
+_HYBRID_GOOD = (
+    "SELECT id, manufacturer, model, year, price, mileage, region "
+    "FROM listings WHERE status = 'on_sale' AND body_type = 'SUV' "
+    "ORDER BY embedding <=> %s::vector LIMIT 10"
+)
+
+
+def test_hybrid_vector_query_passes():
+    """정상 하이브리드 벡터 쿼리는 화이트리스트를 통과하고 LIMIT을 그대로 유지한다."""
+    out = validate_select_sql(_HYBRID_GOOD)
+    assert "LIMIT 10" in out
+    assert "embedding <=> %s::vector" in out
+
+
+def test_hybrid_or_rejected():
+    """하이브리드 형태에 OR을 섞어도 기존과 동일하게 거부된다(회귀 없음)."""
+    sql = _HYBRID_GOOD.replace(
+        "AND body_type = 'SUV' ",
+        "AND body_type = 'SUV' OR price < 1 ",
+    )
+    assert _code(sql) == "forbidden_or"
+
+
+def test_hybrid_subquery_rejected():
+    """하이브리드 형태에 서브쿼리를 섞어도 기존과 동일하게 거부된다(회귀 없음)."""
+    sql = (
+        "SELECT id, manufacturer, model, year, price, mileage, region FROM listings "
+        "WHERE status = 'on_sale' AND id IN (SELECT id FROM listings) "
+        "ORDER BY embedding <=> %s::vector LIMIT 10"
+    )
+    assert _code(sql) == "subquery_not_allowed"
+
+
+def test_hybrid_missing_status_filter_rejected():
+    """하이브리드 형태에서도 status='on_sale' 누락 시 거부된다."""
+    sql = (
+        "SELECT id FROM listings WHERE body_type = 'SUV' "
+        "ORDER BY embedding <=> %s::vector LIMIT 10"
+    )
+    assert _code(sql) == "missing_status_filter"
+
+
+def test_hybrid_bind_placeholder_named_form_passes():
+    """`%(name)s` 자리표시자 형태도 오탐 없이 통과한다(바인드 자리표시자 오탐 방지)."""
+    sql = (
+        "SELECT id FROM listings WHERE status = 'on_sale' "
+        "ORDER BY embedding <=> %(query_embedding)s::vector LIMIT 5"
+    )
+    out = validate_select_sql(sql)
+    assert "LIMIT 5" in out
+
+
+def test_embedding_outside_vector_clause_still_rejected():
+    """`embedding`이 벡터절 밖(예: SELECT 목록)에 나오면 여전히 forbidden_column으로 거부된다.
+
+    위치-스코프 화이트리스트가 실제로 위치를 가리는지 증명하는 회귀 테스트(1차 패스가
+    놓쳤던 위치-무관 취약점 — Spec Change Log 참조).
+    """
+    sql = "SELECT id, embedding FROM listings WHERE status = 'on_sale' LIMIT 5"
+    assert _code(sql) == "forbidden_column"
+
+
+def test_vector_alias_outside_order_by_still_rejected():
+    """`vector`가 벡터절 밖(예: 테이블 별칭)에 나오면 여전히 forbidden_column으로 거부된다."""
+    sql = "SELECT id FROM listings vector WHERE status = 'on_sale' LIMIT 5"
+    assert _code(sql) == "forbidden_column"
+
+
+def test_uppercase_percent_s_placeholder_in_vector_clause_rejected():
+    """`%S`(대문자)는 psycopg 자리표시자가 아니라 절대 바인딩되지 않는다 — 전역 IGNORECASE가
+    이 형태도 벡터절로 지워버리면 그 %S가 그대로 실행 SQL에 남아 psycopg 문법 오류가 된다
+    (review pass 4). 식별자(order by embedding·vector)는 대소문자 무관해도, 자리표시자는
+    대소문자를 구분해야 한다.
+    """
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' ORDER BY EMBEDDING <=> %S::VECTOR LIMIT 5"
+    assert _code(sql) == "forbidden_column"
+
+
+def test_uppercase_vector_keywords_with_correct_case_placeholder_still_passes():
+    """자리표시자만 대소문자를 구분할 뿐, ORDER BY/EMBEDDING/VECTOR 키워드는 여전히
+    대소문자 무관하게 인식된다(위 수정이 위치-스코프 화이트리스트 자체를 깨지 않았음을 확인).
+    """
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' ORDER BY EMBEDDING <=> %s::VECTOR LIMIT 5"
+    out = validate_select_sql(sql)
+    assert "LIMIT 5" in out
+
+
+# ── 자리표시자(%s/%(name)s)는 벡터절 밖에서 거부된다(3차 리뷰 패스 신규) ──────────
+# "방어적 이중 스트립"(벡터절 밖의 %s/%(name)s를 위치 무관하게 지우는 스텝)은 실제로는
+# 가드를 여는 스텝이었다 — 지우면 자리표시자가 미화이트리스트 식별자로 안 잡히고 통과해
+# run_select()가 params 없이 실행돼 psycopg 문법 오류(500)가 된다. 이 두 테스트가 그
+# 스텝이 없어야 함을 실제로 잡는다(그 스텝을 다시 넣으면 아래 2건이 red가 된다).
+def test_placeholder_outside_vector_clause_positional_form_rejected():
+    """`%s`가 벡터절 밖(예: WHERE model = %s)에 나오면 forbidden_column으로 거부된다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' AND model = %s LIMIT 5"
+    assert _code(sql) == "forbidden_column"
+
+
+def test_placeholder_outside_vector_clause_named_form_rejected():
+    """`%(name)s`가 벡터절 밖(예: WHERE price <= %(maxp)s)에 나오면 forbidden_column으로 거부된다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' AND price <= %(maxp)s LIMIT 5"
+    assert _code(sql) == "forbidden_column"
+
+
+# ── 문자열 리터럴 안의 limit/offset + 숫자가 실제 절을 가리지 않는다(3차 리뷰 패스 신규) ──
+# LIMIT·OFFSET 숫자 매처가 cleaned(리터럴 포함)를 읽으면, description 등 자유텍스트 리터럴
+# 안의 우연한 "limit 3"·"offset 999999" 같은 숫자가 실제 절보다 먼저 매치돼 MAX_LIMIT/
+# MAX_OFFSET 우회나 DEFAULT_LIMIT 미주입(무제한 SELECT)으로 이어진다(Design Notes 실측표).
+def test_literal_limit_digit_does_not_bypass_max_limit():
+    """리터럴 속 'limit 3'이 실제 LIMIT 100보다 먼저 매치돼선 안 된다 — MAX_LIMIT 우회 차단."""
+    sql = (
+        "SELECT id, description FROM listings WHERE status='on_sale' "
+        "AND description = 'limit 3' LIMIT 100"
+    )
+    assert _code(sql) == "limit_exceeded"
+
+
+def test_literal_limit_digit_without_real_limit_clause_still_gets_default():
+    """실제 LIMIT절이 없으면(리터럴 속 'limit 10'뿐) DEFAULT_LIMIT이 그대로 덧붙는다.
+
+    수정 전엔 `normalized = cleaned` 경로를 잘못 타 LIMIT 절이 아예 없는 무제한 SELECT를
+    반환했다(Design Notes 실측). 숫자가 없는 'no limit here'만으로는 이 분기에 안 닿으므로
+    (test_limit_word_inside_literal_does_not_trigger_malformed) 숫자 포함 케이스를 별도로 잠근다.
+    """
+    sql = (
+        "SELECT id, description FROM listings WHERE status='on_sale' "
+        "AND description = 'limit 10'"
+    )
+    out = validate_select_sql(sql)
+    assert f"LIMIT {DEFAULT_LIMIT}" in out
+
+
+def test_literal_offset_digit_does_not_trigger_false_offset_exceeded():
+    """리터럴 속 'offset 999999'가 실제 OFFSET절로 오인돼 정상 쿼리를 거부해선 안 된다."""
+    sql = (
+        "SELECT id, description FROM listings WHERE status='on_sale' "
+        "AND description = 'offset 999999'"
+    )
+    out = validate_select_sql(sql)
+    assert f"LIMIT {DEFAULT_LIMIT}" in out
+
+
+# ── LIMIT 괄호 형태(DW-315) — 숫자 형태 미인식 시 이중 LIMIT 대신 명시 거부 ──
+def test_parenthesized_limit_rejected_as_malformed():
+    """`LIMIT (10)`처럼 숫자가 바로 안 붙는 형태는 조용히 LIMIT 5를 덧붙이지 않고 거부한다."""
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' LIMIT (10)"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_limit_word_inside_literal_does_not_trigger_malformed():
+    """문자열 리터럴 안에 우연히 'limit' 단어가 있어도(실제 LIMIT절 없음) 오탐 거부하지 않는다.
+
+    코드리뷰 패치: limit_malformed 분기가 `cleaned`(리터럴 미제거)를 검사하면
+    `description = 'no limit here'` 같은 정상 값 때문에 정상 쿼리가 거부된다.
+    """
+    sql = "SELECT id, description FROM listings WHERE status='on_sale' AND description = 'no limit here'"
+    out = validate_select_sql(sql)
+    assert f"LIMIT {DEFAULT_LIMIT}" in out  # LIMIT 없었으므로 기본 LIMIT 정상 주입
+
+
+def test_allowed_columns_is_exactly_pinned():
+    """ALLOWED_COLUMNS를 정확 집합으로 고정한다 — 지금은 아무 테스트도 이 집합 전체를 보지 않아
+
+    조용히 넓어질 수 있었다(Story 10.1). 신뢰속성 3컬럼(accident_status·is_single_owner·
+    is_non_smoker)이 추가된 뒤에도 listings 테이블 밖 컬럼(storage_path 등)이 섞이지 않는지
+    이 단언이 못박는다 — 늘어나면 여기가 red가 되어 리뷰를 강제한다.
+    """
+    from app.db.sql_guard import ALLOWED_COLUMNS
+
+    assert ALLOWED_COLUMNS == {
+        "id", "manufacturer", "model", "year", "price", "mileage", "region",
+        "body_type", "color", "fuel", "transmission", "displacement", "seats",
+        "accident_free", "status", "options", "description",
+        "accident_status", "is_single_owner", "is_non_smoker",
+    }
+
+
+# ── review pass 5 — 벡터절 "끝"까지 고정한다 ────────────────────────────
+# 벡터절 정규식이 접두사만 보면(끝 미고정), 매치 뒤에 뭐가 붙어도 절이 통째로 지워져
+# 검증 없이 통과한다. 아래 3형태가 실제로 통과했었다.
+def test_hybrid_vector_clause_with_desc_rejected():
+    """`<=>`는 거리 연산자라 DESC는 "가장 안 닮은 순"이다 — 통과시키면 결과가 조용히 뒤집힌다."""
+    sql = (
+        "SELECT id FROM listings WHERE status='on_sale' "
+        "ORDER BY embedding <=> %s::vector DESC LIMIT 10"
+    )
+    assert _code(sql) == "forbidden_column"
+
+
+def test_hybrid_vector_clause_duplicated_rejected():
+    """같은 절이 두 번이면 ORDER BY가 둘인 실행 불가 SQL — psycopg 문법오류(500)로 가기 전에 막는다."""
+    sql = (
+        "SELECT id FROM listings WHERE status='on_sale' "
+        "ORDER BY embedding <=> %s::vector ORDER BY embedding <=> %s::vector LIMIT 5"
+    )
+    assert _code(sql) == "forbidden_column"
+
+
+def test_hybrid_vector_clause_with_trailing_sort_key_rejected():
+    """벡터절 뒤에 딸려오는 2차 정렬키는 검증된 적이 없다 — 넓히는 대신 거부한다."""
+    sql = (
+        "SELECT id FROM listings WHERE status='on_sale' "
+        "ORDER BY embedding <=> %s::vector, price LIMIT 10"
+    )
+    assert _code(sql) == "forbidden_column"
+
+
+def test_hybrid_vector_clause_allows_only_limit_or_offset_or_end():
+    """반대 방향 고정 — 정상 3형태(끝·LIMIT·OFFSET)는 여전히 통과해야 한다."""
+    base = "SELECT id FROM listings WHERE status='on_sale' ORDER BY embedding <=> %s::vector"
+    assert f"LIMIT {DEFAULT_LIMIT}" in validate_select_sql(base)          # 절 뒤가 문장 끝
+    assert "LIMIT 10" in validate_select_sql(base + " LIMIT 10")          # 절 뒤가 LIMIT
+    assert "OFFSET 10" in validate_select_sql(base + " OFFSET 10 LIMIT 5")  # 절 뒤가 OFFSET
+
+
+def test_vector_expression_outside_order_by_rejected():
+    """ORDER BY 앵커가 위치-스코프의 전부다 — 같은 식이 SELECT 목록·WHERE에 오면 거부한다.
+
+    앵커가 없으면 벡터식이 SELECT 목록의 무방비 숫자 슬롯에 들어가 rows_to_cards()에서
+    잡히지 않는 TypeError(400 → 500)가 되고, 미바인드 %s가 params 없는 run_select()로 샌다.
+    """
+    in_select = (
+        "SELECT id, embedding <=> %s::vector FROM listings WHERE status='on_sale' LIMIT 5"
+    )
+    in_where = (
+        "SELECT id FROM listings WHERE status='on_sale' "
+        "AND embedding <=> %s::vector < 0.3 LIMIT 5"
+    )
+    assert _code(in_select) == "forbidden_column"
+    assert _code(in_where) == "forbidden_column"
+
+
+# ── review pass 5 — 달러 인용 리터럴은 LIMIT/OFFSET 매처를 가로챈다 ──────
+def test_dollar_quoted_literal_rejected():
+    """`$$...$$`는 no_strings가 안 지우는 또 다른 문자열 리터럴 문법이다.
+
+    허용하면 그 안의 "limit 3"이 실제 LIMIT절보다 먼저 매치돼 MAX_LIMIT 상한을 우회하고
+    (`$$limit 3$$ LIMIT 100` → 100건 통과), 실제 LIMIT절이 없으면 DEFAULT_LIMIT 주입까지
+    건너뛰어 무제한 SELECT가 된다. 작은따옴표 리터럴에서 이미 막은 것과 같은 구멍이다.
+    """
+    bypass = (
+        "SELECT id, description FROM listings WHERE status='on_sale' "
+        "AND description = $$limit 3$$ LIMIT 100"
+    )
+    unbounded = (
+        "SELECT id, description FROM listings WHERE status='on_sale' "
+        "AND description = $$limit 3$$"
+    )
+    tagged = (
+        "SELECT id, description FROM listings WHERE status='on_sale' "
+        "AND description = $x$limit 3$x$ LIMIT 100"
+    )
+    assert _code(bypass) == "dollar_quote_not_allowed"
+    assert _code(unbounded) == "dollar_quote_not_allowed"
+    assert _code(tagged) == "dollar_quote_not_allowed"
+
+
+# ── DW-557 후속(review-4): 구조적 검사가 만든 과잉 차단 회귀 2형태 ────────────────
+# 두 형태 모두 베이스라인(bf85811, 정규식 존재검사)에서는 통과하던 정상 SQL인데,
+# sqlparse 구조 검사로 바꾸면서 missing_status_filter로 오탈락했다(실측 재현).
+# 보안 방향은 안전(과잉 차단)이지만 정상 요청에 400이 나가는 회귀라 고친다.
+
+def test_paren_and_group_as_one_of_several_conjuncts_still_passes():
+    """괄호로 묶인 AND 그룹이 여러 최상위 결합항 중 하나일 때도 통과해야 한다.
+
+    review-3이 고친 것은 "WHERE절 **전체**를 감싼 괄호" 한 형태뿐이라, 괄호 그룹이
+    다른 조건과 나란히 있으면 여전히 오탈락했다. 괄호 안 항들도 의미상 최상위 AND
+    결합항이므로 재귀 평탄화로 찾아내야 한다.
+    """
+    both_orders = [
+        "SELECT id FROM listings WHERE (status = 'on_sale' AND price < 30000000) "
+        "AND year > 2020 LIMIT 5",
+        "SELECT id FROM listings WHERE year > 2020 "
+        "AND (price < 30000000 AND status = 'on_sale') LIMIT 5",
+        "SELECT id FROM listings WHERE ((status = 'on_sale' AND price < 3) AND year > 2020) LIMIT 5",
+    ]
+    for sql in both_orders:
+        assert validate_select_sql(sql) == sql, f"정상 SQL이 오탈락했다: {sql}"
+
+
+def test_offset_without_preceding_limit_still_passes():
+    """LIMIT 없이 OFFSET만 붙은 형태도 통과해야 한다.
+
+    sqlparse의 Where 그룹은 LIMIT·ORDER BY에서는 닫히지만 OFFSET에서는 닫히지 않아,
+    `OFFSET 5`가 결합항 안으로 딸려 들어와 3토큰 구조 매치를 깨뜨렸다. 즉 검증 로직이
+    파서 내부의 "닫는 키워드 목록"에 조용히 의존하고 있었다 — 그 의존을 여기서 못박는다.
+    (`LIMIT 5 OFFSET 5`는 LIMIT이 먼저 Where를 닫아 우연히 통과했었다.)
+    """
+    assert validate_select_sql(
+        "SELECT id FROM listings WHERE status = 'on_sale' OFFSET 5"
+    ).endswith(f"LIMIT {DEFAULT_LIMIT}")
+    sql = "SELECT id FROM listings WHERE status = 'on_sale' OFFSET 5 LIMIT 5"
+    assert validate_select_sql(sql) == sql
+
+
+@pytest.mark.parametrize("clause", ["ORDER  BY", "ORDER\tBY", "ORDER\nBY"])
+def test_clause_keyword_with_odd_whitespace_still_passes(clause):
+    """`ORDER BY`의 공백이 한 칸이 아니어도 정상 SQL은 통과해야 한다.
+
+    같은 뿌리의 세 번째 오탈락(review-5 실측 — 베이스라인 bf85811에서는 통과하던 쿼리가
+    구조 검사 도입 후 missing_status_filter로 뒤집혔다). sqlparse는 Where를 닫을 때
+    키워드 문자열을 정확히 `'ORDER BY'`로 비교하는데, 토큰 정규화는 대문자로만 바꾸고
+    공백은 접지 않는다 — 그래서 `ORDER  BY`는 Where를 못 닫고 꼬리가 결합항으로 샌다.
+    앞의 OFFSET 건이 "안 닫는 키워드"였다면 이건 "닫는 키워드인데 매칭이 빗나가는" 경우다.
+
+    위치 의존이라 status가 **마지막(또는 유일한)** 결합항일 때만 터졌다 — 하필 이 파일의
+    다른 통과 테스트들이 쓰는 모양이 아니어서 스위트 전체가 초록이었다.
+    """
+    base = "SELECT id, model, price FROM listings WHERE "
+    for tail in (
+        f"status = 'on_sale' {clause} price LIMIT 5",
+        f"price < 30000000 AND status = 'on_sale' {clause} price LIMIT 5",
+    ):
+        sql = base + tail
+        assert validate_select_sql(sql), f"정상 SQL이 오탈락했다: {sql!r}"
+
+
+def test_clause_keyword_with_odd_whitespace_does_not_open_a_bypass():
+    """위 꼬리 절단이 부정 우회까지 열지 않았는지 — 대조군.
+
+    꼬리를 더 많이 잘라내면 "부정된 술어도 잘려나가 통과"할 위험이 있으므로, 부정 형태에
+    같은 공백 변형을 붙여 여전히 거부되는지 확인한다(차단 방향 무회귀).
+    """
+    base = "SELECT id, model, price FROM listings WHERE "
+    for tail in (
+        "NOT status = 'on_sale' ORDER  BY price LIMIT 5",
+        "(status = 'on_sale') = false ORDER\nBY price LIMIT 5",
+        "price < 30000000 ORDER  BY price LIMIT 5",   # status 술어 자체가 없음
+    ):
+        with pytest.raises(SqlGuardError) as exc:
+            validate_select_sql(base + tail)
+        assert exc.value.code == "missing_status_filter", f"거부 사유가 다르다: {tail!r}"
+
+
+# ── DW-558: LIMIT·OFFSET bare-integer 전체 앵커링 (Story 13.3) ────────────────
+# 숫자 매처가 절 뒤에 뭐가 붙어도 첫 정수만 부분 매치해 통과시키던 구멍(review pass 4가
+# 발견) — 값 뒤를 문장 끝/짝 절로 앵커링해 6형태 전부 거부, 정상 2형태는 회귀 없이 통과.
+def test_limit_with_trailing_arithmetic_rejected_as_malformed():
+    """`LIMIT 5+100` — 부분 매치로 n=5만 보고 통과시키면 MAX_LIMIT(50)을 우회해 전량 반환된다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5+100"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_limit_mysql_two_arg_form_rejected_as_malformed():
+    """`LIMIT 10, 5`(MySQL 2인자 형태) — 통과시키면 psycopg 실행 단계에서 문법 오류(500)가 난다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 10, 5"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_duplicated_limit_clause_rejected_as_malformed():
+    """`LIMIT 5 LIMIT 999` — 이중 LIMIT은 실행 불가 SQL이다(재시도 루프가 직전 SQL을 되먹여
+    나올 수 있는 형태)."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 LIMIT 999"
+    assert _code(sql) == "limit_malformed"
+
+
+def test_offset_with_trailing_parenthesized_number_rejected_as_malformed():
+    """`OFFSET 5 (999999)` — 수정 전엔 offset_match가 None이 되어 MAX_OFFSET 검사가
+    통째로 건너뛰어졌다(offset_malformed 짝 분기가 없었다)."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 5 (999999)"
+    assert _code(sql) == "offset_malformed"
+
+
+def test_offset_with_trailing_arithmetic_rejected_as_malformed():
+    """`OFFSET 500+600` — LIMIT의 `5+100`과 동일 우회 형태."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 500+600"
+    assert _code(sql) == "offset_malformed"
+
+
+def test_duplicated_offset_clause_rejected_as_malformed():
+    """이중 OFFSET도 이중 LIMIT과 대칭으로 거부된다(실행 불가 SQL 사전 차단)."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 5 OFFSET 10"
+    assert _code(sql) == "offset_malformed"
+
+
+def test_limit_bare_integer_still_passes_after_anchoring():
+    """정상 `LIMIT n`은 앵커링 후에도 회귀 없이 통과한다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5"
+    out = validate_select_sql(sql)
+    assert out == sql
+
+
+def test_limit_offset_bare_integers_still_pass_after_anchoring():
+    """정상 `LIMIT n OFFSET m`도 앵커링 후 회귀 없이 통과한다."""
+    sql = "SELECT id FROM listings WHERE status='on_sale' LIMIT 5 OFFSET 10"
+    out = validate_select_sql(sql)
+    assert out == sql
+
+
+def test_negation_inside_paren_group_still_rejected():
+    """과잉 차단을 고치다 부정 우회까지 열지 않았는지 — 평탄화의 대조군.
+
+    괄호 그룹을 재귀로 벗기게 됐으므로, 그 안에 부정이 들어 있는 형태가 새로 뚫리지
+    않는지 확인한다(부정된 항은 3토큰 형태를 못 만들어 여전히 탈락해야 한다).
+    """
+    rejected = [
+        "SELECT id FROM listings WHERE (NOT status = 'on_sale' AND price < 3) AND year > 2020 LIMIT 5",
+        "SELECT id FROM listings WHERE ((NOT (status = 'on_sale')) AND price < 3) LIMIT 5",
+        "SELECT id FROM listings WHERE (price < 3 AND (status = 'on_sale') = false) AND year > 2020 LIMIT 5",
+        "SELECT id FROM listings WHERE ((status = 'on_sale' IS NOT TRUE) AND price < 3) LIMIT 5",
+        "SELECT id FROM listings WHERE price < 3 AND NOT (status = 'on_sale' AND year > 2020) LIMIT 5",
+    ]
+    for sql in rejected:
+        assert _code(sql) == "missing_status_filter", f"우회가 뚫렸다: {sql}"

@@ -38,16 +38,19 @@ export default async function AiSearchPage() {
   return (
     <>
       <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/ai" />
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold">AI 검색</h1>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-ink-muted">
             원하는 차를 자연어로 물어보세요. 이어서 후속 질문(예: &ldquo;그 중 더 싼 거&rdquo;)도 가능합니다.
           </p>
         </section>
 
-        {/* 대화·API 호출·멀티턴 맥락 보관은 모두 클라이언트 컴포넌트가 담당. */}
-        <ChatAssistant />
+        {/* 대화·API 호출·멀티턴 맥락 보관은 모두 클라이언트 컴포넌트가 담당.
+            authed: 답변에 딸린 매물카드의 찜 하트가 로그인 여부를 알아야 한다(안 넘기면 카드가
+            비로그인으로 판단해 로그인 게이트로 보낸다 — 2026-07-29 버그 수정). proxy가 /ai
+            비로그인을 1차 차단하므로 사실상 항상 true지만, 값을 지어내지 않고 실제 세션에서 받는다. */}
+        <ChatAssistant authed={!!user} />
       </main>
     </>
   );

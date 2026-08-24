@@ -11,8 +11,11 @@
    트랜잭션 풀러(:6543)를 쓰고, 세션 SET ROLE은 절대 쓰지 않는다.
 
 ⚠️ FR11(판매완료 sold 비노출)은 RLS가 아니라 **호출부 쿼리가 책임진다.**
-   ai_readonly 롤에는 listings를 모두 보는 permissive 정책(using true)이 걸려 있으므로,
-   AI 검색 쿼리(4.3+)는 반드시 WHERE status = 'on_sale' 을 직접 넣어 sold를 거른다.
+   ai_readonly 롤의 listings 정책(listings_ai_readonly_select)은 Story 17.4(0035/0036)로
+   판매자가 활성인지만 거른다(using(private.is_seller_active(seller_id))) — sold 여부는 여전히
+   정책 밖이다. 그래서 AI 검색 쿼리(4.3+)는 반드시 WHERE status = 'on_sale' 을 직접 넣어 sold를
+   거른다(이 축은 그대로 유지, 2026-08-12 로컬 실측: sold 매물은 판매자가 활성이어도 ai_readonly
+   에 계속 보임 — docs/conventions.md §6.2 참조).
 
 풀은 모듈 import 시점에 열지 않는다(config.py 설계: 비밀값 없이도 /health가 떠야 함).
 최초 run_select 호출 때 지연 생성되는 싱글턴이다.

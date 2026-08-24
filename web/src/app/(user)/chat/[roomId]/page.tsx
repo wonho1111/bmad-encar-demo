@@ -12,9 +12,11 @@
 // 보호: proxy가 /chat 비로그인 1차 차단. 참여자 한정은 RLS가 집행. force-dynamic(매 요청 최신 상태).
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { ROLE_LABEL, UNITS, type UserRole } from '@/lib/constants';
+import { ROLE_LABEL, type UserRole } from '@/lib/constants';
+import { chatListingSummary, markChatRoomRead } from '@/lib/chat';
 import AppHeader from '@/components/layout/AppHeader';
 import ChatRoomMessages from './ChatRoomMessages';
+import { buttonClasses } from '@/components/ui/Button';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,7 +80,7 @@ export default async function ChatRoomPage({
   const backLink = (
     <Link
       href="/chat"
-      className="w-fit rounded border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-700"
+      className={buttonClasses({ variant: 'secondary', className: 'w-fit' })}
     >
       채팅방 목록으로
     </Link>
@@ -89,12 +91,9 @@ export default async function ChatRoomPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">문의 채팅</h1>
-          <p
-            role="alert"
-            className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
-          >
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+          <h1 className="text-section font-bold text-ink-primary">문의 채팅</h1>
+          <p role="alert" className="text-body text-danger">
             채팅방을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
           </p>
           {backLink}
@@ -108,18 +107,28 @@ export default async function ChatRoomPage({
     return (
       <>
         {header}
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-          <h1 className="text-2xl font-semibold">문의 채팅</h1>
-          <p
-            role="alert"
-            className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-          >
+        <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+          <h1 className="text-section font-bold text-ink-primary">문의 채팅</h1>
+          <p role="alert" className="text-body text-ink-secondary">
             채팅방을 찾을 수 없습니다. 접근 권한이 없거나 삭제된 방일 수 있습니다.
           </p>
           {backLink}
         </main>
       </>
     );
+  }
+
+  // 본인의 마지막 열람 시각을 지금으로 갱신(FR57, Story 12.5).
+  //   ⚠️ 여기까지 온 것은 방이 RLS상 **보인다**는 뜻일 뿐 "당사자다"라는 뜻이 아니다 —
+  //   0005의 `chat_rooms_select_admin (using is_admin())`이 참여자 정책과 OR로 합쳐지므로
+  //   관리자에게는 남의 방도 보인다(0025가 chat_unread_count()에서 되돌린 것과 **같은 축**이다).
+  //   그래서 buyer_id/seller_id로 실제 당사자를 직접 확인한 뒤에만 기록한다 — 가드가 없으면
+  //   관리자가 방을 열 때마다 chat_room_reads의 참여자 RLS가 42501로 거부하고, 그 실패는
+  //   markChatRoomRead가 삼켜 콘솔 에러만 조용히 쌓인다.
+  //   실패해도 화면은 막지 않는다(markChatRoomRead 내부에서 콘솔 로그만).
+  const iAmParticipant = user?.id === room.buyer_id || user?.id === room.seller_id;
+  if (user?.id && iAmParticipant) {
+    await markChatRoomRead(supabase, room.id, user.id);
   }
 
   // 당사자 — 매물 요약·상대 헤더 + 메시지 빈 골격.
@@ -129,36 +138,38 @@ export default async function ChatRoomPage({
   //   값이 없으면(예전 방·백필 누락) 역할만 표기로 폴백.
   const counterpartName = iAmBuyer ? room.seller_name : room.buyer_name;
   const l = room.listings;
-  // 매물 임베드가 null = 판매완료(sold)거나 구매자 RLS상 조회 불가한 매물.
-  //   FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심 단일 규칙)을 지켜
-  //   매물 상세 정보는 노출하지 않고 플레이스홀더만 보인다. 대화방은 살아 있어 채팅은 그대로 가능.
-  //   [Decision 옵션D] sold를 다시 보이게 하지 않는다(RLS 확대·스냅샷·서버우회 채택 안 함).
-  const summary = l
-    ? `[${l.manufacturer}] ${l.model} · ${l.year}년 · ${l.price.toLocaleString('ko-KR')}${UNITS.price}`
-    : '판매 완료되었거나 조회할 수 없는 매물';
+  // 매물 임베드가 null = 판매완료(sold)거나 판매자가 정지됨(Story 17.4, DW-804(a))이거나 구매자
+  //   RLS상 조회 불가한 매물. FR11(판매완료 매물은 구매자의 모든 경로에서 비노출 — 프로젝트 핵심
+  //   단일 규칙)을 지켜 매물 상세 정보는 노출하지 않고 플레이스홀더만 보인다. 대화방은 살아 있어
+  //   채팅은 그대로 가능. [Decision 옵션D] sold를 다시 보이게 하지 않는다(RLS 확대·스냅샷·서버우회
+  //   채택 안 함). 요약 문구 계산은 `chatListingSummary`(@/lib/chat)로 뽑아 chat/page.tsx와 공유한다
+  //   — 그 함수 주석에 두 원인을 구분하지 않는 이유가 있다.
+  const summary = chatListingSummary(l);
 
   return (
     <>
       {header}
-      <main className="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
         {/* 방 헤더 — 어떤 매물·누구와의 대화인지 (매물이 안 보이면 플레이스홀더 — FR11 준수) */}
         <section className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-2">
-            <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-zinc-400'}>
+            <h1 className={l ? 'text-xl font-semibold' : 'text-xl font-semibold text-ink-muted'}>
               {summary}
             </h1>
             {/* 매물이 살아있는(on_sale) 방이면 그 매물 상세로 가는 링크. 관리자 채팅 목록의 '매물 상세'와 동일한 동선.
                 판매완료(l=null)면 FR11(구매자에게 sold 비노출)에 따라 링크를 숨긴다(상세도 어차피 못 봄). */}
             {l && (
+              // hover:border-brand-petrol(DW-699, spec-15-2) — hover:bg-surface-raised는 라이트 모드에서
+              // 대비 1.045:1(#FAFAF8→#FFFFFF)로 육안상 거의 변화가 없었다(실측, chat/page.tsx와 동일 근거).
               <Link
                 href={`/listings/${room.listing_id}`}
-                className="shrink-0 rounded border border-zinc-300 px-2 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                className="shrink-0 rounded-chip border border-border-hairline px-2 py-1 text-xs font-medium hover:border-brand-petrol"
               >
                 매물 상세
               </Link>
             )}
           </div>
-          <p className="text-sm text-zinc-500">
+          <p className="text-body text-ink-muted">
             {counterpartName ? `${counterpart} ${counterpartName}` : counterpart}와의 문의 채팅
           </p>
         </section>
@@ -168,10 +179,7 @@ export default async function ChatRoomPage({
         {user?.id ? (
           <ChatRoomMessages roomId={room.id} myUserId={user.id} />
         ) : (
-          <p
-            role="alert"
-            className="rounded bg-zinc-100 px-3 py-2 text-sm text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-          >
+          <p role="alert" className="text-body text-ink-secondary">
             로그인이 필요합니다. 다시 로그인해주세요.
           </p>
         )}

@@ -1,0 +1,37 @@
+-- 0037_listings_anon_trust_columns.sql — 신뢰속성 3컬럼을 anon(비로그인)에도 연다 (2026-08-13)
+--
+-- self-contained: listings 테이블·RLS·anon SELECT 정책은 0002/0011에서 이미 만들어졌다.
+--   이 파일은 **컬럼 GRANT 3개만** 더한다(additive). 정책은 건드리지 않는다 — 행 차원(on_sale만)은
+--   0011의 `listings_select_on_sale_anon`이 그대로 집행한다.
+--
+-- 무엇을 여나:
+--   accident_status · is_single_owner · is_non_smoker (전부 판매자 자기신고, 0017)
+--
+-- 왜 지금 여나:
+--   ① **매물 찾기 필터에 신뢰속성을 붙인다**(2026-08-13 사용자 요청). Postgres는 WHERE에 쓰인
+--      컬럼에도 SELECT 권한을 요구한다 — GRANT 없이 anon이 `accident_status=eq.무사고`로 필터하면
+--      컬럼 하나가 막히는 게 아니라 **42501로 목록 조회 전체가 실패한다**(0011 주석이 같은 함정을
+--      이미 기록해 뒀다: "WHERE에 쓰인 컬럼에도 SELECT 권한을 요구한다 — 빠뜨리면 필터가 깨진다").
+--   ② 지금은 비로그인에게 신뢰 뱃지가 **한 번도 안 보인다**(웹이 anon일 땐 이 3컬럼을 아예 select에서
+--      빼고 있다 — search/page.tsx·listings/[id]/page.tsx의 `trustColumns` 분기). 같은 매물이
+--      로그인 여부에 따라 다른 정보를 보여주는 상태였는데, 이 값들은 **비밀이 아니라 광고 문구**다
+--      (판매자가 구매자에게 보여주려고 신고한 정보). 숨길 이유가 없다.
+--
+-- 왜 conventions.md §9.3 (b)에 걸리는 변경인가 — **anon 노출 컬럼을 넓히는 GRANT는 사용자 승인 필수**다.
+--   2026-08-13 사용자 승인으로 진행한다(디스코드 결정).
+--
+-- 노출 위험 검토(무엇이 새로 공개되나): 세 값 모두 **그 매물의 자기신고 속성**이다. 개인정보·
+--   내부 식별자·집계 신호가 아니고, on_sale 매물에만 걸리는 기존 행 정책 안에서만 읽힌다.
+--   embedding(RAG 코퍼스)은 0011이 막은 그대로 여전히 닫혀 있다 — 이 파일은 그 목록을 건드리지 않는다.
+--
+-- 재적용 안전성: GRANT는 멱등이다(같은 권한을 다시 줘도 오류 없이 그대로다).
+
+grant select (accident_status, is_single_owner, is_non_smoker) on public.listings to anon;
+
+-- 사후 확인용 메모(수동 검증 절차):
+--   select privilege_type, column_name from information_schema.column_privileges
+--    where table_name='listings' and grantee='anon'
+--      and column_name in ('accident_status','is_single_owner','is_non_smoker');
+--   → 3행이 나와야 한다. 그리고 **권한이 있다 ≠ 실제로 읽힌다**이므로(B4), anon 키로
+--     `/rest/v1/listings?select=accident_status&status=eq.on_sale&limit=1`을 실제로 호출해
+--     42501이 아닌 값이 오는지까지 확인한다.

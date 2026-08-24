@@ -22,6 +22,9 @@ class ListingOptions {
   ];
   static const List<String> fuel = ['가솔린', '디젤', '하이브리드', '전기', 'LPG'];
   static const List<String> transmission = ['자동', '수동'];
+  // 사고이력 자기신고 — 단일 출처는 `0017_listings_trust_attributes.sql`의 CHECK 목록이다.
+  // ✎ 2026-08-13 — 앱 등록 폼·검색 필터가 함께 쓰려고 추가했다(그전엔 앱에 이 축이 아예 없었다).
+  static const List<String> accidentStatus = ['무사고', '단순교환', '사고'];
   static const List<String> region = [
     '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
     '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
@@ -69,6 +72,11 @@ class ListingFilterInput {
     this.priceMax = '',
     this.yearMin = '',
     this.yearMax = '',
+    // ✎ 2026-08-13 — 신뢰속성 필터(web /search와 같은 축). **뱃지 기준**이다(사용자 결정):
+    //   accident_status로만 거른다 — accident_free는 이제 파생값이라 필터에서 쓰지 않는다.
+    this.accidentStatus,
+    this.singleOwnerOnly = false,
+    this.nonSmokerOnly = false,
   });
 
   final String keyword; // 모델명 부분일치
@@ -81,6 +89,11 @@ class ListingFilterInput {
   final String priceMax;
   final String yearMin;
   final String yearMax;
+  final String? accidentStatus;
+  /// 체크 = "그렇다고 신고한 매물만". 해제는 조건 없음(전체)이지 "1인소유가 아닌 매물"이 아니다 —
+  /// 값이 없는 매물은 "아니다"가 아니라 "말하지 않음"이라 그런 필터는 정의 자체가 안 된다.
+  final bool singleOwnerOnly;
+  final bool nonSmokerOnly;
 }
 
 /// 검증·정규화된 필터(레포가 쿼리에 그대로 적용). min>max 는 swap 으로 보정된 상태.
@@ -96,6 +109,9 @@ class ResolvedFilters {
     this.priceMax,
     this.yearMin,
     this.yearMax,
+    this.accidentStatus,
+    this.singleOwnerOnly = false,
+    this.nonSmokerOnly = false,
   });
 
   final String? keyword; // 이미 escapeLike 적용된 패턴 본문(없으면 null)
@@ -108,6 +124,9 @@ class ResolvedFilters {
   final int? priceMax;
   final int? yearMin;
   final int? yearMax;
+  final String? accidentStatus;
+  final bool singleOwnerOnly;
+  final bool nonSmokerOnly;
 
   /// 입력 → 검증·정규화. web SearchPage 의 파싱부(pickOption·asInt·swap·escapeLike)를 한 곳에 모은다.
   factory ResolvedFilters.fromInput(ListingFilterInput input) {
@@ -135,6 +154,9 @@ class ResolvedFilters {
       color: pickOption(input.color, ListingOptions.color),
       fuel: pickOption(input.fuel, ListingOptions.fuel),
       transmission: pickOption(input.transmission, ListingOptions.transmission),
+      accidentStatus: pickOption(input.accidentStatus, ListingOptions.accidentStatus),
+      singleOwnerOnly: input.singleOwnerOnly,
+      nonSmokerOnly: input.nonSmokerOnly,
       region: pickOption(input.region, ListingOptions.region),
       priceMin: priceMin,
       priceMax: priceMax,

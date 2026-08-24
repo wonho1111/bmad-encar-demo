@@ -21,11 +21,15 @@ export const PROFILE_STATUS = {
 } as const;
 export type ProfileStatus = (typeof PROFILE_STATUS)[keyof typeof PROFILE_STATUS];
 
-/** 사용자 역할 enum (profiles.role CHECK와 일치). */
+/** 사용자 역할 enum. buyer/seller 값은 앱 코드가 계속 쓰지만, profiles.role의 DB CHECK는
+ * Epic 14(Story 14.1)로 완화되어 이 세 값만 허용하지 않는다 — 더 이상 CHECK와 1:1 대응이 아니다.
+ * 'user'는 Story 14.2(0028_handle_new_user_default_role.sql)의 가입 트리거 기본값 — 역할 선택
+ * 없이 가입한 신규 계정이 이 값을 받는다. */
 export const USER_ROLE = {
   BUYER: 'buyer',
   SELLER: 'seller',
   ADMIN: 'admin',
+  USER: 'user',
 } as const;
 export type UserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];
 
@@ -34,12 +38,22 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   [USER_ROLE.BUYER]: '구매자',
   [USER_ROLE.SELLER]: '판매자',
   [USER_ROLE.ADMIN]: '관리자',
+  [USER_ROLE.USER]: '회원',
 };
 
-/** 수치 필드 저장 단위 (표시·검색 전 구간 동일, docs/conventions.md §3). */
+/**
+ * 수치 필드 **저장** 단위 (DB·입력 폼·검색 쿼리 전 구간 동일, docs/conventions.md §3).
+ *
+ * ⚠️ `price`는 저장 단위(원)다. **화면에 가격을 찍을 땐 이 값을 직접 붙이지 말고
+ *    `formatPrice()`(@/lib/price)를 쓴다** — 2026-08-13 사용자 결정으로 표시는 만원 표기가 됐고,
+ *    그 규칙이 여러 화면에 흩어지지 않게 함수 하나에 모아 뒀다. 여기 `price`가 아직 남아 있는 건
+ *    입력 폼 라벨("가격 (원)")·검색 가격범위처럼 **정말 원 단위인 자리** 때문이다.
+ */
 export const UNITS = {
   mileage: 'km',
   price: '원',
+  /** 가격 표시 단위(만원) — formatPrice()만 쓴다. */
+  priceMan: '만원',
   displacement: 'cc',
 } as const;
 
@@ -67,6 +81,12 @@ export const LISTING_OPTIONS = {
     '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
     '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
   ],
+  // 사고이력 자기신고 — 단일 출처는 `0017_listings_trust_attributes.sql`의
+  // `check (accident_status in ('무사고','단순교환','사고'))`. 값·순서·문자를 그대로 복사한다.
+  // ✎ 2026-08-13 사용자 지적으로 추가됐다 — 컬럼은 2026-07(Story 10.1)에 만들었는데 **입력 UI가
+  //   한 번도 없었다.** 화면은 뱃지로 보여주기만 하고 저장 경로가 없어서, 판매자가 새로 등록하면
+  //   이 값이 100% 비었다(실측: 166건 중 104건이 NULL, 값이 있는 62건은 전부 시드 데이터).
+  accident_status: ['무사고', '단순교환', '사고'],
 } as const;
 
 /**

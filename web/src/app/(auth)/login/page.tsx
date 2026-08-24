@@ -5,7 +5,7 @@
 // (없으면 홈으로). 회원가입은 Story 1.2(/signup), 로그아웃은 같은 1.3의 LogoutButton에서 다룬다.
 // middleware 라우트 가드·역할별 화면 분기는 Story 1.4 범위라 여기서는 다루지 않는다.
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import Button from '@/components/ui/Button';
@@ -27,7 +27,6 @@ function toKoreanLoginError(err: { message: string; status?: number; code?: stri
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,10 +64,20 @@ function LoginForm() {
         return;
       }
 
-      // 성공 → 원래 가려던 경로(redirectedFrom)로 복귀, 없으면 홈. router.refresh()로 서버
-      // 컴포넌트가 새 세션 쿠키를 다시 읽게 한다.
-      router.push(resolveSafeRedirect(searchParams.get('redirectedFrom')));
-      router.refresh();
+      // 성공 → 원래 가려던 경로(redirectedFrom)로 복귀, 없으면 홈.
+      //
+      // ⚠️ **router.push()가 아니라 전체 페이지 이동(location.assign)이다**(2026-08-13 사용자 지적 →
+      //    운영 빌드로 재현). 예전 `router.push(target) + router.refresh()`는 이렇게 깨졌다:
+      //      1) 비로그인 상태로 "내 차 팔기"(/sell)를 누른다 → proxy가 /login?redirectedFrom=%2Fsell로 보낸다.
+      //      2) 이때 Next.js의 **클라이언트 라우터 캐시**에 "/sell = 로그인 화면"이라는 결과가 남는다.
+      //      3) 그 화면에서 로그인에 성공해 router.push('/sell')을 하면, 라우터가 서버에 다시 묻지 않고
+      //         2)의 캐시를 재생한다 → **로그인 화면이 그대로 다시 뜬다**(URL도 /login…에 머문다).
+      //      4) 뒤로가기 후 다시 들어가면 캐시가 만료돼 정상 진입 — 사용자가 겪은 증상 그대로다.
+      //    router.refresh()는 "지금 라우트"를 다시 받아올 뿐이라 이 재생을 막지 못했다(실측: 운영
+      //    빌드 `next build && next start`에서 재현, dev 모드는 프리페치가 꺼져 있어 안 보인다).
+      //    로그인은 **세션 쿠키가 바뀌는 순간**이라 이전 상태로 캐시된 화면은 전부 무효다 — 전체
+      //    페이지 이동으로 라우터 캐시를 통째로 버리는 게 이 시점엔 오히려 정확하다.
+      window.location.assign(resolveSafeRedirect(searchParams.get('redirectedFrom')));
     } catch (err) {
       setError(`네트워크 오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -77,8 +86,8 @@ function LoginForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">로그인</h1>
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-6">
+      <h1 className="text-section font-bold text-ink-primary">로그인</h1>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
         <label className="flex flex-col gap-1">
@@ -89,7 +98,7 @@ function LoginForm() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-border-hairline px-3 py-2 bg-surface-raised"
           />
         </label>
 
@@ -101,12 +110,12 @@ function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
-            className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900"
+            className="rounded border border-border-hairline px-3 py-2 bg-surface-raised"
           />
         </label>
 
         {error && (
-          <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          <p role="alert" className="text-sm text-danger">
             {error}
           </p>
         )}
@@ -116,9 +125,9 @@ function LoginForm() {
         </Button>
       </form>
 
-      <p className="text-sm text-zinc-500">
+      <p className="text-sm text-ink-muted">
         아직 계정이 없으신가요?{' '}
-        <Link href="/signup" className="font-medium text-zinc-900 underline dark:text-zinc-100">
+        <Link href="/signup" className="font-medium text-ink-primary underline">
           회원가입
         </Link>
       </p>
@@ -142,7 +151,7 @@ export default function LoginPage() {
 // 크게 튀지 않게 같은 간격·크기를 유지한다.
 function LoginFormSkeleton() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6" aria-busy="true">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-6 p-6" aria-busy="true">
       <Skeleton className="h-8 w-24" />
       <div className="flex flex-col gap-4">
         <Skeleton className="h-16 w-full" />

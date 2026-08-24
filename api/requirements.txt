@@ -6,6 +6,10 @@ uvicorn[standard]
 supabase
 psycopg[binary,pool]
 pydantic-settings
+# app/config.py가 dotenv_values를 직접 import한다(LangSmith env 승격, DW-658).
+# pydantic-settings의 전이 의존성으로 딸려오지만, 앱 코드가 직접 쓰면 직접 선언해야
+# 상위 패키지가 의존성을 바꿔도 안 깨진다.
+python-dotenv
 langgraph==1.2.4
 langchain-google-genai
 pgvector

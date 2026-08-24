@@ -12,9 +12,12 @@
 //
 // CM3(즉시 비노출): 이 페이지는 cookies() 기반 인증을 쓰므로 매 요청 DB를 다시 읽는 동적 렌더다.
 //   매물이 sold로 바뀌면 재조회 시 즉시 사라진다. 정적 캐시로 잔존하지 않도록 force-dynamic을 명시한다.
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
 import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
+import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import ResponsiveGrid from '@/components/ui/ResponsiveGrid';
@@ -51,6 +54,23 @@ function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, '\\$&');
 }
 
+// 한 페이지에 보여줄 매물 수 (대장 DW-542 해소, 2026-07-29).
+// **왜 24인가:** D5 그리드가 ≥1100px에서 4열·640~1099px에서 2열이라, 4와 2의 공배수여야 마지막 줄이
+// 어중간하게 비지 않는다(24 = 4열×6줄 = 2열×12줄 = 1열×24개). 12는 한 화면에 너무 적고 48은
+// 사진 무게(장당 150~190KB, DW-541)를 그대로 되돌린다.
+//
+// **왜 페이지네이션이 필요했나(실측 2026-07-29):** 이 목록엔 `.limit()`이 없어 판매중 매물
+// **전량 93건**을 한 페이지에 그렸다 — HTML 압축 전 320KB + 사진 90장. 사진 캐시까지 꺼져 있어
+// (DW-541) 방문할 때마다 그 전부를 새로 받았다.
+const PAGE_SIZE = 24;
+
+// URL의 `page`를 1 이상 정수로 정규화한다. 없거나 이상한 값이면 1(첫 페이지)로 떨어진다 —
+// 필터 파싱과 같은 방침(계약 밖 값은 조용히 무시, 에러 화면으로 만들지 않는다).
+function asPage(v: string): number {
+  const n = asInt(v);
+  return n !== null && n >= 1 ? n : 1;
+}
+
 export default async function SearchPage({
   searchParams,
 }: {
@@ -76,6 +96,7 @@ export default async function SearchPage({
   }
 
   // ── URL 필터 파싱 ───────────────────────────────────────────────
+  const page = asPage(asStr(sp.page)); // 1-기반. 필터와 달리 항상 값이 있다(기본 1).
   const q = asStr(sp.q).trim();
   const bodyType = pickOption(asStr(sp.body_type), LISTING_OPTIONS.body_type);
   const color = pickOption(asStr(sp.color), LISTING_OPTIONS.color);
@@ -86,6 +107,11 @@ export default async function SearchPage({
   let priceMax = asInt(asStr(sp.price_max));
   let yearMin = asInt(asStr(sp.year_min));
   let yearMax = asInt(asStr(sp.year_max));
+  // 신뢰속성 필터(2026-08-13). 사고이력은 목록 밖 값이면 무시(다른 드롭다운과 같은 규칙),
+  // 두 체크박스는 '1'일 때만 조건이 붙는다(그 외 값은 전부 "조건 없음"으로 떨어진다).
+  const accidentStatus = pickOption(asStr(sp.accident_status), LISTING_OPTIONS.accident_status);
+  const singleOwnerOnly = asStr(sp.single_owner) === '1';
+  const nonSmokerOnly = asStr(sp.non_smoker) === '1';
 
   // 최소>최대로 거꾸로 입력하면(예: 최소 5000~최대 1000) 0건이 나와 혼란 → 둘 다 유효할 때만 값을 맞바꿔(swap) 정상 범위로 보정.
   if (priceMin !== null && priceMax !== null && priceMin > priceMax) {
@@ -97,40 +123,18 @@ export default async function SearchPage({
 
   // ── 쿼리 빌드 ───────────────────────────────────────────────────
   // 구매자 관점(판매중만) 시작점은 buyerListingsQuery(FR11 단일 출처). 조건은 값이 있을 때만 체이닝한다.
-  let query = buyerListingsQuery(
-    supabase,
-    'id, manufacturer, model, year, price, mileage, region, seller_name',
-  );
-
-  if (q) query = query.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
-  if (bodyType) query = query.eq('body_type', bodyType);
-  if (color) query = query.eq('color', color);
-  if (fuel) query = query.eq('fuel', fuel);
-  if (transmission) query = query.eq('transmission', transmission);
-  if (region) query = query.eq('region', region);
-
-  // 가격·연식 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로 여기선 그대로 적용한다.
-  // 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
-  if (priceMin !== null) query = query.gte('price', priceMin);
-  if (priceMax !== null) query = query.lte('price', priceMax);
-  if (yearMin !== null) query = query.gte('year', yearMin);
-  if (yearMax !== null) query = query.lte('year', yearMax);
-
-  // created_at 내림차순. 시드처럼 created_at이 같은 행들의 순서가 새로고침마다 뒤집히지 않도록
-  // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
-  query = query.order('created_at', { ascending: false }).order('id', { ascending: false });
-
-  const { data: rows, error } = await query.returns<ListingCardData[]>();
-
-  // 대표사진 URL·장수를 채운다(Story 9.4). 홈 미리보기와 **같은 함수**를 쓴다 — 로직 이원화 금지.
-  const listings = rows ? await attachCoverImages(supabase, rows) : rows;
-
-  if (error) {
-    // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC2).
-    console.error('[search] 매물 목록 조회 실패:', error);
-  }
-
+  //
+  // ✎ 2026-08-13 — 신뢰속성 3컬럼을 **로그인 여부와 무관하게** 조회한다.
+  //   예전엔 anon에게 이 3컬럼 SELECT 권한이 없어(0011의 컬럼 GRANT 목록 밖) anon일 때만 빼고
+  //   물었다 — 그래서 비로그인 사용자에겐 신뢰 뱃지가 한 번도 안 보였고, 같은 매물이 로그인
+  //   여부에 따라 다른 정보를 보여줬다. `0037_listings_anon_trust_columns.sql`이 그 GRANT를
+  //   열었다(사용자 승인). 필터로 쓰려면 어차피 필수다 — Postgres는 WHERE에 쓰인 컬럼에도
+  //   SELECT 권한을 요구하므로, 권한 없이 필터를 걸면 목록 조회 전체가 42501로 죽는다.
+  const trustColumns = ', accident_status, is_single_owner, is_non_smoker';
+  // options는 이미 0011에서 anon GRANT돼 있다(로그인 분기 불필요, conventions §11 — 10.1
+  // 신뢰컬럼과 다른 점). 그래서 trustColumns와 달리 로그인 여부와 무관하게 항상 조회한다.
   // SearchFilters에 넘길 초기값(현재 URL 그대로 폼에 반영 → 새로고침해도 유지).
+  //   조회보다 **먼저** 만든다 — 아래 "마지막 페이지로 되돌리기"가 pageHref를 쓰는데, 그게 이 값을 읽는다.
   const initialFilters: SearchFilterValues = {
     q,
     body_type: bodyType ?? '',
@@ -142,17 +146,164 @@ export default async function SearchPage({
     price_max: priceMax !== null ? String(priceMax) : '',
     year_min: yearMin !== null ? String(yearMin) : '',
     year_max: yearMax !== null ? String(yearMax) : '',
+    accident_status: accidentStatus ?? '',
+    single_owner: singleOwnerOnly ? '1' : '',
+    non_smoker: nonSmokerOnly ? '1' : '',
   };
+
+  // 페이지 이동 링크 — **정규화된 필터값**으로 쿼리를 다시 조립한다(원본 sp를 그대로 옮기지 않는다).
+  //   그래야 목록 밖 값·중복 키·모르는 파라미터가 페이지를 넘길 때마다 따라다니지 않는다
+  //   (위 pickOption/asInt가 이미 무시한 값을 URL에만 남겨두면 화면과 주소가 어긋난다).
+  //   page=1은 아예 안 붙인다 — 첫 페이지 주소를 지금과 똑같이 유지해 기존 링크·북마크가 안 깨진다.
+  //   ※ 필터를 다시 적용하면 SearchFilters가 자기 필드로만 URL을 새로 만들므로 page는 자연히
+  //     떨어져 1페이지로 돌아간다(별도 리셋 코드 불필요).
+  function pageHref(target: number): string {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(initialFilters)) {
+      if (value !== '') params.set(key, value);
+    }
+    if (target > 1) params.set('page', String(target));
+    const query = params.toString();
+    return query ? `/search?${query}` : '/search';
+  }
+
+  // 필터 체이닝을 함수로 뽑는다 — 범위 밖 page를 마지막 페이지로 되돌릴 때(아래) **같은 조건**으로
+  // 총 건수를 다시 물어야 하는데, 조건을 두 번 적으면 한쪽만 고쳐져 갈린다(단일 출처).
+  // 제네릭 대신 넘겨받은 빌더를 그대로 돌려주는 얇은 함수다 — 타입은 호출부에서 추론된다.
+  function applyFilters<T extends {
+    ilike: (c: string, p: string) => T;
+    eq: (c: string, v: string | boolean) => T;
+    gte: (c: string, v: number) => T;
+    lte: (c: string, v: number) => T;
+  }>(builder: T): T {
+    let b = builder;
+    if (q) b = b.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
+    if (bodyType) b = b.eq('body_type', bodyType);
+    if (color) b = b.eq('color', color);
+    if (fuel) b = b.eq('fuel', fuel);
+    if (transmission) b = b.eq('transmission', transmission);
+    if (region) b = b.eq('region', region);
+    // 가격·연식 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로 여기선 그대로 적용한다.
+    // 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
+    if (priceMin !== null) b = b.gte('price', priceMin);
+    if (priceMax !== null) b = b.lte('price', priceMax);
+    if (yearMin !== null) b = b.gte('year', yearMin);
+    if (yearMax !== null) b = b.lte('year', yearMax);
+    // 신뢰속성 — **뱃지와 같은 컬럼**으로 거른다(사용자 결정: accident_free는 안 쓴다).
+    //   두 체크박스는 `eq(true)`라 값이 NULL(미신고)인 매물은 자연히 빠진다 — 그게 맞다:
+    //   "1인소유라고 신고한 매물"을 찾는 것이지 "1인소유가 아닌 게 아닌 매물"이 아니다.
+    if (accidentStatus) b = b.eq('accident_status', accidentStatus);
+    if (singleOwnerOnly) b = b.eq('is_single_owner', true);
+    if (nonSmokerOnly) b = b.eq('is_non_smoker', true);
+    return b;
+  }
+
+  // count:'exact' — 총 건수를 **같은 응답**의 Content-Range로 받는다(왕복 증가 없음, DW-542).
+  const query = applyFilters(
+    buyerListingsQuery(
+      supabase,
+      `id, manufacturer, model, year, price, mileage, region, seller_name, fuel, options${trustColumns}`,
+      { count: 'exact' },
+    ),
+  )
+    // created_at 내림차순. 시드처럼 created_at이 같은 행들의 순서가 새로고침마다 뒤집히지 않도록
+    // id를 2차 정렬키로 둔다(안정적·결정적 정렬).
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false });
+
+  // 이 페이지 몫만 잘라 온다(DW-542). range는 양끝 포함이라 끝값은 -1 한다.
+  //   ⚠️ **정렬을 건 뒤에 range를 건다** — 순서가 뒤바뀌면 "아무 24건"을 잘라 정렬하는 꼴이 된다.
+  const from = (page - 1) * PAGE_SIZE;
+  const { data: rows, error, count } = await query
+    .range(from, from + PAGE_SIZE - 1)
+    .returns<ListingCardData[]>();
+
+  const totalCount = count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // 범위를 벗어난 page는 **빈 결과가 아니라 에러로 온다** — 실측(2026-07-29, `?page=99`):
+  //   PGRST103 "Requested range not satisfiable / An offset of 2352 was requested, but there are
+  //   only 95 rows." 즉 착수 전 가정("0행으로 돌아온다")이 틀렸다.
+  //
+  // **마지막 페이지로 보낸다**(사용자 요청 2026-07-29 — 안내문을 읽히는 것보다 원하던 곳에 데려다
+  // 놓는 게 낫다). 총 건수는 이 응답에 없으므로(에러라 count가 null) **같은 필터로 개수만** 다시
+  // 묻는다 — `head: true`라 행은 안 받아 가볍고, 손으로 주소를 고친 드문 길에서만 도는 왕복이다.
+  // 정상 경로엔 아무 비용도 붙지 않는다.
+  //
+  // ⚠️ `last < page`일 때만 보낸다 — 두 조회 사이에 매물이 늘어 last가 page 이상이 되는 경합에서
+  //   같은 자리로 무한히 되돌려 보내지 않게 하는 정지 조건이다(엄격히 작아지므로 반드시 끝난다).
+  //   그 경합에 걸리면 리다이렉트 없이 아래 안내문으로 떨어진다(막다른 길은 안 만든다).
+  const rangeOutOfBounds = error?.code === 'PGRST103';
+  if (rangeOutOfBounds) {
+    const { count: totalOnly } = await applyFilters(
+      buyerListingsQuery(supabase, 'id', { count: 'exact', head: true }),
+    );
+    const lastPage = Math.max(1, Math.ceil((totalOnly ?? 0) / PAGE_SIZE));
+    if (lastPage < page) {
+      redirect(pageHref(lastPage)); // redirect()는 throw하므로 아래로 진행되지 않는다.
+    }
+  }
+
+  // anon 경로는 위 select에서 신뢰속성 3컬럼을 아예 안 물었으므로(trustColumns 참조) 그 값이
+  // 행에 `undefined`(키 자체가 없음)로 온다. 계약(conventions §4)은 "값이 없으면 null"이지
+  // "필드가 없음"이 아니다 — 10.2가 뱃지 로직에서 `listing.accident_status`를 읽을 때 undefined와
+  // null을 다르게 다루면(예: `=== null`로만 미상 판정) anon 렌더만 조용히 갈린다. 그래서 여기서
+  // 명시적으로 null을 채워 런타임 모양을 선언한 타입(`ListingCardData`)과 맞춘다.
+  const normalizedRows = rows && !user
+    ? rows.map((r) => ({
+        ...r,
+        accident_status: null,
+        is_single_owner: null,
+        is_non_smoker: null,
+      }))
+    : rows;
+
+  // 대표사진 URL·장수를 채운다(Story 9.4). 홈 미리보기와 **같은 함수**를 쓴다 — 로직 이원화 금지.
+  const listings = normalizedRows ? await attachCoverImages(supabase, normalizedRows) : normalizedRows;
+
+  // 찜 오버레이(Story 10.5) — ListingCardData wire 필드가 아니라 사용자별 별도 조회다(conventions §4).
+  //   /search는 anon도 여는 열람 경로라 로그인일 때만 조회한다(비로그인은 항상 빈 Set = 전부 미찜).
+  const wishedIds = user && listings
+    ? await fetchWishedListingIds(supabase, user.id, listings.map((l) => l.id))
+    : new Set<string>();
+
+  if (error && !rangeOutOfBounds) {
+    // 원본은 서버 로그에만(디버깅), 사용자에겐 한국어. "없음"이 아니라 "불러오기 실패"로 구분(AC2).
+    // 범위 밖 page(PGRST103)는 사용자가 주소를 고친 결과지 장애가 아니므로 에러 로그를 남기지 않는다
+    // — 남기면 진짜 장애가 그 소음에 묻힌다.
+    console.error('[search] 매물 목록 조회 실패:', error);
+  }
+
+  // hover:border-brand-petrol(DW-699와 동일 근거, 코드리뷰 patch) — DW-696 토큰 치환 과정에서 옛
+  // 원시색 호버(라이트/다크 각각의 회색 배경)를 `hover:bg-surface-raised` 하나로 바꿨는데, 이 페이저는
+  // 카드가 아니라 body 배경(--surface-base #FAFAF8) 위에 바로 놓인 칩이라 호버가 #FFFFFF로 가도
+  // 대비 1.045:1 — 같은 커밋이 DW-699로 "죽은 호버"라 판정해 걷어낸 바로 그 조합이었다. 게다가
+  // 다크 모드 호버는 치환 과정에서 대응 클래스가 사라져 신호가 0이 됐다. 테두리 축으로 바꾼 뒤
+  // 실측: 라이트 1.045:1 → 4.69:1, 다크 1.147:1 → 3.88:1(WCAG relative luminance).
+  //
+  // 활성/비활성을 **다른 상수로 나눈다**(코드리뷰 patch). 원래 하나를 양쪽이 같이 썼는데, 호버를
+  // 눈에 띄게(1.045:1 → 4.69:1) 고친 순간 첫/끝 페이지의 **비활성** "← 이전"·"다음 →"까지 같이
+  // 반짝이게 됐다 — 눌러도 아무 일이 없는 자리에 "누를 수 있다"는 신호를 준 셈이다. 호버가 사실상
+  // 안 보이던 때는 드러나지 않던 문제라, 대비를 고친 그 patch가 만들어낸 결과다.
+  const pagerBaseClass = 'rounded border border-border-hairline px-3 py-1.5 text-sm';
+  const pagerLinkClass =
+    'rounded border border-border-hairline px-3 py-1.5 text-sm hover:border-brand-petrol';
 
   return (
     <>
       <AppHeader roleLabel={roleLabel ?? undefined} email={user?.email} currentPath="/search" />
       {/* max-w-3xl(768px)이면 4열 브레이크포인트(≥1100px)에 도달해도 칸이 안 생긴다 —
           D5의 4열을 실제로 보이게 하려면 본문 폭도 함께 열어야 한다(Story 9.4 AC6). */}
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
         <section className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">매물 탐색</h1>
-          <p className="text-sm text-zinc-500">
+          {/* 제목은 이 화면에 들어오는 내비 링크("내 차 사기")와 같은 말을 쓴다 — EXPERIENCE.md
+              Anti-patterns가 **"매물 탐색"·"탐색"을 개발용어 라벨로 명시 금지**하는데(소비자
+              자연어로 치환), 내비만 고치고 도착 화면 제목이 옛 라벨로 남아 있었다. */}
+          {/* ✎ 2026-08-13(#4) — `text-2xl font-semibold`(생 Tailwind)에서 디자인 토큰으로 바꿨다.
+              `/sell`의 제목이 이미 토큰(text-section font-bold text-ink-primary)이라 같은 위계의
+              두 화면 제목이 서로 다른 크기·굵기로 그려지고 있었다. 값이 아니라 토큰을 공유시킨다. */}
+          <h1 className="text-section font-bold text-ink-primary">내 차 사기</h1>
+          <p className="text-sm text-ink-muted">
             원하는 조건으로 판매 중인 매물을 검색하세요.
           </p>
         </section>
@@ -160,24 +311,67 @@ export default async function SearchPage({
         <SearchFilters initial={initialFilters} />
 
         <section className="flex flex-col gap-3">
-          {error ? (
+          {rangeOutOfBounds ? (
+            // 범위 밖 page — 에러가 아니라 "돌아갈 길"을 준다(위 rangeOutOfBounds 주석 참조).
+            <p className="text-sm text-ink-muted">
+              이 페이지에는 매물이 없습니다.{' '}
+              <Link href={pageHref(1)} className="underline">
+                첫 페이지로
+              </Link>
+            </p>
+          ) : error ? (
             <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               매물 목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
             </p>
           ) : !listings || listings.length === 0 ? (
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-ink-muted">
               조건에 맞는 매물이 없습니다. 필터를 완화해 보세요.
             </p>
           ) : (
             <>
-              <p className="text-sm text-zinc-500">{listings.length}건의 매물</p>
+              {/* 총 건수는 **전체**를 말한다(이 페이지에 그린 수가 아니라) — 페이지네이션 후에도
+                  "조건에 몇 건이 걸렸나"는 전체 기준이어야 필터를 조절할 근거가 된다. */}
+              <p className="text-sm text-ink-muted">
+                {totalCount}건의 매물
+                {totalPages > 1 && ` · ${page}/${totalPages} 페이지`}
+              </p>
               {/* D5: 가로폭은 **열 수로만** 흡수한다(≥1100px 4열 · 640~1099px 2열 · <640px 1열).
                   카드 내부 가로 배치는 어느 폭에서도 접히지 않는다 — 규칙은 ResponsiveGrid가 소유. */}
               <ResponsiveGrid>
                 {listings.map((l) => (
-                  <ListingCard key={l.id} listing={l} />
+                  <ListingCard key={l.id} listing={l} wished={wishedIds.has(l.id)} authed={!!user} />
                 ))}
               </ResponsiveGrid>
+
+              {/* 페이지 이동 — 한 페이지뿐이면 아예 렌더하지 않는다(빈 잉크 금지, Story 8.2 AC1).
+                  링크(<a>)라서 자바스크립트 없이도 동작하고, 주소가 그대로 공유·북마크된다. */}
+              {totalPages > 1 && (
+                <nav aria-label="페이지 이동" className="flex items-center justify-center gap-3 pt-2">
+                  {page > 1 ? (
+                    <Link href={pageHref(page - 1)} rel="prev" className={pagerLinkClass}>
+                      ← 이전
+                    </Link>
+                  ) : (
+                    // 첫/끝 페이지에서 버튼을 지우지 않고 비활성으로 남긴다 — 자리가 사라지면
+                    // 옆 버튼이 움직여 연속 클릭이 어긋난다(터치에서 특히).
+                    <span aria-disabled className={`${pagerBaseClass} opacity-40`}>
+                      ← 이전
+                    </span>
+                  )}
+                  <span aria-current="page" className="text-sm text-ink-muted">
+                    {page} / {totalPages}
+                  </span>
+                  {page < totalPages ? (
+                    <Link href={pageHref(page + 1)} rel="next" className={pagerLinkClass}>
+                      다음 →
+                    </Link>
+                  ) : (
+                    <span aria-disabled className={`${pagerBaseClass} opacity-40`}>
+                      다음 →
+                    </span>
+                  )}
+                </nav>
+              )}
             </>
           )}
         </section>
