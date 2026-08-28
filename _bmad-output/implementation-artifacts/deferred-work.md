@@ -6960,3 +6960,30 @@ severity: low
 reason: 외과적 변경 원칙 — 실측된 문제(hybrid 복합 질의)만 고쳤다. 매물 검색 RRF는 효과 미실측.
 trigger: 사용자가 CLARIFY 경로에서도 복합 장문을 넣는 사례가 LangSmith에 보이면.
 status: open
+
+### DW-846: AI 검색 결과 카드 사진이 간헐적으로 회색 빈 상태로 렌더된다
+
+origin: RAG E2E 10질의 테스트(2026-08-29, Vercel preview/Chrome) — 질의 7·9·10에서 6장 관측
+location: web AI 검색 결과 카드(서명 URL 로딩 경로 의심)
+severity: medium
+reason: DB 실측으로 사진 0장 매물은 158건 중 0건 — 데이터 결손이 아니라 렌더/로딩 문제. 이번 RAG 작업과 무관해 분리.
+trigger: 다음 웹 UI 작업 착수 시 첫 재현 확인(서명 URL TTL·동시 로딩 수·스크린샷 타이밍 순으로 배제).
+status: open
+
+### DW-847: 되묻기(CLARIFY) 칩이 고정 템플릿이라 질의 맥락과 무관하게 매번 같다
+
+origin: 사용자 실사용 관찰(2026-08-29) — "매번 같은 칩이 나온다". clarify_node는 CR5 결정(추가 LLM 호출 금지)으로 고정 질문+칩 ["3천만원 이하","SUV","전기차"]만 반환(spec-13-4).
+location: api/app/graph/clarify_node.py
+severity: medium
+reason: 당시엔 비용 절감 결정이었으나, 옵션 동의어·모호 조건 확인("어댑티브크루즈도 볼까요?") 같은 보완 수단으로 쓰려면 맥락 기반 동적 되묻기가 필요.
+trigger: AI 고도화(에이전트화) 과제 설계 시 요구사항으로 편입 — 에이전트 구조에선 되묻기가 도구 호출의 자연스러운 일부가 된다.
+status: open
+
+### DW-848: 정렬 요청 축이 벡터 유사도에 묻힌다 — "연식은 최신일수록"이 반영 안 됨
+
+origin: RAG E2E 질의 6(2026-08-29) — 추출 조건이 price<=25000000뿐, 1등이 2015년식 12만km. HYBRID는 벡터 순서만 쓰고 가격 최상급에만 캐비엇 존재(spec-13-9 옵션 b).
+location: api/app/graph/hybrid_rag_node.py 정렬부
+severity: medium
+reason: 정렬 축 추가는 sql_guard의 ORDER BY 고정 모양과 충돌해 설계가 필요. 수리비→연료 매핑 부재는 제외 코퍼스(DW-843) 복귀와 얽혀 있어 함께 봐야 함.
+trigger: DW-843 코퍼스 복귀 실측과 같은 회차에 — 근거 문서 복귀 후에도 정렬이 안 되면 그때 정렬 설계(파이썬 후정렬이 최소안).
+status: open
