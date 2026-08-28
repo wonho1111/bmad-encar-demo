@@ -6933,3 +6933,30 @@ fix_sketch: 세 갈래 중 택일 — ⓐ `aiSearch.ts`처럼 순수 함수로 �
 trigger: 웹 AI 검색 UI를 다음에 손대는 스토리, 또는 jsdom/RTL 도입을 결정하는 순간. 그 전에 이 블록을 건드리는 사람은 **검사가 안 잡는다는 사실을 알고** 손대야 한다(그래서 코드가 아니라 여기에 적는다).
 related: [[DW-587]](이 항목을 낳은 수정) · [[DW-582]](E2E 상시 승격 축)
 status: open
+
+### DW-843: 임시 제외한 판단기준형 코퍼스 4개(구 05·10·11·12)의 복귀 실측이 남아 있다
+
+origin: RAG 문서참조 개선 세션(코퍼스 개편+top-k+청킹+multi-query, 2026-08-29, 커밋 42e5b1c~0f3d22b)
+location: api/corpus/_excluded/{05,10,11,12}-*.md
+severity: medium
+reason: 매핑형이 아닌 지식형 문서라 top-k 인용에 노이즈가 돼 사용자 결정으로 임시 제외. 복귀 전제조건(multi-query+top-k 구조)은 이 세션에서 완성됨.
+trigger: "중고차 처음 사는데 어떤 차 골라야 하지?"→05, "가성비 좋고 수리 안하고 편하게 탈 차"→05·11·12 매칭을 실측(재적재 후 거리 스윕)해 통과하면 corpus/로 복귀+backfill. 다음 RAG 작업 착수 시 첫 항목.
+status: open
+
+### DW-844: 가이드 top-k 상한 5의 확대 여부를 청킹 안정화 후 재검토한다
+
+origin: Phase 1 사용자 결정(2026-08-29, "5로 시작하고 테스트 후 확대")
+location: api/app/graph/doc_rag_node.py _GUIDE_TOP_K
+severity: low
+reason: 상충·노이즈 위험을 보고 5로 보수 시작. 실질 필터는 상대 마진이라 상한 확대의 실효는 낮을 수 있음.
+trigger: DW-843 복귀 실측 때 같이 잰다 — 28+α 청크에서 통과 개수 분포를 보고 5가 병목이면 확대.
+status: open
+
+### DW-845: multi-query 분해가 HYBRID 경로에만 배선돼 있다 — CLARIFY 폴백·doc_rag 매물검색은 단일 벡터
+
+origin: Phase 3 스코프 결정(2026-08-29) — CLARIFY 폴백은 대개 짧은 질의라 대상에서 제외(multi_query.py 주석에 기록)
+location: api/app/graph/graph.py _clarify_step, doc_rag_node.py 매물 벡터검색
+severity: low
+reason: 외과적 변경 원칙 — 실측된 문제(hybrid 복합 질의)만 고쳤다. 매물 검색 RRF는 효과 미실측.
+trigger: 사용자가 CLARIFY 경로에서도 복합 장문을 넣는 사례가 LangSmith에 보이면.
+status: open
