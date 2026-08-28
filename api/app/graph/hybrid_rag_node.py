@@ -47,8 +47,9 @@ from app.db.sql_guard import (
     validate_select_sql,
 )
 from app.embeddings import embed_query
-from app.graph.doc_rag_node import citation_titles, doc_rag_node, find_relevant_guide
+from app.graph.doc_rag_node import citation_titles, doc_rag_node
 from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
+from app.graph.multi_query import find_relevant_guides_fused
 from app.graph.sql_rag_node import _DOMAIN_RULES, _content_to_text, _strip_sql
 
 logger = logging.getLogger(__name__)
@@ -226,7 +227,9 @@ def hybrid_rag_node(query: str) -> dict:
 
     qvec = embed_query(query)  # 키 부재 시 여기서 fail-loud — 재시도 루프 전 1회만 계산.
     qvec_literal = _vec_literal(qvec)
-    guides = find_relevant_guide(qvec_literal)  # top-k 상대 게이트(FR49) 통과분(FR44).
+    # multi-query 분해 + RRF 병합(질의 희석 완화) — 짧은 질의는 내부에서 자동으로 원 질의
+    # 단독 검색과 동일하게 동작한다(추가 임베딩 호출 0회, app/graph/multi_query.py).
+    guides = find_relevant_guides_fused(query, qvec_literal)
 
     system_prompt = _SYSTEM_PROMPT
     injected_guides = _select_guides_to_inject(guides)

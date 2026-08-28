@@ -336,13 +336,13 @@ def test_hybrid_guard_rejection_retries_once_then_succeeds(monkeypatch):
         calls["embed"] += 1
         return [0.1]
 
-    def counting_guide(qvec_literal):
+    def counting_guide(query, qvec_literal):
         calls["guide"] += 1
         return []
 
     monkeypatch.setattr(node, "_llm", lambda: llm)
     monkeypatch.setattr(node, "embed_query", counting_embed)
-    monkeypatch.setattr(node, "find_relevant_guide", counting_guide)
+    monkeypatch.setattr(node, "find_relevant_guides_fused", counting_guide)
     monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
     monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
 
