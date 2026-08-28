@@ -108,6 +108,34 @@ _GUIDE_PRIORITY_NOTE = """
 _ANSWER_FOUND = "조건에 맞는 매물 {n}건을 찾았어요."
 _ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."  # FR17 조건 완화 안내
 
+# ── 0건 완화 재시도(FR17, 실측: "애들 둘이랑 장인어른까지…기름값도 좀 걱정되고요" →
+#    body_type IN ('SUV','RV') AND seats >= 7 AND price <= 30000000 AND fuel = '하이브리드'가
+#    0건. fuel만 빼면 4건 — "기름값 걱정"이라는 선호 표현이 하드 필터로 굳어버린 것이었다.
+#    LLM 재호출 없이(결정론적) 절을 하나씩 빼며 재조립·재검증·재실행한다) ──────────────────
+#
+# 우선순위(사용자 결정 2026-08-29): 선호·걱정 표현에서 유래하기 쉬운 축(연료·색상·옵션)을
+# 먼저 빼고, 사용자가 숫자로 직접 말한 축(연식·주행거리·가격)은 최후까지 지킨다.
+_RELAX_AXIS_ORDER = (
+    "fuel", "color", "options", "body_type", "transmission",
+    "seats", "displacement", "year", "mileage", "price",
+)
+
+# 완화 캐비엇에 쓰는 축 한국어 이름 — _RELAX_AXIS_ORDER와 1:1 대응.
+_AXIS_KOREAN = {
+    "fuel": "연료", "color": "색상", "options": "옵션", "body_type": "차종",
+    "transmission": "변속기", "seats": "인승", "displacement": "배기량",
+    "year": "연식", "mileage": "주행거리", "price": "가격",
+}
+
+# 연비 선호 사다리 — 연료 조건을 뺀 경우에만 쓴다(사용자 결정 2026-08-29: 연료 선호는
+# 고정값이 아니라 순위다). 하이브리드가 없으면 전기, 그다음 디젤 순으로 밀린다. 같은 연료
+# 끼리는 원래 벡터 유사도 순서를 유지한다(sorted()는 안정 정렬).
+_FUEL_PREFERENCE = ("하이브리드", "전기", "디젤", "LPG", "가솔린")
+
+# axis는 뺀 절의 한국어 축 이름(_AXIS_KOREAN) — 최상급 캐비엇(_SUPERLATIVE_CAVEAT)과
+# 공존 가능하다(둘 다 붙을 수 있음, 서로 다른 문제를 알리는 문장이라 하나로 합치지 않는다).
+_RELAXED_CAVEAT_TEMPLATE = " {axis} 조건에 딱 맞는 매물이 없어 그 조건을 빼고 찾았어요."
+
 # 최상급×HYBRID 정렬 충돌 — 옵션(b) 채택(spec-13-9 Design Notes). HYBRID는 벡터 유사도로만
 # 정렬하고 최상급이 요구하는 가격 등 정렬은 반영하지 않는다(오늘도 이미 그렇게 동작 중) —
 # 이 상수·헬퍼는 그 사실을 답변에 알리는 캐비엇만 추가한다(sql_guard·SQL 조립은 미변경).
@@ -145,6 +173,71 @@ def _has_superlative(query: str) -> bool:
     "싼타페"의 부분문자열일 뿐인데 결합으로 잘못 잡히던 문제 포함).
     """
     return bool(_SUPERLATIVE_PRICE_RE.search(query))
+
+
+def _split_top_level_and(condition: str) -> list[str]:
+    """`condition`을 괄호 깊이 0의 ` AND `에서만 분할해 절 목록을 만든다.
+
+    규칙 5(_HYBRID_INSTRUCTIONS)가 이미 OR를 금지하므로 최상위 결합 연산자는 AND뿐이다 —
+    OR까지 고려할 필요가 없다. `IN ('a','b')`·`= ANY(options)` 같은 괄호 안, 그리고 문자열
+    리터럴 안의 " AND "는 쪼개면 안 되므로 괄호 깊이와 작은따옴표 문자열 여부를 문자 순회로
+    직접 추적한다(정규식 split만으론 이 둘을 구분 못한다). `''`(작은따옴표 리터럴 안의
+    이스케이프된 작은따옴표)는 토글을 두 번 해 원래 상태로 돌아오므로 별도 처리가 필요 없다.
+    """
+    clauses: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_string = False
+    i = 0
+    n = len(condition)
+    while i < n:
+        ch = condition[i]
+        if ch == "'":
+            in_string = not in_string
+            current.append(ch)
+            i += 1
+            continue
+        if not in_string:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif depth == 0 and condition[i : i + 5] == " AND ":
+                clauses.append("".join(current).strip())
+                current = []
+                i += 5
+                continue
+        current.append(ch)
+        i += 1
+    clauses.append("".join(current).strip())
+    return [c for c in clauses if c]
+
+
+def _clause_axis(clause: str) -> str:
+    """절 텍스트에 포함된 컬럼 키워드로 완화 우선순위 축을 판정한다. 못 찾으면 "other"."""
+    lowered = clause.lower()
+    for axis in _RELAX_AXIS_ORDER:
+        if axis in lowered:
+            return axis
+    return "other"
+
+
+def _relax_drop_order(clauses: list[str]) -> list[int]:
+    """한 개씩 빼볼 절의 인덱스를 우선순위(_RELAX_AXIS_ORDER) 순으로 돌려준다.
+
+    미분류 축("other")은 가장 나중에 시도한다 — 어떤 컬럼인지 모르는 절을 먼저 빼면 사용자가
+    명시한 핵심 조건을 실수로 건드릴 수 있다. 같은 축이 여럿이면(드묾) 원래 등장 순서를
+    유지한다(list.sort는 안정 정렬).
+    """
+    axis_priority = {axis: i for i, axis in enumerate(_RELAX_AXIS_ORDER)}
+    indexed = list(enumerate(clauses))
+    indexed.sort(key=lambda pair: axis_priority.get(_clause_axis(pair[1]), len(_RELAX_AXIS_ORDER)))
+    return [i for i, _ in indexed]
+
+
+def _fuel_rank(fuel: str | None) -> int:
+    """연비 선호 사다리에서의 순위 — 목록에 없으면(예: 계약 밖 값·None) 맨 뒤로 보낸다."""
+    return _FUEL_PREFERENCE.index(fuel) if fuel in _FUEL_PREFERENCE else len(_FUEL_PREFERENCE)
 
 
 # 폴백 신호(NONE) 인식 — 정확히 "NONE"만 보면 LLM이 `NONE.`·`"NONE"`처럼 살짝 어긋나게
@@ -278,7 +371,49 @@ def hybrid_rag_node(query: str) -> dict:
         try:
             safe_sql = validate_select_sql(sql)  # 가드 통과 못하면 SqlGuardError
             rows = run_select(safe_sql, (qvec_literal,))  # DW-559 — 임베딩 바인딩(호이스트 재사용)
+
+            # ── 0건 완화 재시도(FR17) — LLM 재호출 없이 절 1개를 빼고 재조립·재검증·재실행한다.
+            dropped_axis: str | None = None
+            clauses = _split_top_level_and(condition)
+            # 절이 2개 이상일 때만 시도한다 — 1개짜리 조건을 빼면 `AND ()`가 아니라 조건 없는
+            # 전체 검색(status='on_sale'만 남음)이 돼버려, "완화"가 아니라 사용자가 말한
+            # 조건을 통째로 무시하는 결과가 나간다.
+            if not rows and len(clauses) >= 2:
+                for idx in _relax_drop_order(clauses):
+                    candidate_condition = " AND ".join(
+                        c for i, c in enumerate(clauses) if i != idx
+                    )
+                    candidate_sql = (
+                        f"SELECT {_SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' "
+                        f"AND ({candidate_condition})"
+                    ).replace("%", "%%")
+                    candidate_sql = (
+                        f"{candidate_sql} ORDER BY embedding <=> %s::vector LIMIT {DEFAULT_LIMIT}"
+                    )
+                    try:
+                        # 기존과 동일한 조립 경로로 새 SQL을 만든 것일 뿐이므로, LLM 생성
+                        # 텍스트를 신뢰하지 않는다는 원칙(함정 #1)은 완화 후보에도 그대로
+                        # 적용한다 — 다시 validate_select_sql()을 거친다.
+                        candidate_safe_sql = validate_select_sql(candidate_sql)
+                        candidate_rows = run_select(candidate_safe_sql, (qvec_literal,))
+                    except (SqlGuardError, psycopg.ProgrammingError, psycopg.DataError):
+                        continue  # 이 후보만 건너뛰고 다음 우선순위 후보를 시도한다.
+                    if candidate_rows:
+                        rows = candidate_rows
+                        dropped_axis = _clause_axis(clauses[idx])
+                        logger.info(
+                            "hybrid_rag_node 0건 완화: '%s' 절 제거 → %d건(재정렬=%s)",
+                            clauses[idx], len(candidate_rows), dropped_axis == "fuel",
+                        )
+                        break
+                else:
+                    logger.info("hybrid_rag_node 0건 완화: 절을 하나씩 빼봤지만 전부 0건")
+
             listings = attach_cover_images(rows_to_cards(rows))
+            if dropped_axis == "fuel":
+                # 연료 절을 뺐을 때만 연비 선호 사다리로 재정렬한다 — 다른 축은 그런 자연스러운
+                # 선호 순서가 없다(스펙).
+                listings = sorted(listings, key=lambda c: _fuel_rank(c.fuel))
             answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
             # 공백 제목은 find_relevant_guide가 이미 걸렀으니 guides의 title은 항상 비어
             # 있지 않다(3회차 코드리뷰). `listings and`가 실제 게이트다: 0건이면 FR17 안내에
@@ -290,6 +425,9 @@ def hybrid_rag_node(query: str) -> dict:
             if listings and guides:
                 titles = citation_titles(guides)
                 answer += f" (참고: {', '.join(titles)})"
+            if listings and dropped_axis:
+                axis_name = _AXIS_KOREAN.get(dropped_axis, "일부")
+                answer += _RELAXED_CAVEAT_TEMPLATE.format(axis=axis_name)
             if listings and _has_superlative(query):
                 # 최상급이 있어도 HYBRID는 벡터 정렬만 적용한다 — 그 사실을 알린다(옵션 b).
                 # 0건이면(listings 없음) 이 캐비엇도 인용과 같은 이유로 붙이지 않는다.

@@ -755,6 +755,160 @@ def test_superlative_price_re_identical_in_both_modules():
     assert node._SUPERLATIVE_PRICE_RE.pattern == contextualize_node._SUPERLATIVE_PRICE_RE.pattern
 
 
+# ── 0건 완화 재시도(FR17, 실측: "애들 둘이랑 장인어른까지…기름값도 좀 걱정되고요" →
+#    body_type IN ('SUV','RV') AND seats >= 7 AND price <= 30000000 AND fuel = '하이브리드'가
+#    0건이지만 fuel만 빼면 4건이던 실제 사례) ────────────────────────────────────────
+def _fake_row_fuel(listing_id: str, fuel: str):
+    return (
+        listing_id, "현대", "싼타페", 2020, 26700000, 62000, "강원",
+        fuel, None, None, None, None,
+    )
+
+
+def test_split_top_level_and_respects_parens_and_string_literals():
+    """괄호 깊이 0의 ` AND `에서만 쪼갠다 — IN(...)·ANY(...) 안, 문자열 리터럴 안은 보존."""
+    clauses = node._split_top_level_and(
+        "body_type IN ('SUV','RV') AND seats >= 7 AND price <= 30000000 AND fuel = '하이브리드'"
+    )
+    assert clauses == [
+        "body_type IN ('SUV','RV')", "seats >= 7", "price <= 30000000", "fuel = '하이브리드'",
+    ]
+
+    # 문자열 리터럴 안의 " AND "는 절 경계로 오인하면 안 된다.
+    clauses2 = node._split_top_level_and("model = '기아 AND 현대' AND price <= 100")
+    assert clauses2 == ["model = '기아 AND 현대'", "price <= 100"]
+
+    # ANY(options) 괄호 안도 하나의 절로 유지돼야 한다.
+    clauses3 = node._split_top_level_and("'통풍시트' = ANY(options) AND price <= 100")
+    assert clauses3 == ["'통풍시트' = ANY(options)", "price <= 100"]
+
+
+def test_relax_drop_order_prioritizes_fuel_then_color():
+    """fuel 절이 있으면 항상 첫 후보, fuel이 없고 color가 있으면 color가 먼저다."""
+    clauses = ["body_type = 'SUV'", "fuel = '하이브리드'", "price <= 100"]
+    assert node._relax_drop_order(clauses)[0] == 1  # fuel 절의 인덱스
+
+    clauses_no_fuel = ["body_type = 'SUV'", "color = '흰색'", "price <= 100"]
+    assert node._relax_drop_order(clauses_no_fuel)[0] == 1  # color 절의 인덱스
+
+
+def test_hybrid_empty_result_relaxes_by_dropping_fuel_and_reorders_by_fuel_preference(monkeypatch):
+    """0건 → fuel 절을 뺀 완화 후보로 재시도해 결과가 나오고, 연비 선호 사다리로 재정렬된다."""
+    condition = "body_type IN ('SUV','RV') AND seats >= 7 AND price <= 30000000 AND fuel = '하이브리드'"
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM([condition]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    # 실측 질의는 20자 이상이라 find_relevant_guides_fused 내부의 multi-query 분해(decompose_query)가
+    # 발동한다 — 이 테스트의 관심사가 아니므로 fused 조회 자체를 직접 막아 실 LLM/임베딩 호출을
+    # 피한다(다른 테스트들은 20자 미만 질의라 _patch_guide_lookup만으로 충분했다).
+    monkeypatch.setattr(node, "find_relevant_guides_fused", lambda query, qvec_literal: [])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    gasoline_row = _fake_row_fuel("11111111-1111-4111-8111-111111111111", "가솔린")
+    diesel_row = _fake_row_fuel("22222222-2222-4222-8222-222222222222", "디젤")
+    calls = {"n": 0, "sqls": []}
+
+    def fake_run_select(sql, params=None):
+        calls["n"] += 1
+        calls["sqls"].append(sql)
+        if calls["n"] == 1:
+            return []  # 원래 조건(fuel 포함) — 실측대로 0건
+        # 완화 후보(fuel 드롭) — 가솔린이 벡터 유사도상 먼저 나왔다고 가정한 순서.
+        return [gasoline_row, diesel_row]
+
+    monkeypatch.setattr(node, "run_select", fake_run_select)
+
+    result = node.hybrid_rag_node(
+        "애들 둘이랑 장인어른까지 태워야 해서 7인승 봐야 하는데, 3천만원 정도면 "
+        "뭐가 있을까요? 기름값도 좀 걱정되고요"
+    )
+
+    # fuel이 완화 우선순위 1위라 첫 후보에서 바로 성공 — 원래 1회 + 완화 1회 = 2회.
+    assert calls["n"] == 2
+    # SELECT 컬럼 목록엔 fuel이 항상 있으므로("fuel" 존재 자체가 아니라) WHERE절의 fuel
+    # 조건("fuel = ...")만 없는지 확인한다.
+    assert "fuel =" not in calls["sqls"][1].lower()
+    assert "연료 조건에 딱 맞는 매물이 없어" in result["answer"]
+    # 디젤이 연비 선호 사다리에서 가솔린보다 앞이므로, 원래 벡터 순서(가솔린 먼저)를
+    # 뒤집어 디젤이 먼저 나와야 한다.
+    assert [c.fuel for c in result["listings"]] == ["디젤", "가솔린"]
+
+
+def test_hybrid_single_clause_skips_relax_retry(monkeypatch):
+    """절이 1개뿐이면 완화를 시도하지 않는다 — 빼면 조건 없는 전체 검색이 되기 때문."""
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM(["price <= 30000000"]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+
+    calls = {"n": 0}
+
+    def fake_run_select(sql, params=None):
+        calls["n"] += 1
+        return []
+
+    monkeypatch.setattr(node, "run_select", fake_run_select)
+
+    result = node.hybrid_rag_node("3천만원 이하")
+
+    assert calls["n"] == 1  # 완화 재시도가 아예 실행되지 않았다
+    assert result["answer"] == node._ANSWER_EMPTY
+    assert "조건에 딱 맞는" not in result["answer"]
+
+
+def test_hybrid_all_relax_candidates_still_empty_keeps_fr17_message(monkeypatch):
+    """절을 하나씩 다 빼봐도 0건이면 기존 FR17 안내 그대로, 캐비엇도 붙지 않는다."""
+    condition = "body_type = 'SUV' AND fuel = '하이브리드'"
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM([condition]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+
+    calls = {"n": 0}
+
+    def fake_run_select(sql, params=None):
+        calls["n"] += 1
+        return []  # 원래도, 완화 후보 둘 다 0건
+
+    monkeypatch.setattr(node, "run_select", fake_run_select)
+
+    result = node.hybrid_rag_node("아무 질의")
+
+    assert calls["n"] == 3  # 원래 1회 + 절 2개짜리 완화 후보 2회(fuel 우선, 그다음 body_type)
+    assert result["answer"] == node._ANSWER_EMPTY
+    assert result["listings"] == []
+
+
+def test_hybrid_relax_retry_revalidates_with_sql_guard(monkeypatch):
+    """완화 후보 SQL도 validate_select_sql을 다시 거친다(LLM 조립 원칙이 완화 후보에도 적용)."""
+    condition = "body_type = 'SUV' AND fuel = '하이브리드'"
+    monkeypatch.setattr(node, "_llm", lambda: _FixedLLM([condition]))
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    _patch_guide_lookup(monkeypatch)
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    real_validate = node.validate_select_sql
+    validate_calls = {"n": 0}
+
+    def counting_validate(sql):
+        validate_calls["n"] += 1
+        return real_validate(sql)
+
+    monkeypatch.setattr(node, "validate_select_sql", counting_validate)
+
+    run_calls = {"n": 0}
+
+    def fake_run_select(sql, params=None):
+        run_calls["n"] += 1
+        if run_calls["n"] == 1:
+            return []  # 원래 조건 — 0건
+        return [_fake_row()]  # 완화 후보(fuel 드롭) — 성공
+
+    monkeypatch.setattr(node, "run_select", fake_run_select)
+
+    result = node.hybrid_rag_node("아무 질의")
+
+    assert validate_calls["n"] == 2  # 원래 SQL 1회 + 완화 후보 SQL 1회, 둘 다 가드를 거쳤다
+    assert result["listings"]
+
+
 def test_guide_present_condition_is_assembled_and_cited(monkeypatch):
     """가이드가 주입된 상태에서 조건이 SQL로 조립되고 answer에 결정론적 인용이 붙는다(AC2).
 
