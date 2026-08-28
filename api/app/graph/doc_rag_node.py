@@ -39,12 +39,12 @@ _ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 원하시는 용도나 �
 _GUIDE_TOP_K = 5
 # 실질 선별은 이 상대 마진이 한다 — 1등 거리 대비 이 폭 안의 후보만 통과. 복합 질의에서
 # 1~2등이 근소한 차이(실측 0.005)인데 한쪽만 버려지던 문제를 막는다.
-_GUIDE_MARGIN = 0.05
+_GUIDE_MARGIN = 0.05  # 2026-08-29 30질의 스윕 실측으로 확정 — 날카로운 질의는 정답 섹션만, 복합 질의는 3~5개 통과
 # 옛 `_GUIDE_DISTANCE_CUTOFF`(=0.3, 절대 컷오프)를 대체 — 이름을 CUTOFF에서 CEILING으로
 # 바꾼 이유: 이제 이 값은 "선별"을 하지 않는다. 선별은 위 마진이 하고, 이 상한은 그저
 # "명백히 무관한 것"만 거르는 최후 안전판이라 0.3보다 넉넉히 잡는다(실측 복합 질의 1등이
 # 0.30~0.35까지 밀림 — 옛 컷오프였다면 전멸했을 값).
-_GUIDE_DISTANCE_CEILING = 0.45
+_GUIDE_DISTANCE_CEILING = 0.45  # 같은 스윕 top1 최대 0.322 — 안전판으로 충분함을 실측 확인
 
 
 def _vec_literal(vec: list[float]) -> str:
@@ -111,6 +111,25 @@ def find_relevant_guide(qvec_literal: str) -> list[tuple[str, str]]:
     return guides
 
 
+def citation_titles(guides: list[tuple[str, str]], limit: int = 2) -> list[str]:
+    """인용용 문서명 리스트를 만든다 — 청킹(섹션 단위 적재)으로 같은 문서의 서로 다른
+    섹션 2개가 top에 오면 "A — x, A — y"처럼 인용이 장황해지는 것을 막는다.
+
+    title에서 " — "(문서제목·섹션제목 구분자, load_corpus 참고) 앞부분만 취해 원본
+    문서명 기준으로 중복 제거한 뒤 상위 최대 `limit`개를 반환한다. " — "가 없으면
+    (청킹 없는 파일의 문서 전체 title) 그대로 문서명으로 쓴다. 순서는 guides 순서
+    (거리 오름차순)를 유지한다.
+    """
+    seen: list[str] = []
+    for title, _content in guides:
+        doc_name = title.split(" — ", 1)[0]
+        if doc_name not in seen:
+            seen.append(doc_name)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
 def doc_rag_node(query: str, qvec: list[float] | None = None) -> dict:
     """의미형 질의를 받아 {"answer": str, "listings": list[ListingCard]}를 반환한다.
 
@@ -154,8 +173,9 @@ def doc_rag_node(query: str, qvec: list[float] | None = None) -> dict:
     answer = _ANSWER_FOUND.format(query=query, n=len(listings))
     # `title.strip()` 재검사는 이제 도달 불가하다 — find_relevant_guide가 공백 제목을 이미
     # 걸러 리스트에 안 담으므로 guides의 모든 title은 비어 있지 않다(3회차 코드리뷰). 인용은
-    # 상위 최대 2개 제목만 붙인다(1개면 기존과 동일한 "(참고: A)" 형식).
+    # citation_titles가 문서명 기준 중복 제거 후 상위 최대 2개만 뽑는다(청킹 후 같은 문서의
+    # 섹션 2개가 top에 와도 인용이 장황해지지 않게).
     if guides:
-        titles = [title for title, _content in guides[:2]]
+        titles = citation_titles(guides)
         answer += f" (참고: {', '.join(titles)})"
     return {"answer": answer, "listings": listings}

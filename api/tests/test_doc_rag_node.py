@@ -16,6 +16,7 @@ from app.graph.doc_rag_node import (
     _GUIDE_DISTANCE_CEILING,
     _GUIDE_MARGIN,
     _vec_literal,
+    citation_titles,
     doc_rag_node,
     find_relevant_guide,
 )
@@ -374,3 +375,25 @@ def test_cards_carry_cover_image_from_shared_helper(monkeypatch):
     assert card.image_count == 3
     # api는 URL을 만들지 않는다 — 원본 경로만 싣는다(conventions.md §10).
     assert card.image_url is None
+
+
+# ── citation_titles(청킹 후 인용 중복 제거, RAG 코퍼스 청킹 후속) ─────────────
+def test_citation_titles_dedupes_by_document_name():
+    """같은 문서의 서로 다른 섹션 2개가 top에 와도 문서명 기준으로 중복 제거해 2개만 남긴다."""
+    guides = [
+        ("A — x", "본문1"),
+        ("A — y", "본문2"),
+        ("B — z", "본문3"),
+    ]
+    assert citation_titles(guides) == ["A", "B"]
+
+
+def test_citation_titles_keeps_full_title_without_separator():
+    """' — ' 구분자가 없는 title(청킹 없는 파일의 문서 전체)은 그대로 문서명으로 쓴다."""
+    guides = [("헤딩 없는 문서", "본문")]
+    assert citation_titles(guides) == ["헤딩 없는 문서"]
+
+
+def test_citation_titles_respects_limit():
+    guides = [("A — x", "1"), ("B — y", "2"), ("C — z", "3")]
+    assert citation_titles(guides, limit=1) == ["A"]

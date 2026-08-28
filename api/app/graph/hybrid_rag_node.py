@@ -47,7 +47,7 @@ from app.db.sql_guard import (
     validate_select_sql,
 )
 from app.embeddings import embed_query
-from app.graph.doc_rag_node import doc_rag_node, find_relevant_guide
+from app.graph.doc_rag_node import citation_titles, doc_rag_node, find_relevant_guide
 from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
 from app.graph.sql_rag_node import _DOMAIN_RULES, _content_to_text, _strip_sql
 
@@ -282,9 +282,10 @@ def hybrid_rag_node(query: str) -> dict:
             # 인용을 붙이지 않는다(AC3, I/O 매트릭스 5행). 이 조건이 사라져도 스위트가
             # 초록이던 구멍은 test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
             # 인용은 주입 상한(_select_guides_to_inject)과 무관하게 게이트 통과분 전체(guides)
-            # 중 상위 최대 2개를 쓴다 — doc_rag_node와 동일한 규칙(AC2).
+            # 중 citation_titles로 문서명 기준 중복 제거 후 상위 최대 2개를 쓴다 —
+            # doc_rag_node와 동일한 규칙(AC2, 청킹 후 인용 장황화 방지 공유 헬퍼).
             if listings and guides:
-                titles = [title for title, _content in guides[:2]]
+                titles = citation_titles(guides)
                 answer += f" (참고: {', '.join(titles)})"
             if listings and _has_superlative(query):
                 # 최상급이 있어도 HYBRID는 벡터 정렬만 적용한다 — 그 사실을 알린다(옵션 b).
