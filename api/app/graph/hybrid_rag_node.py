@@ -15,11 +15,13 @@
     함정 #1). 가드 차단 시 sql_rag_node와 동일한 1회 재생성 재시도 패턴을 따른다.
   · 가드 통과 후 embed_query로 만든 질의 임베딩을 %s 자리표시자에 실제로 바인딩해
     run_select(safe_sql, (qvec,))로 실행한다(DW-559 — 미바인드 실행 방지).
-  · 질의확장(FR44, Story 13.6): 재시도 루프 진입 전 1회 `find_relevant_guide()`로 최상위
-    가이드를 조회한다. 코사인 거리가 컷오프(FR49) 이내일 때만 그 content를 시스템 프롬프트에
+  · 질의확장(FR44, Story 13.6): 재시도 루프 진입 전 1회 `find_relevant_guide()`로 top-k 상대
+    게이트(FR49)를 통과한 가이드 목록을 조회한다. 그중 상위 최대 `_GUIDE_INJECT_MAX`건만,
+    그리고 content 누적 글자수가 `_GUIDE_INJECT_CHAR_CAP`을 넘기 전까지만 시스템 프롬프트에
     덧붙여 LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건(body_type 등)으로
-    바꾸게 한다 — 무조건 곁들이지 않는다. 최종 answer 인용도 같은 게이트를 통과했을 때만
-    doc_rag_node와 동일하게 결정론적으로 붙인다(답변 문장 자체는 LLM이 새로 짓지 않는다).
+    바꾸게 한다 — 무조건 곁들이지 않는다(서로 다른 페르소나 섹션의 가이드가 전부 들어가면
+    조건 AND 폭발로 0건이 되거나 프롬프트가 비대해진다). 최종 answer 인용은 doc_rag_node와
+    동일하게 상위 최대 2개 제목을 결정론적으로 붙인다(답변 문장 자체는 LLM이 새로 짓지 않는다).
 
 Design Notes(spec 13.3): 하이브리드 조립은 가드 통과 "직전"에 완성한다 — LLM 조건 →
   코드가 전체 SQL 문자열로 합친 뒤에야 validate_select_sql()을 부른다. 가드를 먼저
@@ -79,15 +81,24 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB 검색을 위해 WHERE 구조조
 
 출력: 조건 표현식 한 줄 또는 NONE."""
 
-# 가이드 질의확장(FR44, Story 13.6) — find_relevant_guide()가 컷오프 이내로 찾아낸 가이드
-# content를 시스템 프롬프트 뒤에 덧붙이는 블록. 규칙 2(느낌 표현 버리기)보다 이 매핑이
-# 우선한다는 것을 명시해, LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건으로
-# 바꾸게 한다. 이 블록은 조건추출에만 쓰이고 답변 문장을 새로 짓는 데는 쓰이지 않는다
-# (답변 인용은 hybrid_rag_node가 결정론적 문자열 붙이기로 별도 처리, AC2).
+# top-k 상대 게이트(FR49, doc_rag_node._GUIDE_TOP_K/_GUIDE_MARGIN/_GUIDE_DISTANCE_CEILING)
+# 통과분 중 실제로 프롬프트에 주입할 개수·글자수 상한 — 전부 넣으면 서로 다른 페르소나
+# 섹션의 가이드가 뒤섞여 조건 AND 폭발로 0건이 되거나 프롬프트가 비대해진다.
+_GUIDE_INJECT_MAX = 3
+_GUIDE_INJECT_CHAR_CAP = 3000
+
+# 가이드 질의확장(FR44, Story 13.6) — find_relevant_guide()가 top-k 상대 게이트로 찾아낸
+# 가이드마다 이 블록을 이어 붙인다. content를 시스템 프롬프트 뒤에 덧붙이는 블록.
 _GUIDE_BLOCK_TEMPLATE = """
 
 [참고 가이드 문서 — "{title}"]
-{content}
+{content}"""
+
+# 여러 가이드 블록 뒤에 1회만 붙는 우선순위 지시문. 규칙 2(느낌 표현 버리기)보다 이 매핑이
+# 우선한다는 것을 명시해, LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건으로
+# 바꾸게 한다. 이 지시문은 조건추출에만 쓰이고 답변 문장을 새로 짓는 데는 쓰이지 않는다
+# (답변 인용은 hybrid_rag_node가 결정론적 문자열 붙이기로 별도 처리, AC2).
+_GUIDE_PRIORITY_NOTE = """
 
 위 가이드 매핑은 규칙 2(느낌·용도 표현 버리기)보다 우선한다 — 질의의 느낌·용도 표현이 위
 가이드가 제시하는 구조조건(차종·인승 등)과 대응되면, 규칙 2로 버리지 말고 그 구조조건을
@@ -164,6 +175,26 @@ def _vec_literal(vec: list[float]) -> str:
     return "[" + ",".join(map(str, vec)) + "]"
 
 
+def _select_guides_to_inject(
+    guides: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """게이트를 통과한 가이드 중 실제로 프롬프트에 주입할 것만 추린다.
+
+    상위 최대 `_GUIDE_INJECT_MAX`개를 우선 자르고, content 누적 글자수가
+    `_GUIDE_INJECT_CHAR_CAP`을 넘기는 순간부터는 넘긴 문서부터 제외한다(그 앞까지는
+    담는다) — 서로 다른 페르소나 섹션의 상충 매핑이 전부 프롬프트에 들어가 조건 AND
+    폭발로 0건이 되는 것과 프롬프트 비대화를 막는다.
+    """
+    selected: list[tuple[str, str]] = []
+    total_chars = 0
+    for title, content in guides[:_GUIDE_INJECT_MAX]:
+        if total_chars + len(content) > _GUIDE_INJECT_CHAR_CAP:
+            break
+        selected.append((title, content))
+        total_chars += len(content)
+    return selected
+
+
 def _append_retry_turn(messages: list, text: str, reason: str) -> None:
     """재생성 요청 1턴을 대화에 덧붙인다(가드 차단·실행 불가 두 경로가 같은 문구를 쓴다)."""
     messages.append(("ai", text))
@@ -186,19 +217,25 @@ def hybrid_rag_node(query: str) -> dict:
     500이 아니라 400 한국어 안내가 나가야 한다는 계약을 지키기 위해서다.
 
     질의확장(FR44, Story 13.6): 재시도 루프 진입 전에 질의 임베딩을 1회만 계산해(재시도마다
-    재임베딩하던 기존 낭비 제거) find_relevant_guide()에 넘긴다. 컷오프(FR49) 이내 가이드가
-    있으면 시스템 프롬프트에 덧붙이고, 그 가이드로 조건추출이 이뤄졌든 아니든 listings가
-    나오면 doc_rag_node와 동일하게 결정론적 인용을 붙인다.
+    재임베딩하던 기존 낭비 제거) find_relevant_guide()에 넘긴다. top-k 상대 게이트(FR49)를
+    통과한 가이드 중 주입 상한(_GUIDE_INJECT_MAX/_GUIDE_INJECT_CHAR_CAP) 이내분을 시스템
+    프롬프트에 덧붙이고, listings가 나오면 doc_rag_node와 동일하게(상위 최대 2개 제목)
+    결정론적 인용을 붙인다.
     """
     llm = _llm()  # 키 부재 시 여기서 fail-loud — 아래 재시도 루프 전에 즉시 실패.
 
     qvec = embed_query(query)  # 키 부재 시 여기서 fail-loud — 재시도 루프 전 1회만 계산.
     qvec_literal = _vec_literal(qvec)
-    guide = find_relevant_guide(qvec_literal)  # 컷오프(FR49) 이내일 때만 non-None(FR44).
+    guides = find_relevant_guide(qvec_literal)  # top-k 상대 게이트(FR49) 통과분(FR44).
 
     system_prompt = _SYSTEM_PROMPT
-    if guide:
-        system_prompt += _GUIDE_BLOCK_TEMPLATE.format(title=guide[0], content=guide[1])
+    injected_guides = _select_guides_to_inject(guides)
+    if injected_guides:
+        blocks = "".join(
+            _GUIDE_BLOCK_TEMPLATE.format(title=title, content=content)
+            for title, content in injected_guides
+        )
+        system_prompt += blocks + _GUIDE_PRIORITY_NOTE
 
     messages = [("system", system_prompt), ("human", query)]
     last_error: SqlGuardError | None = None
@@ -240,12 +277,15 @@ def hybrid_rag_node(query: str) -> dict:
             rows = run_select(safe_sql, (qvec_literal,))  # DW-559 — 임베딩 바인딩(호이스트 재사용)
             listings = attach_cover_images(rows_to_cards(rows))
             answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
-            # `guide[0]`은 도달 불가한 검사다 — 공백 제목은 find_relevant_guide가 이미 걸렀다
-            # (3회차 코드리뷰). `listings and`가 실제 게이트다: 0건이면 FR17 안내에 인용을 붙이지
-            # 않는다(AC3, I/O 매트릭스 5행). 이 조건이 사라져도 스위트가 초록이던 구멍은
-            # test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
-            if listings and guide and guide[0]:
-                answer += f" (참고: {guide[0]})"  # doc_rag_node와 동일한 결정론적 인용(AC2)
+            # 공백 제목은 find_relevant_guide가 이미 걸렀으니 guides의 title은 항상 비어
+            # 있지 않다(3회차 코드리뷰). `listings and`가 실제 게이트다: 0건이면 FR17 안내에
+            # 인용을 붙이지 않는다(AC3, I/O 매트릭스 5행). 이 조건이 사라져도 스위트가
+            # 초록이던 구멍은 test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
+            # 인용은 주입 상한(_select_guides_to_inject)과 무관하게 게이트 통과분 전체(guides)
+            # 중 상위 최대 2개를 쓴다 — doc_rag_node와 동일한 규칙(AC2).
+            if listings and guides:
+                titles = [title for title, _content in guides[:2]]
+                answer += f" (참고: {', '.join(titles)})"
             if listings and _has_superlative(query):
                 # 최상급이 있어도 HYBRID는 벡터 정렬만 적용한다 — 그 사실을 알린다(옵션 b).
                 # 0건이면(listings 없음) 이 캐비엇도 인용과 같은 이유로 붙이지 않는다.

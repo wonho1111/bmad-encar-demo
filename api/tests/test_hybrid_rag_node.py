@@ -9,9 +9,10 @@
   (3) 가드 차단 1회 후 재생성 성공 경로
   (4) 2회 연속 차단 시 SqlGuardError가 그대로 전파되는지
   (5) run_select가 (qvec,) params와 함께 호출되는지(임베딩 바인딩 배선 검사, DW-559)
-  (6) 가이드 질의확장(FR44/FR49, Story 13.6) — 컷오프 이내 가이드가 시스템 프롬프트에
-      실제로 주입되는지·컷오프 초과 가이드는 주입되지 않는지·가이드로만 도출된 조건이
-      최종 SQL·answer 인용에 반영되는지
+  (6) 가이드 질의확장(FR44/FR49, Story 13.6, top-k 상대 게이트로 전환) — 게이트 통과 가이드가
+      시스템 프롬프트에 실제로 주입되는지·상한 초과 가이드는 주입되지 않는지·주입 개수·
+      글자수 상한(_GUIDE_INJECT_MAX/_GUIDE_INJECT_CHAR_CAP)이 지켜지는지·가이드로만 도출된
+      조건이 최종 SQL·answer 인용(상위 최대 2개 제목)에 반영되는지
 
 ⚠️ find_relevant_guide()는 doc_rag_node.py에 정의돼 **그 모듈 자신의 run_select**를 참조한다
   (hybrid_rag_node.run_select를 패치해도 닿지 않는다 — 서로 다른 모듈 전역이다). hybrid_rag_node()가
@@ -29,7 +30,8 @@ from app.db.sql_guard import DEFAULT_LIMIT, SqlGuardError
 
 _LISTING_ID = "55555555-5555-4555-8555-555555555555"
 
-# 컷오프(0.3) 이내/초과 가이드 행 — (title, content, distance) 3-tuple(find_relevant_guide 계약).
+# 절대 상한(0.45) 이내/초과 가이드 행 — (title, content, distance) 3-tuple(find_relevant_guide
+# 계약). 단독 행이면 1등=자기 자신이라 마진 게이트는 항상 통과하고 상한만 갈린다.
 _GUIDE_ROW_WITHIN_CUTOFF = (
     "패밀리카로 무난한 차종 고르기", "중형차·SUV·RV, 5~7인승이 가족 용도로 무난하다.", 0.1,
 )
@@ -336,7 +338,7 @@ def test_hybrid_guard_rejection_retries_once_then_succeeds(monkeypatch):
 
     def counting_guide(qvec_literal):
         calls["guide"] += 1
-        return None
+        return []
 
     monkeypatch.setattr(node, "_llm", lambda: llm)
     monkeypatch.setattr(node, "embed_query", counting_embed)
@@ -416,7 +418,8 @@ def test_guide_within_cutoff_is_injected_into_system_prompt(monkeypatch):
     # hybrid가 가이드 조회에 **pgvector 텍스트 리터럴**을 넘기는지 못박는다(3회차 코드리뷰) —
     # qvec_literal 대신 qvec(list[float])을 넘기면 실 DB에서 ::vector 캐스팅이 실패해 500이
     # 되는데, 가짜가 params를 버리던 동안엔 이 변이가 전 스위트 초록으로 통과했다.
-    assert captured["guide_params"] == ("[0.1]", "[0.1]")
+    # 세 번째 값은 top-k 상수(doc_rag_node._GUIDE_TOP_K) — LIMIT %s 바인딩.
+    assert captured["guide_params"] == ("[0.1]", "[0.1]", doc_rag_node_module._GUIDE_TOP_K)
 
 
 def test_guide_beyond_cutoff_is_not_injected(monkeypatch):
@@ -462,6 +465,83 @@ def test_blank_guide_is_neither_injected_nor_cited(monkeypatch, guide_row):
     # 주입 자리도 함께 확인 — 가이드 블록의 우선순위 지시가 프롬프트에 들어가면 안 된다.
     system_prompt = llm.calls[0][0][1]
     assert "참고 가이드 문서" not in system_prompt
+
+
+# ── 다건 가이드 — 주입 개수 상한(_GUIDE_INJECT_MAX=3) ────────────────────
+def test_multiple_guides_injection_capped_at_max(monkeypatch):
+    """게이트를 4건이 통과해도 프롬프트에는 상위 최대 3개까지만 주입된다.
+
+    상충 매핑(서로 다른 페르소나 섹션)이 전부 프롬프트에 들어가 조건 AND 폭발로 0건이
+    되는 것을 막기 위한 상한 — doc_rag_node.py 상단 docstring이 밝히는 이유와 동일하다.
+    """
+    llm = _CapturingLLM("body_type = 'SUV'")
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    guide_rows = [
+        ("1등", "본문1", 0.10),
+        ("2등", "본문2", 0.11),
+        ("3등", "본문3", 0.12),
+        ("4등", "본문4", 0.13),
+    ]
+    _patch_guide_lookup(monkeypatch, guide_rows)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    node.hybrid_rag_node("아무 질의")
+
+    system_prompt = llm.calls[0][0][1]
+    assert "1등" in system_prompt and "2등" in system_prompt and "3등" in system_prompt
+    assert "4등" not in system_prompt  # 4번째는 주입 상한(_GUIDE_INJECT_MAX=3) 밖.
+
+
+def test_multiple_guides_injection_capped_at_char_budget(monkeypatch):
+    """content 누적 글자수가 `_GUIDE_INJECT_CHAR_CAP`(3000자)을 넘기면 그 문서부터 제외한다.
+
+    프롬프트 비대화 방지 — 상위 2개만으로 이미 3000자를 넘으면 3번째는 개수 상한(3개) 안에
+    있어도 주입되지 않는다.
+    """
+    llm = _CapturingLLM("body_type = 'SUV'")
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    guide_rows = [
+        ("1등", "가" * 1600, 0.10),
+        ("2등", "나" * 1600, 0.11),  # 누적 3200자 — 3000자 상한 초과, 여기서 끊긴다.
+        ("3등", "다" * 100, 0.12),
+    ]
+    _patch_guide_lookup(monkeypatch, guide_rows)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    node.hybrid_rag_node("아무 질의")
+
+    system_prompt = llm.calls[0][0][1]
+    assert "1등" in system_prompt
+    assert "2등" not in system_prompt  # 누적이 상한을 넘기는 순간부터 제외.
+    assert "3등" not in system_prompt
+
+
+# ── 다건 가이드 — 인용(answer)은 주입 상한과 무관하게 상위 최대 2개 제목 ──────
+def test_multiple_guides_citation_capped_at_two_titles(monkeypatch):
+    """게이트 통과분이 3건이어도(주입 상한 3 이내) answer 인용은 상위 최대 2개까지만.
+
+    doc_rag_node의 인용 규칙과 동일해야 한다(스펙 "답변 인용도 doc_rag_node와 동일 규칙").
+    """
+    llm = _FixedLLM(["body_type = 'SUV'"])
+    monkeypatch.setattr(node, "_llm", lambda: llm)
+    monkeypatch.setattr(node, "embed_query", lambda q: [0.1])
+    guide_rows = [
+        ("1등 가이드", "본문1", 0.10),
+        ("2등 가이드", "본문2", 0.11),
+        ("3등 가이드", "본문3", 0.12),
+    ]
+    _patch_guide_lookup(monkeypatch, guide_rows)
+    monkeypatch.setattr(node, "run_select", lambda sql, params=None: [_fake_row()])
+    monkeypatch.setattr(listing_cards, "run_select", lambda sql, params=None: [])
+
+    result = node.hybrid_rag_node("아무 질의")
+
+    assert result["answer"].endswith("(참고: 1등 가이드, 2등 가이드)")
+    assert "3등 가이드" not in result["answer"]
 
 
 # ── 최상급×HYBRID 정렬 캐비엇(옵션 b, spec-13-9 Design Notes) ───────────
