@@ -750,6 +750,35 @@ def test_limit_offset_bare_integers_still_pass_after_anchoring():
     assert out == sql
 
 
+# ── ARRAY 리터럴 — 옵션 동의어 그룹 검색용 `options && ARRAY[...]` (2026-08-29) ──────
+# `_SQL_KEYWORDS`에 "array"를 추가해 ARRAY[...] 리터럴 구성용 식별자를 통과시킨다.
+# 문자열 리터럴은 이미 지워진 뒤 검사되므로 이건 식별자 검사 예외일 뿐, 테이블·컬럼
+# 화이트리스트와 OR 금지는 그대로 걸린다(아래 두 대조군이 확인).
+def test_array_overlap_option_synonym_query_passes():
+    sql = (
+        "SELECT id, manufacturer, model, year, price, mileage, region FROM listings "
+        "WHERE status = 'on_sale' AND options && ARRAY['크루즈컨트롤','어댑티브크루즈'] LIMIT 5"
+    )
+    out = validate_select_sql(sql)
+    assert out == sql
+
+
+def test_array_overlap_query_with_or_still_rejected():
+    sql = (
+        "SELECT id FROM listings WHERE status = 'on_sale' "
+        "OR options && ARRAY['크루즈컨트롤','어댑티브크루즈'] LIMIT 5"
+    )
+    assert _code(sql) == "forbidden_or"
+
+
+def test_array_overlap_query_with_unwhitelisted_column_still_rejected():
+    sql = (
+        "SELECT id FROM listings WHERE status = 'on_sale' "
+        "AND storage_path && ARRAY['x'] LIMIT 5"
+    )
+    assert _code(sql) == "forbidden_column"
+
+
 def test_negation_inside_paren_group_still_rejected():
     """과잉 차단을 고치다 부정 우회까지 열지 않았는지 — 평탄화의 대조군.
 
