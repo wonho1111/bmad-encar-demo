@@ -28,6 +28,13 @@ dev = [
   "pytest",
   "httpx",   # FastAPI TestClient 백엔드
 ]
+# 3단계 시세 진단 엔진 — TabPFN 적정가 예측(HANDOFF.md §2). 설치는 하지 않는다:
+#   tabpfn 2.2.1과 sentence-transformers 6.x가 같은 venv에서 huggingface-hub 버전 충돌로
+#   공존 불가(실측, HANDOFF.md §0 표 7행) — 통합 설치 방식은 상위 세션이 판단한다.
+#   반드시 tabpfn>=2,<3(2.2.1) — 8.x는 기본 v3를 집어 PriorLabs 로그인을 요구한다(배제 확정).
+market = [
+  "tabpfn>=2,<3",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
