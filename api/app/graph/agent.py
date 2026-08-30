@@ -55,6 +55,17 @@ from app.graph.contextualize_node import contextualize_query
 from app.graph.guard_node import guard_node
 from app.schemas.ai import ClarifyPayload, ListingCard
 
+# LangSmith 루프 관제(4단계 요구): 루프 안의 LLM 2회+도구+최종화가 형제 런으로 흩어지지
+# 않고 run_search_agent 하나의 트레이스로 묶이게 한다. langsmith 미설치/트레이싱 꺼짐이면
+# @traceable은 no-op이라 동작에 영향이 없다(실측: 형제 4런 → 단일 트리, 2026-08-31).
+try:
+    from langsmith import traceable as _traceable
+except Exception:  # pragma: no cover - langsmith는 langchain-core 동반 설치가 기본
+    def _traceable(**_kwargs):
+        def _wrap(fn):
+            return fn
+        return _wrap
+
 logger = logging.getLogger(__name__)
 
 # 스텝 상한(설계 확정값) — 초과 시 그때까지의 도구 결과만으로 강제 최종 응답을 만든다.
@@ -169,6 +180,7 @@ def _system_prompt(listing_id: str | None) -> str:
     )
 
 
+@_traceable(name="run_search_agent", run_type="chain")
 def run_search_agent(query: str, context: list | None = None, listing_id: str | None = None) -> dict:
     """툴콜링 에이전트 루프를 1회 실행해 {answer, listings[], route, clarify, narrowed_by,
     market_diagnosis, tools_used}를 반환한다.
