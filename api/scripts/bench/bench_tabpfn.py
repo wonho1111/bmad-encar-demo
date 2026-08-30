@@ -11,7 +11,10 @@ import traceback
 import numpy as np
 import psutil
 
-OUT_PATH = os.path.join(os.path.dirname(__file__), "results_tabpfn.json")
+OUT_PATH = os.environ.get(
+    "BENCH_OUT",
+    os.path.join(os.path.dirname(__file__), "results_tabpfn.json"),
+)
 SEED = 42
 
 

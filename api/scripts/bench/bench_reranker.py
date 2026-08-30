@@ -15,12 +15,14 @@ import traceback
 
 import psutil
 
-CORPUS_DIR = r"C:\Users\dnjsg\workspace\bmad-encar-demo\api\corpus"
-OUT_PATH = os.path.join(os.path.dirname(__file__), "results_reranker.json")
+CORPUS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "corpus"))
+OUT_PATH = os.environ.get(
+    "BENCH_OUT",
+    os.path.join(os.path.dirname(__file__), "results_reranker.json"),
+)
 
 MODELS = [
     "BAAI/bge-reranker-v2-m3",
-    "dragonkue/bge-reranker-v2-m3-ko",
 ]
 
 QUERIES = [
@@ -71,7 +73,7 @@ def bench_one_model(model_name, sections):
     rss_before = rss_mb()
     t0 = time.time()
     try:
-        model = CrossEncoder(model_name, device="cpu")
+        model = CrossEncoder(model_name, device=os.environ.get("BENCH_DEVICE", "cpu"))
     except Exception as e:
         result["error_stage"] = "load model"
         result["error"] = repr(e)
