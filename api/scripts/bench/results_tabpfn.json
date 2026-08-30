@@ -1,0 +1,25 @@
+{
+  "rss_start_mb": 28.4,
+  "load_time_sec": 0.807,
+  "rss_after_construct_mb": 333.1,
+  "fit_time_sec": 10.411,
+  "rss_after_fit_mb": 458.3,
+  "predict_time_sec": 42.046,
+  "rss_peak_mb": 461.6,
+  "r2": 0.9213,
+  "mae_man_won": 111.09,
+  "y_test_sample_won": [
+    27326274,
+    33899819,
+    32316154,
+    25618731,
+    22891939
+  ],
+  "y_pred_sample_won": [
+    27679660.0,
+    33210856.0,
+    32385020.0,
+    26434788.0,
+    21580224.0
+  ]
+}
