@@ -239,6 +239,31 @@ def test_market_diagnosis_kept_when_single_listing(monkeypatch):
     assert result["market_diagnosis"] == diagnosis  # 카드 1장 → 진단 유지.
 
 
+def test_clarify_dropped_when_listings_also_selected(monkeypatch):
+    """매물과 clarify가 둘 다 채워진 모순 응답 — 검색 결과가 우선, clarify는 버린다
+    (회귀 실측 S1, 2026-08-31: 카드 0장 + '찾았다' 서술 + 되묻기 조합 방지)."""
+    card1 = ListingCard(id="aaa", manufacturer="기아", model="쏘렌토 MQ4", year=2021, price=1, mileage=1, region="서울")
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="쏘렌토 매물을 찾았어요.",
+        selected_listing_ids=["aaa"],
+        clarify=ClarifyPayload(question="예산은요?", chips=["2천만", "3천만"]),
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[card1])},
+    )
+
+    result = agent_module.run_search_agent("쏘렌토 있어?")
+    assert [c.id for c in result["listings"]] == ["aaa"]  # 매물 유지
+    assert result["clarify"] is None  # 모순된 clarify는 버려짐
+
+
 # ───────── (5) 결정론적 REJECT 사전 차단 ─────────
 
 def test_deterministic_reject_skips_llm_entirely(monkeypatch):

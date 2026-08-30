@@ -61,11 +61,61 @@ _SORT_WHITELIST: dict[str, str] = {
     "mileage_asc": "mileage ASC",
 }
 
+# listings.manufacturer/body_type CHECK 제약(supabase/migrations/0002_listings.sql)과 동일한
+# 화이트리스트 — LLM이 model_keyword 칸에 제조사·차종을 섞어 넣는 실측 오류(예:
+# model_keyword="현대 SUV" → model ILIKE '%현대 SUV%' = 0건, 정답은 manufacturer='현대' AND
+# body_type='SUV')를 코드가 토큰 단위로 되돌리는 데 쓴다. '기타'는 진짜 필터 의도가 없는
+# 캐치올 값이라 제외한다(사용자가 "기타"라고 말했다고 그걸 필터로 걸 이유가 없다).
+_MANUFACTURER_WHITELIST = {
+    "현대", "기아", "제네시스", "쉐보레", "르노코리아", "KG모빌리티",
+    "BMW", "벤츠", "아우디", "폭스바겐", "토요타", "혼다", "렉서스", "테슬라",
+}
+_BODY_TYPE_WHITELIST = {
+    "경차", "소형차", "준중형차", "중형차", "대형차", "스포츠카",
+    "SUV", "RV", "경승합차", "승합차", "화물차",
+}
+
+# listings.fuel CHECK 제약(0002)과 동일 — LLM이 '가솔린+전기' 같은 비실존 값을 지어내는 것 방지.
+_FUEL_WHITELIST = {"가솔린", "디젤", "하이브리드", "전기", "LPG"}
+
 # compare_listings에 한 번에 넣을 수 있는 최대 매물 수(설계 확정값) — 초과분은 앞에서부터 자른다.
 _COMPARE_MAX = 4
 
 # search_guides가 LLM에 넘기는 섹션당 본문 글자수 상한(doc_rag_node류와 동일 사상 — 프롬프트 비대화 방지).
 _GUIDE_CONTENT_CHAR_CAP = 1200
+
+
+def _normalize_model_keyword(
+    model_keyword: str | None, manufacturer: str | None, body_type: str | None
+) -> tuple[str | None, str | None, str | None]:
+    """model_keyword를 공백 기준 토큰으로 쪼개, 제조사·차종 화이트리스트에 걸리는 토큰은
+    각자 자리(manufacturer/body_type)로 옮기고 model 필터에서는 뺀다. 두 인자가 이미
+    채워져 있으면 값을 덮지 않고 겹치는 토큰만 버린다(LLM이 같은 값을 두 군데에 중복
+    입력한 경우도 안전). 남는 토큰이 없으면(전부 제조사·차종이었으면) model 필터는
+    생략한다 — 그래야 "현대 SUV"가 model ILIKE '%현대 SUV%'(0건 오검색)로 새지 않는다.
+    """
+    if not model_keyword:
+        return manufacturer, body_type, None
+    remaining: list[str] = []
+    for tok in model_keyword.split():
+        if tok in _MANUFACTURER_WHITELIST:
+            manufacturer = manufacturer or tok
+            continue
+        if tok in _BODY_TYPE_WHITELIST:
+            body_type = body_type or tok
+            continue
+        remaining.append(tok)
+    model_filter = " ".join(remaining) if remaining else None
+    return manufacturer, body_type, model_filter
+
+
+def _sanitize_ilike_fragment(text: str) -> str:
+    """ILIKE 패턴 조립 재료에서 와일드카드 특수문자(%·_)를 제거한다. options_any 값은
+    사용자/LLM이 자유 입력한 문자열이라, 그대로 패턴에 이어붙이면 %나 _가 의도치 않게
+    와일드카드로 해석된다(SQL 인젝션은 아니다 — 파라미터 바인딩은 유지되지만, 패턴의
+    '의미'가 사용자 입력에 흔들리는 문제).
+    """
+    return text.replace("%", "").replace("_", "")
 
 
 def _format_listing_summary(listings: list[ListingCard]) -> str:
@@ -108,19 +158,42 @@ def search_listings(
 
     query_text는 매물 성격을 요약한 자연어(정렬 기준이 similarity일 때 벡터 검색에 쓰인다).
     sort_by 생략 시 similarity(벡터 유사도순)가 기본이다. limit은 20을 넘길 수 없다(자동 보정).
+
+    model_keyword는 **모델명 전용**이다(예: "쏘렌토","아반떼") — 제조사·차종을 여기 넣지
+    말고 반드시 전용 인자(manufacturer/body_type)를 써라. 섞여 들어와도 코드가 토큰 단위로
+    걸러내긴 하지만, 전용 인자를 쓰는 편이 더 정확하다.
     options_any는 사용자가 요구한 옵션 문자열 목록(예: ["스마트키","통풍시트"]) — 하나라도
-    포함된 매물만 걸러진다.
+    포함된 매물만 걸러진다. 옵션명은 대략적으로 적어도 된다(공백·부분일치를 허용해 정규화
+    비교한다 — 예: "어댑티브 크루즈 컨트롤"도 DB의 "어댑티브크루즈"와 매칭된다).
     """
     limit = min(max(int(limit or _DEFAULT_SEARCH_LIMIT), 1), _MAX_SEARCH_LIMIT)
+
+    manufacturer, body_type, model_filter = _normalize_model_keyword(
+        model_keyword, manufacturer, body_type
+    )
+
+    # CHECK 허용값 검증 — LLM이 DB에 없는 축값을 지어내면(회귀 실측 H26: body_type='세단')
+    # 조용히 0건이 되는 대신, 허용 목록을 담은 에러를 던져 모델이 다음 스텝에서 스스로
+    # 고치게 한다(도구 실패 → ToolMessage → 재시도 회복은 실측 검증된 경로).
+    if body_type and body_type not in _BODY_TYPE_WHITELIST:
+        raise ValueError(
+            f"body_type '{body_type}'은(는) 존재하지 않는 값이다. "
+            f"허용값: {sorted(_BODY_TYPE_WHITELIST)}. "
+            "'세단'류는 크기 축(준중형차/중형차/대형차)으로 바꿔 지정하라."
+        )
+    if fuel and fuel not in _FUEL_WHITELIST:
+        raise ValueError(
+            f"fuel '{fuel}'은(는) 존재하지 않는 값이다. 허용값: {sorted(_FUEL_WHITELIST)}."
+        )
 
     clauses = ["status = 'on_sale'"]
     params: list = []
     if manufacturer:
         clauses.append("manufacturer = %s")
         params.append(manufacturer)
-    if model_keyword:
+    if model_filter:
         clauses.append("model ILIKE %s")
-        params.append(f"%{model_keyword}%")
+        params.append(f"%{model_filter}%")
     if body_type:
         clauses.append("body_type = %s")
         params.append(body_type)
@@ -146,8 +219,27 @@ def search_listings(
         clauses.append("accident_free = %s")
         params.append(True)
     if options_any:
-        clauses.append("options && %s::text[]")
-        params.append(list(options_any))
+        # 정확 일치(&&)는 LLM이 "어댑티브 크루즈 컨트롤"처럼 띄어쓰기 풀네임을 넣으면
+        # DB 실존 문자열("어댑티브크루즈")과 어긋나 0건으로 샌다(실측 결함). 공백 제거 +
+        # 양방향 부분일치로 바꿔 정규화 비교한다 — options_any 중 하나라도 매칭되면 통과
+        # (any 의미 유지). 파라미터 바인딩은 그대로 유지(요청값은 %s 배열로만 전달, SQL
+        # 텍스트에 직접 삽입하지 않는다). 요청값의 %·_는 와일드카드 오염 방지로 제거한다
+        # (_sanitize_ilike_fragment) — psycopg는 params가 있으면 SQL 텍스트 전체에서 '%'를
+        # 자리표시자로 스캔하므로, 패턴 조립에 쓰는 리터럴 '%'도 '%%'로 이스케이프한다
+        # (hybrid_rag_node.py와 동일 이유).
+        normalized_options = [
+            _sanitize_ilike_fragment(opt).replace(" ", "")
+            for opt in options_any
+            if opt and opt.strip()
+        ]
+        normalized_options = [o for o in normalized_options if o]
+        if normalized_options:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM unnest(options) o CROSS JOIN unnest(%s::text[]) req "
+                "WHERE replace(o, ' ', '') ILIKE '%%' || req || '%%' "
+                "OR req ILIKE '%%' || replace(o, ' ', '') || '%%')"
+            )
+            params.append(normalized_options)
     where_sql = " AND ".join(clauses)
 
     if sort_by is None or sort_by == "similarity":

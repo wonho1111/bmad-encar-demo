@@ -94,7 +94,8 @@ _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전�
 전혀 없음) 매물을 검색하지 말고 도구를 호출하지 말고, 최종 응답의 clarify 필드를 채워서
 되물어라 — question은 무엇이 부족한지 짧게 묻고, chips는 그 질의 맥락에 맞는 후보 2~4개를
 직접 만들어라(고정 문구를 반복하지 말고 질의 내용에 맞춰라). clarify를 채울 때 answer는
-짧은 안내 한 줄만 남긴다.
+짧은 안내 한 줄만 남긴다. 단, 매물을 이미 찾아 제시할 수 있으면 clarify가 아니라 매물 제시가
+정답이다 — '쏘렌토 있어?' 같은 재고 확인 질의도 매물을 보여주며 답한다.
 
 [금지 사항]
 - 수치(시세·통계·가격·연식·주행거리 등)는 도구가 실제로 돌려준 값만 인용한다 — 지어내지
@@ -161,10 +162,23 @@ def _reject_result(query: str) -> dict:
     }
 
 
-def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list) -> _AgentFinalOutput:
-    """도구 없이 structured output 1회 호출로 최종 응답을 만든다(router_node와 동일 관례)."""
+def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int = 0) -> _AgentFinalOutput:
+    """도구 없이 structured output 1회 호출로 최종 응답을 만든다(router_node와 동일 관례).
+
+    found_count: 루프 동안 도구가 실제로 찾은 매물 수. 0이 아니면 최종화 지시에 사실로
+    주입한다 — 회귀 실측(S1·S14, 2026-08-31): 도구가 매물을 찾았는데도 최종화 LLM이
+    selected_listing_ids를 비우고 "찾았다"는 서술+되묻기만 내는 자기모순 응답을 냈다.
+    """
     structured = base_llm.with_structured_output(_AgentFinalOutput)
-    return structured.invoke(messages + [HumanMessage(_FINALIZE_INSTRUCTION)])
+    instruction = _FINALIZE_INSTRUCTION
+    if found_count:
+        instruction += (
+            f"\n[사실] 도구가 이번 대화에서 매물 {found_count}건을 실제로 찾았다. 사용자 의도가 "
+            "매물 탐색·조회('쏘렌토 있어?' 같은 재고 확인 포함)라면 그중 조건에 맞는 3~5건의 id를 "
+            "selected_listing_ids에 반드시 채워라 — 찾았다고 서술만 하고 목록을 비우는 응답은 "
+            "금지다. 매물을 골랐다면 clarify는 채우지 마라."
+        )
+    return structured.invoke(messages + [HumanMessage(instruction)])
 
 
 def _system_prompt(listing_id: str | None) -> str:
@@ -250,12 +264,15 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 지금까지 쌓인 messages로 최종 구조화 응답을 1회 만든다(설계: "도구 결과까지로 강제
     # 최종 응답" — 자연 종료 경로도 같은 structured-output 관문을 거쳐야 계약이 일정하다).
 
-    final = _finalize(base_llm, messages)
+    final = _finalize(base_llm, messages, found_count=len(seen_listings))
 
     listings = [seen_listings[lid] for lid in final.selected_listing_ids if lid in seen_listings]
     clarify = final.clarify
-    if clarify is not None:
-        listings = []  # 기존 CLARIFY 경로(clarify_node)와 동일 계약 — 되물을 땐 매물 없음.
+    if clarify is not None and listings:
+        # 모순 응답 방지(회귀 실측 S1): 매물을 골라놓고 clarify까지 채우면 검색 결과가 우선 —
+        # 카드 0장 + "찾았다" 서술 + 되묻기 조합보다 매물 제시가 항상 낫다. 순수 되묻기
+        # (selected 비어 있음)는 기존 계약대로 매물 없음이 자연 유지된다.
+        clarify = None
 
     # 진단 차트는 "매물 하나의 시세 진단"일 때만 노출한다 — 추천 흐름(카드 2장 이상)에서
     # 에이전트가 후보 검증용으로 market_price_stats를 여러 번 불러도, 마지막 1건의 차트만

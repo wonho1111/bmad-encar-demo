@@ -1,0 +1,232 @@
+"""4단계 에이전트 전환(run_search_agent, agent.py) 성능 회귀 검증기.
+
+목적: 직전 RAG 개선 세션(커밋 42e5b1c~968bade, "E2E 10질의 검증")이 확인했던 동작과
+  DW-847(동적 되묻기)·DW-848(정렬 축) resolved 지점이, 그래프 기반 run_search(graph.py)에서
+  툴콜링 에이전트 run_search_agent(agent.py)로 넘어온 뒤에도 여전히 성립하는지 실측한다.
+
+질의 출처(우선순위):
+  1. `api/docs/ai-ab-test-queryset.json` — 2026-08-02 재설계된 골든 질의셋(S=SQL 14·H=HYBRID 27·
+     CL=CLARIFY 7·R=REJECT 8·M=멀티턴 8, 총 64항목). score_ab.py/run_phase_b.py가 채점에 쓰던
+     것과 동일 출처 — "직전 RAG 수정 작업"이 실제로 검증 기준으로 삼았던 질의셋이다.
+  2. `_bmad-output/implementation-artifacts/deferred-work.md`의 DW-847·DW-848 resolution에 박힌
+     실측 질의 원문("차 추천해줘", "3천만원 이하 하이브리드 SUV 연식 최신순") — 4단계 완료
+     당시 사람이 직접 돌려 확인한 질의라 그대로 재사용한다.
+  3. `api/scripts/bench/bench_reranker.py`의 QUERIES(8건, 리랭커 품질 벤치용) — 이번 회귀에는
+     보충하지 않는다(1·2에서 이미 10건을 넘겨 충분).
+
+기계 판정 가능한 것만 본다(LLM 응답은 비결정적 — 문구 완전일치 단언 금지):
+  - "search": listings가 min_listings건 이상 반환돼야 한다.
+  - "reject": listings가 0건이어야 한다(매물 무관 질의에 매물을 지어내면 회귀).
+  - "clarify_ok": listings>=1 이거나 clarify가 채워져야 한다(모호 질의는 둘 다 정답 —
+    되묻기 대신 에이전트가 가이드 지식으로 실제로 검색해도 정답으로 인정, 4단계의 의도된
+    확장이다. DW-847 참조).
+  - "sorted_year_desc": listings의 year가 비증가(내림차순)여야 한다.
+  - "guide": answer에 expected_keywords 중 1개 이상(소문자 비교)이 있어야 한다.
+  각 항목에 tools_expected(부분집합)를 얹으면 tools_used가 그 도구들을 포함하는지도 본다.
+
+실행:
+  cd api && .venv/bin/python scripts/verify_agent_regression.py
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.graph.agent import run_search_agent  # noqa: E402
+
+# ── 질의 목록 ────────────────────────────────────────────────────────────────
+# id: 출처 문서의 원 id를 그대로 보존(추적용). kind: 판정 방식. 나머지는 kind별 부가 기대값.
+QUERIES: list[dict] = [
+    # --- SQL(구조조건 검색) — ai-ab-test-queryset.json S그룹. 실제 매물이 나와야 한다.
+    {"id": "S1", "query": "3천만원 이하 SUV 보여줘", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "S4", "query": "디젤 SUV 7인승 이상으로 알려줘", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "S8", "query": "현대 SUV 중에 주행거리 3만km 이하인 거", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "S13", "query": "아반떼 보여줘", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "S14", "query": "쏘렌토 있어?", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+
+    # --- HYBRID(구조조건+의미 narrowing) — H그룹. 가이드 지식으로 조건을 뽑아도 결국 매물이 나와야 한다.
+    {"id": "H1", "query": "3천만원 이하로 무난한 패밀리카 찾아줘", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "H2", "query": "2천만원 이하로 초보운전자가 몰기 편한 차 보여줘", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "H9", "query": "2천만원 이하로 주차하기 쉬운 작은 차 알려줘", "kind": "search",
+     "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "H19", "query": "4천만원 이하로 장거리 출퇴근 유지비 적고 어댑티브크루즈 있는 무사고 차",
+     "kind": "search", "min_listings": 1, "tools_expected": ["search_listings"]},
+    {"id": "H26", "query": "2018년 이후 무사고 중형·대형 세단 중에 내비게이션 있고 장거리 운전이 편한 차",
+     "kind": "search", "min_listings": 1, "tools_expected": ["search_listings"]},
+
+    # --- CLARIFY(모호) — CL그룹. 옛 그래프는 고정 되묻기만 냈지만, 에이전트는 가이드 지식으로
+    # 실제 검색해도 된다(DW-847이 이 확장을 의도적으로 만들었다) — 그래서 관대하게 둘 다 정답.
+    {"id": "CL1", "query": "초보운전자 첫차로 뭐가 좋아?", "kind": "clarify_ok"},
+    {"id": "CL3", "query": "그냥 괜찮은 차 아무거나 추천해줘", "kind": "clarify_ok"},
+    {"id": "CL6", "query": "사회 초년생이 탈만한 저렴한 차 추천해줘", "kind": "clarify_ok"},
+    {"id": "CL7", "query": "주행거리 많은 차 사도 괜찮을까?", "kind": "clarify_ok"},
+
+    # --- REJECT(매물 무관) — R그룹. 매물을 지어내면(listings>0) 회귀.
+    {"id": "R1", "query": "오늘 서울 날씨 어때?", "kind": "reject"},
+    {"id": "R2", "query": "김치찌개 맛있게 끓이는 법 알려줘", "kind": "reject"},
+    {"id": "R3", "query": "비트코인 지금 사도 돼?", "kind": "reject"},
+    {"id": "R4", "query": "차 살 때 할부랑 리스 뭐가 달라?", "kind": "reject"},
+    {"id": "R6", "query": "자동차 보험료 어떻게 하면 아낄 수 있어?", "kind": "reject"},
+    # R7은 _FINANCE_SIGNALS 키워드(할부·보험 등)가 없어 결정론 사전차단을 안 타는 REJECT
+    # 후보다 — 에이전트가 순수 LLM 판단만으로도 매물 무관 지식 질문임을 여전히 걸러내는지
+    # 보는 항목(사전차단에 안전망으로 얹혀가던 게 아니라 진짜 판단력을 보는 케이스).
+    {"id": "R7", "query": "중고차 살 때 사고이력이랑 침수차 어떻게 확인해?", "kind": "reject"},
+
+    # --- DW-848 resolved 지점 — search_listings의 sort_by=year_desc 화이트리스트 경로가
+    # 에이전트 루프 끝까지(최종 구조화 출력의 listings 순서까지) 실제로 내림차순을 유지하는지.
+    {"id": "DW848-sort", "query": "3천만원 이하 하이브리드 SUV 연식 최신순", "kind": "sorted_year_desc",
+     "min_listings": 2, "tools_expected": ["search_listings"]},
+
+    # --- DW-847 resolved 지점 — 고정 템플릿이 아니라 맥락 기반 동적 되묻기(또는 실제 검색)가
+    # 나오는지. 원 트리거 문구 그대로("차 추천해줘"는 예산·용도·차종이 전혀 없는 완전 모호 질의).
+    {"id": "DW847-dynamic-clarify", "query": "차 추천해줘", "kind": "clarify_ok"},
+]
+
+
+# ── 판정 함수 ────────────────────────────────────────────────────────────────
+
+def _check_tools_expected(result: dict, expects: dict) -> str | None:
+    """tools_expected(부분집합)가 있으면 검사. 위반 시 사유 문자열, 통과면 None."""
+    tools_expected = expects.get("tools_expected")
+    if not tools_expected:
+        return None
+    tools_used = set(result.get("tools_used") or [])
+    missing = [t for t in tools_expected if t not in tools_used]
+    if missing:
+        return f"tools_expected 미충족: {missing} (실제 tools_used={result.get('tools_used')})"
+    return None
+
+
+def judge(expects: dict, result: dict) -> tuple[bool, str]:
+    """(pass 여부, 사유) 반환. 사유는 PASS든 FAIL이든 남긴다(로그용)."""
+    kind = expects["kind"]
+    listings = result.get("listings") or []
+    clarify = result.get("clarify")
+    tool_reason = _check_tools_expected(result, expects)
+
+    if kind == "search":
+        min_n = expects.get("min_listings", 1)
+        if len(listings) < min_n:
+            return False, f"listings {len(listings)}건 < min_listings {min_n}"
+        if tool_reason:
+            return False, tool_reason
+        return True, f"listings {len(listings)}건"
+
+    if kind == "reject":
+        if len(listings) != 0:
+            ids = [l.id for l in listings]
+            return False, f"매물 무관 질의인데 listings {len(listings)}건 반환됨: {ids}"
+        return True, "listings 0건(거절/무관 판단 유지)"
+
+    if kind == "clarify_ok":
+        if clarify is not None:
+            chips = clarify.get("chips") if isinstance(clarify, dict) else None
+            return True, f"clarify 채움(chips={chips})"
+        if len(listings) >= 1:
+            if tool_reason:
+                return False, tool_reason
+            return True, f"clarify 대신 실제 검색: listings {len(listings)}건"
+        return False, "clarify도 없고 listings도 0건(막다른 응답)"
+
+    if kind == "sorted_year_desc":
+        min_n = expects.get("min_listings", 1)
+        if len(listings) < min_n:
+            return False, f"listings {len(listings)}건 < min_listings {min_n}"
+        years = [l.year for l in listings]
+        if any(years[i] < years[i + 1] for i in range(len(years) - 1)):
+            return False, f"year 내림차순 아님: {years}"
+        if tool_reason:
+            return False, tool_reason
+        return True, f"year 내림차순 확인: {years}"
+
+    if kind == "guide":
+        keywords = [k.lower() for k in expects.get("expected_keywords", [])]
+        answer_low = (result.get("answer") or "").lower()
+        hit = [k for k in keywords if k in answer_low]
+        if not hit:
+            return False, f"expected_keywords {keywords} 중 answer에 매칭 0개"
+        if tool_reason:
+            return False, tool_reason
+        return True, f"키워드 매칭: {hit}"
+
+    return False, f"알 수 없는 kind: {kind}"
+
+
+# ── 실행 ─────────────────────────────────────────────────────────────────────
+
+def run_once() -> tuple[list[dict], float]:
+    """QUERIES 전체를 문맥 없이(단발) 순차 실행. (결과 행 목록, 총 소요초) 반환."""
+    rows: list[dict] = []
+    t_start = time.time()
+    for expects in QUERIES:
+        qid, query = expects["id"], expects["query"]
+        t0 = time.time()
+        try:
+            result = run_search_agent(query, context=None, listing_id=None)
+            elapsed = time.time() - t0
+            ok, reason = judge(expects, result)
+            rows.append({
+                "id": qid, "query": query, "kind": expects["kind"],
+                "pass": ok, "reason": reason, "elapsed": elapsed,
+                "tools_used": result.get("tools_used"),
+                "n_listings": len(result.get("listings") or []),
+                "answer": result.get("answer"),
+                "clarify": result.get("clarify"),
+            })
+        except Exception as exc:  # 도구/LLM 예외도 FAIL로 집계(회귀일 수 있으니 죽이지 않는다)
+            elapsed = time.time() - t0
+            rows.append({
+                "id": qid, "query": query, "kind": expects["kind"],
+                "pass": False, "reason": f"예외 발생: {exc!r}", "elapsed": elapsed,
+                "tools_used": None, "n_listings": None, "answer": None, "clarify": None,
+            })
+        status = "PASS" if rows[-1]["pass"] else "FAIL"
+        print(f"[{status}] {qid:22s} ({rows[-1]['elapsed']:5.1f}s) {rows[-1]['reason']}")
+    total = time.time() - t_start
+    return rows, total
+
+
+def print_table(rows: list[dict], total: float) -> None:
+    print("\n" + "=" * 100)
+    print(f"{'id':22s} {'kind':16s} {'결과':6s} {'소요':>6s}  사유")
+    print("-" * 100)
+    n_pass = 0
+    for r in rows:
+        status = "PASS" if r["pass"] else "FAIL"
+        n_pass += r["pass"]
+        print(f"{r['id']:22s} {r['kind']:16s} {status:6s} {r['elapsed']:5.1f}s  {r['reason']}")
+    print("-" * 100)
+    print(f"총 {len(rows)}건 중 {n_pass} PASS / {len(rows) - n_pass} FAIL — 소요 {total:.1f}s")
+    print("=" * 100)
+
+
+def main() -> int:
+    rows, total = run_once()
+    print_table(rows, total)
+    failed = [r for r in rows if not r["pass"]]
+    if failed:
+        print("\nFAIL 상세:")
+        for r in failed:
+            print(f"\n--- {r['id']} ({r['query']!r}) ---")
+            print(f"  사유: {r['reason']}")
+            print(f"  tools_used: {r['tools_used']}")
+            print(f"  n_listings: {r['n_listings']}")
+            print(f"  clarify: {r['clarify']}")
+            print(f"  answer: {r['answer']}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
