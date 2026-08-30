@@ -132,12 +132,15 @@ export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosi
   const hasChart = stats !== null && comps.length > 0;
 
   // 대상가와 유사매물 중앙값의 차이(④ 통계 3칸 세 번째 칸 보조 라벨) — stats가 있을 때만 계산.
+  // ⚠️ 판정 단어(저렴/높음)를 여기 붙이지 않는다 — 판정 배지는 사분위(q1/q3) 기준이라
+  //   부호 기반 단어와 어긋날 수 있고(실측: 배지 '적정'인데 라벨 '높음 +7%'), 사용자가
+  //   "무슨 %인지 모르겠다"고 지적함. 기준을 명시한 중립 표기로 통일(2026-08-31).
   const diffLabel = (() => {
     if (!stats || stats.median === 0) return null;
     const diffPct = ((listing.price - stats.median) / stats.median) * 100;
     const rounded = Math.round(diffPct * 10) / 10;
     if (rounded === 0) return '중앙값과 동일';
-    return rounded < 0 ? `저렴 ${rounded}%` : `높음 +${rounded}%`;
+    return rounded < 0 ? `중앙값 대비 ${rounded}%` : `중앙값 대비 +${rounded}%`;
   })();
 
   return (

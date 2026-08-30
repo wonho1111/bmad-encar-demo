@@ -257,6 +257,13 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     if clarify is not None:
         listings = []  # 기존 CLARIFY 경로(clarify_node)와 동일 계약 — 되물을 땐 매물 없음.
 
+    # 진단 차트는 "매물 하나의 시세 진단"일 때만 노출한다 — 추천 흐름(카드 2장 이상)에서
+    # 에이전트가 후보 검증용으로 market_price_stats를 여러 번 불러도, 마지막 1건의 차트만
+    # 덜렁 붙어 혼란스럽다는 사용자 실측 지적(2026-08-31). 내부 도구 사용은 그대로 두고
+    # 노출만 거른다(결정론 규칙 — LLM 판단에 맡기지 않음).
+    if market_diagnosis is not None and len(listings) > 1:
+        market_diagnosis = None
+
     logger.info(
         "run_search_agent 질의=%r → 도구=%r 매물=%d건 clarify=%s",
         effective_query, tools_used, len(listings), clarify is not None,

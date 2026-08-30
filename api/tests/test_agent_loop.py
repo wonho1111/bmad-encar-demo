@@ -185,6 +185,60 @@ def test_market_diagnosis_from_last_market_price_stats_call(monkeypatch):
     assert result["market_diagnosis"] == diagnosis
 
 
+def test_market_diagnosis_suppressed_when_multiple_listings_recommended(monkeypatch):
+    """추천 흐름(카드 2장 이상)에서는 진단 차트를 노출하지 않는다 — 마지막 1건 차트만 덜렁
+    붙는 혼란(사용자 실측 지적, 2026-08-31)의 결정론 억제 규칙."""
+    diagnosis = {"verdict": "저렴", "percentile": 0.1}
+    card1 = ListingCard(id="aaa", manufacturer="현대", model="그랜저 IG", year=2018, price=1, mileage=1, region="서울")
+    card2 = ListingCard(id="bbb", manufacturer="현대", model="그랜저 IG", year=2019, price=2, mileage=2, region="전북")
+
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "bbb"}, "id": "call-2"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="가격 대비 좋은 2건을 추천해요.", selected_listing_ids=["aaa", "bbb"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[card1, card2]),
+         "market_price_stats": _FakeTool("market_price_stats", artifact=diagnosis)},
+    )
+
+    result = agent_module.run_search_agent("그랜저 IG 가성비 좋은 것 추천해줘")
+    assert len(result["listings"]) == 2
+    assert result["market_diagnosis"] is None  # 카드 2장 이상 → 차트 억제.
+
+
+def test_market_diagnosis_kept_when_single_listing(monkeypatch):
+    """카드 1장(시세 진단 흐름)에서는 진단이 그대로 노출된다 — 억제 규칙의 경계 확인."""
+    diagnosis = {"verdict": "적정", "percentile": 0.5}
+    card1 = ListingCard(id="aaa", manufacturer="현대", model="그랜저 IG", year=2019, price=1, mileage=1, region="전북")
+
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "aaa"}, "id": "call-2"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="이 매물 시세입니다.", selected_listing_ids=["aaa"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[card1]),
+         "market_price_stats": _FakeTool("market_price_stats", artifact=diagnosis)},
+    )
+
+    result = agent_module.run_search_agent("이 매물 시세 알려줘")
+    assert len(result["listings"]) == 1
+    assert result["market_diagnosis"] == diagnosis  # 카드 1장 → 진단 유지.
+
+
 # ───────── (5) 결정론적 REJECT 사전 차단 ─────────
 
 def test_deterministic_reject_skips_llm_entirely(monkeypatch):
