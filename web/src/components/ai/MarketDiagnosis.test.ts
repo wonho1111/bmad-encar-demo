@@ -68,3 +68,19 @@ describe('buildCriteriaChips', () => {
 // 이 검사가 안 보는 것: RUNG_DISPLAY 표 자체가 백엔드 LADDER와 실제로 일치하는지는 여기서
 // 확인할 수 없다(두 언어·두 파일에 각각 선언된 상수라 자동 비교가 안 된다) — 사다리를 바꿀 때
 // 사람이 두 표를 함께 고쳐야 한다는 사실은 여전히 주석으로만 지켜진다.
+
+// 통계값 표기 회귀: percentile_cont 보간 중앙값(만원 단위 깨짐)이 원 표기로 새지 않아야 한다
+// (실측 버그 2026-08-31: 표본 8건 중앙값 13,475,000 → "13,475,000원"으로 혼자 길게 표기됨).
+import { formatStatPrice } from '@/lib/price';
+
+describe('formatStatPrice', () => {
+  it('보간된 중앙값을 만원 반올림해 표기한다', () => {
+    expect(formatStatPrice(13_475_000)).toBe('1,348만원');
+  });
+  it('만원 단위 값은 formatPrice와 동일하다', () => {
+    expect(formatStatPrice(17_800_000)).toBe('1,780만원');
+  });
+  it('반올림 경계(내림)', () => {
+    expect(formatStatPrice(13_474_999)).toBe('1,347만원');
+  });
+});

@@ -13,7 +13,7 @@
 //
 // ⚠️ mock(사용자 확정 목업)은 자동차365 참고선·표기를 포함하지만, 상위 결정으로 이 프로젝트는
 //   그 데이터를 갖고 있지 않아(실데이터 없음) 구현하지 않는다 — 각주는 TabPFN·표본 수 두 줄뿐이다.
-import { formatPrice } from '@/lib/price';
+import { formatPrice, formatStatPrice } from '@/lib/price';
 import MarketDiagnosisChart from './MarketDiagnosisChart';
 
 export type MarketDiagnosisListing = {
@@ -197,7 +197,7 @@ export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosi
 
       {/* ④ 통계 3칸 */}
       <div className="grid grid-cols-3 gap-2.5">
-        <StatCell label="유사 매물 중앙값" value={stats ? formatPrice(stats.median) : '—'} />
+        <StatCell label="유사 매물 중앙값" value={stats ? formatStatPrice(stats.median) : '—'} />
         <StatCell
           label="모델 예측 적정가"
           value={tabpfn.price !== null ? formatPrice(tabpfn.price) : '표본 부족'}
