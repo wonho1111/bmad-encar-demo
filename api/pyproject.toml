@@ -13,6 +13,9 @@ dependencies = [
   "psycopg[binary,pool]",  # 읽기전용 롤 트랜잭션 격리(SET LOCAL) + 커넥션 풀(AC-DB-1)
   "pydantic-settings",   # config.py env 로드(fail-loud)
   "python-dotenv",       # config.py가 dotenv_values 직접 사용(LangSmith env 승격, DW-658)
+  "httpx",               # app/rerank_client.py가 리랭커 사이드카를 직접 호출(4단계 부품 A).
+                          # (supabase가 전이 의존성으로 이미 딸려오지만, 앱 코드가 직접
+                          # import하므로 명시 선언 — 상위 패키지가 의존성을 바꿔도 안 깨진다.)
 ]
 
 [project.optional-dependencies]
@@ -23,10 +26,14 @@ ai = [
   "langchain-google-genai",
   "pgvector",
   "sqlparse",            # 4.3 — LLM이 만든 SELECT를 토큰 단위로 검증(결정론적 sql_guard)
+  # langchain-google-genai·langgraph의 전이 의존성으로 이미 딸려오지만, app/graph/agent.py·
+  # agent_tools.py(4단계 부품 B)가 @tool·ToolMessage 등을 직접 import하므로 명시 선언한다
+  # (상위 패키지가 의존성을 바꿔도 안 깨진다 — 위 httpx 주석과 동일 원칙).
+  "langchain-core",
 ]
 dev = [
   "pytest",
-  "httpx",   # FastAPI TestClient 백엔드
+  # httpx는 이제 본 dependencies에 있다(FastAPI TestClient 백엔드로도 그대로 쓰인다).
 ]
 # 3단계 시세 진단 엔진 — TabPFN 적정가 예측(HANDOFF.md §2). 설치는 하지 않는다:
 #   tabpfn 2.2.1과 sentence-transformers 6.x가 같은 venv에서 huggingface-hub 버전 충돌로

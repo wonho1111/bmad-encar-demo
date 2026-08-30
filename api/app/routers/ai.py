@@ -20,6 +20,12 @@
   풀(readonly.py)도 동기라 스레드에서 안전하게 동작한다.
 8.4 코드리뷰 패치: 동시 요청이 DB 풀(max_size=8)보다 많으면 커넥션 대여가 타임아웃될 수
   있다(PoolTimeout). 기존 catch-all(500)로 흘려보내는 대신 503으로 즉시 안내한다.
+
+4단계 부품 B: `settings.ai_agent_mode`(기본 True)로 run_search_agent(툴콜링 에이전트, agent.py)
+  와 기존 run_search(고정 4분기 그래프, graph.py)를 스위치한다 — 둘 다 시그니처
+  `(query, context) -> dict`가 같고 반환 계약도 {answer, listings, clarify, narrowed_by}
+  (+에이전트는 market_diagnosis)로 호환되므로 아래 실행부는 어느 쪽이 골라지든 그대로 쓴다.
+  False로 되돌리면 즉시 기존 그래프 경로로 회귀한다(롤백 스위치).
 """
 
 import asyncio
@@ -29,7 +35,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from psycopg_pool import PoolTimeout
 
 from ..auth import get_current_user
+from ..config import settings
 from ..db.sql_guard import SqlGuardError
+from ..graph.agent import run_search_agent
 from ..graph.graph import run_search
 from ..schemas.ai import SearchRequest, SearchResponse
 
@@ -43,9 +51,11 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
     # get_current_user 의존성: 유효 토큰이 없으면 401. AI 검색은 호출당 Gemini 실비가 나가는
     # "행동"이라 로그인 필수다(conventions.md §8) — 신원이 유일한 과금 울타리다.
     try:
-        # 맥락화→라우터→경로→answer 그래프. context가 있으면 후속 질의를 독립 질의로 재작성해 반영(FR18).
+        # ai_agent_mode 스위치(4단계 부품 B) — 둘 다 (query, context) -> dict 시그니처가
+        # 같으므로 아래 실행부는 어느 쪽이 골라지든 동일하게 쓴다.
+        pipeline = run_search_agent if settings.ai_agent_mode else run_search
         # 동기 파이프라인 전체(LLM+DB)를 스레드풀로 넘겨 이벤트 루프를 막지 않는다(AC-DB-1 FR50).
-        result = await asyncio.to_thread(run_search, req.query, req.context)
+        result = await asyncio.to_thread(pipeline, req.query, req.context)
         # DW-593 해결(13.5): 응답 조립(SearchResponse 검증)을 try 안으로 옮겨, 스키마 위반이면
         # 아래 except Exception(CORS 안쪽, 500)이 잡는다 — try 밖에 있으면 그 500은 main.py
         # 전역 핸들러(CORS 바깥)로 나가 Access-Control-Allow-Origin이 빠진다(원인 은폐).
@@ -54,6 +64,7 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
             listings=result["listings"],
             clarify=result.get("clarify"),
             narrowed_by=result.get("narrowed_by"),
+            market_diagnosis=result.get("market_diagnosis"),
         )
     except SqlGuardError as exc:
         # 가드 차단·재시도 실패 — 사용자에게 의미 있는 한국어 안내(400). 서버 500 누출 금지(AC3).

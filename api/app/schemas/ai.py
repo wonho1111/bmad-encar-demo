@@ -109,6 +109,10 @@ class SearchResponse(BaseModel):
     # REJECT 전용 고정 상수 사유 술어 배열(FR47, CR4, Story 13.5) — additive, 기존 소비처 회귀 없음.
     # REJECT가 아닌 경로(SQL/HYBRID/CLARIFY)는 None.
     narrowed_by: list[str] | None = None
+    # 에이전트 경로(route=AGENT, 4단계 부품 B) 전용 — market_price_stats 도구의 마지막 호출
+    # 결과(app/market_price.diagnose()가 만든 dict 그대로)를 옵션 필드로 노출한다. 기존
+    # run_search 경로는 이 값을 채우지 않으므로 항상 None(additive, 기존 클라이언트 회귀 없음).
+    market_diagnosis: dict | None = None
 
 
 class ErrorBody(BaseModel):

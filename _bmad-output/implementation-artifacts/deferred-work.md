@@ -6978,7 +6978,7 @@ location: api/app/graph/clarify_node.py
 severity: medium
 reason: 당시엔 비용 절감 결정이었으나, 옵션 동의어·모호 조건 확인("어댑티브크루즈도 볼까요?") 같은 보완 수단으로 쓰려면 맥락 기반 동적 되묻기가 필요.
 trigger: AI 고도화(에이전트화) 과제 설계 시 요구사항으로 편입 — 에이전트 구조에선 되묻기가 도구 호출의 자연스러운 일부가 된다.
-status: open
+status: resolved (2026-08-30, AI 고도화 4단계) — 에이전트 전환으로 되묻기가 최종 응답의 동적 필드가 됨: app/graph/agent.py가 맥락 기반 질문+칩을 생성(고정 템플릿 clarify_node는 레거시 경로 전용으로 잔존). 실측: "차 추천해줘" → 매번 다른 맥락 칩 4개 생성 확인. 검증: tests/test_agent_loop.py.
 
 ### DW-848: 정렬 요청 축이 벡터 유사도에 묻힌다 — "연식은 최신일수록"이 반영 안 됨
 
@@ -6987,7 +6987,7 @@ location: api/app/graph/hybrid_rag_node.py 정렬부
 severity: medium
 reason: 정렬 축 추가는 sql_guard의 ORDER BY 고정 모양과 충돌해 설계가 필요. 수리비→연료 매핑 부재는 제외 코퍼스(DW-843) 복귀와 얽혀 있어 함께 봐야 함.
 trigger: DW-843 코퍼스 복귀 실측과 같은 회차에 — 근거 문서 복귀 후에도 정렬이 안 되면 그때 정렬 설계(파이썬 후정렬이 최소안).
-status: open
+status: resolved (2026-08-30, AI 고도화 4단계) — search_listings 도구의 sort_by 화이트리스트 ORDER BY(price/year/mileage 축)로 해결: app/graph/agent_tools.py. LLM 생성 SQL이 아니라 코드 조립이라 sql_guard ORDER BY 고정 모양과 충돌 없음. 실측: "3천만원 이하 하이브리드 SUV 연식 최신순" → 2023→2021 엄격 내림차순 확인. 검증: tests/test_agent_tools.py(화이트리스트 밖 값 거부).
 
 ### DW-849: 결과 과다조회 + 가이드 지식 기반 2차 선별·정렬 — AI 고도화(에이전트화) 과제 요구사항
 
@@ -6996,4 +6996,4 @@ location: api/app/graph/hybrid_rag_node.py 결과 처리부(현재는 벡터 유
 severity: medium
 reason: 검색·조건추출 층은 이미 여러 섹션을 조합하지만(RRF+주입 3섹션), 결과 층의 되추림은 없음. 현 파이프라인에 심는 것보다 에이전트 구조(도구 호출: 검색→가이드 읽기→되추림)에서 푸는 게 자연스럽고 싸다고 판단(2026-08-29 대화).
 trigger: **AI 고도화(에이전트화) 과제 기획 착수 시 요구사항으로 편입 — DW-847(동적 되묻기)·DW-848(정렬 축)과 한 묶음으로 설계에 반영한다.** 기획 문서가 이 세 항목을 인용했는지로 이행 확인(B5).
-status: open
+status: resolved (2026-08-30, AI 고도화 4단계) — 과다조회(limit 20) + 에이전트가 search_guides로 가이드 읽고 최종 5건 내외 선별하는 구조로 해결: app/graph/agent.py 시스템 프롬프트의 되추림 규칙 + selected_listing_ids 사후 검증(도구 결과 밖 id 폐기). 검증: tests/test_agent_loop.py.
