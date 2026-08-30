@@ -22,6 +22,7 @@ import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import { buildWishedIdSet } from '@/lib/wishlist';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import Button from '@/components/ui/Button';
+import MarketDiagnosis, { type MarketDiagnosisData } from '@/components/ai/MarketDiagnosis';
 
 // context 입력 계약(단일 출처: api/docs/ai-demo-queries.md, api/app/schemas/ai.py).
 // 서버가 강제하는 한계를 클라이언트에서 미리 지켜 422를 자초하지 않는다.
@@ -43,6 +44,9 @@ type ChatMessage = {
   // 상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 전부 null이라, 아래 렌더 조건 하나로
   // "더 물어볼 때만 칩이 뜬다"가 성립한다(클라 자체 카운터 없이 서버 신호만으로 동작).
   clarify?: ClarifyPayload | null;
+  // 시세 진단 결과(5단계) — "AI 시세 진단" 버튼 프리필 질의 등으로 에이전트가 market_price_stats를
+  // 호출했을 때만 채워진다. 있으면 이 메시지는 평문 대신 <MarketDiagnosis> 블록으로 렌더된다.
+  marketDiagnosis?: MarketDiagnosisData | null;
 };
 
 /**
@@ -83,7 +87,9 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
   // 실제 검색 실행 — handleSubmit(폼 제출)과 아래 마운트 핸드오프 소비(히어로에서 넘어온 자동
   // 실행) 둘 다 여기로 합류한다(spec-11-3 Code Map). 분리 전엔 handleSubmit 안에 있던 로직 그대로다
   // — 동작은 바뀌지 않고 호출 경로만 하나 더 생겼다.
-  async function runSearch(query: string) {
+  // listingId(5단계): 상세 페이지 "AI 시세 진단" 버튼의 프리필 핸드오프에서만 넘어온다(아래 마운트
+  // effect). 되묻기 칩·직접 타이핑 등 다른 호출 경로는 인자를 안 주므로 undefined로 서버에 안 실린다.
+  async function runSearch(query: string, listingId?: string) {
     if (query === '' || loading) return; // 빈 질의·중복 전송 차단(클라 1차 검증).
 
     // 질의가 서버 상한(1000자)을 넘으면, 그대로 보내봐야 422가 떠 "질문 형식이 올바르지 않습니다"라는
@@ -117,6 +123,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
       const result = await searchAi({
         query,
         context: context.length > 0 ? context : undefined,
+        listingId,
         accessToken: session?.access_token,
       });
 
@@ -140,7 +147,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
         }
       }
 
-      // 어시스턴트 답변(텍스트 + 매물카드 + 되묻기 칩)을 대화에 추가.
+      // 어시스턴트 답변(텍스트 + 매물카드 + 되묻기 칩 + 시세 진단)을 대화에 추가.
       setMessages((prev) => [
         ...prev,
         {
@@ -148,6 +155,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           content: result.answer,
           listings: result.listings,
           clarify: result.clarify,
+          marketDiagnosis: result.market_diagnosis,
         },
       ]);
     } catch (err) {
@@ -191,7 +199,9 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
     const handoff = consumeHeroSearchHandoff(true);
     if (!handoff) return;
     queueMicrotask(() => {
-      void runSearch(handoff.query);
+      // listingId(5단계) — 상세 페이지 "AI 시세 진단" 버튼이 채운 핸드오프에만 있다(히어로 검색은
+      // 이 필드를 안 채우므로 undefined, runSearch가 그대로 서버 요청에서 뺀다).
+      void runSearch(handoff.query, handoff.listingId);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -213,11 +223,20 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                   {m.content}
                 </div>
               ) : (
-                // 어시스턴트 말풍선 — 답변 텍스트 + (있으면) 매물카드 목록.
+                // 어시스턴트 말풍선 — 답변 텍스트(또는 시세 진단 블록) + (있으면) 매물카드 목록.
                 <div className="flex flex-col gap-2">
-                  <div className="self-start whitespace-pre-wrap rounded-lg border border-border-hairline px-3 py-2 text-sm">
-                    {m.content}
-                  </div>
+                  {m.marketDiagnosis ? (
+                    // 시세 진단(5단계) — market_diagnosis가 있으면 평문 대신 STEP2 블록을 렌더한다.
+                    // answer는 MarketDiagnosis 내부의 헤드라인 자리로 넘긴다(중복 렌더 방지 —
+                    // MarketDiagnosis.tsx 상단 주석 참조).
+                    <div className="self-start w-full max-w-full rounded-lg border border-border-hairline px-4 py-4 sm:max-w-[92%]">
+                      <MarketDiagnosis data={m.marketDiagnosis} answer={m.content} />
+                    </div>
+                  ) : (
+                    <div className="self-start whitespace-pre-wrap rounded-lg border border-border-hairline px-3 py-2 text-sm">
+                      {m.content}
+                    </div>
+                  )}
                   {/* 되묻기 칩(FR46, DW-587) — 서버가 clarify를 채워 보냈을 때만 렌더한다.
                       상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 서버가 clarify=null로
                       보내므로 이 조건 하나로 걸러진다(클라가 되묻기 횟수를 따로 세지 않는다).

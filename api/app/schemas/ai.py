@@ -51,6 +51,10 @@ class SearchRequest(BaseModel):
     context: list[ConversationTurn] | None = Field(
         default=None, max_length=12, description="직전 대화 맥락(클라이언트 보관, 최대 12턴)"
     )
+    # 상세 페이지 "AI 시세 진단" 버튼이 프리필 질의와 함께 동봉하는 대상 매물 id(5단계).
+    # 버튼 클릭이 아닌 일반 채팅 질의는 이 필드를 보내지 않는다(None) — 에이전트가 질의만으로
+    # 대상 매물을 못 찾는 경우에만 필요한 보조 힌트라 optional·additive(기존 클라이언트 회귀 없음).
+    listing_id: str | None = Field(default=None, description="시세 진단 대상 매물 id(선택)")
 
     @field_validator("query")
     @classmethod

@@ -334,7 +334,21 @@ export default async function ListingDetailPage({
 
             {/* CTA — 이 카드 안 버튼(데스크톱)과 모바일 하단 고정 바를 **한 컴포넌트**가 함께 그린다.
                 모바일 블록은 position:fixed라 이 자리에 있어도 뷰포트 하단에 고정된다(#82 종결). */}
-            <InquiryCta mode={inquiryMode} listingId={listing.id} loginHref={loginHref} priceText={priceText} />
+            <InquiryCta
+              mode={inquiryMode}
+              listingId={listing.id}
+              loginHref={loginHref}
+              priceText={priceText}
+              // "AI 시세 진단" 버튼(5단계) 프리필 질의 재료 — 이미 위에서 조회한 요약 필드 그대로.
+              marketDiagnosisListing={{
+                id: listing.id,
+                manufacturer: listing.manufacturer,
+                model: listing.model,
+                year: listing.year,
+                mileage: listing.mileage,
+                price: listing.price,
+              }}
+            />
           </aside>
           {/* 좌 컬럼 2행: 정보 섹션 카드 4개(위 그리드 주석 참조 — 여기 있어야 요약이 끝까지 따라온다). */}
           <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">

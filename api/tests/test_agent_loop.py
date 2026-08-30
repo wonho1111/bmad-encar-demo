@@ -12,7 +12,7 @@
       guard_node로 직행하는지(router_node._FINANCE_SIGNALS 재사용, 비용 0 경로)
 """
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 
 from app.graph import agent as agent_module
 from app.schemas.ai import ClarifyPayload, ListingCard
@@ -212,3 +212,52 @@ def test_car_related_query_does_not_trigger_deterministic_reject(monkeypatch):
     result = agent_module.run_search_agent("3천만원 이하 SUV 보여줘")
     assert tool_llm.invoke_count == 1  # LLM이 실제로 호출됐다(사전 차단되지 않음).
     assert result["answer"] == "ok"
+
+
+# ───────── (6) listing_id 프롬프트 주입(5단계, "AI 시세 진단" 버튼) ─────────
+
+def test_listing_id_is_injected_into_system_prompt(monkeypatch):
+    """listing_id를 주면 시스템 프롬프트(첫 메시지)에 그 id가 포함되는지 확인한다.
+
+    실제로 market_price_stats를 호출하는지까지는(그건 LLM의 판단이라 여기서 강제할 수 없다 —
+    agent.py 모듈 docstring "도구 강제 호출은 하지 않음, 프롬프트 유도"). 이 테스트가 고정하는
+    건 "프롬프트에 id가 실제로 실려 가는가"라는 배선 한 겹뿐이다.
+    """
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="시세를 알려드려요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+
+    agent_module.run_search_agent("이 매물 시세 알려줘", listing_id="abc-123")
+
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    assert len(system_messages) == 1
+    assert "abc-123" in system_messages[0].content
+    assert "market_price_stats" in system_messages[0].content
+
+
+def test_no_listing_id_keeps_base_system_prompt(monkeypatch):
+    # 대조군 — listing_id를 안 주면(기존 채팅 질의) 시스템 프롬프트가 그대로다(회귀 0).
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+
+    agent_module.run_search_agent("3천만원 이하 SUV")
+
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    assert system_messages[0].content == agent_module._SYSTEM_PROMPT

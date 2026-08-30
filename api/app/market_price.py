@@ -190,14 +190,14 @@ def _tabpfn_features(row: dict) -> list:
     ]
 
 
-def _tabpfn_predict(target: dict, comps: list[dict]) -> tuple[int | None, str]:
-    """비교군으로 TabPFN을 학습시켜 대상 1건의 적정가를 예측한다.
+def _tabpfn_predict(target: dict, train_rows: list[dict]) -> tuple[int | None, str]:
+    """학습 표본으로 TabPFN을 학습시켜 대상 1건의 적정가를 예측한다.
 
-    비교군 10건 미만이거나 tabpfn 미설치면 통계만 응답하고 가격은 None으로 둔다
+    학습 표본 10건 미만이거나 tabpfn 미설치면 통계만 응답하고 가격은 None으로 둔다
     (엔진 전체가 죽지 않는다 — 설계 확정).
     """
-    if len(comps) < _TABPFN_MIN_COMPS:
-        return None, f"비교군 {_TABPFN_MIN_COMPS}건 미만"
+    if len(train_rows) < _TABPFN_MIN_COMPS:
+        return None, f"학습 표본 {len(train_rows)}건 — {_TABPFN_MIN_COMPS}건 미만"
 
     try:
         from tabpfn import TabPFNRegressor
@@ -208,12 +208,12 @@ def _tabpfn_predict(target: dict, comps: list[dict]) -> tuple[int | None, str]:
     if _TABPFN_MODEL is None:
         _TABPFN_MODEL = TabPFNRegressor(device="cpu")
 
-    x = [_tabpfn_features(c) for c in comps]
-    y = [c["price"] for c in comps]
+    x = [_tabpfn_features(c) for c in train_rows]
+    y = [c["price"] for c in train_rows]
     _TABPFN_MODEL.fit(x, y)
     predicted = _TABPFN_MODEL.predict([_tabpfn_features(target)])[0]
     price = int(round(predicted / 10_000)) * 10_000
-    return price, "TabPFN 예측"
+    return price, f"기본 모델군 {len(train_rows)}건 학습"
 
 
 def _listing_summary(row: dict) -> dict:
@@ -270,6 +270,20 @@ def diagnose(listing_id: str, conn) -> dict | None:
         cur.execute(_comps_sql(where_sql), where_params)
         comp_rows = cur.fetchall()
 
+        # TabPFN 학습 표본은 화면 비교군과 분리해 더 넓게 잡는다 — 사다리(동종 비교)는
+        # 5건이면 멈추는데 TabPFN 최소 표본은 10건이라, 동종 비교가 잘 될수록 예측이
+        # 항상 "표본 부족"으로 빠지는 구멍이 있었다(운영 DB 실측: 더 뉴 그랜저 IG 표본 7).
+        # 연식·배기량·연료가 특징값에 들어가므로 세대 차이는 모델이 흡수한다 — 통계
+        # (사분위·백분위)는 여전히 동종 비교군만 쓴다("같은 종끼리 비교" 원칙 유지).
+        base = _base_model(target["model"])
+        cur.execute(
+            f"SELECT {_COMP_COLUMNS} FROM listings "
+            "WHERE status = 'on_sale' AND id <> %s AND transmission = %s "
+            "AND model ILIKE %s ORDER BY year DESC, mileage ASC LIMIT 120",
+            [target["id"], target["transmission"], f"%{base}%"],
+        )
+        train_rows = cur.fetchall()
+
     sample_count = stats_row["cnt"]
     if sample_count == 0:
         stats = None
@@ -286,7 +300,7 @@ def diagnose(listing_id: str, conn) -> dict | None:
         percentile = stats_row["percentile"]
         verdict = _verdict(target["price"], stats["q1"], stats["q3"])
 
-    tabpfn_price, tabpfn_note = _tabpfn_predict(target, comp_rows)
+    tabpfn_price, tabpfn_note = _tabpfn_predict(target, train_rows)
 
     return {
         "listing": _listing_summary(target),

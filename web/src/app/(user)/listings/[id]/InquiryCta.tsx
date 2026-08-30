@@ -19,6 +19,7 @@
 import Link from 'next/link';
 import Button, { buttonClasses } from '@/components/ui/Button';
 import { useInquiryAction } from './useInquiryAction';
+import MarketDiagnosisButton, { type MarketDiagnosisButtonListing } from './MarketDiagnosisButton';
 
 export type InquiryCtaMode = 'anon' | 'owner' | 'inquiry';
 
@@ -34,10 +35,13 @@ export default function InquiryCta({
   listingId,
   loginHref,
   priceText,
+  marketDiagnosisListing,
 }: {
   mode: InquiryCtaMode;
   listingId: string;
   loginHref: string;
+  // "AI 시세 진단" 버튼(5단계)의 프리필 질의 재료 — page.tsx가 이미 들고 있는 요약 필드 그대로.
+  marketDiagnosisListing: MarketDiagnosisButtonListing;
   priceText: string;
 }) {
   const { busy, error, start } = useInquiryAction(listingId);
@@ -89,8 +93,12 @@ export default function InquiryCta({
 
   return (
     <>
-      {/* 요약 카드 안 CTA — ≥1024px에서만(그 아래는 하단 고정 바가 대신한다). */}
+      {/* 요약 카드 안 CTA — ≥1024px에서만(그 아래는 하단 고정 바가 대신한다).
+          "AI 시세 진단"(5단계)은 문의하기 **위**에 한 줄 추가한다(목업 STEP1 확정, 레이아웃 변형
+          없음) — 판단(시세)→행동(문의) 순서. 모바일 하단 고정 바는 가격+CTA 한 줄 레이아웃이라
+          버튼을 하나 더 넣으면 그 자체가 레이아웃 변형이 되므로 여기 데스크톱 스택에만 둔다. */}
       <div className="hidden flex-col gap-2 lg:flex">
+        <MarketDiagnosisButton mode={mode} listing={marketDiagnosisListing} loginHref={loginHref} />
         {renderAction()}
         <p className="text-center text-caption text-ink-muted">{HELPER_TEXT[mode]}</p>
       </div>

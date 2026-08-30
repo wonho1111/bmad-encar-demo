@@ -51,11 +51,14 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
     # get_current_user 의존성: 유효 토큰이 없으면 401. AI 검색은 호출당 Gemini 실비가 나가는
     # "행동"이라 로그인 필수다(conventions.md §8) — 신원이 유일한 과금 울타리다.
     try:
-        # ai_agent_mode 스위치(4단계 부품 B) — 둘 다 (query, context) -> dict 시그니처가
-        # 같으므로 아래 실행부는 어느 쪽이 골라지든 동일하게 쓴다.
-        pipeline = run_search_agent if settings.ai_agent_mode else run_search
+        # ai_agent_mode 스위치(4단계 부품 B) — 둘 다 (query, context) -> dict가 기본이지만,
+        # listing_id(5단계, "AI 시세 진단" 버튼 프리필)는 run_search_agent만 받는다(run_search·
+        # graph.py는 시세 진단 도구 자체가 없어 인자를 늘릴 이유가 없다) — 그래서 분기해서 부른다.
         # 동기 파이프라인 전체(LLM+DB)를 스레드풀로 넘겨 이벤트 루프를 막지 않는다(AC-DB-1 FR50).
-        result = await asyncio.to_thread(pipeline, req.query, req.context)
+        if settings.ai_agent_mode:
+            result = await asyncio.to_thread(run_search_agent, req.query, req.context, req.listing_id)
+        else:
+            result = await asyncio.to_thread(run_search, req.query, req.context)
         # DW-593 해결(13.5): 응답 조립(SearchResponse 검증)을 try 안으로 옮겨, 스키마 위반이면
         # 아래 except Exception(CORS 안쪽, 500)이 잡는다 — try 밖에 있으면 그 500은 main.py
         # 전역 핸들러(CORS 바깥)로 나가 Access-Control-Allow-Origin이 빠진다(원인 은폐).

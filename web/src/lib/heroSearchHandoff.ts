@@ -12,15 +12,17 @@ export type HeroSearchHandoff = {
   query: string;
   // true=로그인 사용자 제출(/ai에서 1회 자동 실행), false=비로그인 게이트(입력창 복원만, 자동 실행 금지).
   autoRun: boolean;
+  // 상세 페이지 "AI 시세 진단" 버튼 전용(5단계) — 프리필 질의의 대상 매물 id. 히어로 검색·
+  // 되묻기 칩 등 다른 발신처는 이 필드를 안 채운다(옵셔널, additive — 기존 소비처 회귀 없음).
+  listingId?: string;
 };
 
 function isHeroSearchHandoff(value: unknown): value is HeroSearchHandoff {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as HeroSearchHandoff).query === 'string' &&
-    typeof (value as HeroSearchHandoff).autoRun === 'boolean'
-  );
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as HeroSearchHandoff;
+  if (typeof v.query !== 'string' || typeof v.autoRun !== 'boolean') return false;
+  if (v.listingId !== undefined && typeof v.listingId !== 'string') return false;
+  return true;
 }
 
 /** 히어로 제출/제안칩 클릭 시 호출 — 다음 화면이 읽을 질의를 저장한다. */

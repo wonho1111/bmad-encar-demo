@@ -153,12 +153,32 @@ def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list) -> _AgentFinalOu
     return structured.invoke(messages + [HumanMessage(_FINALIZE_INSTRUCTION)])
 
 
-def run_search_agent(query: str, context: list | None = None) -> dict:
+def _system_prompt(listing_id: str | None) -> str:
+    """기본 시스템 프롬프트에 대상 매물 id 힌트를 덧붙인다(5단계, 상세 페이지 "AI 시세 진단" 버튼).
+
+    도구 강제 호출은 아니다 — LLM이 시세 요청으로 판단할 때 market_price_stats를 이 id로
+    호출하도록 프롬프트로만 유도한다(설계: 버튼이 프리필한 질의문 자체도 "이 매물 시세
+    알려줘" 형태라 대부분 자연스럽게 이어지지만, id를 명시해 모호성을 줄인다).
+    """
+    if not listing_id:
+        return _SYSTEM_PROMPT
+    return (
+        f"{_SYSTEM_PROMPT}\n\n"
+        f"[이번 요청의 대상 매물]\n"
+        f"이번 요청의 대상 매물 id는 {listing_id}다. 시세 요청이면 market_price_stats를 이 id로 호출하라."
+    )
+
+
+def run_search_agent(query: str, context: list | None = None, listing_id: str | None = None) -> dict:
     """툴콜링 에이전트 루프를 1회 실행해 {answer, listings[], route, clarify, narrowed_by,
     market_diagnosis, tools_used}를 반환한다.
 
     GEMINI_API_KEY/DATABASE_URL 부재는 도구·LLM 내부의 require()가 명확한 한국어 에러로
     즉시 실패한다(조용한 빈 결과 금지 — 기존 노드들과 동일한 fail-loud 원칙).
+
+    listing_id(선택, 5단계): 상세 페이지 "AI 시세 진단" 버튼이 프리필 질의와 함께 보낸 대상
+    매물 id. 있으면 시스템 프롬프트에 힌트를 덧붙인다(_system_prompt) — 기본값 None이라
+    기존 호출부(호출 시 인자를 안 주는 곳)는 회귀 없이 그대로 동작한다.
     """
     effective_query = contextualize_query(query, context)  # 단일턴이면 query 그대로 반환
     if not (effective_query or "").strip():
@@ -170,7 +190,7 @@ def run_search_agent(query: str, context: list | None = None) -> dict:
     base_llm = _llm()  # 키 부재 시 여기서 fail-loud — 루프 진입 전에 즉시 실패.
     tool_llm = base_llm.bind_tools(AGENT_TOOLS)
 
-    messages: list = [SystemMessage(_SYSTEM_PROMPT), HumanMessage(effective_query)]
+    messages: list = [SystemMessage(_system_prompt(listing_id)), HumanMessage(effective_query)]
     seen_listings: dict[str, ListingCard] = {}
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
