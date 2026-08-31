@@ -21,18 +21,13 @@ import { buttonClasses } from '@/components/ui/Button';
 import { setHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import { formatPrice } from '@/lib/price';
 import { formatManKm } from '@/components/ai/MarketDiagnosis';
+import type { ListingCardData } from '@/components/listings/ListingCard';
 import type { InquiryCtaMode } from './InquiryCta';
 
-export type MarketDiagnosisButtonListing = {
-  id: string;
-  manufacturer: string;
-  model: string;
-  year: number;
-  mileage: number;
-  price: number;
-  // 미니 카드 썸네일(개선 1, 2026-09-01) — page.tsx가 이미 조회한 대표사진 URL(없으면 null/undefined).
-  imageUrl?: string | null;
-};
+// 프리필 카드 재료 = 표준 매물 카드(ListingCard)의 필드 계약 그대로(2026-09-01, 표준 카드 교체).
+// page.tsx가 상세 조회로 이미 들고 있는 전체 필드를 그대로 태워 보낸다 — 전용 미니 타입을 다시
+// 정의하지 않는다(중복 정의 금지, A2).
+export type MarketDiagnosisButtonListing = ListingCardData;
 
 function buildPrefillQuery(listing: MarketDiagnosisButtonListing): string {
   return `이 매물 시세 알려줘 — ${listing.manufacturer} ${listing.model} ${listing.year} · ${formatManKm(listing.mileage)} · ${formatPrice(listing.price)}`;
@@ -73,16 +68,9 @@ export default function MarketDiagnosisButton({
       query: buildPrefillQuery(listing),
       autoRun: true,
       listingId: listing.id,
-      // 미니 카드 요약(개선 1) — ChatAssistant가 이 사용자 턴 위에 렌더한다.
-      listingSummary: {
-        id: listing.id,
-        manufacturer: listing.manufacturer,
-        model: listing.model,
-        year: listing.year,
-        mileage: listing.mileage,
-        price: listing.price,
-        imageUrl: listing.imageUrl,
-      },
+      // 카드 요약(개선 1) — 표준 ListingCard 필드 그대로이므로 매핑 없이 통째로 싣는다.
+      // ChatAssistant가 이 사용자 턴 위에 같은 컴포넌트로 렌더한다.
+      listingSummary: listing,
     });
     router.push('/ai');
   }

@@ -85,8 +85,10 @@ describe('heroSearchHandoff', () => {
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
-  // 매물 미니 카드(개선 1, 2026-09-01) — "AI 시세 진단" 버튼이 listingSummary를 실어 보내면
-  // ChatAssistant가 그대로 왕복해 읽어야 한다. isListingSummary 검증 로직을 이 두 케이스로 고정한다.
+  // 매물 카드(개선 1, 2026-09-01 → 표준 카드 교체) — "AI 시세 진단" 버튼이 listingSummary를 실어
+  // 보내면 ChatAssistant가 그대로 왕복해 읽어야 한다. isListingSummary 검증 로직을 이 두 케이스로
+  // 고정한다. 타입이 ListingCardData로 바뀌어 필수 필드에 region이 추가되고 imageUrl은 표준 카드의
+  // 필드명(image_url)을 그대로 쓴다.
   it('listingSummary가 있으면 그대로 왕복한다', () => {
     const listingSummary = {
       id: 'aaa',
@@ -95,7 +97,8 @@ describe('heroSearchHandoff', () => {
       year: 2019,
       mileage: 69041,
       price: 15620000,
-      imageUrl: 'https://example.com/a.jpg',
+      region: '서울',
+      image_url: 'https://example.com/a.jpg',
     };
     setHeroSearchHandoff({ query: '이 매물 시세 알려줘', autoRun: true, listingId: 'aaa', listingSummary });
     expect(consumeHeroSearchHandoff(true)).toEqual({
@@ -112,7 +115,28 @@ describe('heroSearchHandoff', () => {
       JSON.stringify({
         query: '이 매물 시세 알려줘',
         autoRun: true,
-        listingSummary: { id: 'aaa', manufacturer: '기아' }, // model·year·mileage·price 누락
+        listingSummary: { id: 'aaa', manufacturer: '기아' }, // model·year·mileage·price·region 누락
+      }),
+    );
+    expect(consumeHeroSearchHandoff(true)).toBeNull();
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('listingSummary에 region이 없으면(표준 카드 필수 필드 누락) null을 반환하고 항목을 지운다', () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        query: '이 매물 시세 알려줘',
+        autoRun: true,
+        listingSummary: {
+          id: 'aaa',
+          manufacturer: '기아',
+          model: '더 뉴 쏘렌토 UM',
+          year: 2019,
+          mileage: 69041,
+          price: 15620000,
+          // region 누락
+        },
       }),
     );
     expect(consumeHeroSearchHandoff(true)).toBeNull();

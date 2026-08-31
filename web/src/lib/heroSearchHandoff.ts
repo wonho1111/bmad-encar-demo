@@ -6,6 +6,8 @@
 // 있고 질의 텍스트를 얹으면 인코딩이 지저분해진다(에픽 문서가 sessionStorage로 이미 못 박음).
 // 히어로(쓰기)와 ChatAssistant(읽기) 두 컴포넌트가 각자 키·모양을 따로 정하면 어긋나는 사고가
 // 나므로, 이 파일 하나가 유일한 출처다.
+import type { ListingCardData } from '@/components/listings/ListingCard';
+
 const STORAGE_KEY = 'encar-hero-search-handoff';
 
 export type HeroSearchHandoff = {
@@ -15,21 +17,19 @@ export type HeroSearchHandoff = {
   // 상세 페이지 "AI 시세 진단" 버튼 전용(5단계) — 프리필 질의의 대상 매물 id. 히어로 검색·
   // 되묻기 칩 등 다른 발신처는 이 필드를 안 채운다(옵셔널, additive — 기존 소비처 회귀 없음).
   listingId?: string;
-  // 매물 미니 카드 요약(개선 1, 2026-09-01) — listingId와 세트로만 채워진다("AI 시세 진단" 버튼
-  // 전용, 다른 발신처는 이것도 안 채운다). ChatAssistant가 사용자 턴을 저장할 때 함께 보관해
-  // 말풍선 위에 미니 카드로 렌더한다. 서버로 나가는 API 요청 계약은 무변경 — listingId만 그대로 간다.
-  listingSummary?: {
-    id: string;
-    manufacturer: string;
-    model: string;
-    year: number;
-    mileage: number;
-    price: number;
-    imageUrl?: string | null;
-  };
+  // 매물 카드 요약(개선 1, 2026-09-01 → 2026-09-01 표준 카드 교체) — listingId와 세트로만 채워진다
+  // ("AI 시세 진단" 버튼 전용, 다른 발신처는 이것도 안 채운다). ChatAssistant가 사용자 턴을 저장할
+  // 때 함께 보관해 말풍선 위에 **목록/AI결과와 같은 ListingCard**로 렌더한다(전용 미니 카드 폐기).
+  // 서버로 나가는 API 요청 계약은 무변경 — listingId만 그대로 간다. 타입은 ListingCard의 필드
+  // 계약(ListingCardData)을 그대로 재사용한다(중복 정의 금지 — 표준 카드가 요구하는 필드가 바뀌면
+  // 여기도 같이 따라오게).
+  listingSummary?: ListingCardData;
 };
 
-function isListingSummary(value: unknown): value is NonNullable<HeroSearchHandoff['listingSummary']> {
+// ListingCardData의 **필수** 필드만 검증한다(id·manufacturer·model·year·price·mileage·region).
+// 나머지(옵션 필드)는 표시용이라 값이 없거나 모양이 살짝 달라도 카드가 알아서 빈 자리로 넘긴다 —
+// 여기서까지 전부 따지면 표준 카드에 필드가 늘 때마다 이 파일도 매번 따라와야 한다(A2).
+function isListingSummary(value: unknown): value is ListingCardData {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
@@ -37,9 +37,9 @@ function isListingSummary(value: unknown): value is NonNullable<HeroSearchHandof
     typeof v.manufacturer === 'string' &&
     typeof v.model === 'string' &&
     typeof v.year === 'number' &&
-    typeof v.mileage === 'number' &&
     typeof v.price === 'number' &&
-    (v.imageUrl === undefined || v.imageUrl === null || typeof v.imageUrl === 'string')
+    typeof v.mileage === 'number' &&
+    typeof v.region === 'string'
   );
 }
 
