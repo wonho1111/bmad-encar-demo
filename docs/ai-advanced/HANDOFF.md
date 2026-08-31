@@ -6,6 +6,7 @@
 > 2단계 완료(엔카 실측 보정 시드 150건+기존 7건 조정, 02 문서). 3단계 완료(market_price.py+API).
 > 4단계 완료(툴콜링 에이전트 agent.py+도구 4종, 리랭커 사이드카 reranker_service.py+scripts/dev-reranker.sh, DW-847·848·849 resolved).
 > 5단계 완료(상세 [AI 시세 진단] 버튼→채팅 프리필+listing_id, MarketDiagnosis 산점도 렌더, TabPFN 학습표본은 기본 모델군으로 분리). **과제 5단계 전체 완료** — 남은 것은 사용자 실기 확인·시연 준비. 리랭커는 RERANKER_URL 설정 시에만 활성(미설정=벡터순 폴백, scripts/dev-reranker.sh).
+> **제출 구성 확정(2026-09-01, 사용자 결정)**: 웹=Vercel·API=Cloud Run(TabPFN 내장, dev 2Gi 실측 검증), **리랭커는 클라우드 미배포** — 배포 링크는 벡터순 폴백으로 전 기능 동작, 리랭커는 로컬 GPU 실행·문서(01)·실측으로 증빙. 시연 자리에서만 선택적으로 cloudflared 터널 + RERANKER_URL로 GPU 연결(03 가이드 3번).
 > 노트북 세션(2026-08-29~30)의 결정·실측·다음 단계를 담는다. 작성 시점 develop 최신 = `c5367c7` 이후.
 
 ## 0. 데스크톱 준비 체크리스트 (작업 시작 전 1회)
