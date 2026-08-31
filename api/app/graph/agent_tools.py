@@ -160,7 +160,11 @@ def _format_listing_summary(listings: list[ListingCard]) -> str:
         return "조건에 맞는 매물이 없습니다."
     lines = []
     for i, c in enumerate(listings, start=1):
-        opts = ", ".join((c.options or [])[:3])
+        # 옵션은 전체를 보여준다 — 앞 3개 절단 시절, 6번째 옵션(어댑티브크루즈)이 요약에서
+        # 잘려 "속성은 도구 값과 일치해서만 서술" 규칙과 충돌 → LLM이 조건 충족 매물을
+        # "옵션 확인 불가"로 스스로 걸러낸 실측 결함(2026-09-01, 트레이스 확정). 매물당
+        # 옵션은 최대 십수 개 짧은 문자열이라 프롬프트 비대화 부담이 미미하다.
+        opts = ", ".join(c.options or [])
         line = (
             f"{i}. id={c.id} {c.manufacturer} {c.model} {c.year}년식 "
             f"{c.mileage:,}km {c.price:,}원 연료={c.fuel or '미상'}"

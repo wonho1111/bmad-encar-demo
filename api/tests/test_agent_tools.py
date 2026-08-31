@@ -394,3 +394,18 @@ def test_option_synonym_groups_match_prompt_source():
     for group in _OPTION_SYNONYM_GROUPS:
         for member in group:
             assert member in _DOMAIN_RULES, f"{member}가 프롬프트 원문에 없음 — 두 정의가 갈라짐"
+
+
+def test_listing_summary_includes_all_options():
+    """실측 결함(2026-09-01): 요약이 옵션 앞 3개만 보여줘, 뒤쪽 옵션(어댑티브크루즈)을 근거로
+    찾은 매물을 LLM이 '옵션 확인 불가'로 스스로 걸러냈다 — 전체 표기를 잠근다."""
+    from app.graph.agent_tools import _format_listing_summary
+    from app.schemas.ai import ListingCard
+
+    card = ListingCard(
+        id="x1", manufacturer="기아", model="더 뉴 쏘렌토 UM", year=2019,
+        price=17_470_000, mileage=78_828, region="경기", fuel="디젤",
+        options=["7인승", "열선시트", "헤드업디스플레이", "스마트키", "후방카메라", "어댑티브크루즈"],
+    )
+    summary = _format_listing_summary([card])
+    assert "어댑티브크루즈" in summary  # 6번째 옵션도 요약에 보인다
