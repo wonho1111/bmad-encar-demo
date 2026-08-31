@@ -20,3 +20,6 @@ sqlparse
 # langchain-google-genai·langgraph의 전이 의존성으로 이미 딸려오지만, app/graph/agent.py·
 # agent_tools.py(4단계 부품 B)가 @tool·ToolMessage 등을 직접 import하므로 명시 선언한다.
 langchain-core
+
+# 시세 진단 적정가 예측(3단계) — v2 고정(3.x는 PriorLabs 로그인·비상업 라이선스라 배제 확정)
+tabpfn>=2,<3
