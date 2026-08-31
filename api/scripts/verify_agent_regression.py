@@ -120,6 +120,14 @@ MULTITURN_CASES: list[dict] = [
     # tools_expected(부분집합, 존재 여부만 봄)로는 못 잡는다 — judge_multiturn에서 직접 센다.
     {"id": "MT6", "turn1": "2천만원 이하 세단 추천해줘", "turn2": "이 매물들 전부 시세 분석해줘",
      "kind": "mt_market_stats_multi_call"},
+    # --- MT7(2026-08-31 E2E 2라운드 실측 결함 R1, "직전 목록 없는데 지시어" 재검색 도피 회귀)
+    # — 1턴 "차 추천해줘"는 예산·용도·차종이 전혀 없어 되묻기(clarify)로 끝나야 한다(매물 0건,
+    # 즉 [직전 대화에서 보여준 매물] 블록이 2턴에 생기지 않는다). 그 상태에서 2턴이 "그중"류
+    # 지시어 없이 주어 없는 시세 분석을 요청하면("아니 시세분석해달라고"), 에이전트가 가리킬
+    # 매물이 아예 없으므로 search_listings로 엉뚱한 매물을 새로 찾거나 market_price_stats를
+    # 부르면 안 되고(둘 다 없는 대상을 지어내는 것), clarify로 어떤 차량인지 되물어야 한다.
+    {"id": "MT7", "turn1": "차 추천해줘", "turn2": "아니 시세분석해달라고",
+     "kind": "mt_no_block_reclarify"},
 ]
 
 
@@ -283,6 +291,27 @@ def judge_multiturn(expects: dict, result1: dict, result2: dict) -> tuple[bool, 
                 f"매물의 저렴/높음을 텍스트로만 지어냈을 수 있음): tools_used={tools_used_list}"
             )
         return True, f"market_price_stats 호출 {n_calls}회 확인(매물마다 실제로 도구를 불렀음)"
+
+    if kind == "mt_no_block_reclarify":
+        # MT7(R1, "직전 목록 없는데 지시어" 재검색 도피 회귀) — 1턴이 매물 0건(되묻기)으로
+        # 끝나 2턴에 [직전 대화에서 보여준 매물] 블록이 없는 상태다. 이때 가리킬 매물이
+        # 아예 없으므로 search_listings·market_price_stats 둘 다 부르면 안 되고(존재하지
+        # 않는 대상을 지어내는 것), clarify로 되물어야 한다.
+        if "search_listings" in tools_used:
+            return False, (
+                f"직전 목록 없는데 search_listings 재검색 발생(엉뚱한 매물을 새로 찾은 것으로 "
+                f"의심): tools_used={result2.get('tools_used')}"
+            )
+        if "market_price_stats" in tools_used:
+            return False, (
+                f"직전 목록 없는데 market_price_stats 호출됨(대상 없이 진단을 지어낸 것으로 "
+                f"의심): tools_used={result2.get('tools_used')}"
+            )
+        if result2.get("clarify") is None:
+            return False, "clarify 없음(대상이 불명확한데 되묻지 않음)"
+        if listings2:
+            return False, f"listings {len(listings2)}건(직전 목록이 없는데 매물이 반환됨)"
+        return True, "재검색·진단 도구 미호출 + clarify 존재 + listings 0건 확인"
 
     return False, f"알 수 없는 kind: {kind}"
 

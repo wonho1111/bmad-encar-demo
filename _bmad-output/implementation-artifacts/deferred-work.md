@@ -6997,3 +6997,12 @@ severity: medium
 reason: 검색·조건추출 층은 이미 여러 섹션을 조합하지만(RRF+주입 3섹션), 결과 층의 되추림은 없음. 현 파이프라인에 심는 것보다 에이전트 구조(도구 호출: 검색→가이드 읽기→되추림)에서 푸는 게 자연스럽고 싸다고 판단(2026-08-29 대화).
 trigger: **AI 고도화(에이전트화) 과제 기획 착수 시 요구사항으로 편입 — DW-847(동적 되묻기)·DW-848(정렬 축)과 한 묶음으로 설계에 반영한다.** 기획 문서가 이 세 항목을 인용했는지로 이행 확인(B5).
 status: resolved (2026-08-30, AI 고도화 4단계) — 과다조회(limit 20) + 에이전트가 search_guides로 가이드 읽고 최종 5건 내외 선별하는 구조로 해결: app/graph/agent.py 시스템 프롬프트의 되추림 규칙 + selected_listing_ids 사후 검증(도구 결과 밖 id 폐기). 검증: tests/test_agent_loop.py.
+
+### DW-850: /ai 첫 진입 직후 타이핑하면 첫 전송이 조용히 무시된다(hydration race)
+
+origin: 브라우저 E2E 2라운드 실측(2026-08-31) — 새 대화 첫 입력의 Enter/전송 1회 무반응, 두 번째부터 정상.
+location: web/src/components/ai/ChatAssistant.tsx (제어 입력 + runSearch의 빈 질의 가드 127행)
+severity: low
+reason: SSR 정적 HTML에 리스너가 붙기 전(hydration 완료 전) 타이핑하면 React 상태는 빈 문자열이라 전송 가드에 걸려 조용히 무시됨. 수정은 "hydration 전 입력 비활성화" 등 UX 트레이드오프가 있는 설계 결정이라 보류. 자가회복(재전송 시 정상)이라 데이터 유실 없음.
+trigger: 5단계 이후 웹 폴리시 정리 회차 또는 사용자가 재현 불편을 호소할 때 → 그 회차 스토리 인수조건으로 심는다.
+status: open
