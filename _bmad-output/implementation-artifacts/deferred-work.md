@@ -6936,6 +6936,8 @@ status: open
 
 ### DW-843: 임시 제외한 판단기준형 코퍼스 4개(구 05·10·11·12)의 복귀 실측이 남아 있다
 
+> 현황(2026-09-01 점검): 구 05(신뢰성 체크포인트)는 08번으로 **복귀 완료**(RAG 개편 때). 10·11·12는 _excluded/ 유지 중 — 남은 건 이 3개의 복귀 실측.
+
 origin: RAG 문서참조 개선 세션(코퍼스 개편+top-k+청킹+multi-query, 2026-08-29, 커밋 42e5b1c~0f3d22b)
 location: api/corpus/_excluded/{05,10,11,12}-*.md
 severity: medium
@@ -6945,6 +6947,8 @@ progress: 2026-08-29 05(신뢰성)만 사용자 지시로 복귀 완료(corpus/0
 status: open
 
 ### DW-844: 가이드 top-k 상한 5의 확대 여부를 청킹 안정화 후 재검토한다
+
+> 변수(2026-09-01): 리랭커 도입으로 후보 확대의 실익이 커짐(재정렬이 상위권 품질을 지켜줌). 확대 재검토 시 리랭커 지연(건당 GPU 0.2초/CPU 0.3~0.5초×후보수)도 함께 실측할 것.
 
 origin: Phase 1 사용자 결정(2026-08-29, "5로 시작하고 테스트 후 확대")
 location: api/app/graph/doc_rag_node.py _GUIDE_TOP_K
@@ -6960,7 +6964,7 @@ location: api/app/graph/graph.py _clarify_step, doc_rag_node.py 매물 벡터검
 severity: low
 reason: 외과적 변경 원칙 — 실측된 문제(hybrid 복합 질의)만 고쳤다. 매물 검색 RRF는 효과 미실측.
 trigger: 사용자가 CLARIFY 경로에서도 복합 장문을 넣는 사례가 LangSmith에 보이면.
-status: open
+status: resolved (2026-09-01, AI 고도화 4단계의 부수 효과) — 에이전트 전환(ai_agent_mode 기본 True) 후 가이드 검색은 전부 agent_tools.search_guides → multi_query.find_relevant_guides_fused 경유라 라이브 경로에 단일 벡터 가이드 검색이 남지 않음. 단일 벡터로 남은 곳은 레거시 그래프(스위치 오프 시)뿐 — 레거시 제거 시 자연 소멸.
 
 ### DW-846: AI 검색 결과 카드 사진이 간헐적으로 회색 빈 상태로 렌더된다
 
