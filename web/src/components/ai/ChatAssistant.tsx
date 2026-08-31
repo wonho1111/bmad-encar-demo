@@ -25,6 +25,7 @@ import Button from '@/components/ui/Button';
 import AnswerText from '@/components/ai/AnswerText';
 import MarketDiagnosis, { type MarketDiagnosisData } from '@/components/ai/MarketDiagnosis';
 import MarketDiagnosisTable from '@/components/ai/MarketDiagnosisTable';
+import ListingMiniCard, { type ListingMiniCardData } from '@/components/ai/ListingMiniCard';
 
 // context 입력 계약(단일 출처: api/docs/ai-demo-queries.md, api/app/schemas/ai.py).
 // 서버가 강제하는 한계를 클라이언트에서 미리 지켜 422를 자초하지 않는다.
@@ -46,6 +47,9 @@ type ChatMessage = {
   // 상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 전부 null이라, 아래 렌더 조건 하나로
   // "더 물어볼 때만 칩이 뜬다"가 성립한다(클라 자체 카운터 없이 서버 신호만으로 동작).
   clarify?: ClarifyPayload | null;
+  // 매물 미니 카드(개선 1, 2026-09-01) — user 턴 전용. "AI 시세 진단" 버튼의 프리필 핸드오프가
+  // listingSummary를 실어 보냈을 때만 채워진다(다른 발신처는 undefined). 말풍선 위에 렌더한다.
+  listingSummary?: ListingMiniCardData | null;
   // 시세 진단 결과(5단계) — "AI 시세 진단" 버튼 프리필 질의 등으로 에이전트가 market_price_stats를
   // 호출했을 때만 채워진다. 있으면 이 메시지는 평문 대신 <MarketDiagnosis> 블록으로 렌더된다.
   marketDiagnosis?: MarketDiagnosisData | null;
@@ -123,7 +127,9 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
   // — 동작은 바뀌지 않고 호출 경로만 하나 더 생겼다.
   // listingId(5단계): 상세 페이지 "AI 시세 진단" 버튼의 프리필 핸드오프에서만 넘어온다(아래 마운트
   // effect). 되묻기 칩·직접 타이핑 등 다른 호출 경로는 인자를 안 주므로 undefined로 서버에 안 실린다.
-  async function runSearch(query: string, listingId?: string) {
+  // listingSummary(개선 1): 위와 같은 핸드오프에서만 넘어오는 미니 카드 재료 — 서버로는 보내지
+  // 않는다(API 계약 무변경), 이 사용자 턴을 화면에 저장할 때만 함께 붙인다.
+  async function runSearch(query: string, listingId?: string, listingSummary?: ListingMiniCardData) {
     if (query === '' || loading) return; // 빈 질의·중복 전송 차단(클라 1차 검증).
 
     // 질의가 서버 상한(1000자)을 넘으면, 그대로 보내봐야 422가 떠 "질문 형식이 올바르지 않습니다"라는
@@ -137,7 +143,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
     // 이번 질의 직전까지의 대화를 context로(중복 금지 — 방금 입력한 query는 context가 아니라 query로 보낸다).
     const context = buildContext(messages);
     // 사용자 턴을 먼저 화면에 반영(즉시 피드백).
-    setMessages((prev) => [...prev, { role: 'user', content: query }]);
+    setMessages((prev) => [...prev, { role: 'user', content: query, listingSummary }]);
     setInput('');
     setLoading(true);
 
@@ -236,7 +242,8 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
     queueMicrotask(() => {
       // listingId(5단계) — 상세 페이지 "AI 시세 진단" 버튼이 채운 핸드오프에만 있다(히어로 검색은
       // 이 필드를 안 채우므로 undefined, runSearch가 그대로 서버 요청에서 뺀다).
-      void runSearch(handoff.query, handoff.listingId);
+      // listingSummary(개선 1) — 같은 핸드오프의 미니 카드 재료, 있으면 그대로 함께 넘긴다.
+      void runSearch(handoff.query, handoff.listingId, handoff.listingSummary);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -253,9 +260,13 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           messages.map((m, i) => (
             <div key={i} className="flex flex-col gap-2">
               {m.role === 'user' ? (
-                // 사용자 말풍선 — 오른쪽 정렬.
-                <div className="self-end rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base">
-                  {m.content}
+                // 사용자 턴 — 오른쪽 정렬. listingSummary가 있으면(개선 1, "AI 시세 진단" 버튼
+                // 프리필 전용) 말풍선 위에 매물 미니 카드를 함께 그린다(items-end로 둘 다 우측 정렬).
+                <div className="flex flex-col items-end gap-1.5">
+                  {m.listingSummary && <ListingMiniCard listing={m.listingSummary} />}
+                  <div className="rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base">
+                    {m.content}
+                  </div>
                 </div>
               ) : (
                 // 어시스턴트 말풍선 — 답변 텍스트(또는 시세 진단 블록/다건 요약표) + (있으면) 매물카드 목록.

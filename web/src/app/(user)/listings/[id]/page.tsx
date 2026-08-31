@@ -347,6 +347,9 @@ export default async function ListingDetailPage({
                 year: listing.year,
                 mileage: listing.mileage,
                 price: listing.price,
+                // 미니 카드 썸네일(개선 1) — 갤러리와 같은 조회(fetchListingGalleryUrls)의 대표(첫)
+                // 사진. 사진이 없으면 빈 배열이라 undefined → ListingMiniCard가 플레이스홀더로 대체.
+                imageUrl: galleryUrls[0],
               }}
             />
           </aside>

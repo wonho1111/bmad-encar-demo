@@ -16,10 +16,13 @@ import Button from '@/components/ui/Button';
 // 라벨·입력칸 클래스는 /sell 등록 폼과 **한 벌을 공유**한다(2026-08-13 사용자 결정 — 두 화면이
 // 같은 구조인데 밀도·배경이 달랐다). 자세한 경위는 formField.ts 주석 참조.
 import { FIELD_CONTROL_CLASS, FIELD_LABEL_CLASS } from '@/components/ui/formField';
+import OptionFilterPicker from './OptionFilterPicker';
 
 // 현재 URL 쿼리값(서버가 넘겨준 초기값)으로 폼을 채운다 → 새로고침해도 필터가 유지된다.
 export type SearchFilterValues = {
   q: string; // 키워드(모델명 부분일치)
+  // 제조사(개선 2, 2026-09-01) — 등록 폼(SellForm)엔 있었는데 필터엔 없던 축. 등록↔검색 대칭 요구.
+  manufacturer: string;
   body_type: string;
   color: string;
   fuel: string;
@@ -29,6 +32,14 @@ export type SearchFilterValues = {
   price_max: string;
   year_min: string;
   year_max: string;
+  // 주행거리·배기량·인승 범위(개선 2) — 등록 폼엔 단일값 입력이 있는데 필터엔 그 축 자체가
+  // 없었다. 가격·연식과 같은 범위(min~max) 관례로 맞춘다.
+  mileage_min: string;
+  mileage_max: string;
+  displacement_min: string;
+  displacement_max: string;
+  seats_min: string;
+  seats_max: string;
   // 신뢰속성 필터(2026-08-13 사용자 요청) — 상세·카드에 뱃지로 보여주던 값으로 거를 수 있게 한다.
   //   accident_status: ''(전체) | 무사고 | 단순교환 | 사고 — **뱃지 기준**이다(사용자 결정).
   //     예전 "무사고 차량" 체크박스가 쓰던 accident_free는 필터에서 쓰지 않는다(그건 이제 파생값이고
@@ -39,23 +50,38 @@ export type SearchFilterValues = {
   accident_status: string;
   single_owner: string;
   non_smoker: string;
+  // 옵션(개선 2) — 다중 선택, "전부 보유"(AND) 의미. 다른 필드와 달리 string[]이라 아래
+  // applyFilters/resetFilters/pageHref에서 개별 처리한다(URL엔 같은 키를 반복 — ?options=a&options=b).
+  options: string[];
 };
 
 export default function SearchFilters({ initial }: { initial: SearchFilterValues }) {
   const router = useRouter();
   const [values, setValues] = useState<SearchFilterValues>(initial);
 
-  // 단일 핸들러로 모든 입력 갱신(필드명 = state 키).
-  function update<K extends keyof SearchFilterValues>(key: K, value: string) {
+  // 문자열 필드(대부분)의 단일 핸들러 — 필드명 = state 키. options(string[])는 제외한다
+  // (아래 updateOptions가 따로 담당 — 값 타입이 달라 이 제네릭에 섞으면 타입이 어긋난다).
+  function update<K extends Exclude<keyof SearchFilterValues, 'options'>>(key: K, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  // options 전용 핸들러(개선 2) — OptionFilterPicker가 다중 선택 결과를 그대로 넘긴다.
+  function updateOptions(next: string[]) {
+    setValues((prev) => ({ ...prev, options: next }));
+  }
+
   // 적용: 빈 값은 URL에서 제외(깔끔한 쿼리스트링) 후 /search로 push.
+  //   options는 string[]이라 일반 루프에서 빼고, 같은 키를 반복해 붙인다(?options=a&options=b —
+  //   page.tsx가 Next.js searchParams의 다중값 배열로 그대로 읽는다).
   function applyFilters(e: React.FormEvent) {
     e.preventDefault();
     const params = new URLSearchParams();
-    (Object.entries(values) as [keyof SearchFilterValues, string][]).forEach(([key, value]) => {
-      const v = value.trim();
+    (Object.entries(values) as [keyof SearchFilterValues, string | string[]][]).forEach(([key, value]) => {
+      if (key === 'options') {
+        (value as string[]).forEach((opt) => params.append('options', opt));
+        return;
+      }
+      const v = (value as string).trim();
       if (v !== '') params.set(key, v);
     });
     const query = params.toString();
@@ -65,16 +91,18 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
   // 초기화: 모든 필터를 비우고 전체 목록으로.
   function resetFilters() {
     const empty: SearchFilterValues = {
-      q: '', body_type: '', color: '', fuel: '', transmission: '', region: '',
+      q: '', manufacturer: '', body_type: '', color: '', fuel: '', transmission: '', region: '',
       price_min: '', price_max: '', year_min: '', year_max: '',
+      mileage_min: '', mileage_max: '', displacement_min: '', displacement_max: '', seats_min: '', seats_max: '',
       accident_status: '', single_owner: '', non_smoker: '',
+      options: [],
     };
     setValues(empty);
     router.push('/search');
   }
 
   // 드롭다운 한 개를 그리는 helper — "전체"(빈 값) + LISTING_OPTIONS 항목.
-  function renderSelect(key: keyof SearchFilterValues, label: string, options: readonly string[]) {
+  function renderSelect(key: Exclude<keyof SearchFilterValues, 'options'>, label: string, options: readonly string[]) {
     return (
       <label className="flex flex-col gap-1 text-sm">
         <span className={FIELD_LABEL_CLASS}>{label}</span>
@@ -111,8 +139,9 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
         />
       </label>
 
-      {/* 드롭다운 5종 — 반응형 그리드 */}
+      {/* 드롭다운 6종 — 반응형 그리드. manufacturer(개선 2) — 등록 폼엔 있었는데 필터엔 없던 축. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {renderSelect('manufacturer', '제조사', LISTING_OPTIONS.manufacturer)}
         {renderSelect('body_type', '차종', LISTING_OPTIONS.body_type)}
         {renderSelect('color', '색상', LISTING_OPTIONS.color)}
         {renderSelect('fuel', '연료', LISTING_OPTIONS.fuel)}
@@ -210,6 +239,83 @@ export default function SearchFilters({ initial }: { initial: SearchFilterValues
           />
         </div>
       </fieldset>
+
+      {/* 주행거리 범위(km, 개선 2) — 등록 폼엔 있었는데 필터엔 없던 축. 가격·연식과 같은 관례. */}
+      <fieldset className="flex flex-col gap-1 text-sm">
+        <span className={FIELD_LABEL_CLASS}>주행거리({UNITS.mileage})</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={LISTING_RANGES.mileage.min}
+            value={values.mileage_min}
+            onChange={(e) => update('mileage_min', e.target.value)}
+            placeholder="최소"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
+          />
+          <span className="text-ink-muted">~</span>
+          <input
+            type="number"
+            min={LISTING_RANGES.mileage.min}
+            value={values.mileage_max}
+            onChange={(e) => update('mileage_max', e.target.value)}
+            placeholder="최대"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
+          />
+        </div>
+      </fieldset>
+
+      {/* 배기량 범위(cc, 개선 2) — 위와 동일 이유. */}
+      <fieldset className="flex flex-col gap-1 text-sm">
+        <span className={FIELD_LABEL_CLASS}>배기량({UNITS.displacement})</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={LISTING_RANGES.displacement.min}
+            value={values.displacement_min}
+            onChange={(e) => update('displacement_min', e.target.value)}
+            placeholder="최소"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
+          />
+          <span className="text-ink-muted">~</span>
+          <input
+            type="number"
+            min={LISTING_RANGES.displacement.min}
+            value={values.displacement_max}
+            onChange={(e) => update('displacement_max', e.target.value)}
+            placeholder="최대"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
+          />
+        </div>
+      </fieldset>
+
+      {/* 인승 범위(명, 개선 2) — 위와 동일 이유. */}
+      <fieldset className="flex flex-col gap-1 text-sm">
+        <span className={FIELD_LABEL_CLASS}>인승(명)</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={LISTING_RANGES.seats.min}
+            max={LISTING_RANGES.seats.max}
+            value={values.seats_min}
+            onChange={(e) => update('seats_min', e.target.value)}
+            placeholder="최소"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
+          />
+          <span className="text-ink-muted">~</span>
+          <input
+            type="number"
+            min={LISTING_RANGES.seats.min}
+            max={LISTING_RANGES.seats.max}
+            value={values.seats_max}
+            onChange={(e) => update('seats_max', e.target.value)}
+            placeholder="최대"
+            className={`w-full ${FIELD_CONTROL_CLASS}`}
+          />
+        </div>
+      </fieldset>
+
+      {/* 옵션(개선 2) — 등록 폼(OptionPicker)과 같은 통제어휘, 다중 선택은 "전부 보유"(AND)로 질의된다. */}
+      <OptionFilterPicker value={values.options} onChange={updateOptions} />
 
       <div className="flex gap-3">
         <Button type="submit" variant="primary">

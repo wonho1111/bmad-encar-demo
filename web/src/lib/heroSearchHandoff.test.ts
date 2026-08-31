@@ -84,4 +84,38 @@ describe('heroSearchHandoff', () => {
     expect(consumeHeroSearchHandoff(true)).toBeNull();
     expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
+
+  // 매물 미니 카드(개선 1, 2026-09-01) — "AI 시세 진단" 버튼이 listingSummary를 실어 보내면
+  // ChatAssistant가 그대로 왕복해 읽어야 한다. isListingSummary 검증 로직을 이 두 케이스로 고정한다.
+  it('listingSummary가 있으면 그대로 왕복한다', () => {
+    const listingSummary = {
+      id: 'aaa',
+      manufacturer: '기아',
+      model: '더 뉴 쏘렌토 UM',
+      year: 2019,
+      mileage: 69041,
+      price: 15620000,
+      imageUrl: 'https://example.com/a.jpg',
+    };
+    setHeroSearchHandoff({ query: '이 매물 시세 알려줘', autoRun: true, listingId: 'aaa', listingSummary });
+    expect(consumeHeroSearchHandoff(true)).toEqual({
+      query: '이 매물 시세 알려줘',
+      autoRun: true,
+      listingId: 'aaa',
+      listingSummary,
+    });
+  });
+
+  it('listingSummary의 모양이 어긋나면(필수 필드 누락) null을 반환하고 항목을 지운다', () => {
+    sessionStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        query: '이 매물 시세 알려줘',
+        autoRun: true,
+        listingSummary: { id: 'aaa', manufacturer: '기아' }, // model·year·mileage·price 누락
+      }),
+    );
+    expect(consumeHeroSearchHandoff(true)).toBeNull();
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
 });

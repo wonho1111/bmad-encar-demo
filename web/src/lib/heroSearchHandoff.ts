@@ -15,13 +15,40 @@ export type HeroSearchHandoff = {
   // 상세 페이지 "AI 시세 진단" 버튼 전용(5단계) — 프리필 질의의 대상 매물 id. 히어로 검색·
   // 되묻기 칩 등 다른 발신처는 이 필드를 안 채운다(옵셔널, additive — 기존 소비처 회귀 없음).
   listingId?: string;
+  // 매물 미니 카드 요약(개선 1, 2026-09-01) — listingId와 세트로만 채워진다("AI 시세 진단" 버튼
+  // 전용, 다른 발신처는 이것도 안 채운다). ChatAssistant가 사용자 턴을 저장할 때 함께 보관해
+  // 말풍선 위에 미니 카드로 렌더한다. 서버로 나가는 API 요청 계약은 무변경 — listingId만 그대로 간다.
+  listingSummary?: {
+    id: string;
+    manufacturer: string;
+    model: string;
+    year: number;
+    mileage: number;
+    price: number;
+    imageUrl?: string | null;
+  };
 };
+
+function isListingSummary(value: unknown): value is NonNullable<HeroSearchHandoff['listingSummary']> {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.id === 'string' &&
+    typeof v.manufacturer === 'string' &&
+    typeof v.model === 'string' &&
+    typeof v.year === 'number' &&
+    typeof v.mileage === 'number' &&
+    typeof v.price === 'number' &&
+    (v.imageUrl === undefined || v.imageUrl === null || typeof v.imageUrl === 'string')
+  );
+}
 
 function isHeroSearchHandoff(value: unknown): value is HeroSearchHandoff {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as HeroSearchHandoff;
   if (typeof v.query !== 'string' || typeof v.autoRun !== 'boolean') return false;
   if (v.listingId !== undefined && typeof v.listingId !== 'string') return false;
+  if (v.listingSummary !== undefined && !isListingSummary(v.listingSummary)) return false;
   return true;
 }
 

@@ -30,6 +30,8 @@ export type MarketDiagnosisButtonListing = {
   year: number;
   mileage: number;
   price: number;
+  // 미니 카드 썸네일(개선 1, 2026-09-01) — page.tsx가 이미 조회한 대표사진 URL(없으면 null/undefined).
+  imageUrl?: string | null;
 };
 
 function buildPrefillQuery(listing: MarketDiagnosisButtonListing): string {
@@ -67,7 +69,21 @@ export default function MarketDiagnosisButton({
       router.push(loginHref);
       return;
     }
-    setHeroSearchHandoff({ query: buildPrefillQuery(listing), autoRun: true, listingId: listing.id });
+    setHeroSearchHandoff({
+      query: buildPrefillQuery(listing),
+      autoRun: true,
+      listingId: listing.id,
+      // 미니 카드 요약(개선 1) — ChatAssistant가 이 사용자 턴 위에 렌더한다.
+      listingSummary: {
+        id: listing.id,
+        manufacturer: listing.manufacturer,
+        model: listing.model,
+        year: listing.year,
+        mileage: listing.mileage,
+        price: listing.price,
+        imageUrl: listing.imageUrl,
+      },
+    });
     router.push('/ai');
   }
 
