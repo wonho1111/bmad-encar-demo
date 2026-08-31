@@ -649,3 +649,31 @@ def test_market_diagnoses_none_when_only_one_call(monkeypatch):
 
     assert result["market_diagnoses"] is None
     assert result["market_diagnosis"] == diagnosis
+
+
+def test_original_query_block_added_only_when_rewritten(monkeypatch):
+    """재작성이 일어난 턴은 시스템 프롬프트에 [사용자 원문]이 병기된다 — 재작성기가 구워 넣은
+    직전 매물 연식이 필터로 승격되는 실측 결함(2026-09-01) 방지 배선."""
+    captured = {}
+
+    class _CaptureLLM:
+        def invoke(self, messages):
+            captured["system"] = messages[0].content
+            return _FakeAIMessage(tool_calls=[])
+
+    def _base(monkeypatch_target):
+        final = agent_module._AgentFinalOutput(answer="안내.", selected_listing_ids=[], clarify=None)
+        _patch_base_llm(monkeypatch, _CaptureLLM(), final)
+
+    _base(monkeypatch)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: "재작성된 질의")
+    monkeypatch.setattr(agent_module, "_recent_listings_prompt_block", lambda c: None)
+
+    agent_module.run_search_agent("원문 질의", context=[{"role": "user", "content": "이전 턴"}])
+    assert "[사용자 원문]" in captured["system"] and "원문 질의" in captured["system"]
+
+    # 재작성이 일어나지 않으면(동일 반환) 원문 블록도 없다 — 단일턴 회귀 0 보장.
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    agent_module.run_search_agent("원문 질의")
+    assert "[사용자 원문]" not in captured["system"]

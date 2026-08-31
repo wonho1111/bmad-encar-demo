@@ -83,7 +83,15 @@ _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전�
 사용자의 조건에 맞는 매물을 찾고, 필요하면 근거를 곁들여 추천한다.
 
 [도구] — 아래 4개만 실제로 호출 가능한 도구다. 그 외 이름(예: "clarify")은 도구가 아니다 —
-되묻기는 도구 호출이 아니라 최종 답변의 clarify 필드를 채우는 것이다(아래 [되묻기 규칙] 참조).
+되묻기는 도구 호출이 아니라 최종 답변의 clarify 필드를 채우는 것이다(아래 [검색 필터 규칙 — 말한 조건만 건다]
+- 사용자가 명시하지 않은 필터를 지어내지 마라. 특히 **연식(year_min/year_max)**: 직전에 다룬
+  매물의 연식을 새 검색 조건으로 승격하지 마라 — "같은 차종/같은 모델" 요청은 모델 기준이지
+  연식 기준이 아니다(실측 결함 2026-09-01: 기준 매물이 2019년식이라 year_min=2019를 몰래
+  걸어 2018년식 정답이 잘림).
+- "~년식으로 확대/넓혀 검색"은 연식 **범위를 넓히라**는 뜻이다(예: 2018년식으로 확대 →
+  year_min을 2018로 내리고 year_max는 걸지 않음). 그 연식 하나만 고르라는 뜻이 아니다.
+
+[되묻기 규칙] 참조).
 - search_listings: 구조 조건(가격·연식·주행거리·차종·연료·옵션 등)으로 매물을 최대 20건까지
   과다조회한다. 이 20건은 최종 추천 개수가 아니라 되추릴 재료다.
 - search_guides: 중고차 구매 가이드 문서를 의미 검색한다. search_listings 결과가 한 조건에
@@ -309,7 +317,7 @@ def _recent_listings_prompt_block(context: list | None) -> str | None:
     return _format_recent_listings_block(cards, ids)
 
 
-def _system_prompt(listing_id: str | None, context: list | None = None) -> str:
+def _system_prompt(listing_id: str | None, context: list | None = None, original_query: str | None = None) -> str:
     """기본 시스템 프롬프트에 (1) 대상 매물 id 힌트(5단계, 상세 페이지 "AI 시세 진단" 버튼),
     (2) 직전 대화가 보여준 매물 요약(멀티턴 매물 참조)을 덧붙인다. 둘 다 없으면 원본 그대로
     돌려준다(회귀 0 — 기존 listing_id 전용 테스트가 이 동치를 고정한다).
@@ -327,6 +335,17 @@ def _system_prompt(listing_id: str | None, context: list | None = None) -> str:
     recent_block = _recent_listings_prompt_block(context)
     if recent_block:
         prompt += f"\n\n{recent_block}"
+    if original_query:
+        # 맥락 재작성기(contextualize)가 직전 매물의 속성(연식 등)을 질의문에 구워 넣으면
+        # 에이전트는 "사용자가 그 연식을 요구했다"고 오인해 필터를 지어낸다(실측 2026-09-01:
+        # "같은 차중에서 무사고 스마트크루즈" → 재작성 "2019년식 모델 중…" → year=2019 필터로
+        # 2018년식 정답 누락). 원문을 함께 줘서 필터 판단 기준을 원문으로 고정한다.
+        prompt += (
+            f"\n\n[사용자 원문]\n{original_query}\n"
+            "(검색 필터를 걸지 말지는 이 원문을 기준으로 판단하라 — 재작성된 질의에 직전 매물의 "
+            "연식·주행거리 등 속성이 끼어 있어도, 원문에서 사용자가 직접 요구하지 않았다면 그 값은 "
+            "어느 매물을 가리키는지 알려주는 맥락일 뿐 필터 조건이 아니다.)"
+        )
     return prompt
 
 
@@ -352,7 +371,8 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     base_llm = _llm()  # 키 부재 시 여기서 fail-loud — 루프 진입 전에 즉시 실패.
     tool_llm = base_llm.bind_tools(AGENT_TOOLS)
 
-    messages: list = [SystemMessage(_system_prompt(listing_id, context)), HumanMessage(effective_query)]
+    original = query if effective_query != query else None  # 재작성이 실제로 일어난 턴만 원문 병기
+    messages: list = [SystemMessage(_system_prompt(listing_id, context, original)), HumanMessage(effective_query)]
     seen_listings: dict[str, ListingCard] = {}
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
