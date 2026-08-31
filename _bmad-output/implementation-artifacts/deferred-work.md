@@ -7009,4 +7009,5 @@ location: web/src/components/ai/ChatAssistant.tsx (제어 입력 + runSearch의 
 severity: low
 reason: SSR 정적 HTML에 리스너가 붙기 전(hydration 완료 전) 타이핑하면 React 상태는 빈 문자열이라 전송 가드에 걸려 조용히 무시됨. 수정은 "hydration 전 입력 비활성화" 등 UX 트레이드오프가 있는 설계 결정이라 보류. 자가회복(재전송 시 정상)이라 데이터 유실 없음.
 trigger: 5단계 이후 웹 폴리시 정리 회차 또는 사용자가 재현 불편을 호소할 때 → 그 회차 스토리 인수조건으로 심는다.
+decision: 2026-09-01 사용자 결정 — 과제 제출 전 수정하지 않음(자가회복형·실해 없음 근거). 배포 재현 사실 인지한 채 보류.
 status: open
