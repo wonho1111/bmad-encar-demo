@@ -62,6 +62,15 @@ QUERIES: list[dict] = [
     # 새던 사례 — 옵션 동의어 계열 확장(agent_tools._OPTION_SYNONYM_GROUPS)이 잠근다.
     {"id": "S15", "query": "더 뉴 쏘렌토 UM 중에 무사고에 스마트크루즈 옵션 달린 차 추천해줘",
      "kind": "search", "min_listings": 1, "tools_expected": ["search_listings"]},
+    # 실측 결함(2026-09-01): search_listings의 옵션 필터가 OR 의미(options_any)라, "통풍시트
+    # 그리고 스마트크루즈"를 나열해도 크루즈만 있는 매물이 통과해 조건 미달 매물로 추천 개수를
+    # 채웠다(3건 중 2건 통풍시트 없음). options_required(AND)로 전환한 지점을 잠근다 — 반환
+    # 매물 전원이 통풍시트를 보유해야 한다(조건 미달 패딩이면 FAIL).
+    {"id": "S16", "query": (
+        "무난한 준중형 2~3천만원 사이에 통풍시트, 스마트 크루즈 옵션 달려있고 무사고에 "
+        "1인소유인 차량 추천해줘"
+     ), "kind": "search_options_and", "min_listings": 1, "expected_option_substring": "통풍시트",
+     "tools_expected": ["search_listings"]},
 
     # --- HYBRID(구조조건+의미 narrowing) — H그룹. 가이드 지식으로 조건을 뽑아도 결국 매물이 나와야 한다.
     {"id": "H1", "query": "3천만원 이하로 무난한 패밀리카 찾아줘", "kind": "search",
@@ -229,6 +238,21 @@ def judge(expects: dict, result: dict) -> tuple[bool, str]:
             return False, tool_reason
         return True, f"year 내림차순 확인: {years}"
 
+    if kind == "search_options_and":
+        # S16(2026-09-01) — options_required가 AND 의미로 실제 걸리는지: 최소 건수만 보는
+        # "search"와 달리, 반환된 매물 "전원"이 요구 옵션을 갖췄는지까지 본다(하나라도 빠지면
+        # 조건 미달 매물로 개수를 채운 것 — 옛 OR 의미 회귀).
+        min_n = expects.get("min_listings", 1)
+        if len(listings) < min_n:
+            return False, f"listings {len(listings)}건 < min_listings {min_n}"
+        opt = expects["expected_option_substring"]
+        missing = [l.id for l in listings if not any(opt in (o or "") for o in (l.options or []))]
+        if missing:
+            return False, f"'{opt}' 없는 매물이 결과에 포함됨(조건 미달 패딩 의심): {missing}"
+        if tool_reason:
+            return False, tool_reason
+        return True, f"listings {len(listings)}건 전원 '{opt}' 보유 확인"
+
     if kind == "guide":
         keywords = [k.lower() for k in expects.get("expected_keywords", [])]
         answer_low = (result.get("answer") or "").lower()
@@ -376,11 +400,16 @@ def judge_three_turn(expects: dict, result3: dict, turn1_listing_ids: list[str] 
 
 # ── 실행 ─────────────────────────────────────────────────────────────────────
 
-def run_once() -> tuple[list[dict], float]:
-    """QUERIES 전체를 문맥 없이(단발) 순차 실행. (결과 행 목록, 총 소요초) 반환."""
+def run_once(queries: list[dict] | None = None) -> tuple[list[dict], float]:
+    """queries를 문맥 없이(단발) 순차 실행. 생략 시 QUERIES 전체. (결과 행 목록, 총 소요초) 반환.
+
+    queries를 인자로 받게 한 이유: main()이 커맨드라인 id 선택(예: S15 S16만)을 받으면 이
+    함수에 부분집합을 넘겨 나머지(멀티턴·3턴) 없이 빠르게 표적 재검증할 수 있게 하기 위해서다.
+    """
+    queries = QUERIES if queries is None else queries
     rows: list[dict] = []
     t_start = time.time()
-    for expects in QUERIES:
+    for expects in queries:
         qid, query = expects["id"], expects["query"]
         t0 = time.time()
         try:
@@ -522,6 +551,32 @@ def print_table(rows: list[dict], total: float) -> None:
 
 
 def main() -> int:
+    """전체 회귀(단발+멀티턴+3턴)를 실행한다. 커맨드라인 인자로 QUERIES의 id(예: S15 S16)를
+    주면 그 id들만 골라 단발(run_once)만 실행하고 끝낸다(멀티턴·3턴은 단발 id와 무관하므로
+    건너뛴다) — 수정 하나를 빠르게 표적 재검증할 때 64건 전체+멀티턴+3턴을 매번 다 돌리지
+    않기 위해서다. 지정한 id가 QUERIES에 하나도 없으면(오타 등) 안전하게 전체 실행으로
+    폴백한다("가능하면 그 둘만, 아니면 전체").
+    """
+    selected_ids = sys.argv[1:]
+    if selected_ids:
+        filtered = [q for q in QUERIES if q["id"] in selected_ids]
+        if filtered:
+            rows, total = run_once(filtered)
+            print_table(rows, total)
+            failed = [r for r in rows if not r["pass"]]
+            if failed:
+                print("\nFAIL 상세:")
+                for r in failed:
+                    print(f"\n--- {r['id']} ({r['query']!r}) ---")
+                    print(f"  사유: {r['reason']}")
+                    print(f"  tools_used: {r['tools_used']}")
+                    print(f"  n_listings: {r['n_listings']}")
+                    print(f"  clarify: {r['clarify']}")
+                    print(f"  answer: {r['answer']}")
+                return 1
+            return 0
+        print(f"[경고] 지정한 id {selected_ids} 중 QUERIES에 있는 게 하나도 없음 — 전체 실행으로 폴백\n")
+
     rows, total = run_once()
     print("\n--- 멀티턴 케이스 ---")
     mt_rows, mt_total = run_multiturn_once()

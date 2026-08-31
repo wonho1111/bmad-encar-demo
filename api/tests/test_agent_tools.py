@@ -3,7 +3,8 @@
 실제 실행(라이브 LLM+DB)은 4단계 부품 B 작업 보고의 실측 3질의(api/.venv, run_search_agent)로
 확인한다. 여기서는 결정론적인 부분만 격리한다:
   (1) search_listings — sort_by 화이트리스트 밖 값 거부, limit 20 상한 강제,
-      options_any가 SQL 문자열에 직접 삽입되지 않고 파라미터로만 바인딩되는지
+      options_required가 SQL 문자열에 직접 삽입되지 않고 파라미터로만 바인딩되는지(AND 의미 —
+      옵션마다 독립된 EXISTS 절+배열 파라미터)
   (2) search_guides — app.rerank_client.rerank가 None이면 원래 순서를 유지하는 폴백,
       값을 주면 그 순서로 재정렬되는지
   (3) market_price_stats — app.market_price.diagnose를 readonly_connection 트랜잭션 안에서
@@ -55,7 +56,10 @@ def test_search_listings_caps_limit_to_20(monkeypatch):
     assert captured["params"][-1] == 20  # _MAX_SEARCH_LIMIT(20)으로 강제 보정.
 
 
-def test_search_listings_options_any_binds_as_param_not_interpolated(monkeypatch):
+def test_search_listings_options_required_are_and_combined(monkeypatch):
+    """수정(2026-09-01): 옵션 여러 개는 AND 의미다 — 옵션마다 독립된 EXISTS 절 + 독립된
+    파라미터 배열이 SQL에 쌓인다(전체는 " AND "로 결합). 실측 결함: 예전 OR(options_any)
+    의미로는 "통풍시트 그리고 스마트크루즈"를 나열해도 크루즈만 있는 매물이 통과했다."""
     captured = {}
 
     def fake_run_select(sql, params=None):
@@ -65,21 +69,26 @@ def test_search_listings_options_any_binds_as_param_not_interpolated(monkeypatch
 
     monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
     agent_tools.search_listings.func(
-        query_text="아무거나", sort_by="price_asc", options_any=["스마트키", "통풍시트"],
+        query_text="아무거나", sort_by="price_asc", options_required=["스마트키", "통풍시트"],
     )
     # SQL 문자열에는 값이 직접 삽입되지 않고 자리표시자(%s)만 남는다.
     assert "스마트키" not in captured["sql"]
-    # 정규화(공백제거+양방향 부분일치) SQL 형태 — unnest 교차조인 + replace(...,' ','') ILIKE.
-    assert "unnest(options)" in captured["sql"]
+    # 옵션 2개 → EXISTS 절 2개(리터럴 기대) — AND 결합.
+    assert captured["sql"].count("EXISTS (SELECT 1 FROM unnest(options)") == 2
     assert "unnest(%s::text[])" in captured["sql"]
     assert "replace(o, ' ', '')" in captured["sql"]
-    # 실제 값은 파라미터 배열로만 전달된다(바인딩) — 공백은 이미 제거된 채로 바인딩.
-    assert ["스마트키", "통풍시트"] in captured["params"]
+    # 실제 값은 옵션마다 독립된 파라미터 배열로 전달된다(하나로 합쳐지지 않는다 — OR 시절과의 차이).
+    option_arrays = [p for p in captured["params"] if isinstance(p, list)]
+    assert len(option_arrays) == 2
+    assert option_arrays[0] == ["스마트키"]
+    assert option_arrays[1] == ["통풍시트"]
 
 
-def test_search_listings_options_any_normalizes_spacing(monkeypatch):
+def test_search_listings_options_required_normalizes_spacing_and_expands_synonyms_per_option(monkeypatch):
     """LLM이 띄어쓰기 풀네임("어댑티브 크루즈 컨트롤")을 넣어도 파라미터는 공백이 제거된
-    채로 바인딩된다 — DB 실존 문자열("어댑티브크루즈")과 정규화 비교되도록(실측 결함 #2)."""
+    채로 바인딩되고(DB 실존 문자열과 정규화 비교, 실측 결함 #2), 동의어 계열도 함께
+    확장된다(2026-09-01). 옵션이 여러 개일 땐 각자 자기 배열로만 확장된다 — "통풍시트"
+    배열에 크루즈 동의어가 섞이지 않는다(옵션 단위 격리, AND 의미 유지에 필수)."""
     captured = {}
 
     def fake_run_select(sql, params=None):
@@ -89,17 +98,21 @@ def test_search_listings_options_any_normalizes_spacing(monkeypatch):
     monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
     agent_tools.search_listings.func(
         query_text="아무거나", sort_by="price_asc",
-        options_any=["어댑티브 크루즈 컨트롤", "스마트 크루즈 컨트롤"],
+        options_required=["통풍시트", "어댑티브 크루즈 컨트롤"],
     )
-    # 2026-09-01 동의어 확장 후: 공백 정규화에 더해 크루즈 계열 전체가 함께 바인딩된다
-    # ("스마트크루즈" 요청이 "어댑티브크루즈" 매물과 만나는 실측 결함 수정).
     option_arrays = [p for p in captured["params"] if isinstance(p, list)]
-    sent = set(option_arrays[0])
-    assert {"어댑티브크루즈컨트롤", "스마트크루즈컨트롤"} <= sent  # 정규화 유지
+    assert len(option_arrays) == 2
+    ventilated_array, cruise_array = option_arrays[0], option_arrays[1]
+    # 통풍시트는 동의어 그룹이 없어 자기 자신만 담긴다 — 크루즈 동의어가 섞이지 않는다.
+    assert ventilated_array == ["통풍시트"]
+    # 크루즈 쪽은 공백 정규화 + 동의어 계열 확장이 함께 일어난다.
+    sent = set(cruise_array)
+    assert "어댑티브크루즈컨트롤" in sent  # 정규화 유지
     assert {"어댑티브크루즈", "스마트크루즈", "크루즈컨트롤"} <= sent  # 동의어 확장
+    assert "통풍시트" not in sent  # 격리 확인
 
 
-def test_search_listings_options_any_strips_wildcard_chars(monkeypatch):
+def test_search_listings_options_required_strips_wildcard_chars(monkeypatch):
     """요청 옵션 문자열에 %·_가 섞여 있으면 ILIKE 와일드카드로 오염되지 않게 제거된다."""
     captured = {}
 
@@ -109,13 +122,14 @@ def test_search_listings_options_any_strips_wildcard_chars(monkeypatch):
 
     monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
     agent_tools.search_listings.func(
-        query_text="아무거나", sort_by="price_asc", options_any=["스마트%키_"],
+        query_text="아무거나", sort_by="price_asc", options_required=["스마트%키_"],
     )
     assert ["스마트키"] in captured["params"]
 
 
-def test_search_listings_options_any_blank_after_sanitize_skips_clause(monkeypatch):
-    """정규화 후 남는 게 없으면(전부 공백·와일드카드였으면) 필터절 자체를 넣지 않는다."""
+def test_search_listings_options_required_blank_after_sanitize_skips_clause(monkeypatch):
+    """정규화 후 남는 게 없는 옵션(전부 공백·와일드카드였으면)은 그 옵션의 EXISTS 절만
+    빠지고, 나머지 옵션은 그대로 AND 조건에 남는다."""
     captured = {}
 
     def fake_run_select(sql, params=None):
@@ -124,8 +138,42 @@ def test_search_listings_options_any_blank_after_sanitize_skips_clause(monkeypat
         return [_fake_row()]
 
     monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
-    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", options_any=["  ", "%%"])
+    agent_tools.search_listings.func(
+        query_text="아무거나", sort_by="price_asc", options_required=["  ", "%%"],
+    )
     assert "unnest(options)" not in captured["sql"]
+
+
+def test_search_listings_single_owner_only_filters_is_single_owner(monkeypatch):
+    """single_owner_only=True면 is_single_owner IS TRUE 조건이 SQL에 걸린다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(
+        query_text="아무거나", sort_by="price_asc", single_owner_only=True,
+    )
+    assert "is_single_owner IS TRUE" in captured["sql"]
+
+
+def test_search_listings_non_smoker_only_filters_is_non_smoker(monkeypatch):
+    """non_smoker_only=True면 is_non_smoker IS TRUE 조건이 SQL에 걸린다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(
+        query_text="아무거나", sort_by="price_asc", non_smoker_only=True,
+    )
+    assert "is_non_smoker IS TRUE" in captured["sql"]
 
 
 # ───────── (1b) search_listings — model_keyword 정규화(실측 결함 #1) ─────────

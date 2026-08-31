@@ -146,7 +146,7 @@ def _normalize_model_keyword(
 
 
 def _sanitize_ilike_fragment(text: str) -> str:
-    """ILIKE 패턴 조립 재료에서 와일드카드 특수문자(%·_)를 제거한다. options_any 값은
+    """ILIKE 패턴 조립 재료에서 와일드카드 특수문자(%·_)를 제거한다. options_required 값은
     사용자/LLM이 자유 입력한 문자열이라, 그대로 패턴에 이어붙이면 %나 _가 의도치 않게
     와일드카드로 해석된다(SQL 인젝션은 아니다 — 파라미터 바인딩은 유지되지만, 패턴의
     '의미'가 사용자 입력에 흔들리는 문제).
@@ -188,7 +188,9 @@ def search_listings(
     year_max: int | None = None,
     mileage_max: int | None = None,
     accident_free_only: bool | None = None,
-    options_any: list[str] | None = None,
+    options_required: list[str] | None = None,
+    single_owner_only: bool | None = None,
+    non_smoker_only: bool | None = None,
     sort_by: Literal["price_asc", "price_desc", "year_desc", "mileage_asc", "similarity"] | None = None,
     limit: int = _DEFAULT_SEARCH_LIMIT,
 ) -> tuple[str, list[ListingCard]]:
@@ -202,9 +204,13 @@ def search_listings(
     model_keyword는 **모델명 전용**이다(예: "쏘렌토","아반떼") — 제조사·차종을 여기 넣지
     말고 반드시 전용 인자(manufacturer/body_type)를 써라. 섞여 들어와도 코드가 토큰 단위로
     걸러내긴 하지만, 전용 인자를 쓰는 편이 더 정확하다.
-    options_any는 사용자가 요구한 옵션 문자열 목록(예: ["스마트키","통풍시트"]) — 하나라도
-    포함된 매물만 걸러진다. 옵션명은 대략적으로 적어도 된다(공백·부분일치를 허용해 정규화
-    비교한다 — 예: "어댑티브 크루즈 컨트롤"도 DB의 "어댑티브크루즈"와 매칭된다).
+    options_required는 사용자가 요구한 옵션 문자열 목록(예: ["스마트키","통풍시트"]) —
+    나열한 옵션을 **전부** 갖춘 매물만 걸러진다(하나라도 빠지면 제외, AND 의미). 옵션명은
+    대략적으로 적어도 된다(공백·부분일치·동의어 계열을 허용해 정규화 비교한다 — 예:
+    "어댑티브 크루즈 컨트롤"도 DB의 "어댑티브크루즈"와 매칭된다).
+    single_owner_only=True면 1인소유(is_single_owner) 매물만, non_smoker_only=True면
+    비흡연(is_non_smoker) 매물만 걸러진다 — 사용자가 "1인소유"·"비흡연"을 요구하면 이
+    전용 인자를 써라(options_required에 문자열로 넣지 마라).
     """
     limit = min(max(int(limit or _DEFAULT_SEARCH_LIMIT), 1), _MAX_SEARCH_LIMIT)
 
@@ -258,33 +264,42 @@ def search_listings(
     if accident_free_only:
         clauses.append("accident_free = %s")
         params.append(True)
-    if options_any:
+    if single_owner_only:
+        clauses.append("is_single_owner IS TRUE")
+    if non_smoker_only:
+        clauses.append("is_non_smoker IS TRUE")
+    if options_required:
         # 정확 일치(&&)는 LLM이 "어댑티브 크루즈 컨트롤"처럼 띄어쓰기 풀네임을 넣으면
         # DB 실존 문자열("어댑티브크루즈")과 어긋나 0건으로 샌다(실측 결함). 공백 제거 +
-        # 양방향 부분일치로 바꿔 정규화 비교한다 — options_any 중 하나라도 매칭되면 통과
-        # (any 의미 유지). 파라미터 바인딩은 그대로 유지(요청값은 %s 배열로만 전달, SQL
-        # 텍스트에 직접 삽입하지 않는다). 요청값의 %·_는 와일드카드 오염 방지로 제거한다
-        # (_sanitize_ilike_fragment) — psycopg는 params가 있으면 SQL 텍스트 전체에서 '%'를
-        # 자리표시자로 스캔하므로, 패턴 조립에 쓰는 리터럴 '%'도 '%%'로 이스케이프한다
-        # (hybrid_rag_node.py와 동일 이유).
+        # 양방향 부분일치로 바꿔 정규화 비교한다. 파라미터 바인딩은 그대로 유지(요청값은
+        # %s 배열로만 전달, SQL 텍스트에 직접 삽입하지 않는다). 요청값의 %·_는 와일드카드
+        # 오염 방지로 제거한다(_sanitize_ilike_fragment) — psycopg는 params가 있으면 SQL
+        # 텍스트 전체에서 '%'를 자리표시자로 스캔하므로, 패턴 조립에 쓰는 리터럴 '%'도
+        # '%%'로 이스케이프한다(hybrid_rag_node.py와 동일 이유).
         # 동의어 확장을 부분일치 앞에 건다 — "스마트크루즈" 요청이 "어댑티브크루즈" 매물과
         # 만나려면 글자 부분일치로는 불가능하고 계열 확장이 필요하다(실측 결함 2026-09-01).
-        expanded_options: list[str] = []
-        for opt in options_any:
-            if opt and opt.strip():
-                expanded_options.extend(_expand_option_synonyms(opt.strip()))
-        normalized_options = [
-            _sanitize_ilike_fragment(opt).replace(" ", "")
-            for opt in dict.fromkeys(expanded_options)
-        ]
-        normalized_options = [o for o in normalized_options if o]
-        if normalized_options:
+        #
+        # ⚠️ 옵션 간 의미는 AND다(실측 결함 2026-09-01): "통풍시트 그리고 스마트크루즈"를
+        # 나열하면 둘 다 갖춘 매물만 나와야 한다. 요청 옵션마다 별도 EXISTS 절을 만들어
+        # clauses에 각각 추가한다(전체가 " AND "로 결합되므로 옵션 개수만큼 EXISTS가
+        # 쌓인다) — 그래서 동의어 확장도 옵션별로 독립된 %s::text[] 배열에 바인딩한다
+        # (한 옵션의 동의어가 다른 옵션의 배열에 섞이면 안 된다, 옵션 단위 격리).
+        for opt in options_required:
+            if not (opt and opt.strip()):
+                continue
+            expanded = _expand_option_synonyms(opt.strip())
+            normalized_opt = [
+                _sanitize_ilike_fragment(e).replace(" ", "") for e in expanded
+            ]
+            normalized_opt = [o for o in normalized_opt if o]
+            if not normalized_opt:
+                continue
             clauses.append(
                 "EXISTS (SELECT 1 FROM unnest(options) o CROSS JOIN unnest(%s::text[]) req "
                 "WHERE replace(o, ' ', '') ILIKE '%%' || req || '%%' "
                 "OR req ILIKE '%%' || replace(o, ' ', '') || '%%')"
             )
-            params.append(normalized_options)
+            params.append(normalized_opt)
     where_sql = " AND ".join(clauses)
 
     if sort_by is None or sort_by == "similarity":
