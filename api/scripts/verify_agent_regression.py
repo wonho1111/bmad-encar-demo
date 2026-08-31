@@ -58,6 +58,10 @@ QUERIES: list[dict] = [
      "min_listings": 1, "tools_expected": ["search_listings"]},
     {"id": "S14", "query": "쏘렌토 있어?", "kind": "search",
      "min_listings": 1, "tools_expected": ["search_listings"]},
+    # 실측 결함(2026-09-01): "스마트크루즈"가 DB의 "어댑티브크루즈"와 글자가 달라 0건으로
+    # 새던 사례 — 옵션 동의어 계열 확장(agent_tools._OPTION_SYNONYM_GROUPS)이 잠근다.
+    {"id": "S15", "query": "더 뉴 쏘렌토 UM 중에 무사고에 스마트크루즈 옵션 달린 차 추천해줘",
+     "kind": "search", "min_listings": 1, "tools_expected": ["search_listings"]},
 
     # --- HYBRID(구조조건+의미 narrowing) — H그룹. 가이드 지식으로 조건을 뽑아도 결국 매물이 나와야 한다.
     {"id": "H1", "query": "3천만원 이하로 무난한 패밀리카 찾아줘", "kind": "search",

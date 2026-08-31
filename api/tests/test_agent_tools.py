@@ -91,7 +91,12 @@ def test_search_listings_options_any_normalizes_spacing(monkeypatch):
         query_text="아무거나", sort_by="price_asc",
         options_any=["어댑티브 크루즈 컨트롤", "스마트 크루즈 컨트롤"],
     )
-    assert ["어댑티브크루즈컨트롤", "스마트크루즈컨트롤"] in captured["params"]
+    # 2026-09-01 동의어 확장 후: 공백 정규화에 더해 크루즈 계열 전체가 함께 바인딩된다
+    # ("스마트크루즈" 요청이 "어댑티브크루즈" 매물과 만나는 실측 결함 수정).
+    option_arrays = [p for p in captured["params"] if isinstance(p, list)]
+    sent = set(option_arrays[0])
+    assert {"어댑티브크루즈컨트롤", "스마트크루즈컨트롤"} <= sent  # 정규화 유지
+    assert {"어댑티브크루즈", "스마트크루즈", "크루즈컨트롤"} <= sent  # 동의어 확장
 
 
 def test_search_listings_options_any_strips_wildcard_chars(monkeypatch):
@@ -363,3 +368,29 @@ def test_invalid_fuel_raises_with_allowed_values():
             {"fuel": "가솔린+전기", "query_text": "하이브리드"}
         )
     assert "하이브리드" in str(exc.value)
+
+
+def test_option_synonym_expansion_smart_cruise_reaches_adaptive():
+    """실측 결함(2026-09-01): '스마트크루즈' 요청이 '어댑티브크루즈' 매물과 만나야 한다."""
+    from app.graph.agent_tools import _expand_option_synonyms
+
+    out = _expand_option_synonyms("스마트크루즈")
+    assert "어댑티브크루즈" in out and "크루즈컨트롤" in out
+
+
+def test_option_synonym_panorama_does_not_expand_to_plain_sunroof():
+    """프롬프트 원문 예외: 파노라마 명시 시 일반 선루프로 확장 금지."""
+    from app.graph.agent_tools import _expand_option_synonyms
+
+    out = _expand_option_synonyms("파노라마선루프")
+    assert "선루프" not in out and "파노라마선루프" in out
+
+
+def test_option_synonym_groups_match_prompt_source():
+    """동의어 그룹이 정본(sql_rag_node 프롬프트 원문)과 표류하지 않는지 잠근다."""
+    from app.graph.agent_tools import _OPTION_SYNONYM_GROUPS
+    from app.graph.sql_rag_node import _DOMAIN_RULES
+
+    for group in _OPTION_SYNONYM_GROUPS:
+        for member in group:
+            assert member in _DOMAIN_RULES, f"{member}가 프롬프트 원문에 없음 — 두 정의가 갈라짐"

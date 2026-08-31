@@ -78,6 +78,42 @@ _BODY_TYPE_WHITELIST = {
 # listings.fuel CHECK 제약(0002)과 동일 — LLM이 '가솔린+전기' 같은 비실존 값을 지어내는 것 방지.
 _FUEL_WHITELIST = {"가솔린", "디젤", "하이브리드", "전기", "LPG"}
 
+# 옵션 동의어 그룹 — sql_rag_node._DOMAIN_RULES의 프롬프트 지시(2026-08-29 사용자 승인,
+# DB 실측 옵션 문자열 기준)를 기계용 데이터로 옮긴 사본. 실측 결함(2026-09-01): "스마트크루즈"로
+# 요청하면 부분일치로는 "어댑티브크루즈" 매물(더 뉴 쏘렌토 UM 무사고 2건, DB 정답)과 영원히 못
+# 만난다 — 글자가 달라서. 프롬프트 원문과의 일치는 tests/test_agent_tools.py가 잠근다(표류 방지).
+_OPTION_SYNONYM_GROUPS: list[frozenset[str]] = [
+    frozenset({"크루즈컨트롤", "어댑티브크루즈", "스마트크루즈"}),
+    frozenset({"주차센서", "후방센서", "후방감지센서"}),
+    frozenset({"헤드업디스플레이", "HUD", "증강현실HUD"}),
+    frozenset({"선루프", "파노라마선루프"}),
+    frozenset({"어라운드뷰", "서라운드뷰"}),
+    frozenset({"가죽시트", "나파가죽", "나파가죽시트"}),
+    frozenset({"급속충전지원", "초고속충전"}),
+    frozenset({"하만카돈", "렉시콘사운드", "뱅앤올룹슨"}),
+]
+_SUNROOF_GROUP = frozenset({"선루프", "파노라마선루프"})
+
+
+def _expand_option_synonyms(opt: str) -> list[str]:
+    """요청 옵션 하나를 동의어 계열로 확장한다(공백 제거 후 양방향 부분일치로 그룹 탐지).
+
+    프롬프트 원문의 예외도 그대로 옮긴다: "파노라마"를 명시한 요청은 선루프 그룹으로
+    확장하지 않는다(일반 선루프만 있는 매물이 파노라마 요청에 걸리면 오검색).
+    """
+    norm = opt.replace(" ", "")
+    expanded = {opt}
+    for group in _OPTION_SYNONYM_GROUPS:
+        if group == _SUNROOF_GROUP and "파노라마" in norm:
+            continue
+        for member in group:
+            m = member.replace(" ", "")
+            if m in norm or norm in m:
+                expanded |= group
+                break
+    return sorted(expanded)
+
+
 # compare_listings에 한 번에 넣을 수 있는 최대 매물 수(설계 확정값) — 초과분은 앞에서부터 자른다.
 _COMPARE_MAX = 4
 
@@ -227,10 +263,15 @@ def search_listings(
         # (_sanitize_ilike_fragment) — psycopg는 params가 있으면 SQL 텍스트 전체에서 '%'를
         # 자리표시자로 스캔하므로, 패턴 조립에 쓰는 리터럴 '%'도 '%%'로 이스케이프한다
         # (hybrid_rag_node.py와 동일 이유).
+        # 동의어 확장을 부분일치 앞에 건다 — "스마트크루즈" 요청이 "어댑티브크루즈" 매물과
+        # 만나려면 글자 부분일치로는 불가능하고 계열 확장이 필요하다(실측 결함 2026-09-01).
+        expanded_options: list[str] = []
+        for opt in options_any:
+            if opt and opt.strip():
+                expanded_options.extend(_expand_option_synonyms(opt.strip()))
         normalized_options = [
             _sanitize_ilike_fragment(opt).replace(" ", "")
-            for opt in options_any
-            if opt and opt.strip()
+            for opt in dict.fromkeys(expanded_options)
         ]
         normalized_options = [o for o in normalized_options if o]
         if normalized_options:
