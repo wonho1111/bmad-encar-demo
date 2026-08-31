@@ -68,6 +68,7 @@ async def search(req: SearchRequest, user=Depends(get_current_user)) -> SearchRe
             clarify=result.get("clarify"),
             narrowed_by=result.get("narrowed_by"),
             market_diagnosis=result.get("market_diagnosis"),
+            market_diagnoses=result.get("market_diagnoses"),
         )
     except SqlGuardError as exc:
         # 가드 차단·재시도 실패 — 사용자에게 의미 있는 한국어 안내(400). 서버 500 누출 금지(AC3).

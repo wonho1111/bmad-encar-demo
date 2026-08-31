@@ -49,6 +49,26 @@ _TABPFN_NOTE_RE = re.compile(r"^기본 모델군 (\d+)건 학습$")
 # (import하지 않는 이유는 모듈 docstring 참조).
 _GENERATION_PREFIXES = ("더 뉴 ", "올 뉴 ")
 
+# market_price._DISPLACEMENT_SUFFIX_RE와 동일한 값 — I9(트림 해제 순도) 독립 재계산용.
+_DISPLACEMENT_SUFFIX_RE = re.compile(r"^\d\.\d$")
+
+# verdict 새 기준(±5%, market_price._verdict_by_fair_price)의 독립 재계산용 — I5.
+_FAIR_PRICE_TOLERANCE = 0.05
+
+
+def _family_model_independent(model: str) -> str:
+    """market_price._family_model과 동일 알고리즘을 별도로 재구현한 것(독립 계산 원칙).
+
+    >>> _family_model_independent("더 뉴 그랜저 IG 3.3")
+    '더 뉴 그랜저 IG'
+    >>> _family_model_independent("아반떼 CN7 하이브리드")
+    '아반떼 CN7 하이브리드'
+    """
+    tokens = model.split()
+    if tokens and _DISPLACEMENT_SUFFIX_RE.match(tokens[-1]):
+        return " ".join(tokens[:-1])
+    return model
+
 
 def _base_model_independent(model: str) -> str:
     """market_price._base_model과 동일 알고리즘을 별도로 재구현한 것(독립 계산 원칙).
@@ -73,7 +93,7 @@ def _new_counter():
     return {"checked": 0, "skipped": 0, "violated": 0}
 
 
-INVARIANT_IDS = ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8"]
+INVARIANT_IDS = ["I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8", "I9"]
 
 
 class Sweep:
@@ -170,7 +190,7 @@ def _check_i3(sweep, listing_id, sample_count, comps, target_id):
     sweep.record("I3", listing_id, ok, detail=detail)
 
 
-def _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name):
+def _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name, family_name):
     """멈춘 단(rung)의 선언 조건을 comps 전원이 실제로 만족하는지 원자료로 독립 검사."""
     bad = []
     for c in comps:
@@ -182,6 +202,9 @@ def _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name):
         if rung["model"] == "exact":
             if raw["model"] != target["model"]:
                 bad.append({"comp_id": c["id"], "reason": "model_exact", "actual": raw["model"]})
+        elif rung["model"] == "family":
+            if not raw["model"].startswith(family_name):
+                bad.append({"comp_id": c["id"], "reason": "model_family_prefix", "actual": raw["model"]})
         else:  # "base"
             if base_name not in raw["model"]:
                 bad.append({"comp_id": c["id"], "reason": "model_base_substr", "actual": raw["model"]})
@@ -207,20 +230,41 @@ def _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name):
     sweep.record("I4", listing_id, ok, detail=bad[:5] if bad else None)
 
 
-def _check_i5(sweep, listing_id, price, stats, verdict):
-    if stats is None:
+def _check_i5(sweep, listing_id, price, stats, verdict, verdict_basis, tabpfn_price):
+    """verdict 정합 — 2026-08-31 판정 기준 전환(사용자 승인) 반영.
+
+    tabpfn 적정가가 있으면(verdict_basis="적정가") ±5% 괴리율로, 없으면(stats 있고
+    verdict_basis="사분위") 기존 사분위(q1/q3)로 독립 재계산해 비교한다. 둘 다 없으면
+    (sample_count==0, stats도 tabpfn도 없음) verdict가 None이어야 정상이라 스킵한다.
+    """
+    if stats is None and tabpfn_price is None:
         sweep.record("I5", listing_id, True, skipped=True)
         return
-    if price < stats["q1"]:
-        expected = "저렴"
-    elif price > stats["q3"]:
-        expected = "높음"
+    if tabpfn_price is not None:
+        diff = (price - tabpfn_price) / tabpfn_price
+        if diff < -_FAIR_PRICE_TOLERANCE:
+            expected = "저렴"
+        elif diff > _FAIR_PRICE_TOLERANCE:
+            expected = "높음"
+        else:
+            expected = "적정"
+        expected_basis = "적정가"
     else:
-        expected = "적정"
-    ok = verdict == expected
+        if price < stats["q1"]:
+            expected = "저렴"
+        elif price > stats["q3"]:
+            expected = "높음"
+        else:
+            expected = "적정"
+        expected_basis = "사분위"
+    ok = verdict == expected and verdict_basis == expected_basis
     detail = None
     if not ok:
-        detail = {"price": price, "q1": stats["q1"], "q3": stats["q3"], "expected": expected, "actual": verdict}
+        detail = {
+            "price": price, "tabpfn_price": tabpfn_price,
+            "stats": stats, "expected": expected, "actual": verdict,
+            "expected_basis": expected_basis, "actual_basis": verdict_basis,
+        }
     sweep.record("I5", listing_id, ok, detail=detail)
 
 
@@ -292,6 +336,26 @@ def _check_i8(sweep, listing_id, step, comps, comp_raw_map, target):
     sweep.record("I8", listing_id, ok, detail={"step": step, "contaminants": bad[:5]} if bad else None)
 
 
+# I9 파라미터 — "트림 해제(동일 세대 계열)" 단(LADDER step 3)의 순도 검사. exact 단(0~2)의
+# 세대 순도(I8)와 별개로, 트림 해제 단이 실제로 "동일 세대"만 넓히고 다른 세대(예: GN7)를
+# 끌어오지 않는지 확인한다(2026-08-31 신설, P4 실측 결함 재발 방지).
+_TRIM_RELEASE_STEP = 3
+
+
+def _check_i9(sweep, listing_id, step, comps, comp_raw_map, family_name):
+    if step != _TRIM_RELEASE_STEP:
+        sweep.record("I9", listing_id, True, skipped=True)
+        return
+    bad = []
+    for c in comps:
+        raw = comp_raw_map.get(c["id"])
+        model = raw["model"] if raw else c["model"]
+        if not model.startswith(family_name):
+            bad.append({"comp_id": c["id"], "model": model})
+    ok = not bad
+    sweep.record("I9", listing_id, ok, detail={"family_name": family_name, "contaminants": bad[:5]} if bad else None)
+
+
 def run_sweep(sample, seed):
     from app.market_price import diagnose
 
@@ -313,23 +377,26 @@ def run_sweep(sample, seed):
             stats = result["stats"]
             percentile = result["percentile"]
             verdict = result["verdict"]
+            verdict_basis = result["verdict_basis"]
             comps = result["comps"]
             tabpfn = result["tabpfn"]
             sample_count = criteria["sample_count"]
             step = criteria["step"]
             rung = LADDER[step]
             base_name = _base_model_independent(target["model"])
+            family_name = _family_model_independent(target["model"])
 
             comp_raw_map = _fetch_comp_raw(conn, [c["id"] for c in comps])
 
             _check_i1(sweep, listing_id, stats)
             _check_i2(sweep, listing_id, sample_count, stats, percentile, verdict)
             _check_i3(sweep, listing_id, sample_count, comps, target["id"])
-            _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name)
-            _check_i5(sweep, listing_id, target["price"], stats, verdict)
+            _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name, family_name)
+            _check_i5(sweep, listing_id, target["price"], stats, verdict, verdict_basis, tabpfn.get("price"))
             _check_i6(sweep, listing_id, target["price"], sample_count, comps, percentile)
             _check_i7(sweep, listing_id, tabpfn, conn, target, base_name)
             _check_i8(sweep, listing_id, step, comps, comp_raw_map, target)
+            _check_i9(sweep, listing_id, step, comps, comp_raw_map, family_name)
 
         if i % 10 == 0 or i == sweep.total:
             print(f"[verify_market_engine] 진행 {i}/{sweep.total}", file=sys.stderr)

@@ -9,17 +9,37 @@
 
 완화 사다리는 선언 리스트로 모듈 상단에 박아둔다(코드 로직에 흩뿌리지 않음) — 사다리 자체를
   바꿀 때 이 리스트 하나만 보면 된다.
+
+**2026-08-31 개정(사용자 승인, 실측 결함 4건 중 P4)**: 사다리에 "트림 해제(동일 세대 계열)"
+  단(LADDER step 3, model="family")을 추가했다 — 트림 그룹(예: "더 뉴 그랜저 IG 3.3", 표본
+  5건)에서 사다리가 사고 해제 다음 곧장 세대 해제로 점프해 GN7까지 섞인 중앙값을 기준으로
+  "저렴" 오판이 났다(같은 세대 14건 기준으론 상위 36% 가격이었음 — 실측). 동시에 verdict
+  판정 기준을 사분위(q1/q3)에서 **TabPFN 적정가 대비 괴리율(±5%)**로 전환했다(tabpfn 없으면
+  사분위 폴백 유지, `_verdict_by_fair_price`) — 표본이 적을수록 사분위 폭이 왜곡되는데 TabPFN은
+  개별 특징(연식·주행·배기량 등)으로 더 안정적인 적정가를 낸다. 응답에 `verdict_basis`
+  필드를 추가해(더하기만) 어느 기준으로 판정했는지 웹·설명문이 명시할 수 있게 했다.
+  근거 표: docs/ai-advanced/02-seed-price-calibration.md "v3 최종 확정" 표(트림별 앵커가·
+  연감가가 세대별로 크게 다름을 확인할 수 있다).
 """
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 # ── 완화 사다리 (선언형, 위에서부터 순서대로 시도) ──────────────────────
 # model: "exact"  → model = 대상모델 (세대 동일 비교, v3 확정 원칙)
+#        "family" → 후미 배기량 토큰(예: "3.3") 제거한 접두로 model ilike '접두%' (동일 세대,
+#                    트림만 다른 매물까지 허용 — 아래 _family_model 참조)
 #        "base"   → "더 뉴 "/"올 뉴 " 접두 제거 후 첫 토큰으로 model ilike '%기본명%'
 # fuel/accident: True면 조건을 건다(아래 _build_where 참조), False면 조건 해제.
 # year_band/km_band: 대상 연식·주행 대비 허용 편차.
+#
+# 2026-08-31 사용자 실측 결함(P4): 트림 그룹(예: "더 뉴 그랜저 IG 3.3", 표본 5건)에서 사다리가
+#   곧장 세대 해제(step 4, "base")로 점프해 GN7까지 섞인 중앙값을 기준으로 "저렴" 오판이 났다
+#   (같은 세대 14건 기준으론 상위 36% 가격이었음 — 실측). "동일 세대 계열(트림 해제)" 단을 사고
+#   해제(구 step2)와 세대 해제(구 step3) 사이에 끼워, 트림만 다른 동세대 매물까지 먼저 넓혀보고
+#   그래도 표본이 모자랄 때만 세대를 넘어가게 한다.
 LADDER = [
     {
         "step": 0,
@@ -50,6 +70,15 @@ LADDER = [
     },
     {
         "step": 3,
+        "desc": "트림 해제(동일 세대 계열)",
+        "model": "family",
+        "fuel": True,
+        "accident": False,
+        "year_band": 3,
+        "km_band": 50_000,
+    },
+    {
+        "step": 4,
         "desc": "세대 해제(기본 모델명 매칭)",
         "model": "base",
         "fuel": True,
@@ -58,7 +87,7 @@ LADDER = [
         "km_band": 50_000,
     },
     {
-        "step": 4,
+        "step": 5,
         "desc": "연료 조건 해제",
         "model": "base",
         "fuel": False,
@@ -73,6 +102,10 @@ MIN_SAMPLE = 5
 # "더 뉴 "/"올 뉴 " 접두 제거 후 기본 모델명(첫 토큰) 추출 — v3 확정 명칭 체계
 # ("더 뉴 그랜저 IG" → "그랜저", "올 뉴 쏘렌토" → "쏘렌토").
 _GENERATION_PREFIXES = ("더 뉴 ", "올 뉴 ")
+
+# 후미 배기량 토큰 판정(예: "3.3", "2.5", "3.0") — model 문자열 마지막 토큰이 이 모양이면
+# 트림(배기량) 표기로 보고 제거한다(_family_model). "더 뉴 그랜저 IG 3.3" → "더 뉴 그랜저 IG".
+_DISPLACEMENT_SUFFIX_RE = re.compile(r"^\d\.\d$")
 
 # TabPFN 특징 벡터의 연료 원핫 순서(listings.fuel CHECK 목록, 0002_listings.sql과 동일 순서).
 _FUEL_ORDER = ["가솔린", "디젤", "하이브리드", "전기", "LPG"]
@@ -104,6 +137,25 @@ def _base_model(model: str) -> str:
     return tokens[0] if tokens else stripped
 
 
+def _family_model(model: str) -> str:
+    """model 문자열의 후미 배기량 토큰(정규식 ^\\d\\.\\d$, 예: "3.3")을 제거한 접두를 반환한다
+    ("트림 해제(동일 세대 계열)" 단, LADDER step 3). 후미가 배기량 형태가 아니면 원본 model을
+    그대로 돌려준다 — 그 경우 이 단의 `model ILIKE 원본%` 조건은 exact 단과 사실상 같은 표본을
+    내므로 별도 처리 없이 그대로 통과시킨다(설계 확정, 구현 단순화 허용).
+
+    >>> _family_model("더 뉴 그랜저 IG 3.3")
+    '더 뉴 그랜저 IG'
+    >>> _family_model("그랜저 IG 3.0")
+    '그랜저 IG'
+    >>> _family_model("아반떼 CN7 하이브리드")
+    '아반떼 CN7 하이브리드'
+    """
+    tokens = model.split()
+    if tokens and _DISPLACEMENT_SUFFIX_RE.match(tokens[-1]):
+        return " ".join(tokens[:-1])
+    return model
+
+
 def _build_where(rung: dict, target: dict) -> tuple[str, list]:
     """사다리 한 단(rung)의 WHERE 절과 파라미터를 만든다.
 
@@ -116,6 +168,10 @@ def _build_where(rung: dict, target: dict) -> tuple[str, list]:
     if rung["model"] == "exact":
         clauses.append("model = %s")
         params.append(target["model"])
+    elif rung["model"] == "family":  # 트림 해제 — 동일 세대 계열(배기량 접두 제거) 부분일치
+        family = _family_model(target["model"])
+        clauses.append("model ilike %s")
+        params.append(f"{family}%")
     else:  # "base" — 세대 해제, 기본 모델명 부분일치
         base = _base_model(target["model"])
         clauses.append("model ilike %s")
@@ -166,10 +222,31 @@ def _comps_sql(where_sql: str) -> str:
 
 
 def _verdict(price: int, q1: float, q3: float) -> str:
-    """q1 미만=저렴, q3 초과=높음, 그 외 적정. 결정론(LLM 아님)."""
+    """[사분위 폴백] q1 미만=저렴, q3 초과=높음, 그 외 적정. 결정론(LLM 아님).
+
+    TabPFN 적정가가 없을 때만 쓴다 — 있으면 _verdict_by_fair_price가 우선한다(diagnose()의
+    verdict_basis 분기 참조, 2026-08-31 사용자 승인 판정 기준 전환).
+    """
     if price < q1:
         return "저렴"
     if price > q3:
+        return "높음"
+    return "적정"
+
+
+def _verdict_by_fair_price(price: int, fair_price: int) -> str:
+    """[적정가 기준] TabPFN 예측가 대비 괴리율로 판정한다(2026-08-31 사용자 승인).
+
+    diff = (대상가 - 적정가) / 적정가. |diff| <= 5%면 '적정', diff < -5%면 '저렴'(적정가보다
+    싸다), diff > 5%면 '높음'. 사분위(q1/q3) 기준보다 우선한다 — 트림 그룹처럼 표본이 적어
+    사분위 폭이 왜곡되는 경우에도 TabPFN이 개별 특징(연식·주행·배기량 등)으로 낸 적정가는
+    더 안정적이다(실측: 트림 그룹 5건 사분위 기준으론 "저렴"이었으나 동세대 14건 기준으론
+    상위 36% 가격 — docs/ai-advanced/02-seed-price-calibration.md 참조).
+    """
+    diff = (price - fair_price) / fair_price
+    if diff < -0.05:
+        return "저렴"
+    if diff > 0.05:
         return "높음"
     return "적정"
 
@@ -288,7 +365,6 @@ def diagnose(listing_id: str, conn) -> dict | None:
     if sample_count == 0:
         stats = None
         percentile = None
-        verdict = None
     else:
         stats = {
             "min": stats_row["min_price"],
@@ -298,9 +374,22 @@ def diagnose(listing_id: str, conn) -> dict | None:
             "max": stats_row["max_price"],
         }
         percentile = stats_row["percentile"]
-        verdict = _verdict(target["price"], stats["q1"], stats["q3"])
 
+    # tabpfn 예측을 verdict보다 먼저 계산한다 — 판정 기준 전환(2026-08-31 사용자 승인):
+    # tabpfn 적정가가 있으면 그 괴리율로, 없으면 기존 사분위로 폴백한다(_verdict_by_fair_price
+    # 참조). sample_count==0이면 비교군 자체가 없으므로 verdict도 None으로 둔다(사분위 폴백조차
+    # 근거가 없음 — I2 불변식: stats/percentile/verdict는 항상 함께 None이거나 함께 채워진다).
     tabpfn_price, tabpfn_note = _tabpfn_predict(target, train_rows)
+
+    if sample_count == 0:
+        verdict = None
+        verdict_basis = None
+    elif tabpfn_price is not None:
+        verdict = _verdict_by_fair_price(target["price"], tabpfn_price)
+        verdict_basis = "적정가"
+    else:
+        verdict = _verdict(target["price"], stats["q1"], stats["q3"])
+        verdict_basis = "사분위"
 
     return {
         "listing": _listing_summary(target),
@@ -312,6 +401,7 @@ def diagnose(listing_id: str, conn) -> dict | None:
         "stats": stats,
         "percentile": percentile,
         "verdict": verdict,
+        "verdict_basis": verdict_basis,
         "tabpfn": {"price": tabpfn_price, "note": tabpfn_note},
         "comps": [_comp_summary(r) for r in comp_rows],
     }

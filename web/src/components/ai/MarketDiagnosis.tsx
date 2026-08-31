@@ -14,6 +14,7 @@
 // ⚠️ mock(사용자 확정 목업)은 자동차365 참고선·표기를 포함하지만, 상위 결정으로 이 프로젝트는
 //   그 데이터를 갖고 있지 않아(실데이터 없음) 구현하지 않는다 — 각주는 TabPFN·표본 수 두 줄뿐이다.
 import { formatPrice, formatStatPrice } from '@/lib/price';
+import AnswerText from './AnswerText';
 import MarketDiagnosisChart from './MarketDiagnosisChart';
 
 export type MarketDiagnosisListing = {
@@ -53,11 +54,20 @@ export type MarketDiagnosisData = {
   stats: MarketDiagnosisStats | null;
   percentile: number | null;
   verdict: '저렴' | '적정' | '높음' | null;
+  // 판정 기준(2026-08-31 추가, additive) — tabpfn 적정가가 있으면 "적정가"(괴리율 ±5% 기준),
+  // 없으면 "사분위"(q1/q3 폴백). verdict가 null이면 이 값도 null(비교군 자체가 없는 경우).
+  verdict_basis: '적정가' | '사분위' | null;
   tabpfn: { price: number | null; note: string };
   comps: MarketDiagnosisComp[];
 };
 
 // 완화 사다리 표시 전용 복제본(정본: api/app/market_price.py LADDER) — 취소선 칩 판단에만 쓴다.
+//
+// 2026-08-31 개정: 백엔드 LADDER에 "트림 해제(동일 세대 계열)" 단이 step3으로 끼어들면서
+// 이후 단이 한 칸씩 밀렸다(구 step3 "세대 해제"→4, 구 step4 "연료 해제"→5). step3은 모델
+// 문자열이 더는 완전 일치가 아니므로(family 접두 매칭) modelExact=false — 세대 해제(step4)와
+// 칩 표시상으론 동일하고, 실제 차이(트림만 확장 vs 세대까지 확장)는 criteria.desc 배지
+// 문구로만 구분된다.
 const RUNG_DISPLAY: Record<
   number,
   { yearBand: number; kmBand: number; fuelActive: boolean; accidentActive: boolean; modelExact: boolean }
@@ -66,7 +76,8 @@ const RUNG_DISPLAY: Record<
   1: { yearBand: 3, kmBand: 50_000, fuelActive: true, accidentActive: true, modelExact: true },
   2: { yearBand: 3, kmBand: 50_000, fuelActive: true, accidentActive: false, modelExact: true },
   3: { yearBand: 3, kmBand: 50_000, fuelActive: true, accidentActive: false, modelExact: false },
-  4: { yearBand: 3, kmBand: 50_000, fuelActive: false, accidentActive: false, modelExact: false },
+  4: { yearBand: 3, kmBand: 50_000, fuelActive: true, accidentActive: false, modelExact: false },
+  5: { yearBand: 3, kmBand: 50_000, fuelActive: false, accidentActive: false, modelExact: false },
 };
 
 /** 주행거리를 "3.3만km" 식 만 단위로 표시한다(정수면 "3만km", 소수면 소수 1자리). */
@@ -147,11 +158,16 @@ export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosi
     <div className="flex w-full flex-col gap-4">
       {/* ① 판정 헤드라인(LLM answer) + 백분위 미니칩 */}
       <div className="flex flex-wrap items-center gap-2">
-        <p className="whitespace-pre-wrap text-[17px] font-bold leading-snug text-ink-primary">{answer}</p>
+        <div className="min-w-0">
+          <AnswerText text={answer} className="text-[17px] font-bold leading-snug text-ink-primary" />
+        </div>
         {verdict && (
           <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-caption font-semibold ${verdictToneClass(verdict)}`}>
             {verdict}
           </span>
+        )}
+        {data.verdict_basis === '적정가' && (
+          <span className="shrink-0 whitespace-nowrap text-caption text-ink-muted">(적정가 기준)</span>
         )}
         {percentile !== null && (
           <span className="shrink-0 whitespace-nowrap rounded-full border border-border-hairline bg-surface-base px-2.5 py-0.5 text-caption text-ink-secondary">

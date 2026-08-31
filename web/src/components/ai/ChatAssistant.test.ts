@@ -90,6 +90,7 @@ describe('buildContext — listing_ids 배선', () => {
           stats: null,
           percentile: null,
           verdict: null,
+          verdict_basis: null,
           tabpfn: { price: null, note: '' },
           comps: [],
         },

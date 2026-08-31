@@ -219,6 +219,34 @@ def test_search_listings_similarity_sort_calls_embed_query(monkeypatch):
     assert "ORDER BY embedding <=> %s::vector" in captured["sql"]
 
 
+def test_search_listings_prioritizes_exact_model_match_when_similarity_sort(monkeypatch):
+    # D(2026-08-31, 실측 P4 연장): model_keyword가 있으면 유사도 정렬보다 "정확 세대 일치"가
+    # 먼저 온다 — "그랜저 IG"로 검색하면 부분일치("더 뉴 그랜저 IG")보다 정확히 "그랜저 IG"인
+    # 매물이 먼저 나와야 세대 혼동이 없다.
+    captured = {}
+    monkeypatch.setattr(agent_tools, "embed_query", lambda q: [0.1, 0.2, 0.3])
+    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: (
+        captured.update(sql=sql, params=params), [_fake_row()]
+    )[1])
+    agent_tools.search_listings.func(query_text="그랜저 IG 보여줘", model_keyword="그랜저 IG")
+    assert "ORDER BY (model = %s) DESC, embedding <=> %s::vector" in captured["sql"]
+    # 파라미터 순서: WHERE절 바인딩(model ILIKE 포함) → 정확일치 보조값 → 벡터 → limit.
+    assert captured["params"][-3] == "그랜저 IG"  # 정확일치 보조 파라미터
+
+
+def test_search_listings_explicit_sort_by_not_affected_by_exact_match_boost(monkeypatch):
+    # sort_by가 명시되면(예: price_asc) 그 정렬을 그대로 존중한다 — 정확일치 보조는 유사도
+    # 정렬(sort_by 생략/similarity)일 때만 끼어든다(판단 근거: 사용자가 가격·연식순을 명시
+    # 요구했는데 세대 일치가 그 순서를 덮어쓰면 의도를 배신한다).
+    captured = {}
+    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: (
+        captured.update(sql=sql, params=params), [_fake_row()]
+    )[1])
+    agent_tools.search_listings.func(query_text="아무거나", model_keyword="그랜저 IG", sort_by="price_asc")
+    assert "model = %s) DESC" not in captured["sql"]
+    assert "ORDER BY price ASC" in captured["sql"]
+
+
 # ───────── (2) search_guides ─────────
 
 _GUIDE_A = ("패밀리카 가이드", "본문 A")

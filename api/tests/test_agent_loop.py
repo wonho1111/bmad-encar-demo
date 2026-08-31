@@ -507,3 +507,119 @@ def test_scans_past_listingless_assistant_turn_for_latest_shown_listings(monkeyp
     assert "(id: bbb)" in prompt
     # 주어 없는 후속 질의를 오래된 주제로 건너뛰지 말라는 지침이 프롬프트에 실제로 있어야 한다.
     assert "오래된 주제로 건너뛰지 마라" in prompt
+
+
+def test_recent_listing_ids_merge_across_multiple_assistant_turns(monkeypatch):
+    """P1 실측 결함(2026-08-31) 수정 확인: "레이는?" 같은 후속 질의가 **두 턴 전** 매물도
+    참조할 수 있어야 한다 — 예전엔 "가장 최근 listing_ids 보유 턴 1개"만 썼지만, 이제는
+    listing_ids를 실은 어시스턴트 턴을 최신부터 전부 병합한다(중복 제거, 상한 20). 아래
+    context는 두 어시스턴트 턴 모두 listing_ids를 갖고 있다 — 병합 후 최근 턴("ccc","ddd")이
+    먼저, 이전 턴("aaa","bbb")이 이어서 나와야 한다."""
+    captured_messages: list = []
+    captured_select_params: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda query, context=None: query)
+
+    rows = [
+        ("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+        ("ccc", "기아", "레이", 2021, 9000000, 30000, "인천", None, None, None, None, None),
+        ("ddd", "현대", "아반떼 CN7", 2022, 15000000, 20000, "대전", None, None, None, None, None),
+    ]
+
+    def _fake_run_select(sql, params):
+        captured_select_params.append(params)
+        return rows
+
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select)
+
+    context = [
+        {"role": "user", "content": "1000만원 이하 실속형 차 추천해줘"},
+        {"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]},
+        {"role": "user", "content": "그중 첫 번째 매물 시세 분석해줘"},
+        {"role": "assistant", "content": "적정가로 보여요.", "listing_ids": ["ccc", "ddd"]},
+    ]
+    agent_module.run_search_agent("레이는?", context=context)
+
+    # DB 조회에 넘긴 id 목록 자체가 병합·순서(최신 턴 먼저)를 지켜야 한다.
+    assert captured_select_params[0][0] == ["ccc", "ddd", "aaa", "bbb"]
+
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    prompt = system_messages[0].content
+    assert "[직전 대화에서 보여준 매물]" in prompt
+    # 병합 후 재부여된 순번(최신 턴이 1·2번, 이전 턴이 3·4번)과 두 턴 전 매물(aaa)이 모두 있어야 한다.
+    assert "1. 기아 레이 2021년식" in prompt and "(id: ccc)" in prompt
+    assert "3. 현대 아반떼 AD 2017년식" in prompt and "(id: aaa)" in prompt
+    assert "4. 기아 쏘렌토 2020년식" in prompt and "(id: bbb)" in prompt
+
+
+# ───────── 다건 시세 진단(market_diagnoses, 2026-08-31) ─────────
+
+class _SequentialFakeTool:
+    """호출될 때마다 미리 정한 artifact를 순서대로 돌려주는 가짜 도구(다건 market_price_stats)."""
+
+    def __init__(self, name, artifacts):
+        self.name = name
+        self._artifacts = list(artifacts)
+        self.call_count = 0
+
+    def invoke(self, tool_call):
+        artifact = self._artifacts[min(self.call_count, len(self._artifacts) - 1)]
+        self.call_count += 1
+        return ToolMessage(content="ok", tool_call_id=tool_call["id"], artifact=artifact)
+
+
+def test_market_diagnoses_populated_when_two_or_more_calls(monkeypatch):
+    """market_price_stats가 이번 대화에서 2건 이상 결과를 내면 market_diagnoses(복수)에
+    전부 담긴다 — 다건 진단 요약표(웹 C1)가 쓸 재료."""
+    diag_a = {"listing": {"id": "aaa"}, "verdict": "적정"}
+    diag_b = {"listing": {"id": "bbb"}, "verdict": "저렴"}
+
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "aaa"}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "bbb"}, "id": "call-2"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(answer="두 매물 시세를 알려드려요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"market_price_stats": _SequentialFakeTool("market_price_stats", [diag_a, diag_b])},
+    )
+
+    result = agent_module.run_search_agent("이 두 매물 시세 각각 알려줘")
+
+    assert result["market_diagnoses"] == [diag_a, diag_b]
+    assert result["market_diagnosis"] == diag_b  # 기존 단건 필드는 마지막 호출 그대로 유지.
+
+
+def test_market_diagnoses_none_when_only_one_call(monkeypatch):
+    """market_price_stats 호출이 1건뿐이면 market_diagnoses는 None(기존 단건 market_diagnosis만
+    쓰인다) — additive 필드가 불필요하게 채워지지 않는지 확인."""
+    diagnosis = {"listing": {"id": "aaa"}, "verdict": "적정"}
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "aaa"}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(answer="시세를 알려드려요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"market_price_stats": _FakeTool("market_price_stats", artifact=diagnosis)},
+    )
+
+    result = agent_module.run_search_agent("이 매물 시세 알려줘")
+
+    assert result["market_diagnoses"] is None
+    assert result["market_diagnosis"] == diagnosis

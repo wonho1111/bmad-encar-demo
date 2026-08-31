@@ -10,11 +10,13 @@
 //   body:    { query, context?, listing_id? }    // context = 직전 대화(멀티턴, 최대 12턴)
 //                                            // listing_id = 상세 페이지 "AI 시세 진단" 버튼이 동봉하는
 //                                            //   대상 매물 id(5단계, 선택 — 일반 채팅 질의는 안 보냄)
-//   200:     { answer, listings[], clarify, narrowed_by, market_diagnosis } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
+//   200:     { answer, listings[], clarify, narrowed_by, market_diagnosis, market_diagnoses } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
 //                                            // clarify = 되묻기 페이로드 또는 null(13.4, conventions.md §4)
 //                                            // narrowed_by = REJECT 전용 고정 상수 또는 null(13.5, conventions.md §4)
 //                                            // market_diagnosis = 시세 진단 결과 또는 null(5단계,
 //                                            //   api/app/market_price.py diagnose() 반환 그대로)
+//                                            // market_diagnoses = 다건 시세 진단(2026-08-31) — 2건
+//                                            //   이상일 때만 배열로 채워지고, 그 외엔 null
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
 //   FR58(8.5): 열람(매물 목록·상세)은 anon에 열렸지만 **AI 검색은 로그인 필수**다 —
 //     검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "열람"이 아니라 "행동"(docs/conventions.md §8).
@@ -53,6 +55,10 @@ export type SearchResult = {
   // (일반 매물 추천 질의 등)엔 null이다. ChatAssistant가 있으면 MarketDiagnosis 블록을 렌더한다.
   // (narrowed_by와 동일하게 wire 키 그대로 snake_case를 쓴다 — 이 타입은 응답 그대로의 계약이다.)
   market_diagnosis: MarketDiagnosisData | null;
+  // 다건 시세 진단(2026-08-31, 사용자 승인 설계 변경) — market_price_stats가 이번 대화에서
+  // 2건 이상 결과를 냈을 때만 채워진다(그 전부, 상한 5). 1건 이하면 null — ChatAssistant는
+  // 이 경우 기존 market_diagnosis(단건 차트)를 그대로 쓴다.
+  market_diagnoses: MarketDiagnosisData[] | null;
 };
 
 /** 되묻기 페이로드(FR46) — 서버가 CLARIFY 경로에서 상한 이내일 때만 채워 보낸다. */
@@ -95,6 +101,17 @@ function isValidMarketDiagnosis(value: unknown): value is MarketDiagnosisData {
     v.criteria !== null &&
     Array.isArray(v.comps)
   );
+}
+
+/** wire의 market_diagnoses(복수, 2026-08-31 추가)가 배열이면 각 원소를 isValidMarketDiagnosis로
+ * 걸러 유효한 것만 남긴다 — 깨진 원소 하나 때문에 표 전체를 못 그리는 대신, 그 원소만 뺀다
+ * (listings의 isValidListing과 동일 태도). 2건 미만이면 표를 그릴 이유가 없으므로 null로
+ * 정규화한다(백엔드 계약과 동일 — 2건 이상일 때만 채워진다).
+ */
+function isValidMarketDiagnoses(value: unknown): MarketDiagnosisData[] | null {
+  if (!Array.isArray(value)) return null;
+  const valid = value.filter(isValidMarketDiagnosis);
+  return valid.length >= 2 ? valid : null;
 }
 
 export type SearchAiParams = {
@@ -197,6 +214,8 @@ export async function searchAi({ query, context, listingId, accessToken }: Searc
     // market_diagnosis(5단계) — listings/clarify/narrowed_by와 같은 규칙: 형태가 깨졌으면 null로
     // 정규화한다(이 파일이 wire 값의 유일한 방어선).
     market_diagnosis: isValidMarketDiagnosis(result.market_diagnosis) ? result.market_diagnosis : null,
+    // market_diagnoses(복수, 2026-08-31) — 위와 동일한 방어선 원칙.
+    market_diagnoses: isValidMarketDiagnoses(result.market_diagnoses),
   };
 }
 

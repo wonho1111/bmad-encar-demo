@@ -22,7 +22,9 @@ import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import { buildWishedIdSet } from '@/lib/wishlist';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import Button from '@/components/ui/Button';
+import AnswerText from '@/components/ai/AnswerText';
 import MarketDiagnosis, { type MarketDiagnosisData } from '@/components/ai/MarketDiagnosis';
+import MarketDiagnosisTable from '@/components/ai/MarketDiagnosisTable';
 
 // context 입력 계약(단일 출처: api/docs/ai-demo-queries.md, api/app/schemas/ai.py).
 // 서버가 강제하는 한계를 클라이언트에서 미리 지켜 422를 자초하지 않는다.
@@ -47,19 +49,26 @@ type ChatMessage = {
   // 시세 진단 결과(5단계) — "AI 시세 진단" 버튼 프리필 질의 등으로 에이전트가 market_price_stats를
   // 호출했을 때만 채워진다. 있으면 이 메시지는 평문 대신 <MarketDiagnosis> 블록으로 렌더된다.
   marketDiagnosis?: MarketDiagnosisData | null;
+  // 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats가 이 턴에서 2건 이상 결과를
+  // 냈을 때만 채워진다. 있으면(2건 이상) marketDiagnosis(단건 차트) 대신 요약표를 렌더한다.
+  marketDiagnoses?: MarketDiagnosisData[] | null;
 };
 
 /**
  * assistant 턴 하나가 "실제로 보여준 매물 id들"을 뽑는다(멀티턴 매물 참조).
  *   - 매물카드가 있으면(listings) 그 id들 그대로.
- *   - 카드는 없고 시세 진단만 있으면(marketDiagnosis) 그 진단 대상 매물 id 1개.
+ *   - 카드는 없고 다건 시세 진단(marketDiagnoses)이 있으면 그 진단 대상 매물 id들 전부.
+ *   - 카드도 다건 진단도 없고 단건 시세 진단만 있으면(marketDiagnosis) 그 진단 대상 id 1개.
  *     (예: "AI 시세 진단" 버튼 흐름처럼 카드 목록 없이 진단 블록만 렌더되는 턴 — 이 id도
  *      "직전에 보여준 매물"의 일부이므로 다음 턴의 "그 매물 비교해줘" 류 요청이 참조할 수 있다.)
- *   - 둘 다 없으면(되묻기·REJECT 등) undefined — 서버에 빈 배열을 보내는 대신 키 자체를 뺀다.
+ *   - 셋 다 없으면(되묻기·REJECT 등) undefined — 서버에 빈 배열을 보내는 대신 키 자체를 뺀다.
  */
 function listingIdsOf(m: ChatMessage): string[] | undefined {
   if (m.listings && m.listings.length > 0) {
     return m.listings.map((l) => l.id);
+  }
+  if (m.marketDiagnoses && m.marketDiagnoses.length > 0) {
+    return m.marketDiagnoses.map((d) => d.listing.id);
   }
   if (m.marketDiagnosis) {
     return [m.marketDiagnosis.listing.id];
@@ -181,6 +190,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           listings: result.listings,
           clarify: result.clarify,
           marketDiagnosis: result.market_diagnosis,
+          marketDiagnoses: result.market_diagnoses,
         },
       ]);
     } catch (err) {
@@ -248,9 +258,20 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                   {m.content}
                 </div>
               ) : (
-                // 어시스턴트 말풍선 — 답변 텍스트(또는 시세 진단 블록) + (있으면) 매물카드 목록.
+                // 어시스턴트 말풍선 — 답변 텍스트(또는 시세 진단 블록/다건 요약표) + (있으면) 매물카드 목록.
                 <div className="flex flex-col gap-2">
-                  {m.marketDiagnosis ? (
+                  {m.marketDiagnoses && m.marketDiagnoses.length >= 2 ? (
+                    // 다건 시세 진단(2026-08-31, 사용자 승인) — 매물 2건 이상을 한 번에 진단했을 때
+                    // 마지막 1건 차트 대신 요약표를 렌더한다(단건 차트가 나머지를 가려버리던 혼란,
+                    // 사용자 실측 P2). 답변 텍스트는 그대로 살리고(개행·번호 목록 처리는 AnswerText),
+                    // 표는 그 아래 별도 블록으로 붙인다.
+                    <div className="flex flex-col gap-3">
+                      <div className="self-start rounded-lg border border-border-hairline px-3 py-2 text-sm">
+                        <AnswerText text={m.content} />
+                      </div>
+                      <MarketDiagnosisTable diagnoses={m.marketDiagnoses} />
+                    </div>
+                  ) : m.marketDiagnosis ? (
                     // 시세 진단(5단계) — market_diagnosis가 있으면 평문 대신 STEP2 블록을 렌더한다.
                     // answer는 MarketDiagnosis 내부의 헤드라인 자리로 넘긴다(중복 렌더 방지 —
                     // MarketDiagnosis.tsx 상단 주석 참조).
@@ -258,8 +279,8 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                       <MarketDiagnosis data={m.marketDiagnosis} answer={m.content} />
                     </div>
                   ) : (
-                    <div className="self-start whitespace-pre-wrap rounded-lg border border-border-hairline px-3 py-2 text-sm">
-                      {m.content}
+                    <div className="self-start rounded-lg border border-border-hairline px-3 py-2 text-sm">
+                      <AnswerText text={m.content} />
                     </div>
                   )}
                   {/* 되묻기 칩(FR46, DW-587) — 서버가 clarify를 채워 보냈을 때만 렌더한다.

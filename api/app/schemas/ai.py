@@ -123,6 +123,11 @@ class SearchResponse(BaseModel):
     # 결과(app/market_price.diagnose()가 만든 dict 그대로)를 옵션 필드로 노출한다. 기존
     # run_search 경로는 이 값을 채우지 않으므로 항상 None(additive, 기존 클라이언트 회귀 없음).
     market_diagnosis: dict | None = None
+    # 다건 시세 진단(2026-08-31, 사용자 승인 설계 변경) — 한 대화에서 market_price_stats가
+    # 2건 이상 호출됐을 때 그 결과 전부(app/market_price.diagnose() dict 그대로, 상한 5건)를
+    # 담는다. 1건이거나 호출이 없으면 None — 그 경우 웹은 기존 market_diagnosis(단건 차트)
+    # 렌더를 그대로 쓴다(additive, 기존 소비처 회귀 없음).
+    market_diagnoses: list[dict] | None = None
 
 
 class ErrorBody(BaseModel):

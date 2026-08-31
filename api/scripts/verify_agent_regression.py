@@ -117,6 +117,37 @@ MULTITURN_CASES: list[dict] = [
 ]
 
 
+# ── 3턴 케이스 ───────────────────────────────────────────────────────────────
+# P1(실측 결함, 2026-08-31): "레이는?"류 후속 질의가 두 턴 전 매물을 못 참조했다 —
+# _recent_assistant_listing_ids가 "가장 최근 listing_ids 보유 턴 1개"만 쓰던 것을 "여러 턴
+# 병합"으로 고친 지점(agent.py)을 실제 3턴 흐름으로 검증한다. 1·2턴은 실제로 실행하고, 각
+# 턴의 assistant listing_ids는 웹 ChatAssistant.tsx의 listingIdsOf와 동일 규칙
+# (_client_listing_ids)으로 뽑아 3턴 context에 함께 싣는다 — 실제 클라이언트가 보내는 형태를
+# 그대로 재현해야, "2턴 전 매물 참조"가 서버 로직만이 아니라 클라 조립까지 포함해 실제로
+# 동작하는지 확인할 수 있다.
+THREE_TURN_CASES: list[dict] = [
+    # --- MT4(코디네이터 추가, P1 검증) — 1턴 검색 → 2턴 "그중 첫 번째" 시세 진단(매물카드는
+    # 0장, market_diagnosis만 채워짐) → 3턴 주어 없는 "두 번째 매물은?" — 3턴이 1턴 목록의
+    # "두 번째" 매물을 가리키려면 1턴 listing_ids가 2턴을 건너 3턴까지 살아 있어야 한다.
+    {"id": "MT4", "turn1": "1,000만원 이하 경차 추천해줘", "turn2": "그중 첫 번째 매물 시세 분석해줘",
+     "turn3": "두 번째 매물은?", "kind": "mt4_second_listing_no_resubject"},
+]
+
+
+def _client_listing_ids(result: dict) -> list[str] | None:
+    """웹 ChatAssistant.tsx의 listingIdsOf와 동일 규칙 — 이 턴이 "실제로 보여준" 매물 id들을
+    뽑는다(카드 목록이 있으면 그 id들, 없고 단건 시세 진단만 있으면 그 진단 대상 id 1개,
+    둘 다 없으면 None). 3턴 러너가 실제 클라이언트의 context 조립을 그대로 재현하는 데 쓴다.
+    """
+    listings = result.get("listings") or []
+    if listings:
+        return [c.id for c in listings]
+    diagnosis = result.get("market_diagnosis")
+    if diagnosis:
+        return [diagnosis["listing"]["id"]]
+    return None
+
+
 # ── 판정 함수 ────────────────────────────────────────────────────────────────
 
 def _check_tools_expected(result: dict, expects: dict) -> str | None:
@@ -230,6 +261,34 @@ def judge_multiturn(expects: dict, result1: dict, result2: dict) -> tuple[bool, 
     return False, f"알 수 없는 kind: {kind}"
 
 
+def judge_three_turn(expects: dict, result3: dict) -> tuple[bool, str]:
+    """(pass 여부, 사유) 반환 — 3턴 kind별 판정. result3만 보면 충분하다(1·2턴은 context를
+    만들기 위한 재료일 뿐, 판정 대상은 항상 마지막 턴)."""
+    kind = expects["kind"]
+    tools_used = set(result3.get("tools_used") or [])
+
+    if kind == "mt4_second_listing_no_resubject":
+        # MT3(mt_no_resubject_diagnosis)와 동일한 판정 사상 — 재검색으로 새지 않고, 진단
+        # 또는 대상 특정 되묻기 중 하나로 실제 처리됐는지만 본다(3턴 확장판).
+        if "search_listings" in tools_used:
+            return False, (
+                f"search_listings 재검색 발생(1턴 목록 밖으로 새 매물을 찾은 것으로 의심): "
+                f"tools_used={result3.get('tools_used')}"
+            )
+        handled = ("market_price_stats" in tools_used) or (result3.get("clarify") is not None)
+        if not handled:
+            return False, (
+                f"market_price_stats도 clarify도 없음: tools_used={result3.get('tools_used')} "
+                f"clarify={result3.get('clarify')}"
+            )
+        return True, (
+            f"재검색 없음 + market_price_stats={'market_price_stats' in tools_used} "
+            f"clarify_present={result3.get('clarify') is not None}"
+        )
+
+    return False, f"알 수 없는 kind: {kind}"
+
+
 # ── 실행 ─────────────────────────────────────────────────────────────────────
 
 def run_once() -> tuple[list[dict], float]:
@@ -308,6 +367,61 @@ def run_multiturn_once() -> tuple[list[dict], float]:
     return rows, total
 
 
+def run_three_turn_once() -> tuple[list[dict], float]:
+    """THREE_TURN_CASES 전체를 실행한다. 1·2턴을 실제로 순차 실행하고, 각 턴의 assistant
+    listing_ids를 _client_listing_ids(웹 listingIdsOf와 동일 규칙)로 뽑아 다음 턴 context에
+    누적해 싣는다 — 3턴째에 1턴 목록까지 살아 있어야 하는 P1 시나리오를 그대로 재현한다."""
+    rows: list[dict] = []
+    t_start = time.time()
+    for case in THREE_TURN_CASES:
+        qid, turn1_query, turn2_query, turn3_query = case["id"], case["turn1"], case["turn2"], case["turn3"]
+        t0 = time.time()
+        try:
+            result1 = run_search_agent(turn1_query, context=None, listing_id=None)
+            ids1 = _client_listing_ids(result1)
+            context = [{"role": "user", "content": turn1_query}]
+            turn1_assistant = {"role": "assistant", "content": result1.get("answer") or ""}
+            if ids1:
+                turn1_assistant["listing_ids"] = ids1
+            context.append(turn1_assistant)
+
+            result2 = run_search_agent(turn2_query, context=context, listing_id=None)
+            ids2 = _client_listing_ids(result2)
+            context.append({"role": "user", "content": turn2_query})
+            turn2_assistant = {"role": "assistant", "content": result2.get("answer") or ""}
+            if ids2:
+                turn2_assistant["listing_ids"] = ids2
+            context.append(turn2_assistant)
+
+            result3 = run_search_agent(turn3_query, context=context, listing_id=None)
+            elapsed = time.time() - t0
+            ok, reason = judge_three_turn(case, result3)
+            rows.append({
+                "id": qid, "query": f"{turn1_query!r} → {turn2_query!r} → {turn3_query!r}",
+                "kind": case["kind"],
+                "pass": ok, "reason": reason, "elapsed": elapsed,
+                "tools_used": result3.get("tools_used"),
+                "n_listings": len(result3.get("listings") or []),
+                "answer": result3.get("answer"),
+                "clarify": result3.get("clarify"),
+                "turn1_listing_ids": ids1,
+                "turn2_listing_ids": ids2,
+            })
+        except Exception as exc:  # 도구/LLM 예외도 FAIL로 집계(회귀일 수 있으니 죽이지 않는다)
+            elapsed = time.time() - t0
+            rows.append({
+                "id": qid, "query": f"{turn1_query!r} → {turn2_query!r} → {turn3_query!r}",
+                "kind": case["kind"],
+                "pass": False, "reason": f"예외 발생: {exc!r}", "elapsed": elapsed,
+                "tools_used": None, "n_listings": None, "answer": None, "clarify": None,
+                "turn1_listing_ids": None, "turn2_listing_ids": None,
+            })
+        status = "PASS" if rows[-1]["pass"] else "FAIL"
+        print(f"[{status}] {qid:22s} ({rows[-1]['elapsed']:5.1f}s) {rows[-1]['reason']}")
+    total = time.time() - t_start
+    return rows, total
+
+
 def print_table(rows: list[dict], total: float) -> None:
     print("\n" + "=" * 100)
     print(f"{'id':22s} {'kind':16s} {'결과':6s} {'소요':>6s}  사유")
@@ -326,8 +440,10 @@ def main() -> int:
     rows, total = run_once()
     print("\n--- 멀티턴 케이스 ---")
     mt_rows, mt_total = run_multiturn_once()
-    all_rows = rows + mt_rows
-    print_table(all_rows, total + mt_total)
+    print("\n--- 3턴 케이스 ---")
+    mt3_rows, mt3_total = run_three_turn_once()
+    all_rows = rows + mt_rows + mt3_rows
+    print_table(all_rows, total + mt_total + mt3_total)
     failed = [r for r in all_rows if not r["pass"]]
     if failed:
         print("\nFAIL 상세:")
@@ -340,6 +456,8 @@ def main() -> int:
             print(f"  answer: {r['answer']}")
             if "turn1_listing_ids" in r:
                 print(f"  turn1_listing_ids: {r['turn1_listing_ids']}")
+            if "turn2_listing_ids" in r:
+                print(f"  turn2_listing_ids: {r['turn2_listing_ids']}")
         return 1
     return 0
 

@@ -244,11 +244,23 @@ def search_listings(
 
     if sort_by is None or sort_by == "similarity":
         qvec = _vec_literal(embed_query(query_text))
+        # 정확 세대 우선(D, 2026-08-31 실측 P4 연장) — model_filter가 있으면 그 원문과 정확히
+        # 같은 model인 매물을 유사도 정렬보다 먼저 세운다. "그랜저 IG"로 검색하면 model
+        # ILIKE '%그랜저 IG%'가 "더 뉴 그랜저 IG"까지 부분일치로 끌어오는데, 그 안에서도
+        # 정확히 "그랜저 IG"인 매물이 세대 혼동 없이 먼저 오는 게 사용자 기대와 맞는다.
+        # sort_by가 명시된 값(price_asc 등)일 때는 그 정렬을 그대로 존중한다 — 사용자가 가격·
+        # 연식순을 명시적으로 요구했는데 세대 일치가 끼어들면 그 의도를 덮어써 버리기
+        # 때문이다(explicit sort가 우선한다는 기존 관례, 아래 else 분기는 그대로 둔다).
+        order_prefix = ""
+        order_params: list = []
+        if model_filter:
+            order_prefix = "(model = %s) DESC, "
+            order_params = [model_filter]
         sql = (
             f"SELECT {SELECT_COLUMNS} FROM listings WHERE {where_sql} "
-            "AND embedding IS NOT NULL ORDER BY embedding <=> %s::vector LIMIT %s"
+            f"AND embedding IS NOT NULL ORDER BY {order_prefix}embedding <=> %s::vector LIMIT %s"
         )
-        rows = run_select(sql, (*params, qvec, limit))
+        rows = run_select(sql, (*params, *order_params, qvec, limit))
     else:
         if sort_by not in _SORT_WHITELIST:
             # 정상 경로에서는 Literal 타입이 LLM 호출 이전에 걸러주지만(langchain 스키마

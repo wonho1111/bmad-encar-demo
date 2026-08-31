@@ -31,6 +31,7 @@ function diagnosisWithStep(step: number): MarketDiagnosisData {
     stats: { min: 19_000_000, q1: 21_000_000, median: 23_000_000, q3: 25_000_000, max: 27_000_000 },
     percentile: 0.3,
     verdict: '저렴',
+    verdict_basis: '적정가',
     tabpfn: { price: 23_500_000, note: 'TabPFN 예측' },
     comps: [],
   };
@@ -54,8 +55,21 @@ describe('buildCriteriaChips', () => {
     expect(chips.map((c) => c.label)).toContain('2019~2023년식');
   });
 
-  it('step=4(연료·사고·세대 조건 전부 해제)면 그 세 칩만 비활성(취소선)이다', () => {
-    const chips = buildCriteriaChips(diagnosisWithStep(4));
+  it('step=3(트림 해제 — 동일 세대 계열)이면 모델·사고 칩만 비활성이고 연료는 유지된다', () => {
+    // 2026-08-31 사다리 개정: "트림 해제" 단이 새로 step3에 끼어들었다 — 모델 문자열이 더는
+    // 완전 일치가 아니므로(family 접두 매칭) 세대 칩은 비활성이지만, 연료 조건은 세대 해제
+    // (step4)까지 유지된다(구 step4와 달리 이 단은 연료를 풀지 않는다).
+    const chips = buildCriteriaChips(diagnosisWithStep(3));
+    const byLabel = (label: string) => chips.find((c) => c.label === label);
+
+    expect(byLabel('셀토스')?.active).toBe(false); // 세대(모델 정확 일치) 해제
+    expect(byLabel('가솔린')?.active).toBe(true); // 연료 조건은 아직 유지
+    expect(byLabel('무사고')?.active).toBe(false); // 사고 조건 해제(이전 단에서 이미 해제됨)
+  });
+
+  it('step=5(연료·사고·세대 조건 전부 해제)면 그 세 칩만 비활성(취소선)이다', () => {
+    // 사다리 개정으로 "전부 해제" 단이 구 step4에서 step5로 밀렸다.
+    const chips = buildCriteriaChips(diagnosisWithStep(5));
     const byLabel = (label: string) => chips.find((c) => c.label === label);
 
     expect(byLabel('셀토스')?.active).toBe(false); // 세대(모델 정확 일치) 해제

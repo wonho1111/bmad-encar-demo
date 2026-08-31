@@ -1,8 +1,10 @@
 """툴콜링 에이전트 루프 — 4단계 부품 B(DW-847·848·849를 에이전트 구조로 해결).
 
 진입점 `run_search_agent(query, context=None) -> dict`. 반환 계약은 기존 run_search(graph.py)와
-  동일한 {answer, listings[], route, clarify, narrowed_by}에 두 키를 더한다:
-  `market_diagnosis: dict|None`(직전 market_price_stats 호출 결과), `tools_used: list[str]`
+  동일한 {answer, listings[], route, clarify, narrowed_by}에 키를 더한다:
+  `market_diagnosis: dict|None`(직전 market_price_stats 호출 결과), `market_diagnoses:
+  list[dict]|None`(2026-08-31 추가 — market_price_stats가 이번 대화에서 2건 이상 결과를
+  냈을 때만 그 전부를 담는다, 상한 5. 1건 이하면 None), `tools_used: list[str]`
   (실제로 호출된 도구 이름, 호출 순서 그대로 — 중복 허용). route는 항상 "AGENT"로 고정한다
   (routers/ai.py의 스위치가 이 값으로 그래프 기반 run_search와 구분하지 않아도 되지만,
   응답 계약의 다른 소비처가 route를 로깅·분기에 쓸 수 있어 값을 비우지 않는다).
@@ -74,6 +76,9 @@ logger = logging.getLogger(__name__)
 # 1스텝 = LLM 호출 1회(그 안에서 도구를 여러 개 동시에 부를 수도 있다, tool_calls는 배치).
 _MAX_STEPS = 6
 
+# 다건 시세 진단(market_diagnoses) 수집 상한(설계 확정값) — 2026-08-31 사용자 승인.
+_MAX_MARKET_DIAGNOSES = 5
+
 _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전트다. 아래 도구를 이용해
 사용자의 조건에 맞는 매물을 찾고, 필요하면 근거를 곁들여 추천한다.
 
@@ -104,6 +109,11 @@ compare_listings를 바로 호출해라(새 검색은 새 조건을 찾을 때�
 그 오래된 주제로 건너뛰지 마라(블록이 항상 가장 최근에 실제로 보여준 매물이다). 시세 분석
 요청에는 매물 재추천을 얹지 마라 — 대상 1건의 진단(또는 대상을 특정하기 위한 clarify)만
 응답하고, 별개 조건으로 새 매물 목록을 함께 내놓지 마라.
+생략형 후속 질의("레이는?", "그거는?"처럼 동사 없이 차종·대상만 던지는 요청)는 직전 턴과
+같은 작업을 새 대상에 적용하라 — 직전 턴이 시세 진단이었으면 이번 요청도 그 새 대상의
+시세 진단이다(재검색이 아니다). 그 새 대상이 [직전 대화에서 보여준 매물] 블록에 있으면
+그 id를 그대로 써서 market_price_stats를 호출해라 — 블록에 없으면 그때만 search_listings로
+새로 찾아라.
 
 [되묻기 규칙]
 조건이 모호해 무엇을 찾아야 할지 판단할 수 없으면(예: "차 추천해줘"처럼 예산·용도·차종이
@@ -112,6 +122,10 @@ compare_listings를 바로 호출해라(새 검색은 새 조건을 찾을 때�
 직접 만들어라(고정 문구를 반복하지 말고 질의 내용에 맞춰라). clarify를 채울 때 answer는
 짧은 안내 한 줄만 남긴다. 단, 매물을 이미 찾아 제시할 수 있으면 clarify가 아니라 매물 제시가
 정답이다 — '쏘렌토 있어?' 같은 재고 확인 질의도 매물을 보여주며 답한다.
+
+[답변 형식]
+답변은 한 덩어리로 몰아 쓰지 말고 2~3문장 단위로 문단을 나누고(문단 사이 빈 줄), 여러
+매물을 다루면 "1. ", "2. "처럼 번호 목록으로 써라 — 벽처럼 이어진 긴 문장은 읽기 어렵다.
 
 [금지 사항]
 - 수치(시세·통계·가격·연식·주행거리 등)는 도구가 실제로 돌려준 값만 인용한다 — 지어내지
@@ -174,6 +188,7 @@ def _reject_result(query: str) -> dict:
         "clarify": None,
         "narrowed_by": result["narrowed_by"],
         "market_diagnosis": None,
+        "market_diagnoses": None,
         "tools_used": [],
     }
 
@@ -197,21 +212,29 @@ def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int
     return structured.invoke(messages + [HumanMessage(instruction)])
 
 
+_RECENT_LISTINGS_MERGE_CAP = 20
+
+
 def _recent_assistant_listing_ids(context: list | None) -> list[str]:
-    """context에서 **가장 최근에 listing_ids를 실은** 어시스턴트 턴의 id들을 뽑는다
+    """context에서 listing_ids를 실은 **모든** 어시스턴트 턴의 id들을 최신 턴부터 병합한다
     (멀티턴 매물 참조).
 
-    최신 어시스턴트 턴이 listing_ids가 없으면(예: 매물 없이 순수 안내·되묻기만 한 턴)
-    건너뛰고 그 이전 턴들 중 listing_ids가 있는 가장 최근 것을 계속 찾는다 — "실없는 응대"
-    한 턴 때문에 직전에 실제로 보여준 매물 목록이 통째로 사라지면 안 되기 때문이다
-    (실측 회귀: 그랜저 진단 여러 턴 뒤 쏘렌토 추천 → 시세 문의처럼, 대화가 길어질수록
-    이 스캔이 "진짜 마지막으로 보여준 매물"에 도달하는 게 더 중요해진다). 다만 스캔은
-    직전 대화 안에서만(무상태 — context가 서버로 넘어온 이번 요청 분량만) 이뤄지고,
-    ConversationTurn 자체가 서버·DB에 저장되지 않으므로 무상태 원칙은 그대로다.
-    턴은 Pydantic ConversationTurn 또는 dict 둘 다 받아들인다(contextualize_node.py와 동일 관례).
+    2026-08-31 개정(사용자 실측 결함 P1): 예전엔 "가장 최근 listing_ids 보유 턴 하나"만
+    썼다 — 그래서 "레이 추천해줘"(1턴) → "그 옵션 뭐 있어?"(2턴, listing_ids 없음) →
+    "레이는?"(3턴) 같은 흐름에서 3턴이 1턴의 매물을 더는 참조할 수 없었다(2턴 전 매물을
+    못 봄). 이제는 최신 턴부터 과거로 스캔하며 listing_ids가 있는 **모든** 어시스턴트
+    턴의 id를 순서대로(최근 것이 앞) 모은다 — 같은 id가 여러 턴에 걸쳐 반복되면 최초(가장
+    최근) 등장만 남기고 중복 제거하며, 총 `_RECENT_LISTINGS_MERGE_CAP`(20)건에서 자른다
+    (ConversationTurn.listing_ids 개별 상한 20과 동일선상 — 프롬프트가 과도하게 커지지
+    않게). 다만 스캔은 직전 대화 안에서만(무상태 — context가 서버로 넘어온 이번 요청
+    분량만) 이뤄지고, ConversationTurn 자체가 서버·DB에 저장되지 않으므로 무상태 원칙은
+    그대로다. 턴은 Pydantic ConversationTurn 또는 dict 둘 다 받아들인다
+    (contextualize_node.py와 동일 관례).
     """
     if not context:
         return []
+    merged: list[str] = []
+    seen: set[str] = set()
     for turn in reversed(context):
         role = getattr(turn, "role", None) or (turn.get("role") if isinstance(turn, dict) else None)
         if role != "assistant":
@@ -219,15 +242,21 @@ def _recent_assistant_listing_ids(context: list | None) -> list[str]:
         ids = getattr(turn, "listing_ids", None)
         if ids is None and isinstance(turn, dict):
             ids = turn.get("listing_ids")
-        if ids:
-            return list(ids)
-        # 이 어시스턴트 턴엔 listing_ids가 없다 — 계속 더 이전 턴을 찾는다(위 docstring 참조).
-    return []
+        if not ids:
+            continue  # 이 어시스턴트 턴엔 listing_ids가 없다 — 더 이전 턴을 계속 찾는다.
+        for lid in ids:
+            if lid not in seen:
+                seen.add(lid)
+                merged.append(lid)
+        if len(merged) >= _RECENT_LISTINGS_MERGE_CAP:
+            break
+    return merged[:_RECENT_LISTINGS_MERGE_CAP]
 
 
 def _format_recent_listings_block(cards: list[ListingCard], ordered_ids: list[str]) -> str | None:
-    """조회된 카드들을 원래 id 순서(클라이언트가 보여준 순서, "N번째" 지시어와 대응)대로
-    번호 매겨 요약한다. DB에 없는(존재하지 않는) id는 조용히 건너뛴다(강건성)."""
+    """조회된 카드들을 원래 id 순서(여러 턴을 병합한 순서 — 최근 턴 매물이 앞, "N번째"
+    지시어와 대응)대로 번호를 새로 매겨 요약한다. DB에 없는(존재하지 않는) id는 조용히
+    건너뛴다(강건성)."""
     by_id = {c.id: c for c in cards}
     lines = []
     for lid in ordered_ids:
@@ -311,6 +340,12 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     seen_listings: dict[str, ListingCard] = {}
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
+    # 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats 호출마다 결과를 전부
+    # 모아둔다(매물을 못 찾은 호출은 artifact가 None이라 담기지 않는다). 상한
+    # _MAX_MARKET_DIAGNOSES는 프롬프트·응답 크기를 무한정 키우지 않기 위한 설계 확정값 —
+    # _MAX_STEPS(6)보다 크게 잡을 이유가 없다(한 스텝에 도구 호출이 여럿이어도 실사용에서
+    # market_price_stats만 6번 넘게 부르는 경우는 없다고 가정).
+    market_diagnoses_all: list[dict] = []
 
     for _step in range(_MAX_STEPS):
         ai_msg = tool_llm.invoke(messages)
@@ -348,6 +383,8 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                 # "마지막 호출 1건"을 그대로 반영한다 — 매물을 못 찾은 마지막 호출이면
                 # market_diagnosis도 None으로 덮인다(가장 최근 상태를 있는 그대로 노출).
                 market_diagnosis = artifact
+                if artifact is not None and len(market_diagnoses_all) < _MAX_MARKET_DIAGNOSES:
+                    market_diagnoses_all.append(artifact)
     # for-else 없이 자연 종료(break)든 상한 도달(루프 그냥 끝남)이든 아래에서 동일하게
     # 지금까지 쌓인 messages로 최종 구조화 응답을 1회 만든다(설계: "도구 결과까지로 강제
     # 최종 응답" — 자연 종료 경로도 같은 structured-output 관문을 거쳐야 계약이 일정하다).
@@ -369,6 +406,10 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     if market_diagnosis is not None and len(listings) > 1:
         market_diagnosis = None
 
+    # 다건 시세 진단 노출 — market_price_stats가 실제로 2건 이상 결과를 냈을 때만 채운다.
+    # 1건 이하면 None(웹은 기존 market_diagnosis 단건 차트를 그대로 쓴다, additive).
+    market_diagnoses = market_diagnoses_all if len(market_diagnoses_all) >= 2 else None
+
     logger.info(
         "run_search_agent 질의=%r → 도구=%r 매물=%d건 clarify=%s",
         effective_query, tools_used, len(listings), clarify is not None,
@@ -381,5 +422,6 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
         "clarify": clarify.model_dump() if clarify is not None else None,
         "narrowed_by": None,
         "market_diagnosis": market_diagnosis,
+        "market_diagnoses": market_diagnoses,
         "tools_used": tools_used,
     }
