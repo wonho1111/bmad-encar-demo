@@ -50,8 +50,26 @@ type ChatMessage = {
 };
 
 /**
+ * assistant 턴 하나가 "실제로 보여준 매물 id들"을 뽑는다(멀티턴 매물 참조).
+ *   - 매물카드가 있으면(listings) 그 id들 그대로.
+ *   - 카드는 없고 시세 진단만 있으면(marketDiagnosis) 그 진단 대상 매물 id 1개.
+ *     (예: "AI 시세 진단" 버튼 흐름처럼 카드 목록 없이 진단 블록만 렌더되는 턴 — 이 id도
+ *      "직전에 보여준 매물"의 일부이므로 다음 턴의 "그 매물 비교해줘" 류 요청이 참조할 수 있다.)
+ *   - 둘 다 없으면(되묻기·REJECT 등) undefined — 서버에 빈 배열을 보내는 대신 키 자체를 뺀다.
+ */
+function listingIdsOf(m: ChatMessage): string[] | undefined {
+  if (m.listings && m.listings.length > 0) {
+    return m.listings.map((l) => l.id);
+  }
+  if (m.marketDiagnosis) {
+    return [m.marketDiagnosis.listing.id];
+  }
+  return undefined;
+}
+
+/**
  * 화면 대화(messages)를 서버로 보낼 context(턴 배열)로 직렬화한다.
- *   - 매물카드(listings)는 제외하고 role/content만 보낸다(서버 스키마 = role+content).
+ *   - role/content만 기본으로 보낸다(서버 스키마 = role+content, +assistant 턴은 listing_ids).
  *   - 최근 MAX_CONTEXT_TURNS개만 — 대화가 길어져도 12턴 초과로 422 나지 않게.
  *   - 각 content는 MAX_CONTENT_LENGTH로 안전 절단.
  * 순수 함수로 분리해 동작을 명확히 하고(테스트·추론 용이), 무상태 직렬화임을 드러낸다.
@@ -63,10 +81,17 @@ export function buildContext(messages: ChatMessage[]): ConversationTurn[] {
     // (멀쩡한 질의인데 "질문 형식이 올바르지 않습니다"가 떠 대화가 막히는 오염). 빈 턴을 빼 이를 막는다.
     .filter((m) => m.content.trim() !== '')
     .slice(-MAX_CONTEXT_TURNS) // 최근 N턴
-    .map((m) => ({
-      role: m.role,
-      content: m.content.slice(0, MAX_CONTENT_LENGTH),
-    }));
+    .map((m) => {
+      const turn: ConversationTurn = {
+        role: m.role,
+        content: m.content.slice(0, MAX_CONTENT_LENGTH),
+      };
+      if (m.role === 'assistant') {
+        const ids = listingIdsOf(m);
+        if (ids && ids.length > 0) turn.listing_ids = ids;
+      }
+      return turn;
+    });
 }
 
 export default function ChatAssistant({ authed }: { authed: boolean }) {

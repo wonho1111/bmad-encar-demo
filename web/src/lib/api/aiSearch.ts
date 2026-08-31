@@ -28,6 +28,11 @@ import { LISTING_IMAGES_BUCKET } from '@/lib/storage/bucket';
 export type ConversationTurn = {
   role: 'user' | 'assistant';
   content: string;
+  // 멀티턴 매물 참조(FR18 확장) — 이 턴(assistant 전용)이 실제로 보여준 매물 id들. 서버
+  // agent.py가 이 id들로 DB를 조회해 "직전에 보여준 매물" 요약을 시스템 프롬프트에 붙인다
+  // ("그중 두 번째", "그 5개 비교해줘" 같은 후속 요청이 재검색 대신 이 id들로 처리되게
+  // 하는 핵심 배선). user 턴엔 없다(undefined) — 서버 스키마도 assistant 턴에만 의미를 둔다.
+  listing_ids?: string[];
 };
 
 // /ai/search 200 응답. listings는 매물카드(ListingCard)가 그대로 받는 7필드 배열.

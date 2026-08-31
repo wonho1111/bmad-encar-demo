@@ -24,6 +24,12 @@
   - "guide": answer에 expected_keywords 중 1개 이상(소문자 비교)이 있어야 한다.
   각 항목에 tools_expected(부분집합)를 얹으면 tools_used가 그 도구들을 포함하는지도 본다.
 
+멀티턴(MULTITURN_CASES): 사용자 실측 결함(직전 턴 매물을 두고 "그중 두 번째 시세 알려줘"·
+  "그 5개 비교해줘"라고 물으면 에이전트가 재검색만 반복) 수정을 검증한다. 1턴을 실제로 실행한
+  결과(listings)로 ConversationTurn(role=assistant, listing_ids=...) 딕셔너리를 조립해 2턴의
+  context로 넘긴다 — run_search_agent가 실제로 받는 형태(웹 buildContext와 동일 조립)를 그대로
+  재현한다. 판정은 kind별로 다르다(아래 judge_multiturn 참조).
+
 실행:
   cd api && .venv/bin/python scripts/verify_agent_regression.py
 """
@@ -91,6 +97,23 @@ QUERIES: list[dict] = [
     # --- DW-847 resolved 지점 — 고정 템플릿이 아니라 맥락 기반 동적 되묻기(또는 실제 검색)가
     # 나오는지. 원 트리거 문구 그대로("차 추천해줘"는 예산·용도·차종이 전혀 없는 완전 모호 질의).
     {"id": "DW847-dynamic-clarify", "query": "차 추천해줘", "kind": "clarify_ok"},
+]
+
+
+# ── 멀티턴 케이스 ────────────────────────────────────────────────────────────
+# 1턴을 실제로 실행해 얻은 listings로 2턴 context를 조립한다(judge_multiturn 참조).
+MULTITURN_CASES: list[dict] = [
+    # --- MT1: "그중 N번째 시세" — 재검색 대신 market_price_stats로 직행하는지.
+    {"id": "MT1", "turn1": "1,000만원 이하 실속형 차 추천해줘", "turn2": "그중 두 번째 매물 시세 분석해줘",
+     "kind": "mt_market_diagnosis"},
+    # --- MT2: "그 매물들 전부 비교해줘" — compare_listings가 실제로 불리는지.
+    {"id": "MT2", "turn1": "1,000만원 이하 실속형 차 추천해줘", "turn2": "그 매물들 전부 비교해줘",
+     "kind": "mt_compare"},
+    # --- MT3(코디네이터 추가) — 주어 없는 후속 시세 요청이 직전 목록(1턴 결과) 밖의 매물로
+    # 새지 않는지("그랜저 여러 턴 뒤 쏘렌토 추천 → 시세 문의" 변종의 최소 재현: 1턴이 이미
+    # "직전 목록"을 만들어 둔 상태에서 2턴이 주어 없이 시세만 요구한다).
+    {"id": "MT3", "turn1": "쏘렌토 하이브리드 추천해줘", "turn2": "아니 시세분석해달라고",
+     "kind": "mt_no_resubject_diagnosis"},
 ]
 
 
@@ -163,6 +186,50 @@ def judge(expects: dict, result: dict) -> tuple[bool, str]:
     return False, f"알 수 없는 kind: {kind}"
 
 
+def judge_multiturn(expects: dict, result1: dict, result2: dict) -> tuple[bool, str]:
+    """(pass 여부, 사유) 반환 — 멀티턴 kind별 판정. result1=1턴(문맥 없음) 결과,
+    result2=2턴(1턴 listings로 조립한 context 포함) 결과."""
+    kind = expects["kind"]
+    tools_used = set(result2.get("tools_used") or [])
+    listings2 = result2.get("listings") or []
+
+    if kind == "mt_market_diagnosis":
+        if result2.get("market_diagnosis") is None:
+            return False, "market_diagnosis가 None(시세 진단이 아니라 재검색/다른 응답으로 샌 것으로 의심)"
+        if len(listings2) >= 2:
+            return False, f"listings {len(listings2)}건 >= 2(단일 매물 시세 진단이 아니라 재추천으로 보임)"
+        if "market_price_stats" not in tools_used:
+            return False, f"tools_used에 market_price_stats 없음: {result2.get('tools_used')}"
+        return True, f"market_diagnosis 확인 + listings {len(listings2)}건 + market_price_stats 호출됨"
+
+    if kind == "mt_compare":
+        if "compare_listings" not in tools_used:
+            return False, f"tools_used에 compare_listings 없음: {result2.get('tools_used')}"
+        return True, f"compare_listings 호출 확인(tools_used={result2.get('tools_used')})"
+
+    if kind == "mt_no_resubject_diagnosis":
+        # 단순화한 판정(코디네이터 지시) — search_listings로 새 조건 재검색을 하지 않았고
+        # (직전 목록 밖으로 새 매물을 찾지 않았다는 증거), market_price_stats 호출 또는
+        # clarify(대상 특정 되묻기) 중 하나로 "진단 의도"를 실제로 처리했는지만 본다.
+        if "search_listings" in tools_used:
+            return False, (
+                f"search_listings 재검색 발생(새 조건으로 매물을 새로 찾은 것으로 의심): "
+                f"tools_used={result2.get('tools_used')}"
+            )
+        handled = ("market_price_stats" in tools_used) or (result2.get("clarify") is not None)
+        if not handled:
+            return False, (
+                f"market_price_stats도 clarify도 없음: tools_used={result2.get('tools_used')} "
+                f"clarify={result2.get('clarify')}"
+            )
+        return True, (
+            f"재검색 없음 + market_price_stats={'market_price_stats' in tools_used} "
+            f"clarify_present={result2.get('clarify') is not None}"
+        )
+
+    return False, f"알 수 없는 kind: {kind}"
+
+
 # ── 실행 ─────────────────────────────────────────────────────────────────────
 
 def run_once() -> tuple[list[dict], float]:
@@ -197,6 +264,50 @@ def run_once() -> tuple[list[dict], float]:
     return rows, total
 
 
+def run_multiturn_once() -> tuple[list[dict], float]:
+    """MULTITURN_CASES 전체를 실행한다. 1턴은 문맥 없이(run_once와 동일) 실제로 실행하고,
+    그 결과의 listings id로 어시스턴트 턴(listing_ids 포함)을 조립해 2턴 context로 넘긴다 —
+    웹 buildContext(ChatAssistant.tsx)가 실제로 만드는 형태를 그대로 재현한다(듀ck 타이핑
+    dict — agent.py의 contextualize_node·_recent_assistant_listing_ids가 dict/Pydantic
+    둘 다 받아들이므로 여기선 dict로 충분하다)."""
+    rows: list[dict] = []
+    t_start = time.time()
+    for case in MULTITURN_CASES:
+        qid, turn1_query, turn2_query = case["id"], case["turn1"], case["turn2"]
+        t0 = time.time()
+        try:
+            result1 = run_search_agent(turn1_query, context=None, listing_id=None)
+            listing_ids1 = [c.id for c in (result1.get("listings") or [])]
+            context = [
+                {"role": "user", "content": turn1_query},
+                {"role": "assistant", "content": result1.get("answer") or "", "listing_ids": listing_ids1},
+            ]
+            result2 = run_search_agent(turn2_query, context=context, listing_id=None)
+            elapsed = time.time() - t0
+            ok, reason = judge_multiturn(case, result1, result2)
+            rows.append({
+                "id": qid, "query": f"{turn1_query!r} → {turn2_query!r}", "kind": case["kind"],
+                "pass": ok, "reason": reason, "elapsed": elapsed,
+                "tools_used": result2.get("tools_used"),
+                "n_listings": len(result2.get("listings") or []),
+                "answer": result2.get("answer"),
+                "clarify": result2.get("clarify"),
+                "turn1_listing_ids": listing_ids1,
+            })
+        except Exception as exc:  # 도구/LLM 예외도 FAIL로 집계(회귀일 수 있으니 죽이지 않는다)
+            elapsed = time.time() - t0
+            rows.append({
+                "id": qid, "query": f"{turn1_query!r} → {turn2_query!r}", "kind": case["kind"],
+                "pass": False, "reason": f"예외 발생: {exc!r}", "elapsed": elapsed,
+                "tools_used": None, "n_listings": None, "answer": None, "clarify": None,
+                "turn1_listing_ids": None,
+            })
+        status = "PASS" if rows[-1]["pass"] else "FAIL"
+        print(f"[{status}] {qid:22s} ({rows[-1]['elapsed']:5.1f}s) {rows[-1]['reason']}")
+    total = time.time() - t_start
+    return rows, total
+
+
 def print_table(rows: list[dict], total: float) -> None:
     print("\n" + "=" * 100)
     print(f"{'id':22s} {'kind':16s} {'결과':6s} {'소요':>6s}  사유")
@@ -213,8 +324,11 @@ def print_table(rows: list[dict], total: float) -> None:
 
 def main() -> int:
     rows, total = run_once()
-    print_table(rows, total)
-    failed = [r for r in rows if not r["pass"]]
+    print("\n--- 멀티턴 케이스 ---")
+    mt_rows, mt_total = run_multiturn_once()
+    all_rows = rows + mt_rows
+    print_table(all_rows, total + mt_total)
+    failed = [r for r in all_rows if not r["pass"]]
     if failed:
         print("\nFAIL 상세:")
         for r in failed:
@@ -224,6 +338,8 @@ def main() -> int:
             print(f"  n_listings: {r['n_listings']}")
             print(f"  clarify: {r['clarify']}")
             print(f"  answer: {r['answer']}")
+            if "turn1_listing_ids" in r:
+                print(f"  turn1_listing_ids: {r['turn1_listing_ids']}")
         return 1
     return 0
 

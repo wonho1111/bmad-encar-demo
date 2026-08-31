@@ -340,3 +340,170 @@ def test_no_listing_id_keeps_base_system_prompt(monkeypatch):
 
     system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
     assert system_messages[0].content == agent_module._SYSTEM_PROMPT
+
+
+# ───────── (7) 멀티턴 매물 참조 — 직전 대화 요약 블록(사용자 실측 결함 수정) ─────────
+#
+# 배경: 직전 턴에서 추천한 매물을 두고 "그중 두 번째 시세 알려줘"·"그 5개 비교해줘"라고 물으면
+# 에이전트가 재검색만 반복했다(원인: context가 텍스트뿐이라 직전 매물 id가 다음 턴에 전달되지
+# 않음). ConversationTurn.listing_ids(schemas/ai.py)로 id를 실어 보내고, agent.py가 그 id들로
+# DB를 조회해(SELECT만) 시스템 프롬프트에 "[직전 대화에서 보여준 매물]" 블록을 붙인다.
+
+
+def _fake_run_select_for(rows_by_call):
+    """agent_module.run_select를 몽키패치할 가짜 — 호출될 때마다 rows_by_call을 그대로 돌려준다."""
+
+    def _fake(sql, params):
+        return rows_by_call
+
+    return _fake
+
+
+def test_recent_listing_ids_become_system_prompt_summary_block(monkeypatch):
+    """context의 가장 최근 어시스턴트 턴 listing_ids가 DB 조회를 거쳐 시스템 프롬프트
+    요약 블록으로 들어가는지 확인한다(DB 조회는 run_select를 몽키패치해 네트워크 없이 검증)."""
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    # contextualize_query(맥락 재작성 LLM)는 이 테스트의 관심사가 아니다 — 실제 LLM 호출을
+    # 막고 query를 그대로 통과시킨다(격리, 네트워크 없는 단위테스트 유지).
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda query, context=None: query)
+
+    # SELECT_COLUMNS 순서(id, manufacturer, model, year, price, mileage, region, fuel,
+    # accident_status, is_single_owner, is_non_smoker, options)와 동일한 폭의 가짜 행.
+    rows = [
+        ("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [
+        {"role": "user", "content": "1000만원 이하 실속형 차 추천해줘"},
+        {"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]},
+    ]
+    agent_module.run_search_agent("그중 두 번째 매물 시세 분석해줘", context=context)
+
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    prompt = system_messages[0].content
+    assert "[직전 대화에서 보여준 매물]" in prompt
+    assert "1. 현대 아반떼 AD 2017년식" in prompt
+    assert "(id: aaa)" in prompt
+    assert "2. 기아 쏘렌토 2020년식" in prompt
+    assert "(id: bbb)" in prompt
+
+
+def test_nonexistent_listing_id_is_silently_ignored(monkeypatch):
+    """DB에 없는(팔렸거나 잘못된) id는 조용히 무시된다 — 나머지 id는 정상 포함되고 루프가
+    죽지 않는다(강건성)."""
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda query, context=None: query)
+
+    # WHERE id = ANY(...)라 DB가 애초에 존재하는 행만 돌려준다 — "ghost"는 결과에 없다.
+    rows = [("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None)]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [
+        {"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa", "ghost"]},
+    ]
+    result = agent_module.run_search_agent("아까 그 차 시세 알려줘", context=context)
+
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    prompt = system_messages[0].content
+    assert "1. 현대 아반떼 AD 2017년식" in prompt
+    assert "ghost" not in prompt
+    assert result["answer"] == "ok"  # 루프가 죽지 않고 정상 완주.
+
+
+def test_context_without_listing_ids_behaves_like_before(monkeypatch):
+    """어시스턴트 턴에 listing_ids가 없으면(기존 클라이언트·되묻기 응답 등) 요약 블록 없이
+    기존과 동일하게 동작한다(회귀 0) — DB 조회 자체가 일어나지 않는지도 확인한다.
+
+    ⚠️ "[직전 대화에서 보여준 매물]"이라는 문구 자체는 정적 시스템 프롬프트([직전 목록 참조]
+    절)에도 안내문으로 등장하므로(요약 블록이 실제로 있을 때만 참조하라는 지시), 단순
+    substring 검사로는 늘 참(거짓 양성)이 된다 — 실제 블록은 "\\n\\n[직전 대화에서 보여준
+    매물]\\n1."처럼 헤더 뒤에 번호 매긴 항목이 바로 붙는 형태이므로 그 결합 패턴으로 검사한다.
+    """
+    captured_messages: list = []
+    select_calls: list = []
+
+    def _track_run_select(sql, params):
+        select_calls.append((sql, params))
+        return []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "run_select", _track_run_select)
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda query, context=None: query)
+
+    context = [
+        {"role": "user", "content": "3천만원 이하 SUV"},
+        {"role": "assistant", "content": "조건에 맞는 매물이 없어 다시 여쭤볼게요."},
+    ]
+    agent_module.run_search_agent("음... 그럼 세단은?", context=context)
+
+    assert select_calls == []  # listing_ids가 없으므로 DB 조회 자체가 일어나지 않는다.
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    assert "[직전 대화에서 보여준 매물]\n1." not in system_messages[0].content
+
+
+def test_scans_past_listingless_assistant_turn_for_latest_shown_listings(monkeypatch):
+    """직전 실측 회귀(그랜저 진단 여러 턴 → 쏘렌토 추천 → 시세 문의 → 주어 없는 후속 질의)
+    변종 대응: 가장 최근 어시스턴트 턴에 listing_ids가 없어도(예: 순수 안내 응답), 그 이전
+    턴들 중 listing_ids를 가진 **가장 최근** 것까지 계속 찾는다 — "실없는 응대" 한 턴 때문에
+    직전에 실제로 보여준 매물 목록이 통째로 사라지면 안 된다."""
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda query, context=None: query)
+
+    rows = [("bbb", "기아", "쏘렌토 하이브리드", 2021, 32000000, 78000, "부산", None, None, None, None, None)]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [
+        {"role": "user", "content": "쏘렌토 하이브리드 추천해줘"},
+        {"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["bbb"]},
+        {"role": "user", "content": "78000km짜리 시세 분석"},
+        # 이 턴엔 listing_ids가 없다(순수 안내 응답) — 그래도 위 "bbb" 턴이 여전히 유효해야 한다.
+        {"role": "assistant", "content": "잠시만요, 확인해볼게요."},
+    ]
+    agent_module.run_search_agent("아니 시세분석해달라고", context=context)
+
+    system_messages = [m for m in captured_messages if isinstance(m, SystemMessage)]
+    prompt = system_messages[0].content
+    assert "[직전 대화에서 보여준 매물]" in prompt
+    assert "(id: bbb)" in prompt
+    # 주어 없는 후속 질의를 오래된 주제로 건너뛰지 말라는 지침이 프롬프트에 실제로 있어야 한다.
+    assert "오래된 주제로 건너뛰지 마라" in prompt

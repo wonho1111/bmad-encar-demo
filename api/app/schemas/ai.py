@@ -40,6 +40,12 @@ class ConversationTurn(BaseModel):
 
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1, max_length=2000, description="턴 내용")
+    # 멀티턴 매물 참조(FR18 확장) — 어시스턴트 턴이 실제로 보여준 매물 id들. role="assistant"
+    # 턴에만 의미가 있고(사용자 턴엔 없음), 에이전트가 "그중 N번째"·"그 5개 비교" 같은 후속
+    # 요청을 새 검색이 아니라 이 id들로 직접 처리하는 데 쓴다(agent.py). max_length로 과대
+    # 입력(DoS)을 막는다 — 한 턴에 보여줄 수 있는 매물 카드는 실제로도 20건을 넘지 않는다
+    # (search_listings 상한과 동일선상, agent_tools.py _MAX_SEARCH_LIMIT).
+    listing_ids: list[str] | None = Field(default=None, max_length=20, description="이 턴이 보여준 매물 id들(어시스턴트 턴 전용)")
 
 
 class SearchRequest(BaseModel):

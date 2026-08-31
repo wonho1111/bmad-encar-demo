@@ -49,10 +49,12 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
 from app.config import require, settings
+from app.db.readonly import run_select
 from app.graph import router_node as _router_node
 from app.graph.agent_tools import AGENT_TOOLS, TOOLS_BY_NAME
 from app.graph.contextualize_node import contextualize_query
 from app.graph.guard_node import guard_node
+from app.graph.listing_cards import SELECT_COLUMNS, rows_to_cards
 from app.schemas.ai import ClarifyPayload, ListingCard
 
 # LangSmith 루프 관제(4단계 요구): 루프 안의 LLM 2회+도구+최종화가 형제 런으로 흩어지지
@@ -88,6 +90,20 @@ _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전�
   호출해라. 시세·적정가·가격대를 한 마디라도 언급하려면 **먼저 이 도구를 호출해서 얻은
   값만** 써라 — 호출 없이 아는 대로 가격대를 말하지 마라(일반 지식으로 추정한 시세는 금지).
 - compare_listings: 매물 최대 4건의 핵심 필드를 나란히 비교한다.
+
+[직전 목록 참조] — 아래 [직전 대화에서 보여준 매물] 블록이 있을 때만 해당한다.
+사용자가 "그중 N번째", "아까 그 아반떼", "그 5개 비교"처럼 직전에 보여준 매물을 가리키는
+요청을 하면, 새로 search_listings를 부르지 말고 그 블록의 id로 market_price_stats나
+compare_listings를 바로 호출해라(새 검색은 새 조건을 찾을 때만 쓴다). 그 블록에서 조건에
+맞는 매물이 여럿이면(예: "아반떼 시세 알려줘"인데 목록에 아반떼가 2대) 임의로 하나를 골라
+호출하지 말고, 최종 응답의 clarify로 어느 것인지 물어라 — chips는 그 후보들을 "모델 연식
+가격"(예: "아반떼 AD 2017 926만원") 형태로 2~4개 만들어라. compare_listings 결과로 답할
+땐 비교한 매물들의 id를 selected_listing_ids에 담아라.
+주어가 없는 후속 요청("아니 시세분석해달라고", "그거 말고")은 위 [직전 대화에서 보여준
+매물] 블록의 매물을 가리키는 것으로 우선 해석하라 — 대화가 그보다 앞서 다른 차종을 다뤘어도
+그 오래된 주제로 건너뛰지 마라(블록이 항상 가장 최근에 실제로 보여준 매물이다). 시세 분석
+요청에는 매물 재추천을 얹지 마라 — 대상 1건의 진단(또는 대상을 특정하기 위한 clarify)만
+응답하고, 별개 조건으로 새 매물 목록을 함께 내놓지 마라.
 
 [되묻기 규칙]
 조건이 모호해 무엇을 찾아야 할지 판단할 수 없으면(예: "차 추천해줘"처럼 예산·용도·차종이
@@ -181,20 +197,92 @@ def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int
     return structured.invoke(messages + [HumanMessage(instruction)])
 
 
-def _system_prompt(listing_id: str | None) -> str:
-    """기본 시스템 프롬프트에 대상 매물 id 힌트를 덧붙인다(5단계, 상세 페이지 "AI 시세 진단" 버튼).
+def _recent_assistant_listing_ids(context: list | None) -> list[str]:
+    """context에서 **가장 최근에 listing_ids를 실은** 어시스턴트 턴의 id들을 뽑는다
+    (멀티턴 매물 참조).
+
+    최신 어시스턴트 턴이 listing_ids가 없으면(예: 매물 없이 순수 안내·되묻기만 한 턴)
+    건너뛰고 그 이전 턴들 중 listing_ids가 있는 가장 최근 것을 계속 찾는다 — "실없는 응대"
+    한 턴 때문에 직전에 실제로 보여준 매물 목록이 통째로 사라지면 안 되기 때문이다
+    (실측 회귀: 그랜저 진단 여러 턴 뒤 쏘렌토 추천 → 시세 문의처럼, 대화가 길어질수록
+    이 스캔이 "진짜 마지막으로 보여준 매물"에 도달하는 게 더 중요해진다). 다만 스캔은
+    직전 대화 안에서만(무상태 — context가 서버로 넘어온 이번 요청 분량만) 이뤄지고,
+    ConversationTurn 자체가 서버·DB에 저장되지 않으므로 무상태 원칙은 그대로다.
+    턴은 Pydantic ConversationTurn 또는 dict 둘 다 받아들인다(contextualize_node.py와 동일 관례).
+    """
+    if not context:
+        return []
+    for turn in reversed(context):
+        role = getattr(turn, "role", None) or (turn.get("role") if isinstance(turn, dict) else None)
+        if role != "assistant":
+            continue
+        ids = getattr(turn, "listing_ids", None)
+        if ids is None and isinstance(turn, dict):
+            ids = turn.get("listing_ids")
+        if ids:
+            return list(ids)
+        # 이 어시스턴트 턴엔 listing_ids가 없다 — 계속 더 이전 턴을 찾는다(위 docstring 참조).
+    return []
+
+
+def _format_recent_listings_block(cards: list[ListingCard], ordered_ids: list[str]) -> str | None:
+    """조회된 카드들을 원래 id 순서(클라이언트가 보여준 순서, "N번째" 지시어와 대응)대로
+    번호 매겨 요약한다. DB에 없는(존재하지 않는) id는 조용히 건너뛴다(강건성)."""
+    by_id = {c.id: c for c in cards}
+    lines = []
+    for lid in ordered_ids:
+        card = by_id.get(lid)
+        if card is None:
+            continue  # 존재하지 않는 id 무시(강건성) — 팔린 매물·잘못된 id 등.
+        lines.append(
+            f"{len(lines) + 1}. {card.manufacturer} {card.model} {card.year}년식 · "
+            f"{card.price:,}원 · {card.mileage:,}km (id: {card.id})"
+        )
+    if not lines:
+        return None
+    return "[직전 대화에서 보여준 매물]\n" + "\n".join(lines)
+
+
+def _recent_listings_prompt_block(context: list | None) -> str | None:
+    """직전 대화의 매물 id들로 DB를 조회해(SELECT만) 시스템 프롬프트용 요약 블록을 만든다.
+
+    조회 실패(DB 장애·비UUID 등)는 루프를 막지 않는다 — 이 블록은 "있으면 좋은" 보조
+    힌트이지 필수 경로가 아니므로, 실패 시 경고 로그만 남기고 힌트 없이 그대로 진행한다.
+    """
+    ids = _recent_assistant_listing_ids(context)
+    if not ids:
+        return None
+    try:
+        rows = run_select(
+            f"SELECT {SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' AND id = ANY(%s::uuid[])",
+            (ids,),
+        )
+        cards = rows_to_cards(rows)
+    except Exception as exc:  # DB 장애·비UUID 등 — 힌트 없이 진행(경고 로그만, fail-loud 아님).
+        logger.warning("직전 대화 매물 요약 조회 실패 — 프롬프트 힌트 없이 진행: %r", exc)
+        return None
+    return _format_recent_listings_block(cards, ids)
+
+
+def _system_prompt(listing_id: str | None, context: list | None = None) -> str:
+    """기본 시스템 프롬프트에 (1) 대상 매물 id 힌트(5단계, 상세 페이지 "AI 시세 진단" 버튼),
+    (2) 직전 대화가 보여준 매물 요약(멀티턴 매물 참조)을 덧붙인다. 둘 다 없으면 원본 그대로
+    돌려준다(회귀 0 — 기존 listing_id 전용 테스트가 이 동치를 고정한다).
 
     도구 강제 호출은 아니다 — LLM이 시세 요청으로 판단할 때 market_price_stats를 이 id로
     호출하도록 프롬프트로만 유도한다(설계: 버튼이 프리필한 질의문 자체도 "이 매물 시세
     알려줘" 형태라 대부분 자연스럽게 이어지지만, id를 명시해 모호성을 줄인다).
     """
-    if not listing_id:
-        return _SYSTEM_PROMPT
-    return (
-        f"{_SYSTEM_PROMPT}\n\n"
-        f"[이번 요청의 대상 매물]\n"
-        f"이번 요청의 대상 매물 id는 {listing_id}다. 시세 요청이면 market_price_stats를 이 id로 호출하라."
-    )
+    prompt = _SYSTEM_PROMPT
+    if listing_id:
+        prompt += (
+            f"\n\n[이번 요청의 대상 매물]\n"
+            f"이번 요청의 대상 매물 id는 {listing_id}다. 시세 요청이면 market_price_stats를 이 id로 호출하라."
+        )
+    recent_block = _recent_listings_prompt_block(context)
+    if recent_block:
+        prompt += f"\n\n{recent_block}"
+    return prompt
 
 
 @_traceable(name="run_search_agent", run_type="chain")
@@ -219,7 +307,7 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     base_llm = _llm()  # 키 부재 시 여기서 fail-loud — 루프 진입 전에 즉시 실패.
     tool_llm = base_llm.bind_tools(AGENT_TOOLS)
 
-    messages: list = [SystemMessage(_system_prompt(listing_id)), HumanMessage(effective_query)]
+    messages: list = [SystemMessage(_system_prompt(listing_id, context)), HumanMessage(effective_query)]
     seen_listings: dict[str, ListingCard] = {}
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
