@@ -7011,3 +7011,12 @@ reason: SSR 정적 HTML에 리스너가 붙기 전(hydration 완료 전) 타이�
 trigger: 5단계 이후 웹 폴리시 정리 회차 또는 사용자가 재현 불편을 호소할 때 → 그 회차 스토리 인수조건으로 심는다.
 decision: 2026-09-01 사용자 결정 — 과제 제출 전 수정하지 않음(자가회복형·실해 없음 근거). 배포 재현 사실 인지한 채 보류.
 status: open
+
+### DW-851: AI 시세 진단 기능의 Flutter 이식 (진입 버튼 + MarketDiagnosis 카드 + 채팅 프리필 표준 매물 카드)
+
+origin: 웹 UI 통일의 모바일 반영 세션(2026-09-01) — 웹 커밋 8925669("채팅 프리필은 표준 매물 카드로") 반영 범위 산정 중 발견
+location: app/lib/features/listings/listing_detail_screen.dart(진입점 부재), app/lib/features/ai_search/(프리필·진단 카드 렌더 부재)
+severity: medium
+reason: 프리필 카드 UI 통일의 전제인 "AI 시세 진단" 기능 자체(상세 화면 버튼→채팅 핸드오프→진단 카드)가 앱에 아예 없음. "웹 UI 수정사항 반영"이 아니라 신규 기능 이식이라 범위가 달라 사용자 결정으로 넘김. 이식 시엔 웹의 우회 경로(전용 미니카드→폐기) 없이 처음부터 공용 ListingCard + 최신 listingSummary 계약(ListingCardData, region 필수)을 따른다.
+trigger: 사용자가 앱에도 시세 진단을 넣기로 결정하면 그 스토리 인수조건으로 심는다(B5). 결정 전에는 앱 검색 필터 통일(이번 세션 반영분)만이 모바일 반영 완료 범위다.
+status: open
