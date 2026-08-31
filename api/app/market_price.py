@@ -99,6 +99,13 @@ LADDER = [
 
 MIN_SAMPLE = 5
 
+# 2026-08-31 개정(사용자 실측 결함 F4, 소표본 과신 판정): 비교군이 이 미만(1~2건)이면
+# 사분위(q1/q3)든 TabPFN 적정가든 verdict를 매기지 않고 보류한다 — 표본 1~2건의 사분위는
+# 폭이 좁아 "저렴/높음" 배지가 통계적으로 근거가 못 된다(실측: 비교군 1건으로 "하위 0%"
+# 배지가 뜬 사례). 0건(비교군 자체 없음)은 기존대로 verdict_basis도 None, 1~2건은
+# verdict_basis="표본 부족"으로 구분해(웹이 다른 문구를 쓸 수 있게) 응답한다.
+MIN_VERDICT_SAMPLE = 3
+
 # "더 뉴 "/"올 뉴 " 접두 제거 후 기본 모델명(첫 토큰) 추출 — v3 확정 명칭 체계
 # ("더 뉴 그랜저 IG" → "그랜저", "올 뉴 쏘렌토" → "쏘렌토").
 _GENERATION_PREFIXES = ("더 뉴 ", "올 뉴 ")
@@ -251,6 +258,25 @@ def _verdict_by_fair_price(price: int, fair_price: int) -> str:
     return "적정"
 
 
+def _verdict_and_basis(
+    sample_count: int, price: int, stats: dict | None, tabpfn_price: int | None
+) -> tuple[str | None, str | None]:
+    """verdict·verdict_basis를 함께 결정한다(항상 쌍으로 채워지거나 함께 None — I2 불변식).
+
+    2026-08-31 사용자 실측 결함(F4) 수정: 표본이 MIN_VERDICT_SAMPLE(3) 미만이면(0건 제외,
+    그건 비교군 자체가 없는 별개 케이스) 사분위·적정가 어느 기준으로도 판정하지 않고 보류한다
+    (verdict_basis="표본 부족"). diagnose()에서만 쓰이고 DB 접근이 없어 단위 테스트로 경계
+    (2건→보류, 3건→판정)를 DB 없이 직접 고정할 수 있다(test_market_price.py 참조).
+    """
+    if sample_count == 0:
+        return None, None
+    if sample_count < MIN_VERDICT_SAMPLE:
+        return None, "표본 부족"
+    if tabpfn_price is not None:
+        return _verdict_by_fair_price(price, tabpfn_price), "적정가"
+    return _verdict(price, stats["q1"], stats["q3"]), "사분위"
+
+
 def _fuel_onehot(fuel: str | None) -> list[int]:
     return [1 if fuel == f else 0 for f in _FUEL_ORDER]
 
@@ -379,17 +405,10 @@ def diagnose(listing_id: str, conn) -> dict | None:
     # tabpfn 적정가가 있으면 그 괴리율로, 없으면 기존 사분위로 폴백한다(_verdict_by_fair_price
     # 참조). sample_count==0이면 비교군 자체가 없으므로 verdict도 None으로 둔다(사분위 폴백조차
     # 근거가 없음 — I2 불변식: stats/percentile/verdict는 항상 함께 None이거나 함께 채워진다).
+    # sample_count가 0은 아니지만 MIN_VERDICT_SAMPLE 미만(1~2건)이면 표본 부족으로 보류한다
+    # (F4 수정, _verdict_and_basis 참조 — 이때도 stats/percentile은 그대로 채워진다, I2 개정).
     tabpfn_price, tabpfn_note = _tabpfn_predict(target, train_rows)
-
-    if sample_count == 0:
-        verdict = None
-        verdict_basis = None
-    elif tabpfn_price is not None:
-        verdict = _verdict_by_fair_price(target["price"], tabpfn_price)
-        verdict_basis = "적정가"
-    else:
-        verdict = _verdict(target["price"], stats["q1"], stats["q3"])
-        verdict_basis = "사분위"
+    verdict, verdict_basis = _verdict_and_basis(sample_count, target["price"], stats, tabpfn_price)
 
     return {
         "listing": _listing_summary(target),

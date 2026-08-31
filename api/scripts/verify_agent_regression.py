@@ -114,6 +114,12 @@ MULTITURN_CASES: list[dict] = [
     # "직전 목록"을 만들어 둔 상태에서 2턴이 주어 없이 시세만 요구한다).
     {"id": "MT3", "turn1": "쏘렌토 하이브리드 추천해줘", "turn2": "아니 시세분석해달라고",
      "kind": "mt_no_resubject_diagnosis"},
+    # --- MT6(2026-08-31 실측 결함 F2, 다건 판정 환각 회귀) — "이 매물들 전부 시세 분석해줘"
+    # 처럼 여러 매물의 시세 판정을 한 번에 요청받으면, 매물마다 market_price_stats를 각각
+    # 호출해야 한다(1건만 호출하고 나머지는 판정을 지어내면 회귀). 호출 "횟수"를 보므로
+    # tools_expected(부분집합, 존재 여부만 봄)로는 못 잡는다 — judge_multiturn에서 직접 센다.
+    {"id": "MT6", "turn1": "2천만원 이하 세단 추천해줘", "turn2": "이 매물들 전부 시세 분석해줘",
+     "kind": "mt_market_stats_multi_call"},
 ]
 
 
@@ -131,6 +137,13 @@ THREE_TURN_CASES: list[dict] = [
     # "두 번째" 매물을 가리키려면 1턴 listing_ids가 2턴을 건너 3턴까지 살아 있어야 한다.
     {"id": "MT4", "turn1": "1,000만원 이하 경차 추천해줘", "turn2": "그중 첫 번째 매물 시세 분석해줘",
      "turn3": "두 번째 매물은?", "kind": "mt4_second_listing_no_resubject"},
+    # --- MT5(2026-08-31 실측 결함 F1, "나머지 두 개랑 비교" 재검색 도피 회귀) — 1턴 추천 목록
+    # 중 1건을 2턴에서 진단한 뒤, 3턴이 "나머지"(진단 안 한 것들)를 비교해달라고 하면 재검색
+    # (search_listings) 없이 1턴 목록의 id로 compare_listings를 불러야 한다. LangSmith
+    # 원자료로 확정된 실측 결함(직전 트레이스에서 에이전트가 search_listings를 2번 새로 불러
+    # 그 결과로 비교한 사례)의 최소 재현.
+    {"id": "MT5", "turn1": "3천만원 이하 SUV 추천해줘", "turn2": "그중 첫 번째 시세 봐줘",
+     "turn3": "나머지 두 개랑 뭐가 다른지 비교해줘", "kind": "mt5_no_resubject_compare_from_prior_list"},
 ]
 
 
@@ -258,12 +271,25 @@ def judge_multiturn(expects: dict, result1: dict, result2: dict) -> tuple[bool, 
             f"clarify_present={result2.get('clarify') is not None}"
         )
 
+    if kind == "mt_market_stats_multi_call":
+        # MT6(F2, 다건 판정 환각) — "이 매물들 전부 시세 분석해줘"는 매물마다 도구를 각각
+        # 불러야 한다. set이 아니라 리스트로 세야 "1건만 부르고 텍스트로 나머지를 지어냈다"를
+        # 잡을 수 있다(set이면 1회 호출과 여러 회 호출이 똑같이 "있음"으로만 보인다).
+        tools_used_list = result2.get("tools_used") or []
+        n_calls = tools_used_list.count("market_price_stats")
+        if n_calls < 2:
+            return False, (
+                f"market_price_stats 호출 {n_calls}회 < 2회(다건 판정 환각 의심 — 호출 안 한 "
+                f"매물의 저렴/높음을 텍스트로만 지어냈을 수 있음): tools_used={tools_used_list}"
+            )
+        return True, f"market_price_stats 호출 {n_calls}회 확인(매물마다 실제로 도구를 불렀음)"
+
     return False, f"알 수 없는 kind: {kind}"
 
 
-def judge_three_turn(expects: dict, result3: dict) -> tuple[bool, str]:
-    """(pass 여부, 사유) 반환 — 3턴 kind별 판정. result3만 보면 충분하다(1·2턴은 context를
-    만들기 위한 재료일 뿐, 판정 대상은 항상 마지막 턴)."""
+def judge_three_turn(expects: dict, result3: dict, turn1_listing_ids: list[str] | None = None) -> tuple[bool, str]:
+    """(pass 여부, 사유) 반환 — 3턴 kind별 판정. result3가 판정 대상(1·2턴은 context 조립용
+    재료)이지만, MT5는 "비교 대상이 1턴 목록 안에 있는가"를 보려면 turn1_listing_ids가 필요하다."""
     kind = expects["kind"]
     tools_used = set(result3.get("tools_used") or [])
 
@@ -284,6 +310,32 @@ def judge_three_turn(expects: dict, result3: dict) -> tuple[bool, str]:
         return True, (
             f"재검색 없음 + market_price_stats={'market_price_stats' in tools_used} "
             f"clarify_present={result3.get('clarify') is not None}"
+        )
+
+    if kind == "mt5_no_resubject_compare_from_prior_list":
+        # MT5(F1, "나머지 두 개랑 비교해줘" 재검색 도피 회귀) — 핵심 판정은 재검색 부재 +
+        # compare_listings 호출. "비교 대상 id가 1턴 목록 안에 있는가"는 가능하면(compare
+        # 결과가 최종 응답의 listings에 실제로 담겼을 때만) 추가로 확인한다 — 담기지 않아도
+        # (도구는 불렀지만 최종화 LLM이 selected_listing_ids를 못 채운 경우) 핵심 판정은
+        # 그대로 유효하므로 그 경우엔 이 서브체크를 건너뛴다(스펙의 "(가능하면)" 반영).
+        if "search_listings" in tools_used:
+            return False, (
+                f"search_listings 재검색 발생(1턴 목록 밖에서 새 매물로 비교했을 것으로 의심): "
+                f"tools_used={result3.get('tools_used')}"
+            )
+        if "compare_listings" not in tools_used:
+            return False, f"tools_used에 compare_listings 없음: {result3.get('tools_used')}"
+        compared_ids = [c.id for c in (result3.get("listings") or [])]
+        if turn1_listing_ids and compared_ids:
+            outside = [cid for cid in compared_ids if cid not in turn1_listing_ids]
+            if outside:
+                return False, (
+                    f"compare 대상이 1턴 목록 밖: outside={outside} "
+                    f"turn1_listing_ids={turn1_listing_ids} compared_ids={compared_ids}"
+                )
+        return True, (
+            f"재검색 없음 + compare_listings 호출 확인 + compared_ids={compared_ids} "
+            f"(turn1_listing_ids={turn1_listing_ids})"
         )
 
     return False, f"알 수 없는 kind: {kind}"
@@ -395,7 +447,7 @@ def run_three_turn_once() -> tuple[list[dict], float]:
 
             result3 = run_search_agent(turn3_query, context=context, listing_id=None)
             elapsed = time.time() - t0
-            ok, reason = judge_three_turn(case, result3)
+            ok, reason = judge_three_turn(case, result3, turn1_listing_ids=ids1)
             rows.append({
                 "id": qid, "query": f"{turn1_query!r} → {turn2_query!r} → {turn3_query!r}",
                 "kind": case["kind"],

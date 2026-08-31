@@ -7,7 +7,13 @@
 // 건드렸을 때 바로 드러나게 한다.
 import { describe, expect, it } from 'vitest';
 
-import { buildCriteriaChips, formatManKm, type MarketDiagnosisData } from './MarketDiagnosis';
+import {
+  buildCriteriaChips,
+  buildVerdictBadge,
+  formatManKm,
+  shouldShowPercentileChip,
+  type MarketDiagnosisData,
+} from './MarketDiagnosis';
 
 const BASE_LISTING: MarketDiagnosisData['listing'] = {
   id: 'l-1',
@@ -76,6 +82,36 @@ describe('buildCriteriaChips', () => {
     expect(byLabel('가솔린')?.active).toBe(false); // 연료 조건 해제
     expect(byLabel('무사고')?.active).toBe(false); // 사고 조건 해제
     expect(byLabel('자동')?.active).toBe(true); // 변속기는 사다리가 건드리지 않는다
+  });
+});
+
+// buildVerdictBadge/shouldShowPercentileChip 단위테스트(실측 결함 F4, 2026-08-31) — 비교군이
+// 1~2건(소표본)이면 배지 대신 중립 문구, 백분위 칩은 숨긴다.
+describe('buildVerdictBadge', () => {
+  it('verdict가 있으면 그 값을 그대로 배지로 쓴다(tone=verdict)', () => {
+    expect(buildVerdictBadge('저렴', '사분위')).toEqual({ text: '저렴', tone: 'verdict' });
+  });
+
+  it('verdict가 null이고 표본 부족이면 중립 문구를 낸다(tone=neutral)', () => {
+    expect(buildVerdictBadge(null, '표본 부족')).toEqual({ text: '표본 부족 — 판정 보류', tone: 'neutral' });
+  });
+
+  it('verdict도 null이고 표본 부족도 아니면(비교군 자체 없음) 배지를 아예 안 낸다', () => {
+    expect(buildVerdictBadge(null, null)).toBeNull();
+  });
+});
+
+describe('shouldShowPercentileChip', () => {
+  it('표본 2건이면 percentile이 있어도 숨긴다(경계: 3건 미만)', () => {
+    expect(shouldShowPercentileChip(0.3, 2)).toBe(false);
+  });
+
+  it('표본 3건이면 percentile이 있을 때 보여준다(경계: 3건부터)', () => {
+    expect(shouldShowPercentileChip(0.3, 3)).toBe(true);
+  });
+
+  it('percentile 자체가 null이면 표본 수와 무관하게 숨긴다', () => {
+    expect(shouldShowPercentileChip(null, 10)).toBe(false);
   });
 });
 

@@ -55,8 +55,10 @@ export type MarketDiagnosisData = {
   percentile: number | null;
   verdict: '저렴' | '적정' | '높음' | null;
   // 판정 기준(2026-08-31 추가, additive) — tabpfn 적정가가 있으면 "적정가"(괴리율 ±5% 기준),
-  // 없으면 "사분위"(q1/q3 폴백). verdict가 null이면 이 값도 null(비교군 자체가 없는 경우).
-  verdict_basis: '적정가' | '사분위' | null;
+  // 없으면 "사분위"(q1/q3 폴백). verdict가 null이고 비교군 자체가 없으면(sample_count 0) 이
+  // 값도 null. verdict가 null인데 비교군이 1~2건(소표본)이면 "표본 부족"(2026-08-31 F4 수정
+  // — 표본이 너무 적어 판정을 보류한다, api/app/market_price.py MIN_VERDICT_SAMPLE).
+  verdict_basis: '적정가' | '사분위' | '표본 부족' | null;
   tabpfn: { price: number | null; note: string };
   comps: MarketDiagnosisComp[];
 };
@@ -110,6 +112,27 @@ export function buildCriteriaChips(data: MarketDiagnosisData): CriteriaChip[] {
   ];
 }
 
+// 2026-08-31 개정(F4, 소표본 과신 판정): 배지 대신 무엇을 보여줄지 결정하는 순수 함수 —
+// DOM 없이 단위테스트로 고정한다(MarketDiagnosis.test.ts, buildCriteriaChips와 동일 관례).
+export type VerdictBadge = { text: string; tone: 'verdict' | 'neutral' } | null;
+
+export function buildVerdictBadge(
+  verdict: MarketDiagnosisData['verdict'],
+  verdictBasis: MarketDiagnosisData['verdict_basis'],
+): VerdictBadge {
+  if (verdict) return { text: verdict, tone: 'verdict' };
+  if (verdictBasis === '표본 부족') return { text: '표본 부족 — 판정 보류', tone: 'neutral' };
+  return null;
+}
+
+// 백분위("하위 N% 가격대") 칩은 표본이 MIN_VERDICT_SAMPLE(3, 백엔드와 동일 기준) 미만이면
+// 숨긴다 — 비교군 1~2건의 백분위는 verdict와 마찬가지로 판정 근거가 못 된다(F4).
+const MIN_PERCENTILE_SAMPLE = 3;
+
+export function shouldShowPercentileChip(percentile: number | null, sampleCount: number): boolean {
+  return percentile !== null && sampleCount >= MIN_PERCENTILE_SAMPLE;
+}
+
 function verdictToneClass(verdict: MarketDiagnosisData['verdict']): string {
   if (verdict === '저렴') return 'bg-trust-green-bg text-trust-green-ink';
   if (verdict === '높음') return 'bg-warn-amber-bg text-warn-amber-ink';
@@ -141,6 +164,8 @@ export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosi
   const { listing, criteria, stats, percentile, verdict, tabpfn, comps } = data;
   const chips = buildCriteriaChips(data);
   const hasChart = stats !== null && comps.length > 0;
+  const verdictBadge = buildVerdictBadge(verdict, data.verdict_basis);
+  const showPercentileChip = shouldShowPercentileChip(percentile, criteria.sample_count);
 
   // 대상가와 유사매물 중앙값의 차이(④ 통계 3칸 세 번째 칸 보조 라벨) — stats가 있을 때만 계산.
   // ⚠️ 판정 단어(저렴/높음)를 여기 붙이지 않는다 — 판정 배지는 사분위(q1/q3) 기준이라
@@ -161,17 +186,23 @@ export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosi
         <div className="min-w-0">
           <AnswerText text={answer} className="text-[17px] font-bold leading-snug text-ink-primary" />
         </div>
-        {verdict && (
-          <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-caption font-semibold ${verdictToneClass(verdict)}`}>
-            {verdict}
+        {verdictBadge && (
+          <span
+            className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-caption font-semibold ${
+              verdictBadge.tone === 'verdict'
+                ? verdictToneClass(verdict)
+                : 'border border-border-hairline text-ink-secondary'
+            }`}
+          >
+            {verdictBadge.text}
           </span>
         )}
         {data.verdict_basis === '적정가' && (
           <span className="shrink-0 whitespace-nowrap text-caption text-ink-muted">(적정가 기준)</span>
         )}
-        {percentile !== null && (
+        {showPercentileChip && (
           <span className="shrink-0 whitespace-nowrap rounded-full border border-border-hairline bg-surface-base px-2.5 py-0.5 text-caption text-ink-secondary">
-            하위 {Math.round(percentile * 100)}% 가격대
+            하위 {Math.round((percentile as number) * 100)}% 가격대
           </span>
         )}
       </div>

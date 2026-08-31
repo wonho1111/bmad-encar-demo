@@ -30,7 +30,7 @@ from psycopg.rows import dict_row
 sys.path.insert(0, ".")
 
 from app.db.readonly import close_pool, readonly_connection  # noqa: E402
-from app.market_price import LADDER, MAX_COMPS  # noqa: E402
+from app.market_price import LADDER, MAX_COMPS, MIN_VERDICT_SAMPLE  # noqa: E402
 
 # ── I8 파라미터: 이 단(step) 이하는 "세대(모델 완전 일치) 순도"를 요구한다(세대 오염 검사).
 #   LADDER[0..2]는 model="exact"로 선언돼 있어 원래도 세대가 섞이면 안 된다 — 오늘 실측
@@ -160,10 +160,15 @@ def _check_i1(sweep, listing_id, stats):
 
 
 def _check_i2(sweep, listing_id, sample_count, stats, percentile, verdict):
-    if sample_count >= 1:
-        ok = stats is not None and percentile is not None and verdict is not None
-    else:
+    # 2026-08-31 개정(F4, 소표본 과신 판정 보류): sample_count가 1~2건(MIN_VERDICT_SAMPLE
+    # 미만이지만 0은 아님)이면 stats/percentile은 채워지되 verdict만 의도적으로 None이다 —
+    # 3구간(0건 / 1~2건 / 3건 이상)으로 나눠 각 구간의 정상 형태를 기대한다.
+    if sample_count == 0:
         ok = stats is None and percentile is None and verdict is None
+    elif sample_count < MIN_VERDICT_SAMPLE:
+        ok = stats is not None and percentile is not None and verdict is None
+    else:
+        ok = stats is not None and percentile is not None and verdict is not None
     detail = None
     if not ok:
         detail = {
@@ -230,15 +235,24 @@ def _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name, f
     sweep.record("I4", listing_id, ok, detail=bad[:5] if bad else None)
 
 
-def _check_i5(sweep, listing_id, price, stats, verdict, verdict_basis, tabpfn_price):
-    """verdict 정합 — 2026-08-31 판정 기준 전환(사용자 승인) 반영.
+def _check_i5(sweep, listing_id, price, sample_count, stats, verdict, verdict_basis, tabpfn_price):
+    """verdict 정합 — 2026-08-31 판정 기준 전환(사용자 승인) + 소표본 보류(F4) 반영.
 
-    tabpfn 적정가가 있으면(verdict_basis="적정가") ±5% 괴리율로, 없으면(stats 있고
-    verdict_basis="사분위") 기존 사분위(q1/q3)로 독립 재계산해 비교한다. 둘 다 없으면
-    (sample_count==0, stats도 tabpfn도 없음) verdict가 None이어야 정상이라 스킵한다.
+    sample_count==0(비교군 자체가 없음)이면 verdict도 None이어야 정상이라 스킵한다.
+    sample_count가 1~2건(MIN_VERDICT_SAMPLE 미만)이면 표본 부족으로 verdict/verdict_basis가
+    각각 None/"표본 부족"이어야 한다(F4, _verdict_and_basis와 독립적으로 재확인). 3건 이상이면
+    기존대로 tabpfn 적정가가 있으면(verdict_basis="적정가") ±5% 괴리율로, 없으면
+    (verdict_basis="사분위") 사분위(q1/q3)로 독립 재계산해 비교한다.
     """
-    if stats is None and tabpfn_price is None:
+    if sample_count == 0:
         sweep.record("I5", listing_id, True, skipped=True)
+        return
+    if sample_count < MIN_VERDICT_SAMPLE:
+        ok = verdict is None and verdict_basis == "표본 부족"
+        detail = None if ok else {
+            "sample_count": sample_count, "verdict": verdict, "verdict_basis": verdict_basis,
+        }
+        sweep.record("I5", listing_id, ok, detail=detail)
         return
     if tabpfn_price is not None:
         diff = (price - tabpfn_price) / tabpfn_price
@@ -392,7 +406,10 @@ def run_sweep(sample, seed):
             _check_i2(sweep, listing_id, sample_count, stats, percentile, verdict)
             _check_i3(sweep, listing_id, sample_count, comps, target["id"])
             _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name, family_name)
-            _check_i5(sweep, listing_id, target["price"], stats, verdict, verdict_basis, tabpfn.get("price"))
+            _check_i5(
+                sweep, listing_id, target["price"], sample_count, stats, verdict, verdict_basis,
+                tabpfn.get("price"),
+            )
             _check_i6(sweep, listing_id, target["price"], sample_count, comps, percentile)
             _check_i7(sweep, listing_id, tabpfn, conn, target, base_name)
             _check_i8(sweep, listing_id, step, comps, comp_raw_map, target)

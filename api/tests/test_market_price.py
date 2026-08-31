@@ -76,6 +76,25 @@ def test_verdict_by_fair_price_boundaries():
     assert market_price._verdict_by_fair_price(1_050_001, fair) == "높음"  # diff > 5%
 
 
+def test_verdict_and_basis_sample_size_boundary():
+    # 2026-08-31 실측 결함(F4, 소표본 과신 판정) 수정 — 비교군 <3건이면 verdict를 보류한다.
+    # 경계값을 리터럴로 고정: 0건/2건(보류) vs 3건(판정)을 직접 확인한다.
+    stats = {"q1": 1_000, "q3": 2_000}
+
+    assert market_price._verdict_and_basis(0, 1_500, None, None) == (None, None)  # 비교군 자체 없음
+    assert market_price._verdict_and_basis(1, 1_500, stats, None) == (None, "표본 부족")
+    assert market_price._verdict_and_basis(2, 1_500, stats, None) == (None, "표본 부족")  # 경계: 2건은 여전히 보류
+    assert market_price._verdict_and_basis(3, 1_500, stats, None) == ("적정", "사분위")  # 경계: 3건부터 판정
+    assert market_price._verdict_and_basis(3, 500, stats, None) == ("저렴", "사분위")
+
+
+def test_verdict_and_basis_prefers_tabpfn_when_available_and_sample_sufficient():
+    # 표본이 MIN_VERDICT_SAMPLE 이상이고 tabpfn 적정가가 있으면 사분위 대신 적정가 기준을 쓴다
+    # (기존 _verdict_by_fair_price 우선순위가 sample-size 보류 로직 추가 후에도 유지되는지 확인).
+    stats = {"q1": 1_000, "q3": 2_000}
+    assert market_price._verdict_and_basis(3, 1_100_000, stats, 1_000_000) == ("높음", "적정가")
+
+
 def test_where_clause_differs_by_step_model_vs_ilike():
     target = {
         "id": "target-id",

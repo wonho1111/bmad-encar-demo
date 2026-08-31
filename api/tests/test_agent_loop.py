@@ -603,6 +603,32 @@ def test_market_diagnoses_populated_when_two_or_more_calls(monkeypatch):
     assert result["market_diagnosis"] == diag_b  # 기존 단건 필드는 마지막 호출 그대로 유지.
 
 
+# ───────── 프롬프트 규칙 문자열 계약 고정(2026-08-31, 실측 결함 F1·F2·리텍스트 수정) ─────────
+#
+# LLM 프롬프트 자체는 실행해 검증할 수 없다(비결정적) — 여기서는 "그 규칙 문장이 실제로
+# 프롬프트에 실려 있는가"라는 배선 한 겹만 가볍게 고정한다(리팩터 중 문구가 통째로 지워지는
+# 사고를 막는 안전망). 문구가 바뀌어도 뜻이 같으면 이 테스트도 같이 고쳐 쓰면 된다 — "절대
+# 안 바뀌어야 할 계약"이 아니라 "실수로 안 사라지게 하는 안전망"이다.
+
+
+def test_system_prompt_covers_remainder_reference_rule():
+    # F1: "나머지 두 개랑 비교해줘"처럼 직전 목록에서 이미 다룬 매물을 뺀 나머지를 가리키는
+    # 표현도 재검색 없이 그 블록의 id를 쓰라는 규칙이 프롬프트에 있어야 한다.
+    assert "나머지" in agent_module._SYSTEM_PROMPT
+    assert "이미 다룬" in agent_module._SYSTEM_PROMPT
+
+
+def test_system_prompt_covers_per_listing_verdict_rule():
+    # F2: 여러 매물의 시세 판정을 서술하려면 매물마다 market_price_stats를 각각 호출해야
+    # 한다는 규칙(호출 안 한 매물의 판정을 지어내지 말라)이 프롬프트에 있어야 한다.
+    assert "각 매물에 대해 이 도구를 각각 호출" in agent_module._SYSTEM_PROMPT
+
+
+def test_system_prompt_covers_attribute_consistency_rule():
+    # 매물 속성(연료·연식 등) 서술이 도구가 돌려준 실제 값과 어긋나면 안 된다는 규칙.
+    assert "실제 값과" in agent_module._SYSTEM_PROMPT
+
+
 def test_market_diagnoses_none_when_only_one_call(monkeypatch):
     """market_price_stats 호출이 1건뿐이면 market_diagnoses는 None(기존 단건 market_diagnosis만
     쓰인다) — additive 필드가 불필요하게 채워지지 않는지 확인."""
