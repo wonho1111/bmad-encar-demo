@@ -1,0 +1,53 @@
+# api/Dockerfile.reranker — 리랭커(크로스인코더) 사이드카 전용 Cloud Run(CPU) 이미지.
+#
+# api/Dockerfile(본 API)과 별도 파일인 이유: 이 이미지는 완전히 다른 런타임이다 —
+#   torch(CPU 전용판)·sentence-transformers를 깔고 BAAI/bge-reranker-v2-m3 가중치를
+#   빌드 시점에 이미지 안에 구워 넣는다(reranker_service.py 상단 주석 — 로컬은
+#   ~/bench/venv-rr 별도 venv로 이 충돌을 피했고, 클라우드는 별도 컨테이너 이미지로
+#   같은 원칙을 지킨다: 본 API venv엔 안 섞는다).
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# 1) torch CPU 전용판을 먼저 고정 설치 — Cloud Run엔 GPU가 없어 기본(CUDA)판은 수 GB 낭비.
+#    (api/Dockerfile의 동일 패턴 참고.)
+RUN pip install --no-cache-dir torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+
+# 2) sentence-transformers(CrossEncoder)·fastapi·uvicorn만 설치 — 본 API 의존성(supabase,
+#    langgraph, tabpfn 등)은 이 사이드카에 불필요하다(A2: 최소 인터페이스).
+RUN pip install --no-cache-dir \
+    sentence-transformers \
+    "fastapi==0.137.1" \
+    "uvicorn[standard]"
+
+# 3) Hugging Face 캐시 경로를 이미지 내 고정 경로로 — 아래 RUN에서 받은 모델이 여기 남고,
+#    컨테이너 기동 시 같은 경로를 읽으므로 재다운로드가 없다(콜드스타트 때 2.3GB 다운로드 방지).
+ENV HF_HOME=/app/.cache/huggingface
+
+# 4) 모델 가중치를 이미지에 굽는다 — 앱 코드가 아니라 이 RUN 단계에서 1회 로드해 캐시에
+#    내려받는다. device는 지정하지 않는다(GPU가 없는 빌드 환경이므로 CPU로 로드된다) —
+#    가중치 파일은 device와 무관하게 동일하고, 기동 시 reranker_service.py가 다시
+#    RERANKER_DEVICE(아래 ENV로 cpu 고정)로 CrossEncoder를 만들며 이 캐시를 그대로 쓴다.
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('BAAI/bge-reranker-v2-m3')"
+
+# 4-a) 실측(로컬 docker run) 발견: 가중치를 캐시해도 huggingface_hub는 기동 시 기본적으로
+#      "캐시가 최신인지" HEAD 요청 여러 건을 huggingface.co로 보낸다(여기서 4~5초 추가 지연
+#      확인). Cloud Run 콜드스타트에서 이 요청이 느리거나 막히면(네트워크 정책 등) 기동이
+#      그만큼 늦어지거나 실패한다 — "이미지에 구웠으니 네트워크 불필요"를 실제로 보장하려면
+#      오프라인 모드를 강제해야 한다(캐시에 없는 걸 요청하면 즉시 에러 — 원하는 동작).
+ENV HF_HUB_OFFLINE=1
+
+# 5) 앱 코드 복사 — 이 사이드카는 reranker_service.py 한 파일로 완결된다(api 패키지를
+#    import하지 않는다, 파일 상단 주석 참조).
+COPY reranker_service.py ./
+
+# 6) Cloud Run은 CPU 전용 서비스다 — RERANKER_DEVICE 기본을 cpu로 고정한다(로컬 GPU
+#    스크립트인 scripts/dev-reranker.sh는 자기 env로 RERANKER_DEVICE=cuda를 실행 시점에
+#    넘기므로 이 이미지 기본값과 무관하다).
+ENV RERANKER_DEVICE=cpu
+
+# 7) Cloud Run은 들어오는 포트를 $PORT로 알려준다(기본 8080) — reranker_service.py 자체
+#    기본(8801)은 로컬 단독 실행(`python reranker_service.py`)용이고, 이 이미지는 uvicorn을
+#    직접 실행하며 $PORT를 우선한다. exec로 PID 1을 uvicorn에 넘겨 SIGTERM을 바로 받는다.
+ENV PORT=8080
+CMD exec uvicorn reranker_service:app --host 0.0.0.0 --port ${PORT:-8801}

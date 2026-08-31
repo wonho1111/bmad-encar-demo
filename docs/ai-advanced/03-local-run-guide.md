@@ -58,6 +58,21 @@ curl -s http://127.0.0.1:8000/health   # API 응답 확인
 | `api/.env` | Supabase·DB·Gemini·LangSmith 키 | gitignore. 이동 시 메신저 금지(Zone.Identifier 유출 사고 이력) |
 | `web/.env.local` | Supabase(클라우드)·API 주소(`localhost:8000`) | 로컬 Supabase로 바꾸면 API와 DB가 갈라짐 — 백업본 `.bak-localsupabase` 참고 |
 | `RERANKER_URL` | API 실행 시 환경변수로만 | 미설정 = 리랭커 없이 벡터순(오류 아님) |
+| `RERANKER_TIMEOUT_SECONDS` | API 실행 시 환경변수로만 | 미설정 = 기본 3.0초(로컬 GPU 기준). Cloud Run CPU 사이드카는 10~20으로 올려야 함(아래 절) |
+
+## 클라우드 리랭커(Cloud Run CPU)
+
+로컬은 GPU 사이드카(`scripts/dev-reranker.sh`, `:8801`)를 쓰지만, 로컬 GPU가 없는 환경(배포·다른 개발자 PC)에선 같은 리랭커를 Cloud Run에 CPU 컨테이너로 올려 붙일 수 있다.
+
+```
+[API (FastAPI)] ──RERANKER_URL(https://...)──► [Cloud Run: encar-reranker (CPU)]
+                                                   BAAI/bge-reranker-v2-m3 (이미지에 가중치 내장)
+```
+
+- 이미지: `api/Dockerfile.reranker` (빌드는 `cloudbuild-reranker.yaml` 참고 — Cloud Run은 파일명이 다른 Dockerfile을 `--source`로 못 받아 별도 빌드 단계가 필요하다).
+- 배포 후 API 쪽에 두 환경변수를 설정한다.
+  - `RERANKER_URL` — Cloud Run이 발급한 서비스 URL(예: `https://encar-reranker-xxxxx.a.run.app`). 미설정 시와 동일하게 "있으면 개선, 없으면 원래 벡터순"이라 이 값을 안 넣어도 API는 안 죽는다.
+  - `RERANKER_TIMEOUT_SECONDS` — CPU 추론은 GPU보다 훨씬 느리다(로컬 실측 근거는 작업 보고 참고). 기본 3.0초는 CPU엔 짧으므로 10~20 정도로 올린다.
 
 ## 기계 검증 3종 (전부 읽기전용, api/ 에서)
 

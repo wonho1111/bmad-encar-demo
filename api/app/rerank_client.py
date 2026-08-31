@@ -18,14 +18,13 @@ from .config import settings
 
 logger = logging.getLogger(__name__)
 
-_TIMEOUT_SEC = 3.0
-
 
 def rerank(query: str, docs: list[tuple[str, str]]) -> list[int] | None:
     """(id, text) 쌍 목록을 사이드카에 보내 점수 내림차순 **인덱스** 리스트를 돌려준다.
 
-    RERANKER_URL 미설정, 연결 실패, 타임아웃(3초), 비정상 응답이면 None — 예외를 밖으로
-    던지지 않는다(호출부는 None이면 원래 순서를 유지하면 된다).
+    RERANKER_URL 미설정, 연결 실패, 타임아웃(기본 3초 — settings.reranker_timeout_seconds,
+    env RERANKER_TIMEOUT_SECONDS로 조정), 비정상 응답이면 None — 예외를 밖으로 던지지
+    않는다(호출부는 None이면 원래 순서를 유지하면 된다).
     """
     if not settings.reranker_url:
         return None
@@ -40,7 +39,7 @@ def rerank(query: str, docs: list[tuple[str, str]]) -> list[int] | None:
         resp = httpx.post(
             f"{settings.reranker_url.rstrip('/')}/rerank",
             json=payload,
-            timeout=_TIMEOUT_SEC,
+            timeout=settings.reranker_timeout_seconds,
         )
         resp.raise_for_status()
         scores = resp.json()["scores"]

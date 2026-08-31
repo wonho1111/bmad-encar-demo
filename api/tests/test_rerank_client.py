@@ -87,10 +87,27 @@ def test_정상_응답이면_점수_내림차순_인덱스를_돌려준다(monke
 
     def _fake_post(url, json, timeout):
         assert url == "http://127.0.0.1:8801/rerank"
-        assert timeout == pytest.approx(3.0)
+        assert timeout == pytest.approx(3.0)  # settings 기본값(RERANKER_TIMEOUT_SECONDS 미설정)
         return _FakeResponse(fake_payload)
 
     monkeypatch.setattr(rerank_client.httpx, "post", _fake_post)
 
     result = rerank_client.rerank("쏘렌토", docs)
     assert result == [1, 2, 0]
+
+
+def test_RERANKER_TIMEOUT_SECONDS로_타임아웃을_올릴_수_있다(monkeypatch):
+    """Cloud Run CPU 사이드카는 건당 수 초가 걸려 기본 3초로는 부족하다 — 배포 환경변수로
+    settings.reranker_timeout_seconds를 올리면 httpx.post에 그 값이 그대로 전달돼야 한다.
+    """
+    monkeypatch.setattr(rerank_client.settings, "reranker_url", "http://127.0.0.1:8801")
+    monkeypatch.setattr(rerank_client.settings, "reranker_timeout_seconds", 15.0)
+
+    def _fake_post(url, json, timeout):
+        assert timeout == pytest.approx(15.0)
+        return _FakeResponse({"scores": []})
+
+    monkeypatch.setattr(rerank_client.httpx, "post", _fake_post)
+
+    result = rerank_client.rerank("쏘렌토", [("a", "쏘렌토 2020")])
+    assert result == []
