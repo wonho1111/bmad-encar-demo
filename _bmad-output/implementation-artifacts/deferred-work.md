@@ -7000,7 +7000,7 @@ status: resolved (2026-08-30, AI 고도화 4단계) — 과다조회(limit 20) +
 
 ### DW-850: /ai 첫 진입 직후 타이핑하면 첫 전송이 조용히 무시된다(hydration race)
 
-origin: 브라우저 E2E 2라운드 실측(2026-08-31) — 새 대화 첫 입력의 Enter/전송 1회 무반응, 두 번째부터 정상.
+origin: 브라우저 E2E 2라운드 실측(2026-08-31) — 새 대화 첫 입력의 Enter/전송 1회 무반응, 두 번째부터 정상. **2026-09-01 배포 환경(Vercel preview)에서도 동일 재현** — 로컬 한정 아님, 채점자가 첫 질의에서 겪을 수 있음.
 location: web/src/components/ai/ChatAssistant.tsx (제어 입력 + runSearch의 빈 질의 가드 127행)
 severity: low
 reason: SSR 정적 HTML에 리스너가 붙기 전(hydration 완료 전) 타이핑하면 React 상태는 빈 문자열이라 전송 가드에 걸려 조용히 무시됨. 수정은 "hydration 전 입력 비활성화" 등 UX 트레이드오프가 있는 설계 결정이라 보류. 자가회복(재전송 시 정상)이라 데이터 유실 없음.
