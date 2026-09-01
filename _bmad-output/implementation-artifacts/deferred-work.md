@@ -7019,4 +7019,4 @@ location: app/lib/features/listings/listing_detail_screen.dart(진입점 부재)
 severity: medium
 reason: 프리필 카드 UI 통일의 전제인 "AI 시세 진단" 기능 자체(상세 화면 버튼→채팅 핸드오프→진단 카드)가 앱에 아예 없음. "웹 UI 수정사항 반영"이 아니라 신규 기능 이식이라 범위가 달라 사용자 결정으로 넘김. 이식 시엔 웹의 우회 경로(전용 미니카드→폐기) 없이 처음부터 공용 ListingCard + 최신 listingSummary 계약(ListingCardData, region 필수)을 따른다.
 trigger: 사용자가 앱에도 시세 진단을 넣기로 결정하면 그 스토리 인수조건으로 심는다(B5). 결정 전에는 앱 검색 필터 통일(이번 세션 반영분)만이 모바일 반영 완료 범위다.
-status: open
+status: resolved (2026-09-02) — 사용자 결정("웹과 통일이 기본 철학") 즉일 이식 완료: 커밋 c5e62db(상세 버튼→프리필→진단 카드·CustomPainter 산점도·다건 표, 파싱 가드 포함), v1.1.4 릴리스 배포. 검증: analyze 0·테스트 587 green·red/green 5회. 남은 확인: 실기기 그래프 육안 점검(사용자 S21 연결 대기).
