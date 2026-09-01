@@ -597,6 +597,43 @@ void main() {
     });
   });
 
+  // AI 시세 진단(5단계) — "AI 시세 진단" 버튼 프리필 문구 템플릿(web MarketDiagnosisButton.tsx
+  // buildPrefillQuery 미러). 주행거리·가격 포맷 함수는 각각 formatManKm(만km)·wonText(반올림
+  // 없음)를 재사용한다 — 이 테스트는 그 조합이 만드는 최종 문구 템플릿만 고정한다.
+  group('buildMarketDiagnosisPrefillQuery — 프리필 문구 템플릿(web 미러)', () {
+    test('제조사·모델·연식·만km·가격표기를 "—"로 이어붙인다', () {
+      const listing = ListingCardData(
+        id: 'l-1',
+        manufacturer: '기아',
+        model: '셀토스',
+        year: 2021,
+        price: 22000000,
+        mileage: 33000,
+        region: '경기',
+      );
+      expect(
+        buildMarketDiagnosisPrefillQuery(listing),
+        '이 매물 시세 알려줘 — 기아 셀토스 2021 · 3.3만km · 2,200만원',
+      );
+    });
+
+    test('주행거리가 만 단위로 정확히 떨어지면 소수점 없이 "N만km"', () {
+      const listing = ListingCardData(
+        id: 'l-2',
+        manufacturer: '현대',
+        model: '아반떼',
+        year: 2020,
+        price: 15000000,
+        mileage: 30000,
+        region: '서울',
+      );
+      expect(
+        buildMarketDiagnosisPrefillQuery(listing),
+        '이 매물 시세 알려줘 — 현대 아반떼 2020 · 3만km · 1,500만원',
+      );
+    });
+  });
+
   group('판매자정보 표시 순수함수(web 미러) — 경계값', () {
     test('formatSellerJoinDate — KST 기준으로 연·월을 만든다(자정 전후에 월이 밀리지 않는다)', () {
       // UTC 2026-02-28T23:00Z = KST 2026-03-01 08:00 — 기기 타임존을 그대로 쓰면 "2월"이 된다.

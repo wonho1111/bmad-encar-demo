@@ -2,6 +2,32 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app/features/ai_search/ai_search_api.dart';
 import 'package:app/features/ai_search/chat_message.dart';
+import 'package:app/features/ai_search/market_diagnosis.dart';
+import 'package:app/features/listings/listing.dart';
+
+Map<String, Object?> _wireDiagnosis() => {
+      'listing': {
+        'id': 'l-1',
+        'manufacturer': '기아',
+        'model': '셀토스',
+        'year': 2021,
+        'mileage': 33000,
+        'price': 22000000,
+        'fuel': '가솔린',
+        'transmission': '자동',
+        'displacement': 1998,
+        'accident_free': true,
+        'accident_status': '무사고',
+        'region': '경기',
+      },
+      'criteria': {'step': 0, 'desc': '완화 없음', 'sample_count': 12},
+      'stats': {'min': 19000000, 'q1': 21000000, 'median': 23000000, 'q3': 25000000, 'max': 27000000},
+      'percentile': 0.4,
+      'verdict': '적정',
+      'verdict_basis': '적정가',
+      'tabpfn': {'price': 22500000, 'note': ''},
+      'comps': const <Object?>[],
+    };
 
 void main() {
   group('parseSearchResult', () {
@@ -349,6 +375,128 @@ void main() {
     test('narrowed_by 가 형태 불량(문자열)이면 null 로 폴백', () {
       final r = parseSearchResult({'answer': 'x', 'listings': [], 'narrowed_by': 'oops'});
       expect(r.narrowedBy, isNull);
+    });
+  });
+
+  // AI 시세 진단(5단계) — parseSearchResult가 market_diagnosis/market_diagnoses를 실제로
+  // 엮는지(web aiSearch.test.ts의 I/O 매트릭스 미러). 개별 필드 파싱 가드 자체는
+  // market_diagnosis_test.dart가 더 세밀하게 고정한다 — 여기는 "wire JSON → SearchResult"
+  // 이음매만 본다.
+  group('parseSearchResult — market_diagnosis/market_diagnoses (I/O 매트릭스)', () {
+    test('정상: market_diagnosis가 채워지면 SearchResult.marketDiagnosis로 파싱된다', () {
+      final r = parseSearchResult({
+        'answer': '이 매물은 적정 가격대입니다.',
+        'listings': const <Object?>[],
+        'market_diagnosis': _wireDiagnosis(),
+        'market_diagnoses': null,
+      });
+      expect(r.marketDiagnosis, isNotNull);
+      expect(r.marketDiagnosis!.listing.model, '셀토스');
+      expect(r.marketDiagnoses, isNull);
+    });
+
+    test('형태불량: listing이 깨지면 market_diagnosis는 null로 폴백하고 나머지 파싱은 계속된다', () {
+      final broken = _wireDiagnosis()..['listing'] = 'oops';
+      final r = parseSearchResult({
+        'answer': '조건에 맞는 매물 1건입니다.',
+        'listings': [
+          {
+            'id': 'a',
+            'manufacturer': '현대',
+            'model': '쏘나타',
+            'year': 2020,
+            'price': 25000000,
+            'mileage': 30000,
+            'region': '서울',
+          },
+        ],
+        'market_diagnosis': broken,
+      });
+      expect(r.marketDiagnosis, isNull);
+      expect(r.listings.length, 1, reason: 'market_diagnosis 파싱 실패가 다른 필드 파싱을 막으면 안 된다');
+    });
+
+    test('누락: market_diagnosis 키 자체가 없으면 null(일반 매물 추천 응답과 동일)', () {
+      final r = parseSearchResult({'answer': 'x', 'listings': const <Object?>[]});
+      expect(r.marketDiagnosis, isNull);
+      expect(r.marketDiagnoses, isNull);
+    });
+
+    test('market_diagnoses가 2건 이상이면 그대로 채워진다', () {
+      final r = parseSearchResult({
+        'answer': '두 매물을 비교했어요.',
+        'listings': const <Object?>[],
+        'market_diagnoses': [_wireDiagnosis(), _wireDiagnosis()],
+      });
+      expect(r.marketDiagnoses, isNotNull);
+      expect(r.marketDiagnoses!.length, 2);
+    });
+
+    test('market_diagnoses가 1건뿐이면 null로 정규화한다(표를 그릴 이유가 없다)', () {
+      final r = parseSearchResult({
+        'answer': '한 매물만 진단했어요.',
+        'listings': const <Object?>[],
+        'market_diagnoses': [_wireDiagnosis()],
+      });
+      expect(r.marketDiagnoses, isNull);
+    });
+  });
+
+  // listing_ids 계산(멀티턴 매물 참조, web listingIdsOf 미러) — assistant 턴이 다음 질의의
+  // context에 실어 보내는 "직전에 보여준 매물" id들을 어떤 규칙으로 뽑는지 고정한다.
+  group('listingIdsOf / buildContext — listing_ids 포함 규칙(web listingIdsOf 미러)', () {
+    const listingA = ListingCardData(
+      id: 'card-a',
+      manufacturer: '현대',
+      model: '쏘나타',
+      year: 2020,
+      price: 25000000,
+      mileage: 30000,
+      region: '서울',
+    );
+    const listingB = ListingCardData(
+      id: 'card-b',
+      manufacturer: '기아',
+      model: 'K5',
+      year: 2019,
+      price: 20000000,
+      mileage: 40000,
+      region: '경기',
+    );
+
+    test('매물카드가 있으면 그 id들 그대로', () {
+      final m = ChatMessage(role: 'assistant', content: '2건 찾았어요.', listings: const [listingA, listingB]);
+      expect(listingIdsOf(m), ['card-a', 'card-b']);
+    });
+
+    test('카드는 없고 다건 진단(marketDiagnoses)이 있으면 그 진단 대상 id들 전부', () {
+      final diagnoses = parseMarketDiagnoses([_wireDiagnosis(), _wireDiagnosis()]);
+      final m = ChatMessage(role: 'assistant', content: '두 매물을 비교했어요.', marketDiagnoses: diagnoses);
+      expect(listingIdsOf(m), ['l-1', 'l-1']);
+    });
+
+    test('카드도 다건 진단도 없고 단건 진단(marketDiagnosis)만 있으면 그 진단 대상 id 1개', () {
+      final data = MarketDiagnosisData.fromMap(_wireDiagnosis());
+      final m = ChatMessage(role: 'assistant', content: '적정가입니다.', marketDiagnosis: data);
+      expect(listingIdsOf(m), ['l-1']);
+    });
+
+    test('셋 다 없으면(되묻기·REJECT 등) null', () {
+      final m = ChatMessage(role: 'assistant', content: '조금 더 알려주세요.');
+      expect(listingIdsOf(m), isNull);
+    });
+
+    test('buildContext는 assistant 턴에만 listing_ids를 싣고 user 턴엔 싣지 않는다', () {
+      final data = MarketDiagnosisData.fromMap(_wireDiagnosis());
+      final ctx = buildContext([
+        const ChatMessage(role: 'user', content: '이 매물 시세 알려줘'),
+        ChatMessage(role: 'assistant', content: '적정가입니다.', marketDiagnosis: data),
+      ]);
+      expect(ctx[0].listingIds, isNull, reason: 'user 턴엔 listing_ids가 없어야 한다(서버 스키마도 동일)');
+      expect(ctx[1].listingIds, ['l-1']);
+      // toJson에도 실제로 실리는지(서버로 나가는 wire 형태) — 키 자체가 조건부로 빠지는지까지 확인.
+      expect(ctx[1].toJson()['listing_ids'], ['l-1']);
+      expect(ctx[0].toJson().containsKey('listing_ids'), isFalse);
     });
   });
 }
