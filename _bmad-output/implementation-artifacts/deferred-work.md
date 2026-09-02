@@ -7020,3 +7020,21 @@ severity: medium
 reason: 프리필 카드 UI 통일의 전제인 "AI 시세 진단" 기능 자체(상세 화면 버튼→채팅 핸드오프→진단 카드)가 앱에 아예 없음. "웹 UI 수정사항 반영"이 아니라 신규 기능 이식이라 범위가 달라 사용자 결정으로 넘김. 이식 시엔 웹의 우회 경로(전용 미니카드→폐기) 없이 처음부터 공용 ListingCard + 최신 listingSummary 계약(ListingCardData, region 필수)을 따른다.
 trigger: 사용자가 앱에도 시세 진단을 넣기로 결정하면 그 스토리 인수조건으로 심는다(B5). 결정 전에는 앱 검색 필터 통일(이번 세션 반영분)만이 모바일 반영 완료 범위다.
 status: resolved (2026-09-02) — 사용자 결정("웹과 통일이 기본 철학") 즉일 이식 완료: 커밋 c5e62db(상세 버튼→프리필→진단 카드·CustomPainter 산점도·다건 표, 파싱 가드 포함), v1.1.4 릴리스 배포. 검증: analyze 0·테스트 587 green·red/green 5회. 남은 확인: 실기기 그래프 육안 점검(사용자 S21 연결 대기).
+
+### DW-852: 시세 진단 TabPFN predict 지연이 학습표 행수의 제곱으로 는다 — 120건 상한이면 요청당 ~8초(CPU)
+
+origin: TabPFN 학습 튜터 세션(2026-09-03) — api/app/market_price.py 기본 모델군 학습표 크기별 predict 실측
+location: api/app/market_price.py(_tabpfn_predict, 학습표 SELECT LIMIT 120), Cloud Run API 인스턴스
+severity: medium
+reason: 이 PC CPU 실측 predict 1건: 53행 1.6초 / 120행 8.3초 / 200행 18.5초 / 284행 39.5초(행수 2.3배→시간 5배, 트랜스포머 문맥 길이 n² 성질). 아반떼(53행)는 괜찮지만 그랜저처럼 기본 모델군이 120건 상한에 닿는 모델은 요청당 ~8초. Cloud Run(2Gi) CPU에서의 값은 미측정. 튜터 세션 범위 밖이라 고치지 않았다.
+trigger: Cloud Run에서 그랜저 계열 매물로 /api/market-price 지연을 실측한 뒤, 8초를 넘으면 (a) 학습표 상한 120→60~80 축소(예측 품질 영향은 verify_market_engine 스윕으로 확인) 또는 (b) n_estimators 8→4 축소 중 실측으로 고른다. 어느 쪽이든 아반떼 53건 보정 검사(q90 위≈5건)가 유지되는지 재확인.
+status: open
+
+### DW-853: 띄어쓰기 없는 모델명("아반떼MD")은 기본 모델명 추출이 통째로 잡혀 TabPFN 학습표가 0건이 된다
+
+origin: TabPFN 학습 튜터 세션(2026-09-03) — 아반떼 전 매물 보정 검사 중 발견
+location: api/app/market_price.py(_base_model: 첫 토큰을 기본명으로 씀), listings.model 데이터("아반떼MD" 1건, 정상 표기는 "아반떼 MD")
+severity: low
+reason: _base_model("아반떼MD")="아반떼MD" → ILIKE '%아반떼MD%'가 자기 자신 외 아무것도 못 찾아 학습표 0건 → tabpfn price/quantiles None, 사분위 폴백으로 조용히 넘어간다(크래시 아님). 사다리(exact/base)도 같은 접두를 쓰므로 비교군도 좁아진다. 데이터 1건이라 세션에서 고치지 않았다.
+trigger: 시드/등록 데이터 정규화를 손볼 때 — (a) DB 값 "아반떼MD"→"아반떼 MD" 수정(데이터 더하기·고치기 마이그레이션) 또는 (b) _base_model에서 한글+영문 붙은 토큰을 분리. 고친 뒤 verify_market_engine.py I7(학습표 N≥10)로 해당 매물이 tabpfn 예측을 받는지 확인.
+status: open
