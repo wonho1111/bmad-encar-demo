@@ -20,6 +20,17 @@
   필드를 추가해(더하기만) 어느 기준으로 판정했는지 웹·설명문이 명시할 수 있게 했다.
   근거 표: docs/ai-advanced/02-seed-price-calibration.md "v3 최종 확정" 표(트림별 앵커가·
   연감가가 세대별로 크게 다름을 확인할 수 있다).
+
+**2026-09-03 개정(사용자 결정, TabPFN 학습 세션 실측)**: verdict를 "적정가 대비 ±5%"에서
+  **TabPFN 예측 분포의 분위수 5단**(q10/q25/q75/q90 경계, `_verdict_by_quantiles`)으로 전환했다.
+  ±5%는 사람이 모든 매물에 같은 폭으로 정한 경계라 +5.1%/+4.9%에서 판정이 뒤집혔고(실측:
+  아반떼 CN7 2020, 3만원 차이), 분위수는 그 매물의 이웃 분포에서 폭이 나온다(아반떼 53건 실측
+  q25~q75 폭 6.0~15.9%, 42건이 ±5%보다 좁음 → 판정이 다소 엄격해짐: 적정 28→22건). 보정 검사
+  (자기 제외 학습, 53건)에서 q90 위 5건·q10 아래 4건(기대 5.3)으로 꼬리가 맞았다 — 단 시드
+  데이터(규칙+5% 노이즈) 기준이라 실매물 보정은 미확인. mean과 분위수는 predict(output_type=
+  "full") 한 번에 같이 나와(실측 1.46s→1.49s) 지연 추가는 없다. 응답엔 `tabpfn.quantiles`를
+  더했고(더하기만), verdict_basis 값은 "적정가"→"분위수", verdict 값에 "다소 저렴"/"다소 높음"이
+  추가됐다(웹·앱은 verdict 문자열을 그대로 배지로 쓴다).
 """
 
 import logging
@@ -128,6 +139,11 @@ MAX_COMPS = 60
 # TabPFN 적정가를 내려면 비교군이 이 이상이어야 한다(설계 확정값).
 _TABPFN_MIN_COMPS = 10
 
+# TabPFN 예측 분포에서 읽는 분위수(하위 몇 %에 해당하는 가격)와 응답 키 — 5단 판정의 경계
+# (2026-09-03 개정, 모듈 docstring 참조). 두 튜플은 자리끼리 대응한다.
+_TABPFN_QUANTILES = (0.10, 0.25, 0.50, 0.75, 0.90)
+_TABPFN_QUANTILE_KEYS = ("q10", "q25", "q50", "q75", "q90")
+
 # TabPFN 모델 객체 캐시 — 재로드(가중치 로딩)를 피하기 위해 모듈 레벨에 1회만 생성한다.
 # fit()은 매 호출마다 비교군으로 다시 하므로(sklearn 스타일), 캐시하는 건 객체 생성 비용뿐이다.
 _TABPFN_MODEL = None
@@ -231,8 +247,8 @@ def _comps_sql(where_sql: str) -> str:
 def _verdict(price: int, q1: float, q3: float) -> str:
     """[사분위 폴백] q1 미만=저렴, q3 초과=높음, 그 외 적정. 결정론(LLM 아님).
 
-    TabPFN 적정가가 없을 때만 쓴다 — 있으면 _verdict_by_fair_price가 우선한다(diagnose()의
-    verdict_basis 분기 참조, 2026-08-31 사용자 승인 판정 기준 전환).
+    TabPFN 분위수가 없을 때만 쓴다 — 있으면 _verdict_by_quantiles가 우선한다(diagnose()의
+    verdict_basis 분기 참조, 2026-09-03 판정 기준 전환).
     """
     if price < q1:
         return "저렴"
@@ -241,27 +257,32 @@ def _verdict(price: int, q1: float, q3: float) -> str:
     return "적정"
 
 
-def _verdict_by_fair_price(price: int, fair_price: int) -> str:
-    """[적정가 기준] TabPFN 예측가 대비 괴리율로 판정한다(2026-08-31 사용자 승인).
+def _verdict_by_quantiles(price: int, q: dict) -> str:
+    """[예측 분포 기준] TabPFN 분위수 5단 판정(2026-09-03 사용자 결정, 모듈 docstring 참조).
 
-    diff = (대상가 - 적정가) / 적정가. |diff| <= 5%면 '적정', diff < -5%면 '저렴'(적정가보다
-    싸다), diff > 5%면 '높음'. 사분위(q1/q3) 기준보다 우선한다 — 트림 그룹처럼 표본이 적어
-    사분위 폭이 왜곡되는 경우에도 TabPFN이 개별 특징(연식·주행·배기량 등)으로 낸 적정가는
-    더 안정적이다(실측: 트림 그룹 5건 사분위 기준으론 "저렴"이었으나 동세대 14건 기준으론
-    상위 36% 가격 — docs/ai-advanced/02-seed-price-calibration.md 참조).
+    q10 미만 '저렴' / q25 미만 '다소 저렴' / q75 이하 '적정' / q90 이하 '다소 높음' / 그 위
+    '높음'. 경계 포함 규칙: 아래쪽(q10·q25)은 미만, 위쪽(q75·q90)은 이하 — 정확히 q25도
+    정확히 q75도 '적정'이라 가운데 절반(q25~q75)이 닫힌 구간이다. 폭은 사람이 정하지 않고
+    그 매물의 이웃 분포(TabPFN 출력)에서 나온다 — 종전 ±5% 고정폭과의 차이는 그것뿐이다.
     """
-    diff = (price - fair_price) / fair_price
-    if diff < -0.05:
+    if price < q["q10"]:
         return "저렴"
-    if diff > 0.05:
-        return "높음"
-    return "적정"
+    if price < q["q25"]:
+        return "다소 저렴"
+    if price <= q["q75"]:
+        return "적정"
+    if price <= q["q90"]:
+        return "다소 높음"
+    return "높음"
 
 
 def _verdict_and_basis(
-    sample_count: int, price: int, stats: dict | None, tabpfn_price: int | None
+    sample_count: int, price: int, stats: dict | None, tabpfn_quantiles: dict | None
 ) -> tuple[str | None, str | None]:
     """verdict·verdict_basis를 함께 결정한다(항상 쌍으로 채워지거나 함께 None — I2 불변식).
+
+    2026-09-03: tabpfn 분위수가 있으면 예측 분포 5단(verdict_basis="분위수"), 없으면 사분위
+    폴백(verdict_basis="사분위"). 표본 부족 보류(F4)는 분위수 유무와 무관하게 먼저 적용된다.
 
     2026-08-31 사용자 실측 결함(F4) 수정: 표본이 MIN_VERDICT_SAMPLE(3) 미만이면(0건 제외,
     그건 비교군 자체가 없는 별개 케이스) 사분위·적정가 어느 기준으로도 판정하지 않고 보류한다
@@ -272,8 +293,8 @@ def _verdict_and_basis(
         return None, None
     if sample_count < MIN_VERDICT_SAMPLE:
         return None, "표본 부족"
-    if tabpfn_price is not None:
-        return _verdict_by_fair_price(price, tabpfn_price), "적정가"
+    if tabpfn_quantiles is not None:
+        return _verdict_by_quantiles(price, tabpfn_quantiles), "분위수"
     return _verdict(price, stats["q1"], stats["q3"]), "사분위"
 
 
@@ -293,19 +314,26 @@ def _tabpfn_features(row: dict) -> list:
     ]
 
 
-def _tabpfn_predict(target: dict, train_rows: list[dict]) -> tuple[int | None, str]:
-    """학습 표본으로 TabPFN을 학습시켜 대상 1건의 적정가를 예측한다.
+def _tabpfn_predict(
+    target: dict, train_rows: list[dict]
+) -> tuple[int | None, dict | None, str]:
+    """학습 표본으로 TabPFN을 학습시켜 대상 1건의 적정가(mean)와 예측 분포의 분위수를 낸다.
 
-    학습 표본 10건 미만이거나 tabpfn 미설치면 통계만 응답하고 가격은 None으로 둔다
-    (엔진 전체가 죽지 않는다 — 설계 확정).
+    반환 (price, quantiles, note). 학습 표본 10건 미만이거나 tabpfn 미설치면 통계만 응답하고
+    price·quantiles는 None으로 둔다(엔진 전체가 죽지 않는다 — 설계 확정).
+
+    TabPFN 회귀는 값 하나가 아니라 가격 축 위의 확률 분포를 출력한다. output_type="full"은
+    그 분포에서 mean·median·분위수를 한 번의 추론으로 같이 돌려준다(실측: 기본 predict와
+    시간 동일, mean 값도 원 단위까지 동일) — 두 번 부르지 않는 이유. price는 종전대로
+    mean을 만원 단위로 반올림한 값(웹·앱·I7 불변식 계약 유지), quantiles는 원 단위 정수.
     """
     if len(train_rows) < _TABPFN_MIN_COMPS:
-        return None, f"학습 표본 {len(train_rows)}건 — {_TABPFN_MIN_COMPS}건 미만"
+        return None, None, f"학습 표본 {len(train_rows)}건 — {_TABPFN_MIN_COMPS}건 미만"
 
     try:
         from tabpfn import TabPFNRegressor
     except Exception:
-        return None, "tabpfn 미설치"
+        return None, None, "tabpfn 미설치"
 
     global _TABPFN_MODEL
     if _TABPFN_MODEL is None:
@@ -314,9 +342,15 @@ def _tabpfn_predict(target: dict, train_rows: list[dict]) -> tuple[int | None, s
     x = [_tabpfn_features(c) for c in train_rows]
     y = [c["price"] for c in train_rows]
     _TABPFN_MODEL.fit(x, y)
-    predicted = _TABPFN_MODEL.predict([_tabpfn_features(target)])[0]
-    price = int(round(predicted / 10_000)) * 10_000
-    return price, f"기본 모델군 {len(train_rows)}건 학습"
+    out = _TABPFN_MODEL.predict(
+        [_tabpfn_features(target)], output_type="full", quantiles=list(_TABPFN_QUANTILES)
+    )
+    price = int(round(float(out["mean"][0]) / 10_000)) * 10_000
+    quantiles = {
+        key: int(round(float(values[0])))
+        for key, values in zip(_TABPFN_QUANTILE_KEYS, out["quantiles"])
+    }
+    return price, quantiles, f"기본 모델군 {len(train_rows)}건 학습"
 
 
 def _listing_summary(row: dict) -> dict:
@@ -401,14 +435,16 @@ def diagnose(listing_id: str, conn) -> dict | None:
         }
         percentile = stats_row["percentile"]
 
-    # tabpfn 예측을 verdict보다 먼저 계산한다 — 판정 기준 전환(2026-08-31 사용자 승인):
-    # tabpfn 적정가가 있으면 그 괴리율로, 없으면 기존 사분위로 폴백한다(_verdict_by_fair_price
-    # 참조). sample_count==0이면 비교군 자체가 없으므로 verdict도 None으로 둔다(사분위 폴백조차
+    # tabpfn 예측을 verdict보다 먼저 계산한다 — 판정 기준(2026-09-03 개정): tabpfn 분위수가
+    # 있으면 예측 분포 5단(_verdict_by_quantiles)으로, 없으면 기존 사분위로 폴백한다.
+    # sample_count==0이면 비교군 자체가 없으므로 verdict도 None으로 둔다(사분위 폴백조차
     # 근거가 없음 — I2 불변식: stats/percentile/verdict는 항상 함께 None이거나 함께 채워진다).
     # sample_count가 0은 아니지만 MIN_VERDICT_SAMPLE 미만(1~2건)이면 표본 부족으로 보류한다
     # (F4 수정, _verdict_and_basis 참조 — 이때도 stats/percentile은 그대로 채워진다, I2 개정).
-    tabpfn_price, tabpfn_note = _tabpfn_predict(target, train_rows)
-    verdict, verdict_basis = _verdict_and_basis(sample_count, target["price"], stats, tabpfn_price)
+    tabpfn_price, tabpfn_quantiles, tabpfn_note = _tabpfn_predict(target, train_rows)
+    verdict, verdict_basis = _verdict_and_basis(
+        sample_count, target["price"], stats, tabpfn_quantiles
+    )
 
     return {
         "listing": _listing_summary(target),
@@ -421,6 +457,6 @@ def diagnose(listing_id: str, conn) -> dict | None:
         "percentile": percentile,
         "verdict": verdict,
         "verdict_basis": verdict_basis,
-        "tabpfn": {"price": tabpfn_price, "note": tabpfn_note},
+        "tabpfn": {"price": tabpfn_price, "note": tabpfn_note, "quantiles": tabpfn_quantiles},
         "comps": [_comp_summary(r) for r in comp_rows],
     }

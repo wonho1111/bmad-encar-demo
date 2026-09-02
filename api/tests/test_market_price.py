@@ -66,14 +66,18 @@ def test_verdict_boundaries():
     assert market_price._verdict(2001, 1000, 2000) == "높음"     # q3 초과
 
 
-def test_verdict_by_fair_price_boundaries():
-    # fair_price=1,000,000원 기준 ±5% 경계 리터럴로 확인(2026-08-31 판정 기준 전환, 사용자 승인).
-    fair = 1_000_000
-    assert market_price._verdict_by_fair_price(949_999, fair) == "저렴"   # diff < -5%
-    assert market_price._verdict_by_fair_price(950_000, fair) == "적정"   # 정확히 -5%(경계 포함)
-    assert market_price._verdict_by_fair_price(1_000_000, fair) == "적정"  # diff = 0
-    assert market_price._verdict_by_fair_price(1_050_000, fair) == "적정"  # 정확히 +5%(경계 포함)
-    assert market_price._verdict_by_fair_price(1_050_001, fair) == "높음"  # diff > 5%
+def test_verdict_by_quantiles_boundaries():
+    # 2026-09-03 판정 기준 전환(예측 분포 5단): 경계를 리터럴로 고정한다. 아래쪽 경계(q10·q25)는
+    # 미만, 위쪽 경계(q75·q90)는 이하 — 가운데 절반 q25~q75가 닫힌 구간이어야 한다.
+    q = {"q10": 1_000, "q25": 2_000, "q50": 2_500, "q75": 3_000, "q90": 4_000}
+    assert market_price._verdict_by_quantiles(999, q) == "저렴"          # q10 미만
+    assert market_price._verdict_by_quantiles(1_000, q) == "다소 저렴"   # 정확히 q10 → 저렴 아님
+    assert market_price._verdict_by_quantiles(1_999, q) == "다소 저렴"
+    assert market_price._verdict_by_quantiles(2_000, q) == "적정"        # 정확히 q25(포함)
+    assert market_price._verdict_by_quantiles(3_000, q) == "적정"        # 정확히 q75(포함)
+    assert market_price._verdict_by_quantiles(3_001, q) == "다소 높음"
+    assert market_price._verdict_by_quantiles(4_000, q) == "다소 높음"   # 정확히 q90(포함)
+    assert market_price._verdict_by_quantiles(4_001, q) == "높음"        # q90 초과
 
 
 def test_verdict_and_basis_sample_size_boundary():
@@ -89,10 +93,15 @@ def test_verdict_and_basis_sample_size_boundary():
 
 
 def test_verdict_and_basis_prefers_tabpfn_when_available_and_sample_sufficient():
-    # 표본이 MIN_VERDICT_SAMPLE 이상이고 tabpfn 적정가가 있으면 사분위 대신 적정가 기준을 쓴다
-    # (기존 _verdict_by_fair_price 우선순위가 sample-size 보류 로직 추가 후에도 유지되는지 확인).
+    # 표본이 MIN_VERDICT_SAMPLE 이상이고 tabpfn 분위수가 있으면 사분위 대신 분위수 5단을 쓴다
+    # (2026-09-03 전환). stats(q1/q3=1,000/2,000)만 보면 1,100,000은 '높음'이지만 분위수가 우선.
     stats = {"q1": 1_000, "q3": 2_000}
-    assert market_price._verdict_and_basis(3, 1_100_000, stats, 1_000_000) == ("높음", "적정가")
+    q = {"q10": 900_000, "q25": 950_000, "q50": 1_000_000, "q75": 1_050_000, "q90": 1_100_000}
+    assert market_price._verdict_and_basis(3, 1_100_000, stats, q) == ("다소 높음", "분위수")  # 정확히 q90
+    assert market_price._verdict_and_basis(3, 1_100_001, stats, q) == ("높음", "분위수")
+    assert market_price._verdict_and_basis(3, 1_000_000, stats, q) == ("적정", "분위수")
+    # 표본 부족 보류(F4)는 분위수가 있어도 먼저 적용된다.
+    assert market_price._verdict_and_basis(2, 1_100_001, stats, q) == (None, "표본 부족")
 
 
 def test_where_clause_differs_by_step_model_vs_ilike():
@@ -162,7 +171,8 @@ def test_tabpfn_import_failure_falls_back_to_none_with_note(monkeypatch):
         "accident_free": True,
     }
 
-    price, note = market_price._tabpfn_predict(target, comps)
+    price, quantiles, note = market_price._tabpfn_predict(target, comps)
 
     assert price is None
+    assert quantiles is None
     assert note == "tabpfn 미설치"

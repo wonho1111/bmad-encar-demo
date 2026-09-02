@@ -52,8 +52,9 @@ _GENERATION_PREFIXES = ("더 뉴 ", "올 뉴 ")
 # market_price._DISPLACEMENT_SUFFIX_RE와 동일한 값 — I9(트림 해제 순도) 독립 재계산용.
 _DISPLACEMENT_SUFFIX_RE = re.compile(r"^\d\.\d$")
 
-# verdict 새 기준(±5%, market_price._verdict_by_fair_price)의 독립 재계산용 — I5.
-_FAIR_PRICE_TOLERANCE = 0.05
+# I5 verdict 기준(2026-09-03 전환): tabpfn.quantiles가 있으면 예측 분포 5단 — 경계 규칙을
+# market_price._verdict_by_quantiles에서 import하지 않고 _check_i5에 별도로 재구현한다
+# (독립 계산 원칙, 모듈 docstring). 분위수 값 자체는 모델 출력이라 응답의 것을 그대로 쓴다.
 
 
 def _family_model_independent(model: str) -> str:
@@ -235,14 +236,15 @@ def _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name, f
     sweep.record("I4", listing_id, ok, detail=bad[:5] if bad else None)
 
 
-def _check_i5(sweep, listing_id, price, sample_count, stats, verdict, verdict_basis, tabpfn_price):
-    """verdict 정합 — 2026-08-31 판정 기준 전환(사용자 승인) + 소표본 보류(F4) 반영.
+def _check_i5(sweep, listing_id, price, sample_count, stats, verdict, verdict_basis, tabpfn_quantiles):
+    """verdict 정합 — 2026-09-03 판정 기준 전환(예측 분포 5단) + 소표본 보류(F4) 반영.
 
     sample_count==0(비교군 자체가 없음)이면 verdict도 None이어야 정상이라 스킵한다.
     sample_count가 1~2건(MIN_VERDICT_SAMPLE 미만)이면 표본 부족으로 verdict/verdict_basis가
     각각 None/"표본 부족"이어야 한다(F4, _verdict_and_basis와 독립적으로 재확인). 3건 이상이면
-    기존대로 tabpfn 적정가가 있으면(verdict_basis="적정가") ±5% 괴리율로, 없으면
-    (verdict_basis="사분위") 사분위(q1/q3)로 독립 재계산해 비교한다.
+    tabpfn 분위수가 있으면(verdict_basis="분위수") 5단(q10 미만 저렴/q25 미만 다소 저렴/q75 이하
+    적정/q90 이하 다소 높음/그 위 높음)으로, 없으면(verdict_basis="사분위") 사분위(q1/q3)로
+    독립 재계산해 비교한다. 분위수가 있으면 단조증가(q10<=q25<=q50<=q75<=q90)도 함께 검사한다.
     """
     if sample_count == 0:
         sweep.record("I5", listing_id, True, skipped=True)
@@ -254,15 +256,23 @@ def _check_i5(sweep, listing_id, price, sample_count, stats, verdict, verdict_ba
         }
         sweep.record("I5", listing_id, ok, detail=detail)
         return
-    if tabpfn_price is not None:
-        diff = (price - tabpfn_price) / tabpfn_price
-        if diff < -_FAIR_PRICE_TOLERANCE:
+    if tabpfn_quantiles is not None:
+        q = tabpfn_quantiles
+        ordered = [q[k] for k in ("q10", "q25", "q50", "q75", "q90")]
+        if ordered != sorted(ordered):
+            sweep.record("I5", listing_id, False, detail={"quantiles_not_monotonic": q})
+            return
+        if price < q["q10"]:
             expected = "저렴"
-        elif diff > _FAIR_PRICE_TOLERANCE:
-            expected = "높음"
-        else:
+        elif price < q["q25"]:
+            expected = "다소 저렴"
+        elif price <= q["q75"]:
             expected = "적정"
-        expected_basis = "적정가"
+        elif price <= q["q90"]:
+            expected = "다소 높음"
+        else:
+            expected = "높음"
+        expected_basis = "분위수"
     else:
         if price < stats["q1"]:
             expected = "저렴"
@@ -275,7 +285,7 @@ def _check_i5(sweep, listing_id, price, sample_count, stats, verdict, verdict_ba
     detail = None
     if not ok:
         detail = {
-            "price": price, "tabpfn_price": tabpfn_price,
+            "price": price, "tabpfn_quantiles": tabpfn_quantiles,
             "stats": stats, "expected": expected, "actual": verdict,
             "expected_basis": expected_basis, "actual_basis": verdict_basis,
         }
@@ -408,7 +418,7 @@ def run_sweep(sample, seed):
             _check_i4(sweep, listing_id, rung, target, comps, comp_raw_map, base_name, family_name)
             _check_i5(
                 sweep, listing_id, target["price"], sample_count, stats, verdict, verdict_basis,
-                tabpfn.get("price"),
+                tabpfn.get("quantiles"),
             )
             _check_i6(sweep, listing_id, target["price"], sample_count, comps, percentile)
             _check_i7(sweep, listing_id, tabpfn, conn, target, base_name)
