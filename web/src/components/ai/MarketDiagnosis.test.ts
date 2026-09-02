@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildCriteriaChips,
   buildVerdictBadge,
+  verdictBasisLabel,
   formatManKm,
   shouldShowPercentileChip,
   type MarketDiagnosisData,
@@ -96,6 +97,10 @@ describe('buildVerdictBadge', () => {
     expect(buildVerdictBadge(null, '표본 부족')).toEqual({ text: '표본 부족 — 판정 보류', tone: 'neutral' });
   });
 
+  it('5단 판정 값(다소 높음 등)도 그대로 배지 문구가 된다(2026-09-03 예측 분포 전환)', () => {
+    expect(buildVerdictBadge('다소 높음', '분위수')).toEqual({ text: '다소 높음', tone: 'verdict' });
+  });
+
   it('verdict도 null이고 표본 부족도 아니면(비교군 자체 없음) 배지를 아예 안 낸다', () => {
     expect(buildVerdictBadge(null, null)).toBeNull();
   });
@@ -132,5 +137,20 @@ describe('formatStatPrice', () => {
   });
   it('반올림 경계(내림)', () => {
     expect(formatStatPrice(13_474_999)).toBe('1,347만원');
+  });
+});
+
+// verdictBasisLabel — 배지 옆 "(무엇 기준)" 보조 라벨(2026-09-03 예측 분포 전환).
+describe('verdictBasisLabel', () => {
+  it('분위수 기준이면 예측 분포 라벨을 낸다', () => {
+    expect(verdictBasisLabel('분위수')).toBe('(예측 분포 기준)');
+  });
+  it('구 응답의 적정가 기준도 계속 라벨을 낸다(호환)', () => {
+    expect(verdictBasisLabel('적정가')).toBe('(적정가 기준)');
+  });
+  it('사분위 폴백·표본 부족·null은 라벨 없음', () => {
+    expect(verdictBasisLabel('사분위')).toBeNull();
+    expect(verdictBasisLabel('표본 부족')).toBeNull();
+    expect(verdictBasisLabel(null)).toBeNull();
   });
 });

@@ -198,8 +198,8 @@ class MarketDiagnosisData {
   final MarketDiagnosisCriteria criteria;
   final MarketDiagnosisStats? stats;
   final double? percentile; // 0~1
-  final String? verdict; // '저렴'|'적정'|'높음'|null
-  final String? verdictBasis; // '적정가'|'사분위'|'표본 부족'|null
+  final String? verdict; // '저렴'|'다소 저렴'|'적정'|'다소 높음'|'높음'|null (2026-09-03 5단)
+  final String? verdictBasis; // '분위수'|'적정가'(구 응답)|'사분위'|'표본 부족'|null
   final MarketDiagnosisTabpfn tabpfn;
   final List<MarketDiagnosisComp> comps;
 

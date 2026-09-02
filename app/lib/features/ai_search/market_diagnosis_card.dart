@@ -57,6 +57,9 @@ class MarketDiagnosisCard extends StatelessWidget {
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.inkPrimary),
             ),
             if (verdictBadge != null) _VerdictBadgeView(badge: verdictBadge, verdict: data.verdict),
+            // 2026-09-03: '분위수'(예측 분포 5단) 추가 — web verdictBasisLabel 미러. '적정가'는 구 응답 호환.
+            if (data.verdictBasis == '분위수')
+              const Text('(예측 분포 기준)', style: TextStyle(fontSize: 12, color: AppColors.inkMuted)),
             if (data.verdictBasis == '적정가')
               const Text('(적정가 기준)', style: TextStyle(fontSize: 12, color: AppColors.inkMuted)),
             if (showPercentileChip)
@@ -163,10 +166,10 @@ class _VerdictBadgeView extends StatelessWidget {
     Color? background;
     Color foreground;
     if (isVerdictTone) {
-      if (verdict == '저렴') {
+      if (verdict == '저렴' || verdict == '다소 저렴') {
         background = AppColors.trustGreenBg;
         foreground = AppColors.trustGreenInk;
-      } else if (verdict == '높음') {
+      } else if (verdict == '높음' || verdict == '다소 높음') {
         background = AppColors.warnAmberBg;
         foreground = AppColors.warnAmberInk;
       } else {
