@@ -334,7 +334,34 @@ export default async function ListingDetailPage({
 
             {/* CTA — 이 카드 안 버튼(데스크톱)과 모바일 하단 고정 바를 **한 컴포넌트**가 함께 그린다.
                 모바일 블록은 position:fixed라 이 자리에 있어도 뷰포트 하단에 고정된다(#82 종결). */}
-            <InquiryCta mode={inquiryMode} listingId={listing.id} loginHref={loginHref} priceText={priceText} />
+            <InquiryCta
+              mode={inquiryMode}
+              listingId={listing.id}
+              loginHref={loginHref}
+              priceText={priceText}
+              // "AI 시세 진단" 버튼(5단계) 프리필 질의 재료 — 표준 ListingCard 필드 계약
+              // (ListingCardData) 그대로 채운다(2026-09-01 표준 카드 교체 — 상세는 이미 전체 필드를
+              // 안다). ChatAssistant가 사용자 턴 위에 이 값을 그대로 ListingCard로 렌더한다.
+              marketDiagnosisListing={{
+                id: listing.id,
+                manufacturer: listing.manufacturer,
+                model: listing.model,
+                year: listing.year,
+                mileage: listing.mileage,
+                price: listing.price,
+                region: listing.region,
+                seller_name: listing.seller_name,
+                // 갤러리와 같은 조회(fetchListingGalleryUrls)의 대표(첫) 사진 + 장수. 사진이 없으면
+                // 빈 배열이라 image_url은 undefined → ListingCard가 "사진 준비중" 플레이스홀더로 대체.
+                image_url: galleryUrls[0],
+                image_count: galleryUrls.length,
+                fuel: listing.fuel,
+                accident_status: listing.accident_status ?? null,
+                is_single_owner: listing.is_single_owner ?? null,
+                is_non_smoker: listing.is_non_smoker ?? null,
+                options: listing.options,
+              }}
+            />
           </aside>
           {/* 좌 컬럼 2행: 정보 섹션 카드 4개(위 그리드 주석 참조 — 여기 있어야 요약이 끝까지 따라온다). */}
           <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-2">

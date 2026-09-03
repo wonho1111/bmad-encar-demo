@@ -177,6 +177,19 @@ body {
   }
 }
 
+/* iOS Safari(카카오톡 인앱 브라우저 포함)는 포커스된 입력창의 글자가 16px 미만이면
+   화면 전체를 자동 확대한다. text-sm(14px) 입력창들이 이 조건에 걸리므로 iOS에서만
+   16px로 올려 확대를 막는다. @supports 조건은 iOS WebKit에서만 참이라 안드로이드·데스크톱
+   렌더링은 그대로다. viewport maximum-scale=1 방식은 안드로이드의 핀치줌(접근성)까지
+   막아서 쓰지 않는다. */
+@supports (-webkit-touch-callout: none) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* CardCarousel 전용 — 스냅 스크롤(1.2장 노출)이 이미 스크롤 가능 신호라 브라우저 기본
    스크롤바까지 겹치면 지저분하다. 키보드/스크린리더 접근성에는 영향 없음(시각적 숨김만). */
 .scrollbar-hide {

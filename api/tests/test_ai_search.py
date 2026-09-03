@@ -3,15 +3,28 @@
 4.5에서 라우터가 sql_rag_node 직접호출 → run_search(그래프)로 바뀌었다. 그 교체 이후에도
 기존 계약(200 {answer, listings[]} / 422 빈질의 / 400 SqlGuardError)이 그대로 보존되는지
 (회귀 0) 확인한다. 인증 의존성은 가짜 사용자로 오버라이드한다.
+
+4단계 부품 B: routers/ai.py가 `settings.ai_agent_mode`(기본 True)로 run_search_agent와
+run_search를 스위치하게 됐다 — 이 파일은 원래대로 레거시 그래프(run_search) 계약만 검증하는
+파일이므로, 아래 autouse 픽스처로 이 파일 안에서만 ai_agent_mode=False를 강제해 기존
+monkeypatch("app.routers.ai.run_search", ...)들이 계속 실제로 호출되게 한다(회귀 0). 에이전트
+경로의 계약은 test_agent_loop.py가 별도로 검증한다.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user
+from app.config import settings
 from app.db.sql_guard import SqlGuardError
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _force_legacy_graph_pipeline(monkeypatch):
+    monkeypatch.setattr(settings, "ai_agent_mode", False)
 
 
 def _auth():

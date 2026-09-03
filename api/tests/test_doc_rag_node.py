@@ -12,7 +12,14 @@
 
 import app.graph.doc_rag_node as node
 import app.graph.listing_cards as listing_cards
-from app.graph.doc_rag_node import _GUIDE_DISTANCE_CUTOFF, _vec_literal, doc_rag_node, find_relevant_guide
+from app.graph.doc_rag_node import (
+    _GUIDE_DISTANCE_CEILING,
+    _GUIDE_MARGIN,
+    _vec_literal,
+    citation_titles,
+    doc_rag_node,
+    find_relevant_guide,
+)
 
 # run_select 모킹용 — listings/guide 행을 SQL 내용으로 분기해 돌려주는 가짜 구현.
 _LISTING_ID = "44444444-4444-4444-8444-444444444444"
@@ -21,10 +28,11 @@ _LISTING_ROW = (
     _LISTING_ID, "기아", "카니발", "2021", "38000000", "41000", "경기",
     "LPG", None, None, None, None,
 )
-# find_relevant_guide 계약(Story 13.6) — (title, content, distance) 3-tuple. 0.1은 컷오프(0.3)
-# 이내(기존 인용 동작 유지 확인용).
+# find_relevant_guide 계약(Story 13.6, top-k 상대 게이트로 전환) — (title, content, distance)
+# 3-tuple. 0.1은 상한(0.45) 이내(기존 인용 동작 유지 확인용) — 단독 행이면 1등=자기 자신이라
+# 마진 게이트도 항상 통과한다.
 _GUIDE_ROW = ("패밀리카 적합 차종", "가이드 본문 텍스트", 0.1)
-# 컷오프(0.3) 초과 — 무관 가이드가 딸려 와도 인용·질의확장에 쓰이면 안 된다(FR49).
+# 절대 상한(0.45) 초과 — 무관 가이드가 딸려 와도 인용·질의확장에 쓰이면 안 된다(FR49).
 _GUIDE_ROW_BEYOND_CUTOFF = ("전기차 충전·보조금 가이드", "전기차 본문 텍스트", 0.5)
 
 
@@ -106,20 +114,38 @@ def test_answer_includes_guide_title(monkeypatch):
     _install_fakes(monkeypatch, [_LISTING_ROW], [_GUIDE_ROW], captured)
     result = doc_rag_node("패밀리카")
     assert "1건을 찾았어요" in result["answer"]
-    # 근거 가이드 제목이 answer에 곁들여진다(AC1 "적합 차종/특성 근거").
-    assert "패밀리카 적합 차종" in result["answer"]
+    # 근거 가이드 제목이 answer에 곁들여진다(AC1 "적합 차종/특성 근거"). 가이드가 1개면
+    # 기존과 동일하게 "(참고: A)" 형식이다.
+    assert result["answer"].endswith("(참고: 패밀리카 적합 차종)")
+
+
+def test_answer_includes_up_to_two_guide_titles(monkeypatch):
+    """신규 테스트(e) — top-k 게이트를 여러 건 통과하면 상위 최대 2개 제목만 인용한다.
+
+    3건이 통과해도 3번째는 인용에서 빠진다("," 로 이어붙인 2개까지만).
+    """
+    captured = {}
+    rows = [
+        ("1등 가이드", "본문1", 0.20),
+        ("2등 가이드", "본문2", 0.22),
+        ("3등 가이드", "본문3", 0.24),
+    ]
+    _install_fakes(monkeypatch, [_LISTING_ROW], rows, captured)
+    result = doc_rag_node("패밀리카")
+    assert result["answer"].endswith("(참고: 1등 가이드, 2등 가이드)")
+    assert "3등 가이드" not in result["answer"]
 
 
 def test_find_relevant_guide_within_cutoff_returns_title_and_content(monkeypatch):
-    """거리가 컷오프(0.3) 이내면 (title, content)를 그대로 반환한다(Story 13.6 AC1)."""
+    """단독 행 + 상한(0.45) 이내면 [(title, content)]를 그대로 반환한다(Story 13.6 AC1)."""
     monkeypatch.setattr(node, "run_select", lambda query, params=None: [_GUIDE_ROW])
-    assert find_relevant_guide("[0.1,0.2,0.3]") == (_GUIDE_ROW[0], _GUIDE_ROW[1])
+    assert find_relevant_guide("[0.1,0.2,0.3]") == [(_GUIDE_ROW[0], _GUIDE_ROW[1])]
 
 
 def test_find_relevant_guide_beyond_cutoff_returns_none(monkeypatch):
-    """거리가 컷오프(0.3)를 초과하면 가이드가 있어도 None을 반환한다(FR49)."""
+    """거리가 절대 상한(0.45)을 초과하면 가이드가 있어도 빈 리스트를 반환한다(FR49)."""
     monkeypatch.setattr(node, "run_select", lambda query, params=None: [_GUIDE_ROW_BEYOND_CUTOFF])
-    assert find_relevant_guide("[0.1,0.2,0.3]") is None
+    assert find_relevant_guide("[0.1,0.2,0.3]") == []
 
 
 def test_guide_query_selects_three_columns_and_binds_vector_twice(monkeypatch):
@@ -149,44 +175,82 @@ def test_guide_query_selects_three_columns_and_binds_vector_twice(monkeypatch):
     assert "select title, content," in lowered
     assert "embedding is not null" in lowered
     assert "order by embedding <=> %s::vector" in lowered
-    assert "limit 1" in lowered
-    # 자리표시자 개수와 바인딩 개수가 반드시 일치해야 한다(실행 시점 500 방지).
-    assert lowered.count("%s") == len(guide_params) == 2
-    assert guide_params == ("[0.1,0.2,0.3]", "[0.1,0.2,0.3]")
+    # LIMIT도 %s 자리표시자로 바인딩된다(top-k, LIMIT 1이 아니다).
+    assert "limit %s" in lowered
+    # 자리표시자 개수와 바인딩 개수가 반드시 일치해야 한다(실행 시점 500 방지) — 벡터절 2개 +
+    # top-k 정수 1개.
+    assert lowered.count("%s") == len(guide_params) == 3
+    assert guide_params == ("[0.1,0.2,0.3]", "[0.1,0.2,0.3]", node._GUIDE_TOP_K)
 
 
 def test_find_relevant_guide_at_exact_cutoff_is_included(monkeypatch):
-    """거리 == 컷오프는 **포함**이다(`<=`) — 경계 자체를 못박는다(후속 코드리뷰).
+    """단독 행 + 거리 == 절대 상한은 **포함**이다(`<=`) — 경계 자체를 못박는다(후속 코드리뷰).
 
     기존 테스트는 0.1(한참 안쪽)과 0.5(한참 바깥)만 써서, 비교연산자를 `<`로 바꿔도
-    전 스위트가 초록이었다. 컷오프가 이 스토리의 유일한 판단 로직인데 그 판단의 정의가
-    테스트로 고정돼 있지 않았다 — DW-604로 0.3이 실측값으로 바뀔 때가 특히 위험하다.
+    전 스위트가 초록이었다. 상한이 이 게이트의 최후 안전판인데 그 판단의 정의가 테스트로
+    고정돼 있지 않았다.
     """
-    at_cutoff = ("경계 가이드", "본문", _GUIDE_DISTANCE_CUTOFF)
+    at_cutoff = ("경계 가이드", "본문", _GUIDE_DISTANCE_CEILING)
     monkeypatch.setattr(node, "run_select", lambda query, params=None: [at_cutoff])
-    assert find_relevant_guide("[0.1,0.2,0.3]") == ("경계 가이드", "본문")
+    assert find_relevant_guide("[0.1,0.2,0.3]") == [("경계 가이드", "본문")]
 
 
 def test_find_relevant_guide_just_beyond_cutoff_is_excluded(monkeypatch):
-    """컷오프를 아주 조금만 넘어도 제외된다 — 위 경계 테스트의 반대편 짝."""
-    beyond = ("경계 밖 가이드", "본문", _GUIDE_DISTANCE_CUTOFF + 1e-9)
+    """절대 상한을 아주 조금만 넘어도 제외된다 — 위 경계 테스트의 반대편 짝."""
+    beyond = ("경계 밖 가이드", "본문", _GUIDE_DISTANCE_CEILING + 1e-9)
     monkeypatch.setattr(node, "run_select", lambda query, params=None: [beyond])
-    assert find_relevant_guide("[0.1,0.2,0.3]") is None
+    assert find_relevant_guide("[0.1,0.2,0.3]") == []
 
 
 def test_find_relevant_guide_rejects_nan_distance(monkeypatch):
-    """거리가 NaN이면 제외된다 — 게이트를 `not (d <= cutoff)`로 써야 하는 이유(3회차 코드리뷰).
+    """1등 거리가 NaN이면 전부 제외된다 — 게이트를 "통과 조건"으로 써야 하는 이유(3회차 코드리뷰).
 
-    실측: 게이트가 `if distance > _GUIDE_DISTANCE_CUTOFF`였을 때 NaN 행을 넣으면 함수는
-    가이드를 **반환**하는데(NaN과의 모든 비교는 False라 `>` 검사를 빠져나간다) 바로 위
-    로그는 `컷오프통과=False`라고 남겼다 — 스펙이 요구한 유일한 계측 수단이 실제 동작과
-    반대를 말하는 상태였다. 도달 경로: 질의 임베딩이 영벡터면(embeddings.py의 _l2_normalize가
-    norm==0을 그대로 통과시킨다) pgvector `<=>`가 NaN을 내고, 그때는 모든 행이 NaN이라
-    LIMIT 1이 임의의 무관한 가이드를 집어 조건추출 프롬프트까지 오염시킨다.
+    실측(옛 절대 컷오프 시절): 게이트가 `if distance > _GUIDE_DISTANCE_CUTOFF`였을 때 NaN
+    행을 넣으면 함수는 가이드를 **반환**하는데(NaN과의 모든 비교는 False라 `>` 검사를
+    빠져나간다) 바로 위 로그는 `컷오프통과=False`라고 남겼다 — 스펙이 요구한 유일한 계측
+    수단이 실제 동작과 반대를 말하는 상태였다. 도달 경로: 질의 임베딩이 영벡터면
+    (embeddings.py의 _l2_normalize가 norm==0을 그대로 통과시킨다) pgvector `<=>`가 NaN을
+    내고, 그때는 모든 행이 NaN이라 1등 거리(best_distance)도 NaN — `d <= NaN + margin`은
+    항상 False라 top-k 게이트에서도 전부 탈락한다(빈 리스트).
     """
     nan_row = ("무관 가이드", "무관 본문", float("nan"))
     monkeypatch.setattr(node, "run_select", lambda query, params=None: [nan_row])
-    assert find_relevant_guide("[0.0,0.0,0.0]") is None
+    assert find_relevant_guide("[0.0,0.0,0.0]") == []
+
+
+def test_find_relevant_guide_all_nan_distances_returns_empty(monkeypatch):
+    """여러 행이 전부 NaN이어도(1등뿐 아니라 전체) 빈 리스트다 — top-k 게이트의 NaN 전멸 확인."""
+    rows = [("가이드1", "본문1", float("nan")), ("가이드2", "본문2", float("nan"))]
+    monkeypatch.setattr(node, "run_select", lambda query, params=None: rows)
+    assert find_relevant_guide("[0.0,0.0,0.0]") == []
+
+
+def test_find_relevant_guide_top_k_margin_gate(monkeypatch):
+    """신규 테스트(a) — 1등 0.28·2등 0.31·3등 0.36(마진 0.05): a·b만 통과, c는 마진 밖.
+
+    1등 대비 마진 0.05 이내(0.28~0.33)만 통과해야 한다 — b(0.31)는 포함, c(0.36)는 제외.
+    """
+    rows = [("a", "본문a", 0.28), ("b", "본문b", 0.31), ("c", "본문c", 0.36)]
+    monkeypatch.setattr(node, "run_select", lambda query, params=None: rows)
+    assert find_relevant_guide("[0.1,0.2,0.3]") == [("a", "본문a"), ("b", "본문b")]
+
+
+def test_find_relevant_guide_ceiling_gate_even_within_margin(monkeypatch):
+    """신규 테스트(b) — 1등 0.44·2등 0.47(마진 안이어도 2등은 절대 상한 0.45 초과라 제외).
+
+    2등(0.47)은 1등(0.44) 대비 마진(0.05) 안이지만(0.44+0.05=0.49 ≥ 0.47), 절대 상한
+    0.45를 넘어 제외돼야 한다 — 마진·상한 두 게이트가 AND로 둘 다 필요함을 확인한다.
+    """
+    rows = [("1등", "본문1", 0.44), ("2등", "본문2", 0.47)]
+    monkeypatch.setattr(node, "run_select", lambda query, params=None: rows)
+    assert find_relevant_guide("[0.1,0.2,0.3]") == [("1등", "본문1")]
+
+
+def test_find_relevant_guide_ceiling_gate_excludes_first_place_too(monkeypatch):
+    """신규 테스트(b) 이어서 — 1등 자체가 0.46(상한 초과)이면 빈 리스트."""
+    rows = [("1등", "본문1", 0.46)]
+    monkeypatch.setattr(node, "run_select", lambda query, params=None: rows)
+    assert find_relevant_guide("[0.1,0.2,0.3]") == []
 
 
 def test_doc_rag_node_reuses_caller_supplied_qvec(monkeypatch):
@@ -213,21 +277,33 @@ def test_doc_rag_node_reuses_caller_supplied_qvec(monkeypatch):
     guide_params = next(
         p for (q, p) in captured["queries"] if "from guide_documents" in q.lower()
     )
-    assert guide_params == ("[0.9,0.8,0.7]", "[0.9,0.8,0.7]")
+    assert guide_params == ("[0.9,0.8,0.7]", "[0.9,0.8,0.7]", node._GUIDE_TOP_K)
     assert len(result["listings"]) == 1
 
 
 def test_find_relevant_guide_rejects_blank_title_or_content(monkeypatch):
-    """제목이나 본문이 공백뿐이면 컷오프 이내여도 None(후속 코드리뷰).
+    """제목이나 본문이 공백뿐이면 상한 이내여도 그 행은 제외된다(후속 코드리뷰).
 
     이전 패스는 **인용 자리에만** `guide[0]` 검사를 넣었다 — 그래서 (1) 제목이 공백
     문자열이면 `"   "`가 참이라 "(참고:    )"라는 빈 인용이 그대로 붙었고(실측),
     (2) 빈 제목·빈 본문 가이드가 hybrid의 조건추출 프롬프트에는 여전히 주입돼 매핑도
     없이 "규칙 2보다 우선한다"는 지시만 LLM에 전달됐다. 게이트를 헬퍼로 모아 둘 다 막는다.
+    단독 행이면 결과는 빈 리스트다.
     """
     for row in (("   ", "본문", 0.1), ("제목", "  \n ", 0.1), ("", "본문", 0.1)):
         monkeypatch.setattr(node, "run_select", lambda query, params=None, _r=row: [_r])
-        assert find_relevant_guide("[0.1,0.2,0.3]") is None, f"거부돼야 한다: {row!r}"
+        assert find_relevant_guide("[0.1,0.2,0.3]") == [], f"거부돼야 한다: {row!r}"
+
+
+def test_find_relevant_guide_skips_blank_row_but_keeps_others(monkeypatch):
+    """신규 테스트(d) — 공백 제목 행은 건너뛰고, 통과 게이트를 만족하는 나머지는 반환한다.
+
+    이전 버전(LIMIT 1)은 이 시나리오 자체가 없었다 — top-k라 여러 행 중 일부만 공백인
+    경우가 생긴다. 공백 행 하나가 나머지 유효한 행까지 막으면 안 된다.
+    """
+    rows = [("   ", "공백 제목 본문", 0.1), ("유효한 가이드", "유효 본문", 0.12)]
+    monkeypatch.setattr(node, "run_select", lambda query, params=None: rows)
+    assert find_relevant_guide("[0.1,0.2,0.3]") == [("유효한 가이드", "유효 본문")]
 
 
 def test_answer_omits_citation_when_guide_beyond_cutoff(monkeypatch):
@@ -256,7 +332,7 @@ def test_answer_omits_citation_when_guide_title_is_empty_string(monkeypatch):
 
     guide_documents.title은 NOT NULL이지만 빈 문자열 자체는 스키마가 막지 않는다. 이 테스트가
     실제로 태우는 게이트는 **find_relevant_guide의 strip 검사**다(3회차 코드리뷰 정정) —
-    호출부의 `guide and guide[0]`은 헬퍼가 이미 None을 돌려주므로 도달하지 않는다. 즉 이건
+    호출부는 헬퍼가 이미 걸러 빈 리스트를 돌려주므로 이 행에 도달하지 않는다. 즉 이건
     "인용 자리 방어"가 아니라 "헬퍼 게이트가 사용자에게 보이는 문자열까지 막는다"는 확인이다.
     """
     captured = {}
@@ -299,3 +375,25 @@ def test_cards_carry_cover_image_from_shared_helper(monkeypatch):
     assert card.image_count == 3
     # api는 URL을 만들지 않는다 — 원본 경로만 싣는다(conventions.md §10).
     assert card.image_url is None
+
+
+# ── citation_titles(청킹 후 인용 중복 제거, RAG 코퍼스 청킹 후속) ─────────────
+def test_citation_titles_dedupes_by_document_name():
+    """같은 문서의 서로 다른 섹션 2개가 top에 와도 문서명 기준으로 중복 제거해 2개만 남긴다."""
+    guides = [
+        ("A — x", "본문1"),
+        ("A — y", "본문2"),
+        ("B — z", "본문3"),
+    ]
+    assert citation_titles(guides) == ["A", "B"]
+
+
+def test_citation_titles_keeps_full_title_without_separator():
+    """' — ' 구분자가 없는 title(청킹 없는 파일의 문서 전체)은 그대로 문서명으로 쓴다."""
+    guides = [("헤딩 없는 문서", "본문")]
+    assert citation_titles(guides) == ["헤딩 없는 문서"]
+
+
+def test_citation_titles_respects_limit():
+    guides = [("A — x", "1"), ("B — y", "2"), ("C — z", "3")]
+    assert citation_titles(guides, limit=1) == ["A"]

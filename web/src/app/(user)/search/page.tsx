@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ROLE_LABEL, LISTING_OPTIONS, type UserRole } from '@/lib/constants';
+import { ALL_CONTROLLED_OPTIONS } from '@/lib/options';
 import { buyerListingsQuery, attachCoverImages } from '@/lib/listings';
 import { fetchWishedListingIds } from '@/lib/wishlist';
 import AppHeader from '@/components/layout/AppHeader';
@@ -30,6 +31,13 @@ export const dynamic = 'force-dynamic';
 function asStr(v: string | string[] | undefined): string {
   if (Array.isArray(v)) return v[0] ?? '';
   return v ?? '';
+}
+
+// searchParams 한 항목을 문자열 배열로 꺼낸다(개선 2, 옵션 다중 선택 — ?options=a&options=b).
+// 값이 하나뿐이면 Next.js가 string 하나로 주므로 배열로 감싸고, 없으면 빈 배열.
+function asStrArray(v: string | string[] | undefined): string[] {
+  if (v === undefined) return [];
+  return Array.isArray(v) ? v : [v];
 }
 
 // "목록에 있는 값일 때만" 통과시킨다(목록 밖 임의 값은 무시 → 쿼리 오염 방지). 빈 값이면 미적용.
@@ -98,6 +106,8 @@ export default async function SearchPage({
   // ── URL 필터 파싱 ───────────────────────────────────────────────
   const page = asPage(asStr(sp.page)); // 1-기반. 필터와 달리 항상 값이 있다(기본 1).
   const q = asStr(sp.q).trim();
+  // 제조사(개선 2) — 등록 폼엔 있었는데 필터엔 없던 축. 다른 드롭다운과 같은 pickOption 규칙.
+  const manufacturer = pickOption(asStr(sp.manufacturer), LISTING_OPTIONS.manufacturer);
   const bodyType = pickOption(asStr(sp.body_type), LISTING_OPTIONS.body_type);
   const color = pickOption(asStr(sp.color), LISTING_OPTIONS.color);
   const fuel = pickOption(asStr(sp.fuel), LISTING_OPTIONS.fuel);
@@ -107,11 +117,22 @@ export default async function SearchPage({
   let priceMax = asInt(asStr(sp.price_max));
   let yearMin = asInt(asStr(sp.year_min));
   let yearMax = asInt(asStr(sp.year_max));
+  // 주행거리·배기량·인승 범위(개선 2) — 가격·연식과 같은 파싱·swap 규칙.
+  let mileageMin = asInt(asStr(sp.mileage_min));
+  let mileageMax = asInt(asStr(sp.mileage_max));
+  let displacementMin = asInt(asStr(sp.displacement_min));
+  let displacementMax = asInt(asStr(sp.displacement_max));
+  let seatsMin = asInt(asStr(sp.seats_min));
+  let seatsMax = asInt(asStr(sp.seats_max));
   // 신뢰속성 필터(2026-08-13). 사고이력은 목록 밖 값이면 무시(다른 드롭다운과 같은 규칙),
   // 두 체크박스는 '1'일 때만 조건이 붙는다(그 외 값은 전부 "조건 없음"으로 떨어진다).
   const accidentStatus = pickOption(asStr(sp.accident_status), LISTING_OPTIONS.accident_status);
   const singleOwnerOnly = asStr(sp.single_owner) === '1';
   const nonSmokerOnly = asStr(sp.non_smoker) === '1';
+  // 옵션(개선 2) — 통제어휘(@/lib/options ALL_CONTROLLED_OPTIONS) 밖 값은 무시(다른 드롭다운과
+  // 같은 "목록 밖 값은 조용히 버림" 규칙), 중복은 제거. 다중 선택 = "전부 보유"(AND) 의미로
+  // applyFilters의 .contains()가 적용한다.
+  const selectedOptions = [...new Set(asStrArray(sp.options))].filter((o) => ALL_CONTROLLED_OPTIONS.has(o));
 
   // 최소>최대로 거꾸로 입력하면(예: 최소 5000~최대 1000) 0건이 나와 혼란 → 둘 다 유효할 때만 값을 맞바꿔(swap) 정상 범위로 보정.
   if (priceMin !== null && priceMax !== null && priceMin > priceMax) {
@@ -119,6 +140,15 @@ export default async function SearchPage({
   }
   if (yearMin !== null && yearMax !== null && yearMin > yearMax) {
     [yearMin, yearMax] = [yearMax, yearMin];
+  }
+  if (mileageMin !== null && mileageMax !== null && mileageMin > mileageMax) {
+    [mileageMin, mileageMax] = [mileageMax, mileageMin];
+  }
+  if (displacementMin !== null && displacementMax !== null && displacementMin > displacementMax) {
+    [displacementMin, displacementMax] = [displacementMax, displacementMin];
+  }
+  if (seatsMin !== null && seatsMax !== null && seatsMin > seatsMax) {
+    [seatsMin, seatsMax] = [seatsMax, seatsMin];
   }
 
   // ── 쿼리 빌드 ───────────────────────────────────────────────────
@@ -137,6 +167,7 @@ export default async function SearchPage({
   //   조회보다 **먼저** 만든다 — 아래 "마지막 페이지로 되돌리기"가 pageHref를 쓰는데, 그게 이 값을 읽는다.
   const initialFilters: SearchFilterValues = {
     q,
+    manufacturer: manufacturer ?? '',
     body_type: bodyType ?? '',
     color: color ?? '',
     fuel: fuel ?? '',
@@ -146,9 +177,16 @@ export default async function SearchPage({
     price_max: priceMax !== null ? String(priceMax) : '',
     year_min: yearMin !== null ? String(yearMin) : '',
     year_max: yearMax !== null ? String(yearMax) : '',
+    mileage_min: mileageMin !== null ? String(mileageMin) : '',
+    mileage_max: mileageMax !== null ? String(mileageMax) : '',
+    displacement_min: displacementMin !== null ? String(displacementMin) : '',
+    displacement_max: displacementMax !== null ? String(displacementMax) : '',
+    seats_min: seatsMin !== null ? String(seatsMin) : '',
+    seats_max: seatsMax !== null ? String(seatsMax) : '',
     accident_status: accidentStatus ?? '',
     single_owner: singleOwnerOnly ? '1' : '',
     non_smoker: nonSmokerOnly ? '1' : '',
+    options: selectedOptions,
   };
 
   // 페이지 이동 링크 — **정규화된 필터값**으로 쿼리를 다시 조립한다(원본 sp를 그대로 옮기지 않는다).
@@ -160,7 +198,12 @@ export default async function SearchPage({
   function pageHref(target: number): string {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(initialFilters)) {
-      if (value !== '') params.set(key, value);
+      // options는 string[] — 같은 키를 반복해 붙인다(SearchFilters.applyFilters와 같은 인코딩).
+      if (key === 'options') {
+        (value as string[]).forEach((opt) => params.append('options', opt));
+        continue;
+      }
+      if (value !== '') params.set(key, value as string);
     }
     if (target > 1) params.set('page', String(target));
     const query = params.toString();
@@ -175,26 +218,38 @@ export default async function SearchPage({
     eq: (c: string, v: string | boolean) => T;
     gte: (c: string, v: number) => T;
     lte: (c: string, v: number) => T;
+    contains: (c: string, v: string[]) => T;
   }>(builder: T): T {
     let b = builder;
     if (q) b = b.ilike('model', `%${escapeLike(q)}%`); // 모델명 부분일치(대소문자 무시, LIKE 메타문자 이스케이프)
+    if (manufacturer) b = b.eq('manufacturer', manufacturer);
     if (bodyType) b = b.eq('body_type', bodyType);
     if (color) b = b.eq('color', color);
     if (fuel) b = b.eq('fuel', fuel);
     if (transmission) b = b.eq('transmission', transmission);
     if (region) b = b.eq('region', region);
-    // 가격·연식 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로 여기선 그대로 적용한다.
-    // 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
+    // 가격·연식·주행거리·배기량·인승 범위 — 위에서 역전(min>max) 입력은 이미 swap으로 보정했으므로
+    // 여기선 그대로 적용한다. 한쪽만 있으면 그 한쪽만 적용(min만→이상, max만→이하).
     if (priceMin !== null) b = b.gte('price', priceMin);
     if (priceMax !== null) b = b.lte('price', priceMax);
     if (yearMin !== null) b = b.gte('year', yearMin);
     if (yearMax !== null) b = b.lte('year', yearMax);
+    if (mileageMin !== null) b = b.gte('mileage', mileageMin);
+    if (mileageMax !== null) b = b.lte('mileage', mileageMax);
+    if (displacementMin !== null) b = b.gte('displacement', displacementMin);
+    if (displacementMax !== null) b = b.lte('displacement', displacementMax);
+    if (seatsMin !== null) b = b.gte('seats', seatsMin);
+    if (seatsMax !== null) b = b.lte('seats', seatsMax);
     // 신뢰속성 — **뱃지와 같은 컬럼**으로 거른다(사용자 결정: accident_free는 안 쓴다).
     //   두 체크박스는 `eq(true)`라 값이 NULL(미신고)인 매물은 자연히 빠진다 — 그게 맞다:
     //   "1인소유라고 신고한 매물"을 찾는 것이지 "1인소유가 아닌 게 아닌 매물"이 아니다.
     if (accidentStatus) b = b.eq('accident_status', accidentStatus);
     if (singleOwnerOnly) b = b.eq('is_single_owner', true);
     if (nonSmokerOnly) b = b.eq('is_non_smoker', true);
+    // 옵션(개선 2) — .contains()는 "column이 value의 원소를 전부 포함"으로 해석된다(Postgres
+    // `@>` 연산자, PostgrestFilterBuilder 문서 그대로) — 선택한 옵션 전부 보유(AND) 의미가 정확히
+    // 이 연산 하나로 나온다(어제 채팅 검색과 같은 결정, 사용자 지시).
+    if (selectedOptions.length > 0) b = b.contains('options', selectedOptions);
     return b;
   }
 

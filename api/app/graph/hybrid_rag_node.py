@@ -15,11 +15,13 @@
     함정 #1). 가드 차단 시 sql_rag_node와 동일한 1회 재생성 재시도 패턴을 따른다.
   · 가드 통과 후 embed_query로 만든 질의 임베딩을 %s 자리표시자에 실제로 바인딩해
     run_select(safe_sql, (qvec,))로 실행한다(DW-559 — 미바인드 실행 방지).
-  · 질의확장(FR44, Story 13.6): 재시도 루프 진입 전 1회 `find_relevant_guide()`로 최상위
-    가이드를 조회한다. 코사인 거리가 컷오프(FR49) 이내일 때만 그 content를 시스템 프롬프트에
+  · 질의확장(FR44, Story 13.6): 재시도 루프 진입 전 1회 `find_relevant_guide()`로 top-k 상대
+    게이트(FR49)를 통과한 가이드 목록을 조회한다. 그중 상위 최대 `_GUIDE_INJECT_MAX`건만,
+    그리고 content 누적 글자수가 `_GUIDE_INJECT_CHAR_CAP`을 넘기 전까지만 시스템 프롬프트에
     덧붙여 LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건(body_type 등)으로
-    바꾸게 한다 — 무조건 곁들이지 않는다. 최종 answer 인용도 같은 게이트를 통과했을 때만
-    doc_rag_node와 동일하게 결정론적으로 붙인다(답변 문장 자체는 LLM이 새로 짓지 않는다).
+    바꾸게 한다 — 무조건 곁들이지 않는다(서로 다른 페르소나 섹션의 가이드가 전부 들어가면
+    조건 AND 폭발로 0건이 되거나 프롬프트가 비대해진다). 최종 answer 인용은 doc_rag_node와
+    동일하게 상위 최대 2개 제목을 결정론적으로 붙인다(답변 문장 자체는 LLM이 새로 짓지 않는다).
 
 Design Notes(spec 13.3): 하이브리드 조립은 가드 통과 "직전"에 완성한다 — LLM 조건 →
   코드가 전체 SQL 문자열로 합친 뒤에야 validate_select_sql()을 부른다. 가드를 먼저
@@ -45,8 +47,9 @@ from app.db.sql_guard import (
     validate_select_sql,
 )
 from app.embeddings import embed_query
-from app.graph.doc_rag_node import doc_rag_node, find_relevant_guide
+from app.graph.doc_rag_node import citation_titles, doc_rag_node
 from app.graph.listing_cards import SELECT_COLUMNS, attach_cover_images, rows_to_cards
+from app.graph.multi_query import find_relevant_guides_fused
 from app.graph.sql_rag_node import _DOMAIN_RULES, _content_to_text, _strip_sql
 
 logger = logging.getLogger(__name__)
@@ -79,15 +82,24 @@ _SYSTEM_PROMPT = f"""너는 중고차 매물 DB 검색을 위해 WHERE 구조조
 
 출력: 조건 표현식 한 줄 또는 NONE."""
 
-# 가이드 질의확장(FR44, Story 13.6) — find_relevant_guide()가 컷오프 이내로 찾아낸 가이드
-# content를 시스템 프롬프트 뒤에 덧붙이는 블록. 규칙 2(느낌 표현 버리기)보다 이 매핑이
-# 우선한다는 것을 명시해, LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건으로
-# 바꾸게 한다. 이 블록은 조건추출에만 쓰이고 답변 문장을 새로 짓는 데는 쓰이지 않는다
-# (답변 인용은 hybrid_rag_node가 결정론적 문자열 붙이기로 별도 처리, AC2).
+# top-k 상대 게이트(FR49, doc_rag_node._GUIDE_TOP_K/_GUIDE_MARGIN/_GUIDE_DISTANCE_CEILING)
+# 통과분 중 실제로 프롬프트에 주입할 개수·글자수 상한 — 전부 넣으면 서로 다른 페르소나
+# 섹션의 가이드가 뒤섞여 조건 AND 폭발로 0건이 되거나 프롬프트가 비대해진다.
+_GUIDE_INJECT_MAX = 3
+_GUIDE_INJECT_CHAR_CAP = 3000
+
+# 가이드 질의확장(FR44, Story 13.6) — find_relevant_guide()가 top-k 상대 게이트로 찾아낸
+# 가이드마다 이 블록을 이어 붙인다. content를 시스템 프롬프트 뒤에 덧붙이는 블록.
 _GUIDE_BLOCK_TEMPLATE = """
 
 [참고 가이드 문서 — "{title}"]
-{content}
+{content}"""
+
+# 여러 가이드 블록 뒤에 1회만 붙는 우선순위 지시문. 규칙 2(느낌 표현 버리기)보다 이 매핑이
+# 우선한다는 것을 명시해, LLM이 "패밀리카" 같은 느낌 표현을 가이드가 제시하는 구조조건으로
+# 바꾸게 한다. 이 지시문은 조건추출에만 쓰이고 답변 문장을 새로 짓는 데는 쓰이지 않는다
+# (답변 인용은 hybrid_rag_node가 결정론적 문자열 붙이기로 별도 처리, AC2).
+_GUIDE_PRIORITY_NOTE = """
 
 위 가이드 매핑은 규칙 2(느낌·용도 표현 버리기)보다 우선한다 — 질의의 느낌·용도 표현이 위
 가이드가 제시하는 구조조건(차종·인승 등)과 대응되면, 규칙 2로 버리지 말고 그 구조조건을
@@ -95,6 +107,34 @@ _GUIDE_BLOCK_TEMPLATE = """
 
 _ANSWER_FOUND = "조건에 맞는 매물 {n}건을 찾았어요."
 _ANSWER_EMPTY = "조건에 맞는 매물이 없어요. 가격대나 차종 조건을 넓혀보세요."  # FR17 조건 완화 안내
+
+# ── 0건 완화 재시도(FR17, 실측: "애들 둘이랑 장인어른까지…기름값도 좀 걱정되고요" →
+#    body_type IN ('SUV','RV') AND seats >= 7 AND price <= 30000000 AND fuel = '하이브리드'가
+#    0건. fuel만 빼면 4건 — "기름값 걱정"이라는 선호 표현이 하드 필터로 굳어버린 것이었다.
+#    LLM 재호출 없이(결정론적) 절을 하나씩 빼며 재조립·재검증·재실행한다) ──────────────────
+#
+# 우선순위(사용자 결정 2026-08-29): 선호·걱정 표현에서 유래하기 쉬운 축(연료·색상·옵션)을
+# 먼저 빼고, 사용자가 숫자로 직접 말한 축(연식·주행거리·가격)은 최후까지 지킨다.
+_RELAX_AXIS_ORDER = (
+    "fuel", "color", "options", "body_type", "transmission",
+    "seats", "displacement", "year", "mileage", "price",
+)
+
+# 완화 캐비엇에 쓰는 축 한국어 이름 — _RELAX_AXIS_ORDER와 1:1 대응.
+_AXIS_KOREAN = {
+    "fuel": "연료", "color": "색상", "options": "옵션", "body_type": "차종",
+    "transmission": "변속기", "seats": "인승", "displacement": "배기량",
+    "year": "연식", "mileage": "주행거리", "price": "가격",
+}
+
+# 연비 선호 사다리 — 연료 조건을 뺀 경우에만 쓴다(사용자 결정 2026-08-29: 연료 선호는
+# 고정값이 아니라 순위다). 하이브리드가 없으면 전기, 그다음 디젤 순으로 밀린다. 같은 연료
+# 끼리는 원래 벡터 유사도 순서를 유지한다(sorted()는 안정 정렬).
+_FUEL_PREFERENCE = ("하이브리드", "전기", "디젤", "LPG", "가솔린")
+
+# axis는 뺀 절의 한국어 축 이름(_AXIS_KOREAN) — 최상급 캐비엇(_SUPERLATIVE_CAVEAT)과
+# 공존 가능하다(둘 다 붙을 수 있음, 서로 다른 문제를 알리는 문장이라 하나로 합치지 않는다).
+_RELAXED_CAVEAT_TEMPLATE = " {axis} 조건에 딱 맞는 매물이 없어 그 조건을 빼고 찾았어요."
 
 # 최상급×HYBRID 정렬 충돌 — 옵션(b) 채택(spec-13-9 Design Notes). HYBRID는 벡터 유사도로만
 # 정렬하고 최상급이 요구하는 가격 등 정렬은 반영하지 않는다(오늘도 이미 그렇게 동작 중) —
@@ -135,6 +175,71 @@ def _has_superlative(query: str) -> bool:
     return bool(_SUPERLATIVE_PRICE_RE.search(query))
 
 
+def _split_top_level_and(condition: str) -> list[str]:
+    """`condition`을 괄호 깊이 0의 ` AND `에서만 분할해 절 목록을 만든다.
+
+    규칙 5(_HYBRID_INSTRUCTIONS)가 이미 OR를 금지하므로 최상위 결합 연산자는 AND뿐이다 —
+    OR까지 고려할 필요가 없다. `IN ('a','b')`·`= ANY(options)` 같은 괄호 안, 그리고 문자열
+    리터럴 안의 " AND "는 쪼개면 안 되므로 괄호 깊이와 작은따옴표 문자열 여부를 문자 순회로
+    직접 추적한다(정규식 split만으론 이 둘을 구분 못한다). `''`(작은따옴표 리터럴 안의
+    이스케이프된 작은따옴표)는 토글을 두 번 해 원래 상태로 돌아오므로 별도 처리가 필요 없다.
+    """
+    clauses: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_string = False
+    i = 0
+    n = len(condition)
+    while i < n:
+        ch = condition[i]
+        if ch == "'":
+            in_string = not in_string
+            current.append(ch)
+            i += 1
+            continue
+        if not in_string:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif depth == 0 and condition[i : i + 5] == " AND ":
+                clauses.append("".join(current).strip())
+                current = []
+                i += 5
+                continue
+        current.append(ch)
+        i += 1
+    clauses.append("".join(current).strip())
+    return [c for c in clauses if c]
+
+
+def _clause_axis(clause: str) -> str:
+    """절 텍스트에 포함된 컬럼 키워드로 완화 우선순위 축을 판정한다. 못 찾으면 "other"."""
+    lowered = clause.lower()
+    for axis in _RELAX_AXIS_ORDER:
+        if axis in lowered:
+            return axis
+    return "other"
+
+
+def _relax_drop_order(clauses: list[str]) -> list[int]:
+    """한 개씩 빼볼 절의 인덱스를 우선순위(_RELAX_AXIS_ORDER) 순으로 돌려준다.
+
+    미분류 축("other")은 가장 나중에 시도한다 — 어떤 컬럼인지 모르는 절을 먼저 빼면 사용자가
+    명시한 핵심 조건을 실수로 건드릴 수 있다. 같은 축이 여럿이면(드묾) 원래 등장 순서를
+    유지한다(list.sort는 안정 정렬).
+    """
+    axis_priority = {axis: i for i, axis in enumerate(_RELAX_AXIS_ORDER)}
+    indexed = list(enumerate(clauses))
+    indexed.sort(key=lambda pair: axis_priority.get(_clause_axis(pair[1]), len(_RELAX_AXIS_ORDER)))
+    return [i for i, _ in indexed]
+
+
+def _fuel_rank(fuel: str | None) -> int:
+    """연비 선호 사다리에서의 순위 — 목록에 없으면(예: 계약 밖 값·None) 맨 뒤로 보낸다."""
+    return _FUEL_PREFERENCE.index(fuel) if fuel in _FUEL_PREFERENCE else len(_FUEL_PREFERENCE)
+
+
 # 폴백 신호(NONE) 인식 — 정확히 "NONE"만 보면 LLM이 `NONE.`·`"NONE"`처럼 살짝 어긋나게
 # 낼 때 폴백을 놓치고, 그 문자열이 조건으로 조립돼 가드 차단(400)까지 간다(실측: `NONE.`
 # → forbidden_column). 따옴표·백틱·마침표·공백만 두른 형태는 전부 폴백으로 읽는다.
@@ -164,6 +269,26 @@ def _vec_literal(vec: list[float]) -> str:
     return "[" + ",".join(map(str, vec)) + "]"
 
 
+def _select_guides_to_inject(
+    guides: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """게이트를 통과한 가이드 중 실제로 프롬프트에 주입할 것만 추린다.
+
+    상위 최대 `_GUIDE_INJECT_MAX`개를 우선 자르고, content 누적 글자수가
+    `_GUIDE_INJECT_CHAR_CAP`을 넘기는 순간부터는 넘긴 문서부터 제외한다(그 앞까지는
+    담는다) — 서로 다른 페르소나 섹션의 상충 매핑이 전부 프롬프트에 들어가 조건 AND
+    폭발로 0건이 되는 것과 프롬프트 비대화를 막는다.
+    """
+    selected: list[tuple[str, str]] = []
+    total_chars = 0
+    for title, content in guides[:_GUIDE_INJECT_MAX]:
+        if total_chars + len(content) > _GUIDE_INJECT_CHAR_CAP:
+            break
+        selected.append((title, content))
+        total_chars += len(content)
+    return selected
+
+
 def _append_retry_turn(messages: list, text: str, reason: str) -> None:
     """재생성 요청 1턴을 대화에 덧붙인다(가드 차단·실행 불가 두 경로가 같은 문구를 쓴다)."""
     messages.append(("ai", text))
@@ -186,19 +311,27 @@ def hybrid_rag_node(query: str) -> dict:
     500이 아니라 400 한국어 안내가 나가야 한다는 계약을 지키기 위해서다.
 
     질의확장(FR44, Story 13.6): 재시도 루프 진입 전에 질의 임베딩을 1회만 계산해(재시도마다
-    재임베딩하던 기존 낭비 제거) find_relevant_guide()에 넘긴다. 컷오프(FR49) 이내 가이드가
-    있으면 시스템 프롬프트에 덧붙이고, 그 가이드로 조건추출이 이뤄졌든 아니든 listings가
-    나오면 doc_rag_node와 동일하게 결정론적 인용을 붙인다.
+    재임베딩하던 기존 낭비 제거) find_relevant_guide()에 넘긴다. top-k 상대 게이트(FR49)를
+    통과한 가이드 중 주입 상한(_GUIDE_INJECT_MAX/_GUIDE_INJECT_CHAR_CAP) 이내분을 시스템
+    프롬프트에 덧붙이고, listings가 나오면 doc_rag_node와 동일하게(상위 최대 2개 제목)
+    결정론적 인용을 붙인다.
     """
     llm = _llm()  # 키 부재 시 여기서 fail-loud — 아래 재시도 루프 전에 즉시 실패.
 
     qvec = embed_query(query)  # 키 부재 시 여기서 fail-loud — 재시도 루프 전 1회만 계산.
     qvec_literal = _vec_literal(qvec)
-    guide = find_relevant_guide(qvec_literal)  # 컷오프(FR49) 이내일 때만 non-None(FR44).
+    # multi-query 분해 + RRF 병합(질의 희석 완화) — 짧은 질의는 내부에서 자동으로 원 질의
+    # 단독 검색과 동일하게 동작한다(추가 임베딩 호출 0회, app/graph/multi_query.py).
+    guides = find_relevant_guides_fused(query, qvec_literal)
 
     system_prompt = _SYSTEM_PROMPT
-    if guide:
-        system_prompt += _GUIDE_BLOCK_TEMPLATE.format(title=guide[0], content=guide[1])
+    injected_guides = _select_guides_to_inject(guides)
+    if injected_guides:
+        blocks = "".join(
+            _GUIDE_BLOCK_TEMPLATE.format(title=title, content=content)
+            for title, content in injected_guides
+        )
+        system_prompt += blocks + _GUIDE_PRIORITY_NOTE
 
     messages = [("system", system_prompt), ("human", query)]
     last_error: SqlGuardError | None = None
@@ -238,14 +371,63 @@ def hybrid_rag_node(query: str) -> dict:
         try:
             safe_sql = validate_select_sql(sql)  # 가드 통과 못하면 SqlGuardError
             rows = run_select(safe_sql, (qvec_literal,))  # DW-559 — 임베딩 바인딩(호이스트 재사용)
+
+            # ── 0건 완화 재시도(FR17) — LLM 재호출 없이 절 1개를 빼고 재조립·재검증·재실행한다.
+            dropped_axis: str | None = None
+            clauses = _split_top_level_and(condition)
+            # 절이 2개 이상일 때만 시도한다 — 1개짜리 조건을 빼면 `AND ()`가 아니라 조건 없는
+            # 전체 검색(status='on_sale'만 남음)이 돼버려, "완화"가 아니라 사용자가 말한
+            # 조건을 통째로 무시하는 결과가 나간다.
+            if not rows and len(clauses) >= 2:
+                for idx in _relax_drop_order(clauses):
+                    candidate_condition = " AND ".join(
+                        c for i, c in enumerate(clauses) if i != idx
+                    )
+                    candidate_sql = (
+                        f"SELECT {_SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' "
+                        f"AND ({candidate_condition})"
+                    ).replace("%", "%%")
+                    candidate_sql = (
+                        f"{candidate_sql} ORDER BY embedding <=> %s::vector LIMIT {DEFAULT_LIMIT}"
+                    )
+                    try:
+                        # 기존과 동일한 조립 경로로 새 SQL을 만든 것일 뿐이므로, LLM 생성
+                        # 텍스트를 신뢰하지 않는다는 원칙(함정 #1)은 완화 후보에도 그대로
+                        # 적용한다 — 다시 validate_select_sql()을 거친다.
+                        candidate_safe_sql = validate_select_sql(candidate_sql)
+                        candidate_rows = run_select(candidate_safe_sql, (qvec_literal,))
+                    except (SqlGuardError, psycopg.ProgrammingError, psycopg.DataError):
+                        continue  # 이 후보만 건너뛰고 다음 우선순위 후보를 시도한다.
+                    if candidate_rows:
+                        rows = candidate_rows
+                        dropped_axis = _clause_axis(clauses[idx])
+                        logger.info(
+                            "hybrid_rag_node 0건 완화: '%s' 절 제거 → %d건(재정렬=%s)",
+                            clauses[idx], len(candidate_rows), dropped_axis == "fuel",
+                        )
+                        break
+                else:
+                    logger.info("hybrid_rag_node 0건 완화: 절을 하나씩 빼봤지만 전부 0건")
+
             listings = attach_cover_images(rows_to_cards(rows))
+            if dropped_axis == "fuel":
+                # 연료 절을 뺐을 때만 연비 선호 사다리로 재정렬한다 — 다른 축은 그런 자연스러운
+                # 선호 순서가 없다(스펙).
+                listings = sorted(listings, key=lambda c: _fuel_rank(c.fuel))
             answer = _ANSWER_FOUND.format(n=len(listings)) if listings else _ANSWER_EMPTY
-            # `guide[0]`은 도달 불가한 검사다 — 공백 제목은 find_relevant_guide가 이미 걸렀다
-            # (3회차 코드리뷰). `listings and`가 실제 게이트다: 0건이면 FR17 안내에 인용을 붙이지
-            # 않는다(AC3, I/O 매트릭스 5행). 이 조건이 사라져도 스위트가 초록이던 구멍은
-            # test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
-            if listings and guide and guide[0]:
-                answer += f" (참고: {guide[0]})"  # doc_rag_node와 동일한 결정론적 인용(AC2)
+            # 공백 제목은 find_relevant_guide가 이미 걸렀으니 guides의 title은 항상 비어
+            # 있지 않다(3회차 코드리뷰). `listings and`가 실제 게이트다: 0건이면 FR17 안내에
+            # 인용을 붙이지 않는다(AC3, I/O 매트릭스 5행). 이 조건이 사라져도 스위트가
+            # 초록이던 구멍은 test_hybrid_empty_result_with_guide_omits_citation이 닫는다.
+            # 인용은 주입 상한(_select_guides_to_inject)과 무관하게 게이트 통과분 전체(guides)
+            # 중 citation_titles로 문서명 기준 중복 제거 후 상위 최대 2개를 쓴다 —
+            # doc_rag_node와 동일한 규칙(AC2, 청킹 후 인용 장황화 방지 공유 헬퍼).
+            if listings and guides:
+                titles = citation_titles(guides)
+                answer += f" (참고: {', '.join(titles)})"
+            if listings and dropped_axis:
+                axis_name = _AXIS_KOREAN.get(dropped_axis, "일부")
+                answer += _RELAXED_CAVEAT_TEMPLATE.format(axis=axis_name)
             if listings and _has_superlative(query):
                 # 최상급이 있어도 HYBRID는 벡터 정렬만 적용한다 — 그 사실을 알린다(옵션 b).
                 # 0건이면(listings 없음) 이 캐비엇도 인용과 같은 이유로 붙이지 않는다.

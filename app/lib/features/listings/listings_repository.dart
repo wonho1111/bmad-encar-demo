@@ -228,6 +228,8 @@ class ListingsRepository {
     if (f.keyword != null) {
       query = query.ilike('model', '%${f.keyword}%'); // 모델명 부분일치(대소문자 무시).
     }
+    // 제조사(개선 2, 2026-09-01) — 등록 폼엔 있었는데 필터엔 없던 축. 다른 드롭다운과 같은 eq.
+    if (f.manufacturer != null) query = query.eq('manufacturer', f.manufacturer!);
     if (f.bodyType != null) query = query.eq('body_type', f.bodyType!);
     if (f.color != null) query = query.eq('color', f.color!);
     if (f.fuel != null) query = query.eq('fuel', f.fuel!);
@@ -245,6 +247,16 @@ class ListingsRepository {
     if (f.priceMax != null) query = query.lte('price', f.priceMax!);
     if (f.yearMin != null) query = query.gte('year', f.yearMin!);
     if (f.yearMax != null) query = query.lte('year', f.yearMax!);
+    // 주행거리·배기량·인승 범위(개선 2) — 가격·연식과 같은 gte/lte 규칙.
+    if (f.mileageMin != null) query = query.gte('mileage', f.mileageMin!);
+    if (f.mileageMax != null) query = query.lte('mileage', f.mileageMax!);
+    if (f.displacementMin != null) query = query.gte('displacement', f.displacementMin!);
+    if (f.displacementMax != null) query = query.lte('displacement', f.displacementMax!);
+    if (f.seatsMin != null) query = query.gte('seats', f.seatsMin!);
+    if (f.seatsMax != null) query = query.lte('seats', f.seatsMax!);
+    // 옵션(개선 2) — .contains()는 "column이 value의 원소를 전부 포함"(Postgres `@>`)으로
+    // 해석된다 — 선택한 옵션 전부 보유(AND) 의미가 이 연산 하나로 나온다(web과 동일 결정).
+    if (f.options.isNotEmpty) query = query.contains('options', f.options);
 
     // created_at 같은 시드 행 순서가 새로고침마다 뒤집히지 않도록 id 를 2차 정렬키로(결정적 정렬).
     final rows = await query

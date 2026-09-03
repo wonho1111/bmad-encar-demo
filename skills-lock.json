@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "fastapi": {
+      "source": "fastapi/fastapi",
+      "sourceType": "github",
+      "skillPath": "fastapi/.agents/skills/fastapi/SKILL.md",
+      "computedHash": "187b2e06c41cdb6c6beeab15e6db4aeb1bf62f57735974646ad5646af8aacc66"
+    },
+    "hf-cli": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/hf-cli/SKILL.md",
+      "computedHash": "7e18d39eef6e1519417aa2a48112fe7df8ea1b0f5051ab62f1635c7029f34404"
+    },
+    "langchain-rag": {
+      "source": "langchain-ai/langchain-skills",
+      "sourceType": "github",
+      "skillPath": "config/skills/langchain-rag/SKILL.md",
+      "computedHash": "cf1cdc8657527ddac4c4d256c73288ec88c9600e0f31d2393324103e9bd503a1"
+    },
+    "langgraph-python-quickstart": {
+      "source": "langchain-ai/langchain-skills",
+      "sourceType": "github",
+      "skillPath": "config/skills/langgraph-python-quickstart/SKILL.md",
+      "computedHash": "fa638ecd264eb6f61c9c2233b3f44ffce70b00ed76b5d542c323a5e260f31000"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "computedHash": "128fac78002d916c8ca908245d398e634f540d8bcf20915b2b2359aeb18eba59"
+    },
+    "train-sentence-transformers": {
+      "source": "huggingface/skills",
+      "sourceType": "github",
+      "skillPath": "skills/train-sentence-transformers/SKILL.md",
+      "computedHash": "a4cb483748d9ca2b9d3faa1340e3896389a95798a5dae1aeef13df2b1c31af56"
+    }
+  }
+}

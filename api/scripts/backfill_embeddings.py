@@ -2,7 +2,7 @@
 
 하는 일:
   1) listings 중 embedding이 NULL인 행 → 설명·옵션·핵심사양 텍스트(코퍼스①)를 768 임베딩으로 채움
-  2) api/corpus/*.md 가이드 문서(코퍼스②) → guide_documents에 제목·본문·임베딩 적재
+  2) api/corpus/*.md 가이드 문서(코퍼스②) → '## ' 섹션 단위로 청킹해 guide_documents에 제목·본문·임베딩 적재
 
 ⚠️ 쓰기 경로: 이 스크립트는 데이터를 '쓴다'. 4.1의 읽기전용 헬퍼(app/db/readonly.py, SET ROLE ai_readonly)를
    쓰면 insufficient_privilege로 실패하므로, 여기서는 SET ROLE 없이 연결 롤(postgres)로 직접 쓴다.
@@ -99,8 +99,40 @@ def backfill_listings(conn) -> int:
     return len(rows)
 
 
+def _split_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
+    """'## ' 헤딩 경계로 본문을 나눠 (서두, [(섹션제목, 섹션본문), ...])로 반환한다(헤딩 줄 제외).
+
+    서두 = 첫 '## ' 헤딩 이전 텍스트. '## '가 하나도 없으면 서두="", 섹션 리스트=[].
+    """
+    intro_buf: list[str] = []
+    sections: list[tuple[str, str]] = []
+    heading: str | None = None
+    buf: list[str] = []
+    for line in body.splitlines():
+        if line.lstrip().startswith("## "):
+            if heading is not None:
+                sections.append((heading, "\n".join(buf).strip()))
+            else:
+                intro_buf = buf
+            heading = line.lstrip()[3:].strip()
+            buf = []
+        else:
+            buf.append(line)
+    if heading is not None:
+        sections.append((heading, "\n".join(buf).strip()))
+    else:
+        intro_buf = buf
+    intro = "\n".join(intro_buf).strip() if sections else ""
+    return intro, sections
+
+
 def load_corpus() -> list[tuple[str, str]]:
-    """api/corpus/*.md 를 (title, content)로 읽는다. 첫 줄 '# 제목' → title, 나머지 → content."""
+    """api/corpus/*.md 를 (title, content) 여러 건으로 청킹해 읽는다.
+
+    파일 제목(첫 줄 '# 제목') 직후~첫 '## ' 사이의 서두 문단이 있으면 그것도 1건
+    (title=문서제목)으로 담고, 이후 '## ' 섹션마다 1건(title="{문서제목} — {섹션제목}")으로
+    쪼갠다. '## '가 하나도 없는 파일은 기존과 동일하게 문서 전체를 1건으로 담는다(하위호환).
+    """
     corpus_dir = API_ROOT / "corpus"
     docs: list[tuple[str, str]] = []
     for f in sorted(corpus_dir.glob("*.md")):
@@ -108,26 +140,40 @@ def load_corpus() -> list[tuple[str, str]]:
         text = f.read_text(encoding="utf-8-sig").strip()
         lines = text.splitlines()
         if lines and lines[0].lstrip().startswith("#"):
-            title = lines[0].lstrip("#").strip()
-            content = "\n".join(lines[1:]).strip()
+            doc_title = lines[0].lstrip("#").strip()
+            body = "\n".join(lines[1:]).strip()
         else:
-            title = f.stem
-            content = text
-        if not content:  # 빈/제목만 있는 문서는 의미 없는 빈 가이드 행이 되므로 건너뛴다.
-            print(f"[guide_documents] 본문 없는 문서 건너뜀: {f.name}")
+            doc_title = f.stem
+            body = text
+
+        intro, sections = _split_sections(body)
+        if not sections:  # '## ' 없는 파일 — 기존과 동일하게 문서 전체를 1건으로.
+            if not body:
+                print(f"[guide_documents] 본문 없는 문서 건너뜀: {f.name}")
+                continue
+            docs.append((doc_title, body))
             continue
-        docs.append((title, content))
+
+        # 서두(첫 '## ' 이전) — 01번 문서의 body_type 전체 목록처럼 버리면 안 되는 내용이 있다.
+        if intro:
+            docs.append((doc_title, intro))
+
+        for section_title, section_body in sections:
+            if not section_body:  # 헤딩만 있고 본문이 공백뿐인 섹션은 의미 없는 행이 되므로 건너뛴다.
+                print(f"[guide_documents] 본문 없는 섹션 건너뜀: {f.name} — {section_title}")
+                continue
+            docs.append((f"{doc_title} — {section_title}", section_body))
     return docs
 
 
 def backfill_guides(conn) -> int:
-    """가이드 문서를 임베딩해 guide_documents에 적재(멱등: 전량 delete 후 재삽입)."""
+    """가이드 문서를 '## ' 섹션 단위 청크로 임베딩해 guide_documents에 적재(멱등: 전량 delete 후 재삽입)."""
     docs = load_corpus()
     if not docs:
         print("[guide_documents] corpus/*.md 없음 — 건너뜀.")
         return 0
 
-    print(f"[guide_documents] {len(docs)}개 문서 임베딩 생성 중...")
+    print(f"[guide_documents] {len(docs)}개 청크 임베딩 생성 중...")
     # 제목+본문을 함께 임베딩해 의미 맥락을 강화. 저장 content는 본문만.
     vecs = embed_documents([f"{title}\n{content}" for title, content in docs])
     # ⚠️ 개수 검증은 반드시 DELETE 전에 — 불일치 시 테이블을 비우기 전에 멈춰 데이터 유실을 막는다.

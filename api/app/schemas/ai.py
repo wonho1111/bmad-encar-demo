@@ -40,6 +40,12 @@ class ConversationTurn(BaseModel):
 
     role: Literal["user", "assistant"]
     content: str = Field(..., min_length=1, max_length=2000, description="턴 내용")
+    # 멀티턴 매물 참조(FR18 확장) — 어시스턴트 턴이 실제로 보여준 매물 id들. role="assistant"
+    # 턴에만 의미가 있고(사용자 턴엔 없음), 에이전트가 "그중 N번째"·"그 5개 비교" 같은 후속
+    # 요청을 새 검색이 아니라 이 id들로 직접 처리하는 데 쓴다(agent.py). max_length로 과대
+    # 입력(DoS)을 막는다 — 한 턴에 보여줄 수 있는 매물 카드는 실제로도 20건을 넘지 않는다
+    # (search_listings 상한과 동일선상, agent_tools.py _MAX_SEARCH_LIMIT).
+    listing_ids: list[str] | None = Field(default=None, max_length=20, description="이 턴이 보여준 매물 id들(어시스턴트 턴 전용)")
 
 
 class SearchRequest(BaseModel):
@@ -51,6 +57,10 @@ class SearchRequest(BaseModel):
     context: list[ConversationTurn] | None = Field(
         default=None, max_length=12, description="직전 대화 맥락(클라이언트 보관, 최대 12턴)"
     )
+    # 상세 페이지 "AI 시세 진단" 버튼이 프리필 질의와 함께 동봉하는 대상 매물 id(5단계).
+    # 버튼 클릭이 아닌 일반 채팅 질의는 이 필드를 보내지 않는다(None) — 에이전트가 질의만으로
+    # 대상 매물을 못 찾는 경우에만 필요한 보조 힌트라 optional·additive(기존 클라이언트 회귀 없음).
+    listing_id: str | None = Field(default=None, description="시세 진단 대상 매물 id(선택)")
 
     @field_validator("query")
     @classmethod
@@ -109,6 +119,15 @@ class SearchResponse(BaseModel):
     # REJECT 전용 고정 상수 사유 술어 배열(FR47, CR4, Story 13.5) — additive, 기존 소비처 회귀 없음.
     # REJECT가 아닌 경로(SQL/HYBRID/CLARIFY)는 None.
     narrowed_by: list[str] | None = None
+    # 에이전트 경로(route=AGENT, 4단계 부품 B) 전용 — market_price_stats 도구의 마지막 호출
+    # 결과(app/market_price.diagnose()가 만든 dict 그대로)를 옵션 필드로 노출한다. 기존
+    # run_search 경로는 이 값을 채우지 않으므로 항상 None(additive, 기존 클라이언트 회귀 없음).
+    market_diagnosis: dict | None = None
+    # 다건 시세 진단(2026-08-31, 사용자 승인 설계 변경) — 한 대화에서 market_price_stats가
+    # 2건 이상 호출됐을 때 그 결과 전부(app/market_price.diagnose() dict 그대로, 상한 5건)를
+    # 담는다. 1건이거나 호출이 없으면 None — 그 경우 웹은 기존 market_diagnosis(단건 차트)
+    # 렌더를 그대로 쓴다(additive, 기존 소비처 회귀 없음).
+    market_diagnoses: list[dict] | None = None
 
 
 class ErrorBody(BaseModel):

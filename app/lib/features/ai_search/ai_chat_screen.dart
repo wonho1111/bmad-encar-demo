@@ -9,16 +9,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../auth/auth_controller.dart';
+import '../listings/listing.dart';
 import '../listings/listing_card.dart';
 import '../listings/listing_detail_screen.dart';
 import '../wishlist/wishlist_providers.dart';
 import 'ai_search_api.dart';
 import 'chat_message.dart';
+import 'market_diagnosis_card.dart';
+import 'market_diagnosis_table.dart';
 
 /// `searchAi`(ai_search_api.dart)와 같은 시그니처 — 테스트 전용 주입 시접(seam)에 쓴다.
 typedef SearchAiFn = Future<SearchResult> Function({
   required String query,
   List<ConversationTurn>? context,
+  String? listingId,
   required String? accessToken,
 });
 
@@ -26,6 +30,8 @@ class AiChatScreen extends ConsumerStatefulWidget {
   const AiChatScreen({
     super.key,
     this.initialQuery,
+    this.initialListingId,
+    this.initialListingSummary,
     @visibleForTesting this.searchAiOverride,
   });
 
@@ -33,6 +39,14 @@ class AiChatScreen extends ConsumerStatefulWidget {
   // 그 문장으로 이미 조회를 시작한 상태다(입력창에 채우기만 하고 기다리지 않는다). 되묻기 칩
   // 탭과 똑같은 _submit(overrideQuery:) 경로를 그대로 태운다(파이프라인 하나만 존재).
   final String? initialQuery;
+
+  // 시세 진단 대상 매물 id(5단계) — 상세 화면 "AI 시세 진단" 버튼에서만 넘어온다. initialQuery와
+  // 함께 채워지고, initState 자동 제출이 이 값을 그대로 searchAi의 listingId로 넘긴다.
+  final String? initialListingId;
+
+  // 매물 요약 카드 재료(5단계) — 위와 같은 진입에서만 채워진다. 첫 user 턴 위에 기존 공용
+  // ListingCard로 렌더한다(web listingSummary 미러 — 전용 미니 카드는 만들지 않는다).
+  final ListingCardData? initialListingSummary;
 
   // 테스트 전용 시접 — 기본은 실제 네트워크 호출(searchAi). `API_BASE_URL`은 컴파일타임
   // 상수(String.fromEnvironment)라 테스트에서 값을 채울 수 없고, flutter_test는 실제 네트워크도
@@ -63,7 +77,16 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     // addPostFrameCallback을 쓰는 것과 동일한 원칙).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // restoreInputOnFailure: true — 히어로 자동 제출 전용(아래 _submit 시그니처 주석 참조).
-      if (mounted) _submit(overrideQuery: q, restoreInputOnFailure: true);
+      // listingId·listingSummary(5단계) — "AI 시세 진단" 버튼 진입에서만 채워진다(그 외
+      // 히어로 자동 제출은 둘 다 null이라 기존 동작과 무파괴).
+      if (mounted) {
+        _submit(
+          overrideQuery: q,
+          restoreInputOnFailure: true,
+          listingId: widget.initialListingId,
+          listingSummary: widget.initialListingSummary,
+        );
+      }
     });
   }
 
@@ -85,7 +108,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   // 해버린 뒤라 이 문장의 유일한 사본이 없다 — 실패하면 사용자가 처음부터 다시 타이핑해야
   // 한다. 기본값 false(칩 탭 동작 유지, 그 draft-preservation은 의도적이고
   // ai_chat_screen_test.dart가 고정한다) — initState의 히어로 호출부만 true로 넘긴다.
-  Future<bool> _submit({String? overrideQuery, bool restoreInputOnFailure = false}) async {
+  Future<bool> _submit({
+    String? overrideQuery,
+    bool restoreInputOnFailure = false,
+    // listingId·listingSummary(5단계) — initState의 "AI 시세 진단" 자동 제출에서만 넘어온다.
+    // 되묻기 칩 탭(_onChipTap)·직접 타이핑은 인자를 안 주므로 기본값 null로 기존 동작 그대로다.
+    String? listingId,
+    ListingCardData? listingSummary,
+  }) async {
     final query = (overrideQuery ?? _input.text).trim();
     if (query.isEmpty || _loading) return false; // 빈 질의·중복 전송 차단.
 
@@ -116,7 +146,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
     setState(() {
       _error = null;
-      _messages.add(ChatMessage(role: 'user', content: query)); // 낙관적 user 버블.
+      // listingSummary(5단계) — "AI 시세 진단" 진입에서만 채워진다. 말풍선 위에 렌더한다
+      // (아래 _MessageBubble).
+      _messages.add(ChatMessage(role: 'user', content: query, listingSummary: listingSummary));
       // overrideQuery(칩 탭)로 온 제출이면 입력창은 손대지 않는다 — 사용자가 칩 탭 전에
       // 독립적으로 타이핑해 둔 초안이 있을 수 있고, 그건 칩 전송과 무관하다(review).
       if (overrideQuery == null) _input.clear();
@@ -131,6 +163,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       final result = await search(
         query: query,
         context: context.isNotEmpty ? context : null,
+        listingId: listingId,
         accessToken: token,
       );
       if (!mounted) return false;
@@ -141,6 +174,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
             content: result.answer,
             listings: result.listings,
             clarify: result.clarify,
+            marketDiagnosis: result.marketDiagnosis,
+            marketDiagnoses: result.marketDiagnoses,
           ),
         );
         _loading = false;
@@ -400,35 +435,85 @@ class _MessageBubble extends StatelessWidget {
     if (message.isUser) {
       return Align(
         alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            message.content,
-            // petrol(브랜드 색) 배경 위 잉크는 하드코딩 흰색 대신 토큰을 쓴다(review,
-            // spec-16-1 P10 — app_router.dart 프로필 아이콘과 같은 규칙).
-            style: const TextStyle(color: AppColors.onPetrol),
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 매물 요약 카드(5단계) — "AI 시세 진단" 버튼 프리필에서만 채워진다(web
+            // listingSummary 미러). 목록·AI결과와 **같은 ListingCard**로 그린다(전용 미니
+            // 카드를 새로 만들지 않는다 — 웹과 같은 원칙).
+            if (message.listingSummary != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: SizedBox(
+                  width: 260,
+                  child: ListingCard(
+                    key: ValueKey('summary_${message.listingSummary!.id}'),
+                    listing: message.listingSummary!,
+                    wished: wishedIds.contains(message.listingSummary!.id),
+                    onTap: () => onTapListing(message.listingSummary!.id),
+                  ),
+                ),
+              ),
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                message.content,
+                // petrol(브랜드 색) 배경 위 잉크는 하드코딩 흰색 대신 토큰을 쓴다(review,
+                // spec-16-1 P10 — app_router.dart 프로필 아이콘과 같은 규칙).
+                style: const TextStyle(color: AppColors.onPetrol),
+              ),
+            ),
+          ],
         ),
       );
     }
-    // assistant — 답변 텍스트 + 매물카드 목록.
+    // assistant — 답변(또는 시세 진단 카드/다건 요약표) + (있으면) 매물카드 목록.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+        if (message.marketDiagnoses != null && message.marketDiagnoses!.length >= 2) ...[
+          // 다건 시세 진단 — 매물 2건 이상을 한 번에 진단했을 때 단건 카드 대신 요약표를
+          // 렌더한다(web marketDiagnoses 분기 미러 — 마지막 1건 카드만 덜렁 붙어 나머지
+          // 진단 결과가 안 보이던 혼란을 없앤다).
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(message.content),
           ),
-          child: Text(message.content),
-        ),
+          const SizedBox(height: 8),
+          MarketDiagnosisTable(diagnoses: message.marketDiagnoses!),
+        ] else if (message.marketDiagnosis != null) ...[
+          // 시세 진단(5단계) — market_diagnosis가 있으면 평문 대신 카드를 렌더한다. answer는
+          // 카드 내부의 헤드라인 자리로 넘긴다(중복 렌더 방지 — market_diagnosis_card.dart 참조).
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.borderHairline),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: MarketDiagnosisCard(data: message.marketDiagnosis!, answer: message.content),
+          ),
+        ] else ...[
+          Container(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(message.content),
+          ),
+        ],
         // 되묻기 칩(spec-16-5 Always) — clarify가 채워지고 chips가 비어있지 않을 때만 렌더.
         // 상한 초과 강제 폴백(clarify:null)·구조형/거절 응답(clarify:null)은 이 조건에서
         // 자연히 걸러진다(클라 자체 카운터 없이 서버 신호만으로 동작).

@@ -449,14 +449,19 @@ def test_anon_can_select_whitelisted_columns_including_view_count(seeded):
     """
     cur, listing_id, _seller_id = seeded
 
-    # 0011(20컬럼) + 0021(view_count 1컬럼) = anon SELECT 화이트리스트의 전부(마이그레이션
-    # 원문 확인, 추측 아님). 여기 없는 컬럼(embedding·updated_at·accident_status 등)은 막혀야
-    # 한다.
+    # 0011(20컬럼) + 0021(view_count 1컬럼) + 0037(신뢰 속성 3컬럼: accident_status·
+    # is_single_owner·is_non_smoker — 커밋 4ad79d7, 2026-08-13, 비로그인 카드·필터에 노출하기로
+    # 의도적으로 사양을 바꿈) = anon SELECT 화이트리스트의 전부(마이그레이션 원문 확인, 추측 아님).
+    # 여기 없는 컬럼(embedding·updated_at 등)은 막혀야 한다.
+    # 2026-09-03: 0037 반영 — 이 단언이 0037 이후 3주간 CI를 빨갛게 만들고 있었다(사양 변경이
+    # 아니라 낡은 기대값). 목록이 또 바뀌면 이 단언이 걸리는 것이 의도이니, 그때도 마이그레이션
+    # 번호와 함께 여기를 갱신한다.
     expected = {
         "id", "seller_id", "status", "created_at", "manufacturer", "model", "body_type",
         "year", "price", "mileage", "color", "fuel", "transmission", "displacement",
         "seats", "region", "accident_free", "seller_name", "options", "description",
         "view_count",
+        "accident_status", "is_single_owner", "is_non_smoker",
     }
     cur.execute(
         "select column_name from information_schema.column_privileges "
@@ -465,7 +470,7 @@ def test_anon_can_select_whitelisted_columns_including_view_count(seeded):
     )
     granted = {row[0] for row in cur.fetchall()}
     assert granted == expected, (
-        "anon SELECT 화이트리스트가 0011+0021 기준과 다르다"
+        "anon SELECT 화이트리스트가 0011+0021+0037 기준과 다르다"
         f" (누락: {expected - granted}, 초과: {granted - expected})"
     )
 

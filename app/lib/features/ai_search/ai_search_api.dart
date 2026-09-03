@@ -4,10 +4,18 @@
 // 백엔드 계약(api/app/schemas/ai.py·routers/ai.py):
 //   POST {API_BASE_URL}/ai/search
 //   headers: Authorization: Bearer <supabase access_token>, Content-Type: application/json
-//   body:    { query, context? }    // context = 직전 대화(멀티턴, 최대 12턴)
-//   200:     { answer, listings[], clarify, narrowed_by } // listings 원소 = 매물카드 7필드
+//   body:    { query, context?, listing_id? }    // context = 직전 대화(멀티턴, 최대 12턴)
+//                                            // listing_id = 시세 진단 대상 매물 id(5단계, 선택 —
+//                                            //   "AI 시세 진단" 버튼 프리필에서만 동봉)
+//   200:     { answer, listings[], clarify, narrowed_by, market_diagnosis, market_diagnoses }
+//                                            // listings 원소 = 매물카드 7필드
 //                                            // clarify = 되묻기 페이로드 또는 null(FR46, docs/conventions.md §4)
 //                                            // narrowed_by = REJECT 전용 고정 상수 또는 null(파싱만, 미렌더 — Story 16.5 Never)
+//                                            // market_diagnosis = 시세 진단 결과 또는 null(5단계,
+//                                            //   api/app/market_price.py diagnose() 반환 그대로,
+//                                            //   Pydantic 미검증이라 이 파일이 유일한 방어선)
+//                                            // market_diagnoses = 다건 시세 진단 — 2건 이상일 때만
+//                                            //   배열로 채워지고, 그 외엔 null
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
 import 'dart:convert';
 
@@ -17,15 +25,23 @@ import '../../core/supabase/env.dart';
 import '../../core/supabase/storage_helper.dart';
 import '../listings/listing.dart';
 import '../listings/listing_images_bucket.dart';
+import 'market_diagnosis.dart';
 
-/// 멀티턴 대화 한 턴(FR18). 서버 ConversationTurn 과 동일(role + content).
+/// 멀티턴 대화 한 턴(FR18). 서버 ConversationTurn 과 동일(role + content + listing_ids).
 class ConversationTurn {
-  const ConversationTurn({required this.role, required this.content});
+  const ConversationTurn({required this.role, required this.content, this.listingIds});
 
   final String role; // 'user' | 'assistant'
   final String content;
+  // 이 턴(assistant 전용)이 실제로 보여준 매물 id들(멀티턴 매물 참조, web listingIdsOf 미러 —
+  // chat_message.dart 참조). user 턴엔 없다(null) — 서버 스키마도 assistant 턴에만 의미를 둔다.
+  final List<String>? listingIds;
 
-  Map<String, String> toJson() => {'role': role, 'content': content};
+  Map<String, Object?> toJson() => {
+        'role': role,
+        'content': content,
+        if (listingIds != null && listingIds!.isNotEmpty) 'listing_ids': listingIds,
+      };
 }
 
 /// /ai/search 200 응답. listings 는 매물카드(ListingCardData) 배열.
@@ -35,6 +51,8 @@ class SearchResult {
     required this.listings,
     this.clarify,
     this.narrowedBy,
+    this.marketDiagnosis,
+    this.marketDiagnoses,
   });
 
   final String answer;
@@ -46,6 +64,12 @@ class SearchResult {
   // REJECT 전용 고정 상수 사유 술어 배열(FR47, Story 13.5). 파싱만 하고 화면에 렌더하지
   // 않는다(spec-16-5 Never — 원시 술어 문자열이라 사람이 읽을 텍스트가 아님, 대장 DW-597).
   final List<String>? narrowedBy;
+  // 시세 진단 결과(5단계) — "AI 시세 진단" 버튼 프리필 질의 등으로 에이전트가 진단을
+  // 수행했을 때만 채워진다. 있으면 이 메시지는 평문 대신 MarketDiagnosisCard로 렌더된다.
+  final MarketDiagnosisData? marketDiagnosis;
+  // 다건 시세 진단 — market_diagnoses가 이번 대화에서 2건 이상 결과를 냈을 때만 채워진다.
+  // 1건 이하면 null — 그 경우 화면은 marketDiagnosis(단건 카드)를 그대로 쓴다.
+  final List<MarketDiagnosisData>? marketDiagnoses;
 }
 
 /// 되묻기 페이로드(FR46, Story 13.4) — `question`(되묻는 문장) + `chips`(탭 가능한 후보 문자열).
@@ -124,9 +148,12 @@ String _apiBaseUrl() {
 
 /// 자연어 질의를 AI 검색 API 로 보내고 {answer, listings} 를 받는다.
 /// 토큰이 없거나 비200이면 한국어 메시지를 담은 AiSearchException 을 던진다(조용한 실패 금지).
+/// [listingId]: 상세 페이지 "AI 시세 진단" 버튼의 프리필 핸드오프에서만 넘어온다(5단계) —
+/// 되묻기 칩·직접 타이핑 등 다른 호출 경로는 인자를 안 주므로 서버 요청에서 빠진다.
 Future<SearchResult> searchAi({
   required String query,
   List<ConversationTurn>? context,
+  String? listingId,
   required String? accessToken,
 }) async {
   if (accessToken == null || accessToken.isEmpty) {
@@ -135,11 +162,12 @@ Future<SearchResult> searchAi({
   }
 
   final url = Uri.parse('${_apiBaseUrl()}/ai/search');
-  // context 가 있으면 동봉, 없으면 키 자체를 빼서 단일턴으로 보낸다(서버 기본값 None 과 동일).
+  // context·listing_id는 있을 때만 동봉, 없으면 키 자체를 빼서 서버 기본값(None)과 같게 한다.
   final body = <String, Object?>{
     'query': query,
     if (context != null && context.isNotEmpty)
       'context': context.map((t) => t.toJson()).toList(),
+    if (listingId != null && listingId.isNotEmpty) 'listing_id': listingId,
   };
 
   http.Response res;
@@ -216,6 +244,8 @@ SearchResult parseSearchResult(
     listings: listings,
     clarify: parseClarifyPayload(data['clarify']),
     narrowedBy: parseNarrowedBy(data['narrowed_by']),
+    marketDiagnosis: MarketDiagnosisData.fromMap(data['market_diagnosis']),
+    marketDiagnoses: parseMarketDiagnoses(data['market_diagnoses']),
   );
 }
 

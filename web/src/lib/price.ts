@@ -30,3 +30,16 @@ export function formatPrice(price: number): string {
   }
   return `${(price / MAN).toLocaleString('ko-KR')}${UNITS.priceMan}`;
 }
+
+/**
+ * 집계 통계값(중앙값·사분위 등) 전용 표기 — 만원 **반올림** 후 formatPrice에 위임. 13_475_000 → "1,348만원".
+ *
+ * formatPrice가 원 폴백을 두는 이유(호가 반올림 = 오표시)는 **매물 가격**에만 해당한다. 통계값은
+ * 계산된 집계치라 만원 반올림이 오표시가 아니고, 오히려 통계 3칸의 표기 통일이 우선이다
+ * (실측 버그: percentile_cont 중앙값이 짝수 표본에서 13,475,000으로 보간돼 혼자 원 표기로 샜다).
+ * 매물 호가에는 이 함수를 쓰지 말 것 — formatPrice가 정답.
+ */
+export function formatStatPrice(price: number): string {
+  if (!Number.isFinite(price)) return formatPrice(price);
+  return formatPrice(Math.round(price / MAN) * MAN);
+}

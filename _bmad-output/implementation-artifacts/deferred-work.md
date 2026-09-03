@@ -6933,3 +6933,126 @@ fix_sketch: 세 갈래 중 택일 — ⓐ `aiSearch.ts`처럼 순수 함수로 �
 trigger: 웹 AI 검색 UI를 다음에 손대는 스토리, 또는 jsdom/RTL 도입을 결정하는 순간. 그 전에 이 블록을 건드리는 사람은 **검사가 안 잡는다는 사실을 알고** 손대야 한다(그래서 코드가 아니라 여기에 적는다).
 related: [[DW-587]](이 항목을 낳은 수정) · [[DW-582]](E2E 상시 승격 축)
 status: open
+
+### DW-843: 임시 제외한 판단기준형 코퍼스 4개(구 05·10·11·12)의 복귀 실측이 남아 있다
+
+> 현황(2026-09-01 점검): 구 05(신뢰성 체크포인트)는 08번으로 **복귀 완료**(RAG 개편 때). 10·11·12는 _excluded/ 유지 중 — 남은 건 이 3개의 복귀 실측.
+
+origin: RAG 문서참조 개선 세션(코퍼스 개편+top-k+청킹+multi-query, 2026-08-29, 커밋 42e5b1c~0f3d22b)
+location: api/corpus/_excluded/{05,10,11,12}-*.md
+severity: medium
+reason: 매핑형이 아닌 지식형 문서라 top-k 인용에 노이즈가 돼 사용자 결정으로 임시 제외. 복귀 전제조건(multi-query+top-k 구조)은 이 세션에서 완성됨.
+trigger: "중고차 처음 사는데 어떤 차 골라야 하지?"→05, "가성비 좋고 수리 안하고 편하게 탈 차"→05·11·12 매칭을 실측(재적재 후 거리 스윕)해 통과하면 corpus/로 복귀+backfill. 다음 RAG 작업 착수 시 첫 항목.
+progress: 2026-08-29 05(신뢰성)만 사용자 지시로 복귀 완료(corpus/08, 4청크, 트리거 질의 실측 통과 — "처음 사는데"에서 신뢰성 청크 3개가 최상위). 잔여 10·11·12는 계속 open.
+status: open
+
+### DW-844: 가이드 top-k 상한 5의 확대 여부를 청킹 안정화 후 재검토한다
+
+> 변수(2026-09-01): 리랭커 도입으로 후보 확대의 실익이 커짐(재정렬이 상위권 품질을 지켜줌). 확대 재검토 시 리랭커 지연(건당 GPU 0.2초/CPU 0.3~0.5초×후보수)도 함께 실측할 것.
+
+origin: Phase 1 사용자 결정(2026-08-29, "5로 시작하고 테스트 후 확대")
+location: api/app/graph/doc_rag_node.py _GUIDE_TOP_K
+severity: low
+reason: 상충·노이즈 위험을 보고 5로 보수 시작. 실질 필터는 상대 마진이라 상한 확대의 실효는 낮을 수 있음.
+trigger: DW-843 복귀 실측 때 같이 잰다 — 28+α 청크에서 통과 개수 분포를 보고 5가 병목이면 확대.
+status: open
+
+### DW-845: multi-query 분해가 HYBRID 경로에만 배선돼 있다 — CLARIFY 폴백·doc_rag 매물검색은 단일 벡터
+
+origin: Phase 3 스코프 결정(2026-08-29) — CLARIFY 폴백은 대개 짧은 질의라 대상에서 제외(multi_query.py 주석에 기록)
+location: api/app/graph/graph.py _clarify_step, doc_rag_node.py 매물 벡터검색
+severity: low
+reason: 외과적 변경 원칙 — 실측된 문제(hybrid 복합 질의)만 고쳤다. 매물 검색 RRF는 효과 미실측.
+trigger: 사용자가 CLARIFY 경로에서도 복합 장문을 넣는 사례가 LangSmith에 보이면.
+status: resolved (2026-09-01, AI 고도화 4단계의 부수 효과) — 에이전트 전환(ai_agent_mode 기본 True) 후 가이드 검색은 전부 agent_tools.search_guides → multi_query.find_relevant_guides_fused 경유라 라이브 경로에 단일 벡터 가이드 검색이 남지 않음. 단일 벡터로 남은 곳은 레거시 그래프(스위치 오프 시)뿐 — 레거시 제거 시 자연 소멸.
+
+### DW-846: AI 검색 결과 카드 사진이 간헐적으로 회색 빈 상태로 렌더된다
+
+origin: RAG E2E 10질의 테스트(2026-08-29, Vercel preview/Chrome) — 질의 7·9·10에서 6장 관측
+location: web AI 검색 결과 카드(서명 URL 로딩 경로 의심)
+severity: medium
+reason: DB 실측으로 사진 0장 매물은 158건 중 0건 — 데이터 결손이 아니라 렌더/로딩 문제. 이번 RAG 작업과 무관해 분리.
+trigger: 다음 웹 UI 작업 착수 시 첫 재현 확인(서명 URL TTL·동시 로딩 수·스크린샷 타이밍 순으로 배제).
+status: open
+
+### DW-847: 되묻기(CLARIFY) 칩이 고정 템플릿이라 질의 맥락과 무관하게 매번 같다
+
+origin: 사용자 실사용 관찰(2026-08-29) — "매번 같은 칩이 나온다". clarify_node는 CR5 결정(추가 LLM 호출 금지)으로 고정 질문+칩 ["3천만원 이하","SUV","전기차"]만 반환(spec-13-4).
+location: api/app/graph/clarify_node.py
+severity: medium
+reason: 당시엔 비용 절감 결정이었으나, 옵션 동의어·모호 조건 확인("어댑티브크루즈도 볼까요?") 같은 보완 수단으로 쓰려면 맥락 기반 동적 되묻기가 필요.
+trigger: AI 고도화(에이전트화) 과제 설계 시 요구사항으로 편입 — 에이전트 구조에선 되묻기가 도구 호출의 자연스러운 일부가 된다.
+status: resolved (2026-08-30, AI 고도화 4단계) — 에이전트 전환으로 되묻기가 최종 응답의 동적 필드가 됨: app/graph/agent.py가 맥락 기반 질문+칩을 생성(고정 템플릿 clarify_node는 레거시 경로 전용으로 잔존). 실측: "차 추천해줘" → 매번 다른 맥락 칩 4개 생성 확인. 검증: tests/test_agent_loop.py.
+
+### DW-848: 정렬 요청 축이 벡터 유사도에 묻힌다 — "연식은 최신일수록"이 반영 안 됨
+
+origin: RAG E2E 질의 6(2026-08-29) — 추출 조건이 price<=25000000뿐, 1등이 2015년식 12만km. HYBRID는 벡터 순서만 쓰고 가격 최상급에만 캐비엇 존재(spec-13-9 옵션 b).
+location: api/app/graph/hybrid_rag_node.py 정렬부
+severity: medium
+reason: 정렬 축 추가는 sql_guard의 ORDER BY 고정 모양과 충돌해 설계가 필요. 수리비→연료 매핑 부재는 제외 코퍼스(DW-843) 복귀와 얽혀 있어 함께 봐야 함.
+trigger: DW-843 코퍼스 복귀 실측과 같은 회차에 — 근거 문서 복귀 후에도 정렬이 안 되면 그때 정렬 설계(파이썬 후정렬이 최소안).
+status: resolved (2026-08-30, AI 고도화 4단계) — search_listings 도구의 sort_by 화이트리스트 ORDER BY(price/year/mileage 축)로 해결: app/graph/agent_tools.py. LLM 생성 SQL이 아니라 코드 조립이라 sql_guard ORDER BY 고정 모양과 충돌 없음. 실측: "3천만원 이하 하이브리드 SUV 연식 최신순" → 2023→2021 엄격 내림차순 확인. 검증: tests/test_agent_tools.py(화이트리스트 밖 값 거부).
+
+### DW-849: 결과 과다조회 + 가이드 지식 기반 2차 선별·정렬 — AI 고도화(에이전트화) 과제 요구사항
+
+origin: 사용자 확인요청(2026-08-29) — "같은 연료가 5건 이상이면 다른 섹션(차급 가이드)을 조합해 되추려라(예: 하이브리드 소형4+대형3+준중형1 → 소형+준중형 5건)"
+location: api/app/graph/hybrid_rag_node.py 결과 처리부(현재는 벡터 유사도순 LIMIT 5로 끝 — 되추릴 후보 자체를 안 가져온다)
+severity: medium
+reason: 검색·조건추출 층은 이미 여러 섹션을 조합하지만(RRF+주입 3섹션), 결과 층의 되추림은 없음. 현 파이프라인에 심는 것보다 에이전트 구조(도구 호출: 검색→가이드 읽기→되추림)에서 푸는 게 자연스럽고 싸다고 판단(2026-08-29 대화).
+trigger: **AI 고도화(에이전트화) 과제 기획 착수 시 요구사항으로 편입 — DW-847(동적 되묻기)·DW-848(정렬 축)과 한 묶음으로 설계에 반영한다.** 기획 문서가 이 세 항목을 인용했는지로 이행 확인(B5).
+status: resolved (2026-08-30, AI 고도화 4단계) — 과다조회(limit 20) + 에이전트가 search_guides로 가이드 읽고 최종 5건 내외 선별하는 구조로 해결: app/graph/agent.py 시스템 프롬프트의 되추림 규칙 + selected_listing_ids 사후 검증(도구 결과 밖 id 폐기). 검증: tests/test_agent_loop.py.
+
+### DW-850: /ai 첫 진입 직후 타이핑하면 첫 전송이 조용히 무시된다(hydration race)
+
+origin: 브라우저 E2E 2라운드 실측(2026-08-31) — 새 대화 첫 입력의 Enter/전송 1회 무반응, 두 번째부터 정상. **2026-09-01 배포 환경(Vercel preview)에서도 동일 재현** — 로컬 한정 아님, 채점자가 첫 질의에서 겪을 수 있음.
+location: web/src/components/ai/ChatAssistant.tsx (제어 입력 + runSearch의 빈 질의 가드 127행)
+severity: low
+reason: SSR 정적 HTML에 리스너가 붙기 전(hydration 완료 전) 타이핑하면 React 상태는 빈 문자열이라 전송 가드에 걸려 조용히 무시됨. 수정은 "hydration 전 입력 비활성화" 등 UX 트레이드오프가 있는 설계 결정이라 보류. 자가회복(재전송 시 정상)이라 데이터 유실 없음.
+trigger: 5단계 이후 웹 폴리시 정리 회차 또는 사용자가 재현 불편을 호소할 때 → 그 회차 스토리 인수조건으로 심는다.
+decision: 2026-09-01 사용자 결정 — 과제 제출 전 수정하지 않음(자가회복형·실해 없음 근거). 배포 재현 사실 인지한 채 보류.
+status: open
+
+### DW-851: AI 시세 진단 기능의 Flutter 이식 (진입 버튼 + MarketDiagnosis 카드 + 채팅 프리필 표준 매물 카드)
+
+origin: 웹 UI 통일의 모바일 반영 세션(2026-09-01) — 웹 커밋 8925669("채팅 프리필은 표준 매물 카드로") 반영 범위 산정 중 발견
+location: app/lib/features/listings/listing_detail_screen.dart(진입점 부재), app/lib/features/ai_search/(프리필·진단 카드 렌더 부재)
+severity: medium
+reason: 프리필 카드 UI 통일의 전제인 "AI 시세 진단" 기능 자체(상세 화면 버튼→채팅 핸드오프→진단 카드)가 앱에 아예 없음. "웹 UI 수정사항 반영"이 아니라 신규 기능 이식이라 범위가 달라 사용자 결정으로 넘김. 이식 시엔 웹의 우회 경로(전용 미니카드→폐기) 없이 처음부터 공용 ListingCard + 최신 listingSummary 계약(ListingCardData, region 필수)을 따른다.
+trigger: 사용자가 앱에도 시세 진단을 넣기로 결정하면 그 스토리 인수조건으로 심는다(B5). 결정 전에는 앱 검색 필터 통일(이번 세션 반영분)만이 모바일 반영 완료 범위다.
+status: resolved (2026-09-02) — 사용자 결정("웹과 통일이 기본 철학") 즉일 이식 완료: 커밋 c5e62db(상세 버튼→프리필→진단 카드·CustomPainter 산점도·다건 표, 파싱 가드 포함), v1.1.4 릴리스 배포. 검증: analyze 0·테스트 587 green·red/green 5회. 남은 확인: 실기기 그래프 육안 점검(사용자 S21 연결 대기).
+
+### DW-852: 시세 진단 TabPFN predict 지연이 학습표 행수의 제곱으로 는다 — 120건 상한이면 요청당 ~8초(CPU)
+
+origin: TabPFN 학습 튜터 세션(2026-09-03) — api/app/market_price.py 기본 모델군 학습표 크기별 predict 실측
+location: api/app/market_price.py(_tabpfn_predict, 학습표 SELECT LIMIT 120), Cloud Run API 인스턴스
+severity: medium
+reason: 이 PC CPU 실측 predict 1건: 53행 1.6초 / 120행 8.3초 / 200행 18.5초 / 284행 39.5초(행수 2.3배→시간 5배, 트랜스포머 문맥 길이 n² 성질). 아반떼(53행)는 괜찮지만 그랜저처럼 기본 모델군이 120건 상한에 닿는 모델은 요청당 ~8초. Cloud Run(2Gi) CPU에서의 값은 미측정. 튜터 세션 범위 밖이라 고치지 않았다.
+trigger: Cloud Run에서 그랜저 계열 매물로 /api/market-price 지연을 실측한 뒤, 8초를 넘으면 (a) 학습표 상한 120→60~80 축소(예측 품질 영향은 verify_market_engine 스윕으로 확인) 또는 (b) n_estimators 8→4 축소 중 실측으로 고른다. 어느 쪽이든 아반떼 53건 보정 검사(q90 위≈5건)가 유지되는지 재확인.
+status: open
+
+### DW-853: 띄어쓰기 없는 모델명("아반떼MD")은 기본 모델명 추출이 통째로 잡혀 TabPFN 학습표가 0건이 된다
+
+origin: TabPFN 학습 튜터 세션(2026-09-03) — 아반떼 전 매물 보정 검사 중 발견
+location: api/app/market_price.py(_base_model: 첫 토큰을 기본명으로 씀), listings.model 데이터("아반떼MD" 1건, 정상 표기는 "아반떼 MD")
+severity: low
+reason: _base_model("아반떼MD")="아반떼MD" → ILIKE '%아반떼MD%'가 자기 자신 외 아무것도 못 찾아 학습표 0건 → tabpfn price/quantiles None, 사분위 폴백으로 조용히 넘어간다(크래시 아님). 사다리(exact/base)도 같은 접두를 쓰므로 비교군도 좁아진다. 데이터 1건이라 세션에서 고치지 않았다.
+trigger: 시드/등록 데이터 정규화를 손볼 때 — (a) DB 값 "아반떼MD"→"아반떼 MD" 수정(데이터 더하기·고치기 마이그레이션) 또는 (b) _base_model에서 한글+영문 붙은 토큰을 분리. 고친 뒤 verify_market_engine.py I7(학습표 N≥10)로 해당 매물이 tabpfn 예측을 받는지 확인.
+status: open
+
+### DW-854: TabPFN 특징 벡터에 세대 정보가 없어 세대 교체 연식(예: 2020 아반떼 AD vs CN7)에서 판정이 왜곡된다
+
+origin: 시세 진단 시연 케이스 선정(2026-09-03, docs/ai-advanced/04-demo-cases.md §4 L-1) — 146건 전수 실행 중 발견
+location: api/app/market_price.py(_tabpfn_features 10칸: 연식·주행·배기량·연료·옵션수·무사고 — 모델명/세대 없음), 학습표 SELECT(기본 모델군 전체)
+severity: medium
+reason: 실측 — 아반떼 AD 2020 88,566km 무사고 호가 1,332만원이 "저렴"(적정가 1,564만, −14.8%)으로 뜸. 학습표의 같은 2020년식 이웃이 대부분 CN7(1,451~1,579만)이라 구형 AD를 신형 급으로 봄. 비교군 통계(AD exact, 중앙 881만·하위 100%)와 정반대. 세대가 겹치는 연식에서만 발생하고 다른 연식은 연식 칸이 세대를 대신하므로 시연 목록에서 해당 케이스를 빼는 것으로 대응했다.
+trigger: (a) 특징에 세대 원핫(기본명 접두 뒤 토큰: AD/CN7/IG/GN7…) 추가 또는 (b) 학습표를 세대(exact model)로 좁히되 최소 표본 미달 시 기본 모델군 폴백 — 둘 다 아반떼 53건 보정 검사(q90 위≈5건)와 what-if 방향(주행↑=하락)이 유지되는지 실측 후 고른다. (b)는 16건 학습표에서 외삽 실패(02 문서 후속 절)가 실측됐으므로 단독 채택 금지.
+status: open
+
+### DW-855: 멀티턴 "나머지 두 개랑 비교해줘"에서 에이전트가 직전 목록 id 대신 차 이름으로 재검색해 목록 밖 매물을 비교한다 (회귀 MT5 재발)
+
+origin: main 병합 전 검증(2026-09-03) — api/scripts/verify_agent_regression.py 31건 중 MT5만 2회 연속 FAIL
+location: api/app/graph/agent.py(직전 목록 지칭 해석 규칙 F1, 커밋 1c67bbd에서 추가), 멀티턴 context의 listing_ids 전달
+severity: medium
+reason: LangSmith 트레이스(루트 01a0671b·01a06715) 실측 — 1턴 listing_ids 5건(2c15f138·80730d06·b56ea262·94f21bc5·2fc43a83), 2턴 시세 진단(2c15f138) 정상. 3턴 "나머지 두 개랑 뭐가 다른지 비교해줘"에서 search_listings(model_keyword="쏘렌토 MQ4", year 2021)를 먼저 호출해 목록 밖 800205a1을 얻은 뒤 compare_listings([2c15f138, 80730d06, 800205a1]). 즉 답변 본문의 차 이름을 보고 재검색했고 두 번째 이후 id는 쓰지 않았다. 1c67bbd(2026-08-31, 28/28 PASS) 시점엔 통과했으므로 그 뒤 에이전트 커밋(a3b594a·8170be1·f0f8267·7eb4fbd·fb38767) 중 하나가 규칙을 약화시켰거나, 1턴 결과가 3건→5건으로 늘어 "두 개" 지칭이 모호해진 것 — 어느 쪽인지는 미확정. 병합 전 검증에서 발견했으나 프롬프트 수정+회귀 재실행(4분/회, 실 LLM 과금) 반복이 필요해 이번 병합에서 고치지 않았다(사용자에게 보고). 핵심 기능(검색·진단·비교 자체)은 동작한다.
+trigger: 에이전트 프롬프트를 다음에 손볼 때 — (1) 1c67bbd 이후 커밋을 하나씩 되돌려 MT5를 돌려 원인 커밋 특정, (2) "나머지/그중/N번째" 지칭은 context의 listing_ids로만 해석하고 search_listings 금지 규칙을 강화, (3) 31건 전부 PASS 확인 후 닫는다.
+status: open

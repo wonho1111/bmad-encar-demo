@@ -27,9 +27,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user
+from app.config import settings
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _force_legacy_graph_pipeline(monkeypatch):
+    # 4단계 부품 B: ai_agent_mode(기본 True)가 라우터를 run_search_agent로 돌리면 이 파일의
+    # monkeypatch("app.routers.ai.run_search", ...)가 무력화된다 — 이 파일 안에서만 레거시
+    # 그래프 경로를 강제해 기존 계약 검증을 그대로 유지한다(test_ai_search.py와 동일 조치).
+    monkeypatch.setattr(settings, "ai_agent_mode", False)
 
 # Supabase Storage URL의 특징 패턴(docs/conventions.md §10).
 #   `/storage/v1/` — sign·public·render·upload 등 **모든** Storage 경로의 공통 접두. api는 이 중

@@ -7,14 +7,21 @@
 // 백엔드 계약(api/app/schemas/ai.py·routers/ai.py, 4.1~4.6):
 //   POST {NEXT_PUBLIC_API_BASE_URL}/ai/search
 //   headers: Authorization: Bearer <supabase access_token>(필수), Content-Type: application/json
-//   body:    { query, context? }    // context = 직전 대화(멀티턴, 최대 12턴)
-//   200:     { answer, listings[], clarify, narrowed_by } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
+//   body:    { query, context?, listing_id? }    // context = 직전 대화(멀티턴, 최대 12턴)
+//                                            // listing_id = 상세 페이지 "AI 시세 진단" 버튼이 동봉하는
+//                                            //   대상 매물 id(5단계, 선택 — 일반 채팅 질의는 안 보냄)
+//   200:     { answer, listings[], clarify, narrowed_by, market_diagnosis, market_diagnoses } // listings 원소 = ListingCardData 7필드(+증분 nullable 필드)
 //                                            // clarify = 되묻기 페이로드 또는 null(13.4, conventions.md §4)
 //                                            // narrowed_by = REJECT 전용 고정 상수 또는 null(13.5, conventions.md §4)
+//                                            // market_diagnosis = 시세 진단 결과 또는 null(5단계,
+//                                            //   api/app/market_price.py diagnose() 반환 그대로)
+//                                            // market_diagnoses = 다건 시세 진단(2026-08-31) — 2건
+//                                            //   이상일 때만 배열로 채워지고, 그 외엔 null
 //   비200:   { error: { code, message } }  // 401·400·422·500·503 등 공통 포맷
 //   FR58(8.5): 열람(매물 목록·상세)은 anon에 열렸지만 **AI 검색은 로그인 필수**다 —
 //     검색 1회 = Gemini 호출 3회 내외 = 실제 과금이라 "열람"이 아니라 "행동"(docs/conventions.md §8).
 import type { ListingCardData } from '@/components/listings/ListingCard';
+import type { MarketDiagnosisData } from '@/components/ai/MarketDiagnosis';
 import { getPublicUrl } from '@/lib/storage';
 import { LISTING_IMAGES_BUCKET } from '@/lib/storage/bucket';
 
@@ -23,6 +30,11 @@ import { LISTING_IMAGES_BUCKET } from '@/lib/storage/bucket';
 export type ConversationTurn = {
   role: 'user' | 'assistant';
   content: string;
+  // 멀티턴 매물 참조(FR18 확장) — 이 턴(assistant 전용)이 실제로 보여준 매물 id들. 서버
+  // agent.py가 이 id들로 DB를 조회해 "직전에 보여준 매물" 요약을 시스템 프롬프트에 붙인다
+  // ("그중 두 번째", "그 5개 비교해줘" 같은 후속 요청이 재검색 대신 이 id들로 처리되게
+  // 하는 핵심 배선). user 턴엔 없다(undefined) — 서버 스키마도 assistant 턴에만 의미를 둔다.
+  listing_ids?: string[];
 };
 
 // /ai/search 200 응답. listings는 매물카드(ListingCard)가 그대로 받는 7필드 배열.
@@ -39,6 +51,14 @@ export type SearchResult = {
   // 거절) 경로를 타면 항상 채워지고, 그 외 라우트는 null이다. clarify와 동일하게 웹은 아직
   // 탭 가능한 "재제안 칩" UI로 렌더하지 않는다(값만 배선 — clarify.chips와 동일 경계).
   narrowed_by: string[] | null;
+  // 시세 진단 결과(5단계) — 에이전트가 market_price_stats를 호출했을 때만 채워지고, 그 외
+  // (일반 매물 추천 질의 등)엔 null이다. ChatAssistant가 있으면 MarketDiagnosis 블록을 렌더한다.
+  // (narrowed_by와 동일하게 wire 키 그대로 snake_case를 쓴다 — 이 타입은 응답 그대로의 계약이다.)
+  market_diagnosis: MarketDiagnosisData | null;
+  // 다건 시세 진단(2026-08-31, 사용자 승인 설계 변경) — market_price_stats가 이번 대화에서
+  // 2건 이상 결과를 냈을 때만 채워진다(그 전부, 상한 5). 1건 이하면 null — ChatAssistant는
+  // 이 경우 기존 market_diagnosis(단건 차트)를 그대로 쓴다.
+  market_diagnoses: MarketDiagnosisData[] | null;
 };
 
 /** 되묻기 페이로드(FR46) — 서버가 CLARIFY 경로에서 상한 이내일 때만 채워 보낸다. */
@@ -65,10 +85,41 @@ function isValidNarrowedBy(value: unknown): value is string[] {
   return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === 'string');
 }
 
+/** wire의 market_diagnosis가 최소한의 계약 형태(listing/criteria 객체 + comps 배열)를 갖췄는지
+ * 확인한다 — 백엔드가 `dict | None`(스키마 미검증)으로 내려보내므로, 이 파일이 유일한 방어선이다
+ * (listings/clarify/narrowed_by와 동일한 방침). 필드 하나하나를 다 검사하지 않는 이유는
+ * MarketDiagnosis 컴포넌트가 없는 하위 필드(stats·percentile·verdict·tabpfn.price 등)를 이미
+ * null-safe하게 다루도록 설계됐기 때문이다(§4 "계약-외 값은 소비처가 막는다"와 동일 결).
+ */
+function isValidMarketDiagnosis(value: unknown): value is MarketDiagnosisData {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Partial<MarketDiagnosisData>;
+  return (
+    typeof v.listing === 'object' &&
+    v.listing !== null &&
+    typeof v.criteria === 'object' &&
+    v.criteria !== null &&
+    Array.isArray(v.comps)
+  );
+}
+
+/** wire의 market_diagnoses(복수, 2026-08-31 추가)가 배열이면 각 원소를 isValidMarketDiagnosis로
+ * 걸러 유효한 것만 남긴다 — 깨진 원소 하나 때문에 표 전체를 못 그리는 대신, 그 원소만 뺀다
+ * (listings의 isValidListing과 동일 태도). 2건 미만이면 표를 그릴 이유가 없으므로 null로
+ * 정규화한다(백엔드 계약과 동일 — 2건 이상일 때만 채워진다).
+ */
+function isValidMarketDiagnoses(value: unknown): MarketDiagnosisData[] | null {
+  if (!Array.isArray(value)) return null;
+  const valid = value.filter(isValidMarketDiagnosis);
+  return valid.length >= 2 ? valid : null;
+}
+
 export type SearchAiParams = {
   query: string;
   // 직전 대화 맥락(클라이언트 보관분). 없으면(첫 질의) 미동봉 — 서버는 단일턴으로 처리한다.
   context?: ConversationTurn[];
+  // 상세 페이지 "AI 시세 진단" 버튼이 넘기는 대상 매물 id(5단계). 없으면(일반 채팅 질의) 미동봉.
+  listingId?: string;
   // Supabase 세션의 access_token. 없으면(비로그인·세션 만료) 호출하지 않고 바로 throw 한다.
   accessToken: string | null | undefined;
 };
@@ -92,13 +143,15 @@ function getApiBaseUrl(): string {
  * 헛된 왕복을 만들지 않는다.
  * 비200 응답이면 한국어 메시지를 담은 Error를 throw 한다(조용한 실패 금지 — fail-loud).
  */
-export async function searchAi({ query, context, accessToken }: SearchAiParams): Promise<SearchResult> {
+export async function searchAi({ query, context, listingId, accessToken }: SearchAiParams): Promise<SearchResult> {
   if (!accessToken) {
     throw new Error('로그인이 필요합니다. 로그인한 뒤 다시 시도해주세요.');
   }
   const url = `${getApiBaseUrl()}/ai/search`;
-  // context가 있으면 동봉, 없으면 키 자체를 빼서 단일턴으로 보낸다(서버 기본값 None과 동일 효과).
-  const body = context && context.length > 0 ? { query, context } : { query };
+  // context·listing_id는 있을 때만 동봉, 없으면 키 자체를 뺀다(서버 기본값 None과 동일 효과).
+  const body: Record<string, unknown> = { query };
+  if (context && context.length > 0) body.context = context;
+  if (listingId) body.listing_id = listingId;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${accessToken}`,
@@ -158,6 +211,11 @@ export async function searchAi({ query, context, accessToken }: SearchAiParams):
     // narrowed_by(Story 13.5) — listings/clarify와 같은 규칙: 형태가 깨졌으면(문자열 배열이 아니면)
     // null로 정규화한다(이 파일이 wire 값의 유일한 방어선).
     narrowed_by: isValidNarrowedBy(result.narrowed_by) ? result.narrowed_by : null,
+    // market_diagnosis(5단계) — listings/clarify/narrowed_by와 같은 규칙: 형태가 깨졌으면 null로
+    // 정규화한다(이 파일이 wire 값의 유일한 방어선).
+    market_diagnosis: isValidMarketDiagnosis(result.market_diagnosis) ? result.market_diagnosis : null,
+    // market_diagnoses(복수, 2026-08-31) — 위와 동일한 방어선 원칙.
+    market_diagnoses: isValidMarketDiagnoses(result.market_diagnoses),
   };
 }
 

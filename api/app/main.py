@@ -19,7 +19,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .db.readonly import close_pool
-from .routers import ai
+from .routers import ai, market_price
 
 # ── 로깅 설정 (DW-659) ──────────────────────────────────────────────
 # logging.basicConfig가 어디에도 없어 루트 로거가 파이썬 기본값 WARNING(30)에 머물러
@@ -93,6 +93,7 @@ async def health() -> dict:
 
 
 app.include_router(ai.router)
+app.include_router(market_price.router)
 
 
 # ── 공통 에러 포맷 ─────────────────────────────────────────────────

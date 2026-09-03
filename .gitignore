@@ -56,3 +56,4 @@ Thumbs.db
 .bmad-loop/runs/
 .bmad-loop/cache/
 .bmad-loop/archive/
+api/env:Zone.Identifier

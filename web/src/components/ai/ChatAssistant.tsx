@@ -22,6 +22,9 @@ import { consumeHeroSearchHandoff } from '@/lib/heroSearchHandoff';
 import { buildWishedIdSet } from '@/lib/wishlist';
 import ListingCard, { type ListingCardData } from '@/components/listings/ListingCard';
 import Button from '@/components/ui/Button';
+import AnswerText from '@/components/ai/AnswerText';
+import MarketDiagnosis, { type MarketDiagnosisData } from '@/components/ai/MarketDiagnosis';
+import MarketDiagnosisTable from '@/components/ai/MarketDiagnosisTable';
 
 // context 입력 계약(단일 출처: api/docs/ai-demo-queries.md, api/app/schemas/ai.py).
 // 서버가 강제하는 한계를 클라이언트에서 미리 지켜 422를 자초하지 않는다.
@@ -43,11 +46,43 @@ type ChatMessage = {
   // 상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 전부 null이라, 아래 렌더 조건 하나로
   // "더 물어볼 때만 칩이 뜬다"가 성립한다(클라 자체 카운터 없이 서버 신호만으로 동작).
   clarify?: ClarifyPayload | null;
+  // 매물 카드(개선 1, 2026-09-01 → 표준 카드 교체) — user 턴 전용. "AI 시세 진단" 버튼의 프리필
+  // 핸드오프가 listingSummary를 실어 보냈을 때만 채워진다(다른 발신처는 undefined). 말풍선 위에
+  // **목록/AI결과와 같은 ListingCard**로 렌더한다(전용 미니 카드는 폐기 — 시각 언어를 하나로).
+  listingSummary?: ListingCardData | null;
+  // 시세 진단 결과(5단계) — "AI 시세 진단" 버튼 프리필 질의 등으로 에이전트가 market_price_stats를
+  // 호출했을 때만 채워진다. 있으면 이 메시지는 평문 대신 <MarketDiagnosis> 블록으로 렌더된다.
+  marketDiagnosis?: MarketDiagnosisData | null;
+  // 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats가 이 턴에서 2건 이상 결과를
+  // 냈을 때만 채워진다. 있으면(2건 이상) marketDiagnosis(단건 차트) 대신 요약표를 렌더한다.
+  marketDiagnoses?: MarketDiagnosisData[] | null;
 };
 
 /**
+ * assistant 턴 하나가 "실제로 보여준 매물 id들"을 뽑는다(멀티턴 매물 참조).
+ *   - 매물카드가 있으면(listings) 그 id들 그대로.
+ *   - 카드는 없고 다건 시세 진단(marketDiagnoses)이 있으면 그 진단 대상 매물 id들 전부.
+ *   - 카드도 다건 진단도 없고 단건 시세 진단만 있으면(marketDiagnosis) 그 진단 대상 id 1개.
+ *     (예: "AI 시세 진단" 버튼 흐름처럼 카드 목록 없이 진단 블록만 렌더되는 턴 — 이 id도
+ *      "직전에 보여준 매물"의 일부이므로 다음 턴의 "그 매물 비교해줘" 류 요청이 참조할 수 있다.)
+ *   - 셋 다 없으면(되묻기·REJECT 등) undefined — 서버에 빈 배열을 보내는 대신 키 자체를 뺀다.
+ */
+function listingIdsOf(m: ChatMessage): string[] | undefined {
+  if (m.listings && m.listings.length > 0) {
+    return m.listings.map((l) => l.id);
+  }
+  if (m.marketDiagnoses && m.marketDiagnoses.length > 0) {
+    return m.marketDiagnoses.map((d) => d.listing.id);
+  }
+  if (m.marketDiagnosis) {
+    return [m.marketDiagnosis.listing.id];
+  }
+  return undefined;
+}
+
+/**
  * 화면 대화(messages)를 서버로 보낼 context(턴 배열)로 직렬화한다.
- *   - 매물카드(listings)는 제외하고 role/content만 보낸다(서버 스키마 = role+content).
+ *   - role/content만 기본으로 보낸다(서버 스키마 = role+content, +assistant 턴은 listing_ids).
  *   - 최근 MAX_CONTEXT_TURNS개만 — 대화가 길어져도 12턴 초과로 422 나지 않게.
  *   - 각 content는 MAX_CONTENT_LENGTH로 안전 절단.
  * 순수 함수로 분리해 동작을 명확히 하고(테스트·추론 용이), 무상태 직렬화임을 드러낸다.
@@ -59,10 +94,17 @@ export function buildContext(messages: ChatMessage[]): ConversationTurn[] {
     // (멀쩡한 질의인데 "질문 형식이 올바르지 않습니다"가 떠 대화가 막히는 오염). 빈 턴을 빼 이를 막는다.
     .filter((m) => m.content.trim() !== '')
     .slice(-MAX_CONTEXT_TURNS) // 최근 N턴
-    .map((m) => ({
-      role: m.role,
-      content: m.content.slice(0, MAX_CONTENT_LENGTH),
-    }));
+    .map((m) => {
+      const turn: ConversationTurn = {
+        role: m.role,
+        content: m.content.slice(0, MAX_CONTENT_LENGTH),
+      };
+      if (m.role === 'assistant') {
+        const ids = listingIdsOf(m);
+        if (ids && ids.length > 0) turn.listing_ids = ids;
+      }
+      return turn;
+    });
 }
 
 export default function ChatAssistant({ authed }: { authed: boolean }) {
@@ -83,7 +125,11 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
   // 실제 검색 실행 — handleSubmit(폼 제출)과 아래 마운트 핸드오프 소비(히어로에서 넘어온 자동
   // 실행) 둘 다 여기로 합류한다(spec-11-3 Code Map). 분리 전엔 handleSubmit 안에 있던 로직 그대로다
   // — 동작은 바뀌지 않고 호출 경로만 하나 더 생겼다.
-  async function runSearch(query: string) {
+  // listingId(5단계): 상세 페이지 "AI 시세 진단" 버튼의 프리필 핸드오프에서만 넘어온다(아래 마운트
+  // effect). 되묻기 칩·직접 타이핑 등 다른 호출 경로는 인자를 안 주므로 undefined로 서버에 안 실린다.
+  // listingSummary(개선 1): 위와 같은 핸드오프에서만 넘어오는 카드 재료(표준 ListingCardData) —
+  // 서버로는 보내지 않는다(API 계약 무변경), 이 사용자 턴을 화면에 저장할 때만 함께 붙인다.
+  async function runSearch(query: string, listingId?: string, listingSummary?: ListingCardData) {
     if (query === '' || loading) return; // 빈 질의·중복 전송 차단(클라 1차 검증).
 
     // 질의가 서버 상한(1000자)을 넘으면, 그대로 보내봐야 422가 떠 "질문 형식이 올바르지 않습니다"라는
@@ -97,7 +143,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
     // 이번 질의 직전까지의 대화를 context로(중복 금지 — 방금 입력한 query는 context가 아니라 query로 보낸다).
     const context = buildContext(messages);
     // 사용자 턴을 먼저 화면에 반영(즉시 피드백).
-    setMessages((prev) => [...prev, { role: 'user', content: query }]);
+    setMessages((prev) => [...prev, { role: 'user', content: query, listingSummary }]);
     setInput('');
     setLoading(true);
 
@@ -117,6 +163,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
       const result = await searchAi({
         query,
         context: context.length > 0 ? context : undefined,
+        listingId,
         accessToken: session?.access_token,
       });
 
@@ -140,7 +187,7 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
         }
       }
 
-      // 어시스턴트 답변(텍스트 + 매물카드 + 되묻기 칩)을 대화에 추가.
+      // 어시스턴트 답변(텍스트 + 매물카드 + 되묻기 칩 + 시세 진단)을 대화에 추가.
       setMessages((prev) => [
         ...prev,
         {
@@ -148,6 +195,8 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           content: result.answer,
           listings: result.listings,
           clarify: result.clarify,
+          marketDiagnosis: result.market_diagnosis,
+          marketDiagnoses: result.market_diagnoses,
         },
       ]);
     } catch (err) {
@@ -191,7 +240,10 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
     const handoff = consumeHeroSearchHandoff(true);
     if (!handoff) return;
     queueMicrotask(() => {
-      void runSearch(handoff.query);
+      // listingId(5단계) — 상세 페이지 "AI 시세 진단" 버튼이 채운 핸드오프에만 있다(히어로 검색은
+      // 이 필드를 안 채우므로 undefined, runSearch가 그대로 서버 요청에서 뺀다).
+      // listingSummary(개선 1) — 같은 핸드오프의 미니 카드 재료, 있으면 그대로 함께 넘긴다.
+      void runSearch(handoff.query, handoff.listingId, handoff.listingSummary);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -208,16 +260,55 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
           messages.map((m, i) => (
             <div key={i} className="flex flex-col gap-2">
               {m.role === 'user' ? (
-                // 사용자 말풍선 — 오른쪽 정렬.
-                <div className="self-end rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base">
-                  {m.content}
-                </div>
-              ) : (
-                // 어시스턴트 말풍선 — 답변 텍스트 + (있으면) 매물카드 목록.
-                <div className="flex flex-col gap-2">
-                  <div className="self-start whitespace-pre-wrap rounded-lg border border-border-hairline px-3 py-2 text-sm">
+                // 사용자 턴 — 오른쪽 정렬. listingSummary가 있으면(개선 1, "AI 시세 진단" 버튼
+                // 프리필 전용) 말풍선 위에 매물 미니 카드를 함께 그린다(items-end로 둘 다 우측 정렬).
+                <div className="flex flex-col items-end gap-1.5">
+                  {/* 매물 카드(개선 1, 2026-09-01 → 표준 카드 교체) — 전용 미니 카드(ListingMiniCard,
+                      폐기)가 아니라 목록/AI결과와 **같은 ListingCard**로 그린다. 그리드 컬럼폭에
+                      맞춰 우측 칸(sm:col-start-2)에 얹어 "그리드 1칸 폭"을 재현한다(아래 assistant
+                      매물카드 그리드 sm:grid-cols-2와 동일 폭 규칙). 찜·클릭 이동은 ListingCard
+                      내장 동작 그대로 — wishedIds는 이 대화에서 조회된 것만 반영(house 방침 동일). */}
+                  {m.listingSummary && (
+                    <div className="grid w-full gap-3 sm:grid-cols-2">
+                      <div className="sm:col-start-2">
+                        <ListingCard
+                          listing={m.listingSummary}
+                          authed={authed}
+                          wished={wishedIds.has(m.listingSummary.id)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="rounded-lg bg-brand-petrol px-3 py-2 text-sm text-surface-base">
                     {m.content}
                   </div>
+                </div>
+              ) : (
+                // 어시스턴트 말풍선 — 답변 텍스트(또는 시세 진단 블록/다건 요약표) + (있으면) 매물카드 목록.
+                <div className="flex flex-col gap-2">
+                  {m.marketDiagnoses && m.marketDiagnoses.length >= 2 ? (
+                    // 다건 시세 진단(2026-08-31, 사용자 승인) — 매물 2건 이상을 한 번에 진단했을 때
+                    // 마지막 1건 차트 대신 요약표를 렌더한다(단건 차트가 나머지를 가려버리던 혼란,
+                    // 사용자 실측 P2). 답변 텍스트는 그대로 살리고(개행·번호 목록 처리는 AnswerText),
+                    // 표는 그 아래 별도 블록으로 붙인다.
+                    <div className="flex flex-col gap-3">
+                      <div className="self-start rounded-lg border border-border-hairline px-3 py-2 text-sm">
+                        <AnswerText text={m.content} />
+                      </div>
+                      <MarketDiagnosisTable diagnoses={m.marketDiagnoses} />
+                    </div>
+                  ) : m.marketDiagnosis ? (
+                    // 시세 진단(5단계) — market_diagnosis가 있으면 평문 대신 STEP2 블록을 렌더한다.
+                    // answer는 MarketDiagnosis 내부의 헤드라인 자리로 넘긴다(중복 렌더 방지 —
+                    // MarketDiagnosis.tsx 상단 주석 참조).
+                    <div className="self-start w-full max-w-full rounded-lg border border-border-hairline px-4 py-4 sm:max-w-[92%]">
+                      <MarketDiagnosis data={m.marketDiagnosis} answer={m.content} />
+                    </div>
+                  ) : (
+                    <div className="self-start rounded-lg border border-border-hairline px-3 py-2 text-sm">
+                      <AnswerText text={m.content} />
+                    </div>
+                  )}
                   {/* 되묻기 칩(FR46, DW-587) — 서버가 clarify를 채워 보냈을 때만 렌더한다.
                       상한 초과 강제 폴백·구조형(SQL/HYBRID)·거절(REJECT)은 서버가 clarify=null로
                       보내므로 이 조건 하나로 걸러진다(클라가 되묻기 횟수를 따로 세지 않는다).

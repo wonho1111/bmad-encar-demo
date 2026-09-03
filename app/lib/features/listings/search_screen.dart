@@ -9,6 +9,9 @@ import 'listing_card.dart';
 import 'listing_detail_screen.dart';
 import 'listing_filters.dart';
 import 'listings_providers.dart';
+// 옵션 다중선택 통제어휘 — 카드 칩 로직(options.dart)이 이미 쓰는 단일 출처를 필터도 재사용한다
+// (web이 SellForm 상수를 필터에 재사용한 것과 동일 원칙, 2026-09-01).
+import 'options.dart' show allControlledOptions;
 
 class SearchScreen extends ConsumerStatefulWidget {
   // 차종 칩(spec-16-8 AC2) 목적지 계약 — 값이 있으면 진입 즉시 그 필터로 조회한다(수동 검색
@@ -32,7 +35,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _priceMax = TextEditingController();
   final _yearMin = TextEditingController();
   final _yearMax = TextEditingController();
+  // 주행거리·배기량·인승 범위(개선 2, 2026-09-01) — 등록 폼엔 단일값 입력이 있는데 필터엔 그
+  // 축 자체가 없었다. 가격·연식과 같은 컨트롤러 관례로 맞춘다.
+  final _mileageMin = TextEditingController();
+  final _mileageMax = TextEditingController();
+  final _displacementMin = TextEditingController();
+  final _displacementMax = TextEditingController();
+  final _seatsMin = TextEditingController();
+  final _seatsMax = TextEditingController();
 
+  // 제조사(개선 2) — 등록 폼(sell_screen)엔 있었는데 필터엔 없던 축.
+  String? _manufacturer;
   String? _bodyType;
   String? _color;
   String? _fuel;
@@ -42,6 +55,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   String? _accidentStatus;
   bool _singleOwnerOnly = false;
   bool _nonSmokerOnly = false;
+  // 옵션(개선 2) — 다중 선택, "전부 보유"(AND) 의미.
+  List<String> _selectedOptions = const [];
 
   @override
   void initState() {
@@ -83,6 +98,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _priceMax.dispose();
     _yearMin.dispose();
     _yearMax.dispose();
+    _mileageMin.dispose();
+    _mileageMax.dispose();
+    _displacementMin.dispose();
+    _displacementMax.dispose();
+    _seatsMin.dispose();
+    _seatsMax.dispose();
     super.dispose();
   }
 
@@ -90,6 +111,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // 화면 입력을 컨트롤러에 반영한 뒤 검색 실행.
     final input = ListingFilterInput(
       keyword: _keyword.text,
+      manufacturer: _manufacturer,
       bodyType: _bodyType,
       color: _color,
       fuel: _fuel,
@@ -102,6 +124,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       priceMax: _priceMax.text,
       yearMin: _yearMin.text,
       yearMax: _yearMax.text,
+      mileageMin: _mileageMin.text,
+      mileageMax: _mileageMax.text,
+      displacementMin: _displacementMin.text,
+      displacementMax: _displacementMax.text,
+      seatsMin: _seatsMin.text,
+      seatsMax: _seatsMax.text,
+      options: _selectedOptions,
     );
     final notifier = ref.read(searchControllerProvider.notifier);
     notifier.updateInput(input);
@@ -136,6 +165,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             priceMax: _priceMax,
             yearMin: _yearMin,
             yearMax: _yearMax,
+            mileageMin: _mileageMin,
+            mileageMax: _mileageMax,
+            displacementMin: _displacementMin,
+            displacementMax: _displacementMax,
+            seatsMin: _seatsMin,
+            seatsMax: _seatsMax,
+            manufacturer: _manufacturer,
             bodyType: _bodyType,
             color: _color,
             fuel: _fuel,
@@ -144,6 +180,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             accidentStatus: _accidentStatus,
             singleOwnerOnly: _singleOwnerOnly,
             nonSmokerOnly: _nonSmokerOnly,
+            selectedOptions: _selectedOptions,
+            onManufacturer: (v) => setState(() => _manufacturer = v),
             onBodyType: (v) => setState(() => _bodyType = v),
             onColor: (v) => setState(() => _color = v),
             onFuel: (v) => setState(() => _fuel = v),
@@ -152,6 +190,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onAccidentStatus: (v) => setState(() => _accidentStatus = v),
             onSingleOwnerOnly: (v) => setState(() => _singleOwnerOnly = v),
             onNonSmokerOnly: (v) => setState(() => _nonSmokerOnly = v),
+            onOptionsChanged: (v) => setState(() => _selectedOptions = v),
             onSearch: _runSearch,
           ),
           const Divider(height: 1),
@@ -217,7 +256,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 }
 
-/// 필터 입력 패널(접을 수 있는 ExpansionTile). 키워드·드롭다운·범위 + 검색 버튼.
+/// 필터 입력 패널(접을 수 있는 ExpansionTile). 등록 폼(sell_screen)과 같은 축·순서로 통일한다
+/// (web SearchFilters.tsx와 동일한 사용자 지시, 2026-09-01) — 제조사→모델(키워드)→차종→연식→
+/// 가격→주행거리→색상→연료→변속기→배기량→인승→지역→신뢰정보→옵션.
+///
+/// ⚠️ web과 다르게 간 점 — 옵션 다중선택: 이 앱의 등록 폼(sell_screen)엔 web SellForm의
+///   OptionPicker(칩 요약+인기칩+카테고리 검색) 같은 컴포넌트가 아예 없다(쉼표구분 텍스트필드
+///   뿐이다) — 그래서 web처럼 "등록 폼 컴포넌트를 그대로 재사용"할 대상이 없다. 대신 이
+///   필터 자체의 기존 시각 언어(드롭다운·체크박스와 같은 밀도)로 다중선택 체크리스트를 새로
+///   최소 구현한다(_OptionMultiSelect) — 통제어휘(options.dart의 allControlledOptions, 카드
+///   칩 로직이 이미 쓰는 단일 출처)는 재사용한다.
+///
+/// 필드 수가 많이 늘어(6→13축) 접힌 패널을 항상 펼친 채(initiallyExpanded) 스크롤 없는 Column
+/// 안에 그대로 쌓으면 화면 밖으로 넘친다(위 옛 주석이 필드 2개만으로도 겪었던 문제) — 옵션
+/// 목록(통제어휘 전체)만 별도로도 71개라 한 화면에 다 펼치면 그 자체로 넘친다. 그래서 드롭다운·
+/// 범위·신뢰정보·옵션 전체를 **패널 자체 높이를 제한한 스크롤 영역**(ConstrainedBox+
+/// SingleChildScrollView) 안에 넣고, 검색 버튼만 그 밖에 항상 보이게 둔다.
 class _FilterPanel extends StatelessWidget {
   const _FilterPanel({
     required this.keyword,
@@ -225,6 +279,13 @@ class _FilterPanel extends StatelessWidget {
     required this.priceMax,
     required this.yearMin,
     required this.yearMax,
+    required this.mileageMin,
+    required this.mileageMax,
+    required this.displacementMin,
+    required this.displacementMax,
+    required this.seatsMin,
+    required this.seatsMax,
+    required this.manufacturer,
     required this.bodyType,
     required this.color,
     required this.fuel,
@@ -233,6 +294,8 @@ class _FilterPanel extends StatelessWidget {
     required this.accidentStatus,
     required this.singleOwnerOnly,
     required this.nonSmokerOnly,
+    required this.selectedOptions,
+    required this.onManufacturer,
     required this.onBodyType,
     required this.onColor,
     required this.onFuel,
@@ -241,6 +304,7 @@ class _FilterPanel extends StatelessWidget {
     required this.onAccidentStatus,
     required this.onSingleOwnerOnly,
     required this.onNonSmokerOnly,
+    required this.onOptionsChanged,
     required this.onSearch,
   });
 
@@ -249,6 +313,13 @@ class _FilterPanel extends StatelessWidget {
   final TextEditingController priceMax;
   final TextEditingController yearMin;
   final TextEditingController yearMax;
+  final TextEditingController mileageMin;
+  final TextEditingController mileageMax;
+  final TextEditingController displacementMin;
+  final TextEditingController displacementMax;
+  final TextEditingController seatsMin;
+  final TextEditingController seatsMax;
+  final String? manufacturer;
   final String? bodyType;
   final String? color;
   final String? fuel;
@@ -257,6 +328,8 @@ class _FilterPanel extends StatelessWidget {
   final String? accidentStatus;
   final bool singleOwnerOnly;
   final bool nonSmokerOnly;
+  final List<String> selectedOptions;
+  final ValueChanged<String?> onManufacturer;
   final ValueChanged<String?> onBodyType;
   final ValueChanged<String?> onColor;
   final ValueChanged<String?> onFuel;
@@ -265,6 +338,7 @@ class _FilterPanel extends StatelessWidget {
   final ValueChanged<String?> onAccidentStatus;
   final ValueChanged<bool> onSingleOwnerOnly;
   final ValueChanged<bool> onNonSmokerOnly;
+  final ValueChanged<List<String>> onOptionsChanged;
   final VoidCallback onSearch;
 
   @override
@@ -274,92 +348,121 @@ class _FilterPanel extends StatelessWidget {
       initiallyExpanded: true,
       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
-        TextField(
-          controller: keyword,
-          decoration: const InputDecoration(
-            // ✎ 2026-08-13 — "부분일치"는 검색 구현 방식(SQL ilike)을 그대로 노출한 개발
-            // 용어였다. 웹 필터의 같은 칸 라벨("키워드(모델명)")로 맞춘다 — 동작은 그대로다.
-            labelText: '키워드(모델명)',
-            isDense: true,
-          ),
-          onSubmitted: (_) => onSearch(),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _dropdown('차종', bodyType, ListingOptions.bodyType, onBodyType)),
-            const SizedBox(width: 8),
-            Expanded(child: _dropdown('색상', color, ListingOptions.color, onColor)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _dropdown('연료', fuel, ListingOptions.fuel, onFuel)),
-            const SizedBox(width: 8),
-            Expanded(child: _dropdown('변속기', transmission, ListingOptions.transmission, onTransmission)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        // ✎ 2026-08-13 — 지역 단독 행에 사고이력을 합쳐 **행 수를 늘리지 않는다.** 이 패널은
-        //   스크롤되지 않는 Column의 자식이고 그 아래 결과 목록이 남은 높이를 나눠 쓰므로,
-        //   행이 하나 늘 때마다 결과가 화면 밖으로 밀린다(실측: 처음에 세로로 쌓았더니 작은
-        //   화면에서 71px 오버플로, 한 줄로 줄여도 첫 카드가 안 보였다).
-        Row(
-          children: [
-            Expanded(child: _dropdown('지역', region, ListingOptions.region, onRegion)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _dropdown(
-                '사고이력',
-                accidentStatus,
-                ListingOptions.accidentStatus,
-                onAccidentStatus,
-              ),
+        // 스크롤 영역(위 클래스 주석) — 이 안의 순서가 web SearchFilters.tsx의 필드 순서다.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 380),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dropdown('제조사', manufacturer, ListingOptions.manufacturer, onManufacturer),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: keyword,
+                        decoration: const InputDecoration(
+                          // ✎ 2026-08-13 — "부분일치"는 검색 구현 방식(SQL ilike)을 그대로 노출한
+                          // 개발 용어였다. 웹 필터의 같은 칸 라벨("키워드(모델명)")로 맞춘다.
+                          labelText: '키워드(모델명)',
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => onSearch(),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _dropdown('차종', bodyType, ListingOptions.bodyType, onBodyType)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _rangeField('연식(년)', yearMin, yearMax)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _rangeField('가격(원)', priceMin, priceMax)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _rangeField('주행거리(km)', mileageMin, mileageMax)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _dropdown('색상', color, ListingOptions.color, onColor)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _dropdown('연료', fuel, ListingOptions.fuel, onFuel)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _dropdown('변속기', transmission, ListingOptions.transmission, onTransmission),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: _rangeField('배기량(cc)', displacementMin, displacementMax)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: _rangeField('인승(명)', seatsMin, seatsMax)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _dropdown('지역', region, ListingOptions.region, onRegion)),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // 신뢰 정보 — 등록 폼(sell_screen)과 같은 3축(사고이력·1인소유·비흡연), web
+                // SearchFilters.tsx의 신뢰 정보 fieldset과 같은 구성.
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('신뢰 정보', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      const SizedBox(height: 4),
+                      _dropdown('사고이력', accidentStatus, ListingOptions.accidentStatus, onAccidentStatus),
+                      Row(
+                        children: [
+                          _CompactCheck(
+                            key: const Key('filter_single_owner'),
+                            label: '1인소유',
+                            value: singleOwnerOnly,
+                            onChanged: onSingleOwnerOnly,
+                          ),
+                          _CompactCheck(
+                            key: const Key('filter_non_smoker'),
+                            label: '비흡연',
+                            value: nonSmokerOnly,
+                            onChanged: onNonSmokerOnly,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 옵션(개선 2) — 다중 선택(전부 보유, AND). 위 클래스 주석 참조.
+                _OptionMultiSelect(selected: selectedOptions, onChanged: onOptionsChanged),
+              ],
             ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _numField('가격 최소(원)', priceMin)),
-            const SizedBox(width: 8),
-            Expanded(child: _numField('가격 최대(원)', priceMax)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(child: _numField('연식 최소', yearMin)),
-            const SizedBox(width: 8),
-            Expanded(child: _numField('연식 최대', yearMax)),
-          ],
+          ),
         ),
         const SizedBox(height: 12),
-        // 신뢰 체크박스 2개를 검색 버튼과 **같은 행**에 둔다(위 주석과 같은 이유 — 행을 안 늘린다).
-        Row(
-          children: [
-            _CompactCheck(
-              key: const Key('filter_single_owner'),
-              label: '1인소유',
-              value: singleOwnerOnly,
-              onChanged: onSingleOwnerOnly,
-            ),
-            _CompactCheck(
-              key: const Key('filter_non_smoker'),
-              label: '비흡연',
-              value: nonSmokerOnly,
-              onChanged: onNonSmokerOnly,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton(
-                key: const Key('search_button'),
-                onPressed: onSearch,
-                child: const Text('검색'),
-              ),
-            ),
-          ],
+        FilledButton(
+          key: const Key('search_button'),
+          onPressed: onSearch,
+          child: const Text('검색'),
         ),
       ],
     );
@@ -383,11 +486,96 @@ class _FilterPanel extends StatelessWidget {
     );
   }
 
-  Widget _numField(String label, TextEditingController c) {
-    return TextField(
-      controller: c,
-      keyboardType: TextInputType.number,
-      decoration: InputDecoration(labelText: label, isDense: true),
+  /// 범위(최소~최대) 입력 한 쌍 — web renderRange 이식. 연식·가격·주행거리·배기량·인승 5축이
+  /// 공유하는 공통 헬퍼(과설계 방지 — 파일을 새로 만들지 않고 이 클래스의 private 메서드로).
+  Widget _rangeField(String label, TextEditingController minC, TextEditingController maxC) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4, left: 2),
+          child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: minC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: '최소', isDense: true),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: Text('~'),
+            ),
+            Expanded(
+              child: TextField(
+                controller: maxC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(hintText: '최대', isDense: true),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 옵션 다중선택(전부 보유, AND) — web OptionPicker가 없는 이 앱에서 필터 자체 시각 언어
+/// (칩·체크박스)로 최소 구현한 대체재(위 _FilterPanel 클래스 주석 참조). 통제어휘 71개가 한
+/// 번에 펼쳐지면 그 자체로 패널을 넘치게 하므로, 이 위젯만 높이를 한정해 내부 스크롤한다.
+class _OptionMultiSelect extends StatelessWidget {
+  const _OptionMultiSelect({required this.selected, required this.onChanged});
+
+  final List<String> selected;
+  final ValueChanged<List<String>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedSet = selected.toSet();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '옵션(다중 선택 — 선택한 옵션 전부 보유한 매물만)',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 140),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).dividerColor),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: SingleChildScrollView(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: allControlledOptions.map((name) {
+                final isSelected = selectedSet.contains(name);
+                return FilterChip(
+                  key: ValueKey('filter_option_$name'),
+                  label: Text(name, style: const TextStyle(fontSize: 12)),
+                  visualDensity: VisualDensity.compact,
+                  selected: isSelected,
+                  onSelected: (_) {
+                    final next = List<String>.from(selected);
+                    if (isSelected) {
+                      next.remove(name);
+                    } else {
+                      next.add(name);
+                    }
+                    onChanged(next);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

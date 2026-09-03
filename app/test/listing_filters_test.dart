@@ -80,5 +80,52 @@ void main() {
       expect(f.region, isNull);
       expect(f.fuel, '디젤');
     });
+
+    // ✎ 2026-09-01 — web 필터 통일(8925669·01b38d9)로 추가된 5축(제조사·주행거리·배기량·
+    // 인승 범위·옵션 다중선택 AND). 기존 가격·연식 범위와 같은 파싱·swap·목록 밖 값 방어
+    // 규칙을 그대로 따르는지 축마다 확인한다.
+    test('제조사 — 목록에 있는 값만 통과, 밖은 무시', () {
+      expect(ResolvedFilters.fromInput(const ListingFilterInput(manufacturer: '현대')).manufacturer,
+          '현대');
+      expect(
+          ResolvedFilters.fromInput(const ListingFilterInput(manufacturer: '없는회사')).manufacturer,
+          isNull);
+    });
+
+    test('주행거리 min>max 는 swap 으로 보정', () {
+      final f = ResolvedFilters.fromInput(
+        const ListingFilterInput(mileageMin: '80000', mileageMax: '10000'),
+      );
+      expect(f.mileageMin, 10000);
+      expect(f.mileageMax, 80000);
+    });
+
+    test('배기량 min>max 는 swap 으로 보정', () {
+      final f = ResolvedFilters.fromInput(
+        const ListingFilterInput(displacementMin: '3000', displacementMax: '1000'),
+      );
+      expect(f.displacementMin, 1000);
+      expect(f.displacementMax, 3000);
+    });
+
+    test('인승 min>max 는 swap 으로 보정', () {
+      final f = ResolvedFilters.fromInput(
+        const ListingFilterInput(seatsMin: '7', seatsMax: '2'),
+      );
+      expect(f.seatsMin, 2);
+      expect(f.seatsMax, 7);
+    });
+
+    test('옵션 — 통제어휘 안 값만 남기고 중복 제거(전부 보유 AND 대상)', () {
+      final f = ResolvedFilters.fromInput(
+        const ListingFilterInput(options: ['선루프', '없는옵션', '선루프', '내비게이션']),
+      );
+      expect(f.options.toSet(), {'선루프', '내비게이션'});
+    });
+
+    test('옵션 — 빈 입력은 빈 리스트(미적용)', () {
+      final f = ResolvedFilters.fromInput(const ListingFilterInput());
+      expect(f.options, isEmpty);
+    });
   });
 }

@@ -50,6 +50,69 @@ describe('buildContext', () => {
   });
 });
 
+// listing_ids 배선 (멀티턴 매물 참조) — 직전 턴에서 추천한 매물을 두고 "그중 두 번째
+// 시세 알려줘"·"그 5개 비교해줘"라고 물으면 에이전트가 재검색만 반복하던 실측 결함의 수정.
+// 서버(agent.py)가 "직전에 보여준 매물" 요약 블록을 만들려면 이 id들이 실제로 실려가야 한다.
+describe('buildContext — listing_ids 배선', () => {
+  const BASE_LISTING = {
+    manufacturer: '현대',
+    model: '아반떼 AD',
+    year: 2017,
+    price: 9260000,
+    mileage: 106062,
+    region: '서울',
+  };
+
+  it('매물카드가 있는 assistant 턴은 그 매물 id들을 listing_ids로 싣는다', () => {
+    const ctx = buildContext([
+      { role: 'user' as const, content: '1000만원 이하 실속형 차 추천해줘' },
+      {
+        role: 'assistant' as const,
+        content: '2건을 찾았어요.',
+        listings: [
+          { ...BASE_LISTING, id: 'aaa' },
+          { ...BASE_LISTING, id: 'bbb' },
+        ],
+      },
+    ]);
+    expect(ctx[1].listing_ids).toEqual(['aaa', 'bbb']);
+  });
+
+  it('카드는 없고 시세 진단만 있는 assistant 턴은 진단 대상 매물 id 1개를 싣는다', () => {
+    const ctx = buildContext([
+      { role: 'user' as const, content: '이 매물 시세 알려줘' },
+      {
+        role: 'assistant' as const,
+        content: '시세를 분석했어요.',
+        marketDiagnosis: {
+          listing: { ...BASE_LISTING, id: 'ccc', fuel: '가솔린', transmission: '자동' as const, displacement: 1600, accident_free: true, accident_status: null },
+          criteria: { step: 0, desc: '동일 모델', sample_count: 5 },
+          stats: null,
+          percentile: null,
+          verdict: null,
+          verdict_basis: null,
+          tabpfn: { price: null, note: '' },
+          comps: [],
+        },
+      },
+    ]);
+    expect(ctx[1].listing_ids).toEqual(['ccc']);
+  });
+
+  it('매물도 진단도 없는 assistant 턴(되묻기 등)은 listing_ids 키 자체가 없다', () => {
+    const ctx = buildContext([
+      { role: 'user' as const, content: '차 추천해줘' },
+      { role: 'assistant' as const, content: '예산을 알려주시겠어요?', clarify: { question: '예산은요?', chips: ['2천만원 이하'] } },
+    ]);
+    expect(ctx[1]).not.toHaveProperty('listing_ids');
+  });
+
+  it('user 턴은 listing_ids를 담지 않는다(서버 스키마도 assistant 전용)', () => {
+    const ctx = buildContext([{ role: 'user' as const, content: '3천만원 이하 SUV' }]);
+    expect(ctx[0]).not.toHaveProperty('listing_ids');
+  });
+});
+
 // 이 검사가 **안 보는 것**: 서버가 실제로 그 길이를 상한으로 해석하는지는 여기서 못 본다
 // (그건 api/tests/test_graph.py의 상한 테스트 몫이다). 여기가 고정하는 것은 "웹이 서버 상한에
 // 도달할 만큼의 턴을 실어 보낸다"는 한쪽 절반뿐이다 — 두 검사가 붙어야 경로가 닫힌다.

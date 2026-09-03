@@ -38,6 +38,19 @@ class Settings(BaseSettings):
     gemini_generation_model: str = "gemini-3.1-flash-lite"
     gemini_embedding_model: str = "gemini-embedding-001"
 
+    # 리랭커 사이드카(4단계 부품 A) 주소 — 예: http://127.0.0.1:8801.
+    # 미설정이면 rerank_client.rerank()가 즉시 None을 돌려주고 호출부는 기존 순서를 유지한다
+    # (데모 환경엔 GPU 사이드카가 없을 수 있으므로 이 기능은 있으면 쓰고 없으면 조용히 꺼진다).
+    reranker_url: str | None = None
+    # 리랭커 사이드카 호출 타임아웃(초) — 기본 3.0은 로컬 GPU 사이드카 기준(1.1초/10건 실측,
+    # reranker_service.py 상단 주석). Cloud Run CPU 사이드카는 건당 수 초가 걸려 이 기본값이
+    # 너무 짧다 — 그럴 땐 배포 환경변수로 RERANKER_TIMEOUT_SECONDS를 올려 잡는다.
+    reranker_timeout_seconds: float = 3.0
+
+    # 4단계 부품 B — True면 routers/ai.py가 run_search_agent(툴콜링 에이전트)를,
+    # False면 기존 run_search(고정 4분기 그래프)를 부른다. 기본 True(신규 경로가 기본).
+    ai_agent_mode: bool = True
+
 
 settings = Settings()
 

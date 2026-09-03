@@ -4,6 +4,13 @@
 //    값·순서·문자를 그대로 복사한다. 어긋나면(drift) 고른 값이 DB CHECK 에 걸려 0건이 된다.
 //
 // 검증 함수들은 순수 함수(부수효과 없음)라 단위 테스트로 회귀를 빠르게 잡는다.
+//
+// ✎ 2026-09-01 — web 필터 통일(커밋 8925669·01b38d9)을 앱에 이식: 등록 폼(sell_screen)엔
+//   있었는데 필터엔 없던 5축(제조사·주행거리·배기량·인승 범위·옵션 다중선택 AND)을 추가한다.
+//   옵션 통제어휘는 새로 만들지 않고 `options.dart`의 `allControlledOptions`(카드 칩 로직이
+//   이미 쓰는 단일 출처)를 그대로 재사용한다 — web이 SellForm 상수를 필터에 재사용한 것과 동일.
+
+import 'options.dart' show allControlledOptions;
 
 /// 매물 고정 목록 필드의 허용값(드롭다운 옵션). web LISTING_OPTIONS 미러.
 class ListingOptions {
@@ -63,6 +70,8 @@ String escapeLike(String s) {
 class ListingFilterInput {
   const ListingFilterInput({
     this.keyword = '',
+    // 제조사(개선 2, 2026-09-01) — 등록 폼(sell_screen)엔 있었는데 필터엔 없던 축. 등록↔검색 대칭.
+    this.manufacturer,
     this.bodyType,
     this.color,
     this.fuel,
@@ -72,14 +81,25 @@ class ListingFilterInput {
     this.priceMax = '',
     this.yearMin = '',
     this.yearMax = '',
+    // 주행거리·배기량·인승 범위(개선 2) — 등록 폼엔 단일값 입력이 있는데 필터엔 그 축 자체가
+    // 없었다. 가격·연식과 같은 범위(min~max) 관례로 맞춘다(web SearchFilterValues 이식).
+    this.mileageMin = '',
+    this.mileageMax = '',
+    this.displacementMin = '',
+    this.displacementMax = '',
+    this.seatsMin = '',
+    this.seatsMax = '',
     // ✎ 2026-08-13 — 신뢰속성 필터(web /search와 같은 축). **뱃지 기준**이다(사용자 결정):
     //   accident_status로만 거른다 — accident_free는 이제 파생값이라 필터에서 쓰지 않는다.
     this.accidentStatus,
     this.singleOwnerOnly = false,
     this.nonSmokerOnly = false,
+    // 옵션(개선 2) — 다중 선택, "전부 보유"(AND) 의미. web options: string[]와 동일.
+    this.options = const <String>[],
   });
 
   final String keyword; // 모델명 부분일치
+  final String? manufacturer;
   final String? bodyType;
   final String? color;
   final String? fuel;
@@ -89,17 +109,25 @@ class ListingFilterInput {
   final String priceMax;
   final String yearMin;
   final String yearMax;
+  final String mileageMin;
+  final String mileageMax;
+  final String displacementMin;
+  final String displacementMax;
+  final String seatsMin;
+  final String seatsMax;
   final String? accidentStatus;
   /// 체크 = "그렇다고 신고한 매물만". 해제는 조건 없음(전체)이지 "1인소유가 아닌 매물"이 아니다 —
   /// 값이 없는 매물은 "아니다"가 아니라 "말하지 않음"이라 그런 필터는 정의 자체가 안 된다.
   final bool singleOwnerOnly;
   final bool nonSmokerOnly;
+  final List<String> options;
 }
 
 /// 검증·정규화된 필터(레포가 쿼리에 그대로 적용). min>max 는 swap 으로 보정된 상태.
 class ResolvedFilters {
   const ResolvedFilters({
     this.keyword,
+    this.manufacturer,
     this.bodyType,
     this.color,
     this.fuel,
@@ -109,12 +137,20 @@ class ResolvedFilters {
     this.priceMax,
     this.yearMin,
     this.yearMax,
+    this.mileageMin,
+    this.mileageMax,
+    this.displacementMin,
+    this.displacementMax,
+    this.seatsMin,
+    this.seatsMax,
     this.accidentStatus,
     this.singleOwnerOnly = false,
     this.nonSmokerOnly = false,
+    this.options = const <String>[],
   });
 
   final String? keyword; // 이미 escapeLike 적용된 패턴 본문(없으면 null)
+  final String? manufacturer;
   final String? bodyType;
   final String? color;
   final String? fuel;
@@ -124,9 +160,17 @@ class ResolvedFilters {
   final int? priceMax;
   final int? yearMin;
   final int? yearMax;
+  final int? mileageMin;
+  final int? mileageMax;
+  final int? displacementMin;
+  final int? displacementMax;
+  final int? seatsMin;
+  final int? seatsMax;
   final String? accidentStatus;
   final bool singleOwnerOnly;
   final bool nonSmokerOnly;
+  /// 통제어휘 안 값만 남기고 중복 제거된 상태(없으면 빈 리스트 = 미적용). web selectedOptions 이식.
+  final List<String> options;
 
   /// 입력 → 검증·정규화. web SearchPage 의 파싱부(pickOption·asInt·swap·escapeLike)를 한 곳에 모은다.
   factory ResolvedFilters.fromInput(ListingFilterInput input) {
@@ -135,6 +179,12 @@ class ResolvedFilters {
     var priceMax = parseIntFilter(input.priceMax);
     var yearMin = parseIntFilter(input.yearMin);
     var yearMax = parseIntFilter(input.yearMax);
+    var mileageMin = parseIntFilter(input.mileageMin);
+    var mileageMax = parseIntFilter(input.mileageMax);
+    var displacementMin = parseIntFilter(input.displacementMin);
+    var displacementMax = parseIntFilter(input.displacementMax);
+    var seatsMin = parseIntFilter(input.seatsMin);
+    var seatsMax = parseIntFilter(input.seatsMax);
 
     // 최소>최대로 거꾸로 입력하면 0건이 나와 혼란 → 둘 다 유효할 때만 swap 해 정상 범위로 보정.
     if (priceMin != null && priceMax != null && priceMin > priceMax) {
@@ -147,9 +197,32 @@ class ResolvedFilters {
       yearMin = yearMax;
       yearMax = t;
     }
+    if (mileageMin != null && mileageMax != null && mileageMin > mileageMax) {
+      final t = mileageMin;
+      mileageMin = mileageMax;
+      mileageMax = t;
+    }
+    if (displacementMin != null && displacementMax != null && displacementMin > displacementMax) {
+      final t = displacementMin;
+      displacementMin = displacementMax;
+      displacementMax = t;
+    }
+    if (seatsMin != null && seatsMax != null && seatsMin > seatsMax) {
+      final t = seatsMin;
+      seatsMin = seatsMax;
+      seatsMax = t;
+    }
+
+    // 옵션(개선 2) — 통제어휘(allControlledOptions) 밖 값은 무시(다른 드롭다운과 같은 "목록 밖
+    // 값은 조용히 버림" 규칙), 중복 제거. web pickOption과 동일 방어, 다중값이라 Set으로 처리.
+    final selectedOptions = <String>{
+      for (final o in input.options)
+        if (allControlledOptions.contains(o)) o,
+    }.toList();
 
     return ResolvedFilters(
       keyword: kw.isNotEmpty ? escapeLike(kw) : null,
+      manufacturer: pickOption(input.manufacturer, ListingOptions.manufacturer),
       bodyType: pickOption(input.bodyType, ListingOptions.bodyType),
       color: pickOption(input.color, ListingOptions.color),
       fuel: pickOption(input.fuel, ListingOptions.fuel),
@@ -162,6 +235,13 @@ class ResolvedFilters {
       priceMax: priceMax,
       yearMin: yearMin,
       yearMax: yearMax,
+      mileageMin: mileageMin,
+      mileageMax: mileageMax,
+      displacementMin: displacementMin,
+      displacementMax: displacementMax,
+      seatsMin: seatsMin,
+      seatsMax: seatsMax,
+      options: selectedOptions,
     );
   }
 }

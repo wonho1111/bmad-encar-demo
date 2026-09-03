@@ -2,14 +2,25 @@
 
 FR58(8.5)은 열람(매물 목록·상세)만 anon에 열고 이 엔드포인트는 **로그인 필수로 남긴다**:
 검색 1회 = Gemini 호출 3회 내외 = 실제 과금이므로 "열람"이 아니라 "행동"이다(conventions.md §8).
+
+4단계 부품 B: `settings.ai_agent_mode`(기본 True)가 라우터를 run_search_agent로 돌리면
+아래 monkeypatch("app.routers.ai.run_search", ...)가 무력화되므로, 이 파일 안에서만
+결정론적으로 ai_agent_mode=False를 강제한다(회귀 0, test_ai_search.py와 동일 조치).
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.auth import get_current_user
+from app.config import settings
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _force_legacy_graph_pipeline(monkeypatch):
+    monkeypatch.setattr(settings, "ai_agent_mode", False)
 
 
 def test_search_without_token_returns_401():

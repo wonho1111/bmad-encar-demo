@@ -35,3 +35,14 @@ String kmText(int mileage) => '${thousands(mileage)}km';
 
 /// 배기량(cc). 예: 1999 → "1,999cc".
 String ccText(int displacement) => '${thousands(displacement)}cc';
+
+/// 집계 통계값(중앙값·사분위 등) 전용 표기 — 만원 **반올림** 후 wonText에 위임(AI 시세 진단,
+/// web `web/src/lib/price.ts` formatStatPrice 미러). 13_475_000 → "1,348만원".
+///
+/// wonText가 매물 호가에 반올림을 걸지 않는 이유(반올림 = 오표시)는 **매물 가격**에만
+/// 해당한다. 통계값은 계산된 집계치라 만원 반올림이 오표시가 아니고, 통계 3칸의 표기 통일이
+/// 우선이다 — 매물 호가에는 이 함수를 쓰지 말 것(wonText가 정답).
+String formatStatPrice(int price) {
+  const man = 10000;
+  return wonText(((price / man).round()) * man);
+}

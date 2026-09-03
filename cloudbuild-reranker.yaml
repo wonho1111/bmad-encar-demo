@@ -1,0 +1,25 @@
+# cloudbuild-reranker.yaml — 리랭커(크로스인코더) 사이드카 이미지를 Cloud Build로
+# 빌드·Artifact Registry에 푸시하기 위한 설정 파일.
+#
+# 왜 이 파일이 필요한가: `gcloud run deploy --source .` 는 저장소 루트의 `Dockerfile`만
+#   찾고, `api/Dockerfile.reranker`처럼 파일명이 다른 Dockerfile은 지정할 수 없다. 그래서
+#   빌드 단계를 이 Cloud Build 설정으로 직접 명시해 이미지를 만들고, 그 이미지를
+#   `gcloud run deploy --image ...`로 배포하는 2단계 경로를 쓴다.
+#
+# 사용법(사용자가 실행):
+#   gcloud builds submit --config cloudbuild-reranker.yaml
+#   (완료 후) gcloud run deploy encar-reranker --image <_IMAGE 값> --region asia-northeast3 ...
+#
+# Artifact Registry 저장소 `cloud-run-source-deploy`(리전 asia-northeast3)는 이 GCP
+# 프로젝트(gen-lang-client-0291729033)에 이미 존재함(코디네이터 확인) — 별도 저장소 생성 불필요.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "api/Dockerfile.reranker", "-t", "${_IMAGE}", "api"]
+images: ["${_IMAGE}"]
+substitutions:
+  _IMAGE: asia-northeast3-docker.pkg.dev/gen-lang-client-0291729033/cloud-run-source-deploy/encar-reranker:latest
+options:
+  machineType: E2_HIGHCPU_8
+# 모델 가중치(BAAI/bge-reranker-v2-m3, ~2.3GB) 다운로드가 빌드 중(Dockerfile.reranker의
+# RUN CrossEncoder(...) 단계)에 일어나므로 기본 타임아웃(10분)보다 넉넉히 잡는다.
+timeout: 1800s

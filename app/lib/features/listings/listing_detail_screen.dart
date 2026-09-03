@@ -9,6 +9,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/format/number_format.dart';
 import '../../core/theme/app_theme.dart';
+import '../ai_search/ai_chat_screen.dart';
+import '../ai_search/market_diagnosis.dart' show formatManKm;
 import '../auth/auth_controller.dart';
 import '../chat/chat_providers.dart';
 import '../chat/chat_repository.dart';
@@ -88,6 +90,15 @@ class _MessageBody extends StatelessWidget {
   }
 }
 
+/// "AI 시세 진단" 프리필 질의 문구 — web MarketDiagnosisButton.tsx buildPrefillQuery 미러.
+/// 주행거리는 market_diagnosis.dart의 formatManKm(만km, 웹과 동일 함수 재사용 — 중복 정의
+/// 금지)로, 가격은 기존 wonText(반올림 없음, 웹 formatPrice와 동일 규칙)로 표기한다.
+@visibleForTesting
+String buildMarketDiagnosisPrefillQuery(ListingCardData listing) {
+  return '이 매물 시세 알려줘 — ${listing.manufacturer} ${listing.model} ${listing.year} · '
+      '${formatManKm(listing.mileage)} · ${wonText(listing.price)}';
+}
+
 /// 상세 본문 — 제목 + 기본정보(15필드) + 옵션 + 설명 + 문의하기(7.5).
 ///   ConsumerStatefulWidget: "문의하기" 탭 시 방 생성/재사용을 호출하는 동안 버튼을 비활성(중복 클릭 차단)해야 하므로.
 class _DetailContent extends ConsumerStatefulWidget {
@@ -146,6 +157,48 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(message)));
     }
+  }
+
+  // AI 시세 진단(5단계, web MarketDiagnosisButton.tsx 미러) — 프리필 질의 + 매물 요약 카드 +
+  // listingId를 AiChatScreen에 실어 연다. 비로그인이면 문의하기(_openChat)와 동일한 게이트
+  // (로그인으로 유도, 서버 호출 없음)를 탄다 — 이 화면의 기존 비로그인 패턴을 그대로 따른다.
+  void _openMarketDiagnosis() {
+    final myId = ref.read(currentUserProvider)?.id;
+    if (myId == null) {
+      context.go('/login');
+      return;
+    }
+    // 프리필 카드 재료 = 표준 매물 카드(ListingCardData) 필드 계약(web과 동일, 2026-09-01
+    // 표준 카드 교체 결정). 사진은 상세가 이미 들고 있는 갤러리 첫 장을 대표 사진으로 쓴다
+    // (ListingDetail엔 imageCount가 따로 없으므로 "url 없으면 count도 0" 규칙을 여기서 직접
+    // 지킨다 — ListingCardData.fromMap의 방침과 동일, listing.dart 참조).
+    final imageCount = listing.imageUrls.length;
+    final summary = ListingCardData(
+      id: listing.id,
+      manufacturer: listing.manufacturer,
+      model: listing.model,
+      year: listing.year,
+      price: listing.price,
+      mileage: listing.mileage,
+      region: listing.region,
+      sellerName: listing.sellerName,
+      imageUrl: imageCount > 0 ? listing.imageUrls.first : null,
+      imageCount: imageCount,
+      fuel: listing.fuel,
+      accidentStatus: listing.accidentStatus,
+      isSingleOwner: listing.isSingleOwner,
+      isNonSmoker: listing.isNonSmoker,
+      options: listing.options,
+    );
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => AiChatScreen(
+          initialQuery: buildMarketDiagnosisPrefillQuery(summary),
+          initialListingId: listing.id,
+          initialListingSummary: summary,
+        ),
+      ),
+    );
   }
 
   @override
@@ -367,7 +420,21 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
+                    // "AI 시세 진단" 진입 버튼(5단계, web MarketDiagnosisButton.tsx 미러) —
+                    // 문의하기(FilledButton, primary)와 나란히 OutlinedButton으로 시각 위계를
+                    // 낮춰 둔다(문의하기가 이 화면의 주 행동이라는 기존 위계를 유지). 비로그인
+                    // 처리는 _openMarketDiagnosis 내부에서 _openChat과 동일 패턴(로그인 게이트,
+                    // 서버 호출 없음)을 탄다.
+                    OutlinedButton(
+                      key: const Key('go_market_diagnosis'),
+                      onPressed: _openMarketDiagnosis,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      ),
+                      child: const Text('AI 시세 진단', style: TextStyle(fontSize: 13)),
+                    ),
+                    const SizedBox(width: 8),
                     // 색·라벨은 새로 정하지 않는다(Never) — 위치만 옮긴다. 분기 3개(본인 매물=
                     // 이 자리 자체가 없음/비로그인=탭 시 /login/타인 매물=openOrCreateRoom)도
                     // _openChat 하나에 그대로 유지한다.

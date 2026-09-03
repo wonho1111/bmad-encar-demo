@@ -12,6 +12,7 @@ import 'dart:async';
 import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/ai_search/ai_search_api.dart';
+import 'package:app/features/ai_search/market_diagnosis_chart.dart';
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/listings/listing.dart';
 import 'package:app/features/listings/listing_card.dart';
@@ -90,7 +91,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 const SearchResult(
               answer: '조건에 맞는 매물 2건입니다.',
               listings: [wishedListing, otherListing],
@@ -136,7 +137,7 @@ void main() {
         child: MaterialApp(
           home: AiChatScreen(
             initialQuery: '4천만원대 전기 SUV',
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               sentQueries.add(query);
               return const SearchResult(answer: '조건에 맞는 매물을 찾았어요.', listings: []);
@@ -179,7 +180,7 @@ void main() {
         child: MaterialApp(
           home: AiChatScreen(
             initialQuery: q,
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               throw Exception('network down');
             },
           ),
@@ -205,7 +206,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               return const SearchResult(answer: 'x', listings: []);
             },
@@ -245,7 +246,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               sentQueries.add(query);
               sentContexts.add(context);
@@ -349,7 +350,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               if (callCount == 1) {
                 return const SearchResult(
@@ -399,7 +400,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               if (callCount == 1) {
                 return const SearchResult(
@@ -450,7 +451,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               if (query == '패밀리카로 무난한 거 추천해줘') {
                 return const SearchResult(
                   answer: '어떤 용도로 찾으세요?',
@@ -492,7 +493,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 const SearchResult(
               answer: '질문입니다.',
               listings: [],
@@ -531,7 +532,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               if (callCount == 1) {
                 return const SearchResult(
@@ -597,7 +598,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               if (callCount == 1) {
                 return const SearchResult(
@@ -658,7 +659,7 @@ void main() {
         child: MaterialApp(
           theme: buildAppTheme(),
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 const SearchResult(
               answer: '어떤 용도로 찾으세요?',
               listings: [],
@@ -719,7 +720,7 @@ void main() {
         child: MaterialApp(
           theme: buildAppTheme(),
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 const SearchResult(answer: 'x', listings: []),
           ),
         ),
@@ -766,7 +767,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 const SearchResult(answer: 'x', listings: []),
           ),
         ),
@@ -813,7 +814,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               sent++;
               return const SearchResult(answer: '찾았어요.', listings: []);
             },
@@ -863,7 +864,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 parseSearchResult(wire, imageUrlBuilder: (p) => 'https://x/$p'),
           ),
         ),
@@ -903,7 +904,7 @@ void main() {
         ],
         child: MaterialApp(
           home: AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async =>
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
                 parseSearchResult(wire, imageUrlBuilder: (p) => 'https://x/$p'),
           ),
         ),
@@ -938,7 +939,7 @@ void main() {
         GoRoute(
           path: '/ai',
           builder: (context, state) => AiChatScreen(
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               return const SearchResult(answer: '호출되면 안 된다', listings: []);
             },
@@ -986,7 +987,7 @@ void main() {
           path: '/ai',
           builder: (context, state) => AiChatScreen(
             initialQuery: '4천만원대 전기 SUV',
-            searchAiOverride: ({required query, context, required accessToken}) async {
+            searchAiOverride: ({required query, context, listingId, required accessToken}) async {
               callCount++;
               return const SearchResult(answer: '호출되면 안 된다', listings: []);
             },
@@ -1015,5 +1016,159 @@ void main() {
     expect(callCount, 0, reason: '히어로 자동 제출도 같은 _submit 게이트를 타야 한다');
     expect(find.byKey(const Key('login_probe')), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  // AI 시세 진단(5단계) 위젯 테스트 — market_diagnosis_card.dart·market_diagnosis_chart.dart가
+  // 정상 데이터로 크래시 없이 그려지는지(산점도 CustomPaint 포함), user 턴 위 ListingCard
+  // 부착이 실제로 렌더되는지 본다. 서버 wire JSON을 parseSearchResult에 통과시켜 주입한다
+  // (searchAiOverride 시접 — 위 되묻기 칩 테스트들과 같은 관례, "wire JSON이 실제로 화면에
+  // 닿는지"까지 잇는다).
+  group('AI 시세 진단(5단계) — 카드·산점도·요약 카드 렌더', () {
+    Map<String, Object?> wireDiagnosis({String id = 'l-1', int step = 0}) => {
+          'listing': {
+            'id': id,
+            'manufacturer': '기아',
+            'model': '셀토스',
+            'year': 2021,
+            'mileage': 33000,
+            'price': 22000000,
+            'fuel': '가솔린',
+            'transmission': '자동',
+            'displacement': 1998,
+            'accident_free': true,
+            'accident_status': '무사고',
+            'region': '경기',
+          },
+          'criteria': {'step': step, 'desc': '연식·주행거리 조건 완화', 'sample_count': 12},
+          'stats': {
+            'min': 19000000,
+            'q1': 21000000,
+            'median': 23000000,
+            'q3': 25000000,
+            'max': 27000000,
+          },
+          'percentile': 0.4,
+          'verdict': '적정',
+          'verdict_basis': '적정가',
+          'tabpfn': {'price': 22500000, 'note': ''},
+          'comps': [
+            {'id': 'c1', 'model': '셀토스', 'year': 2020, 'mileage': 40000, 'price': 21000000},
+            {'id': 'c2', 'model': '셀토스', 'year': 2022, 'mileage': 20000, 'price': 24000000},
+          ],
+        };
+
+    testWidgets('단건 시세 진단 카드가 산점도를 포함해 크래시 없이 그려진다', (tester) async {
+      final wire = <String, Object?>{
+        'answer': '이 매물은 적정 가격대예요.',
+        'listings': const <Object?>[],
+        'market_diagnosis': wireDiagnosis(),
+      };
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+            currentUserProvider.overrideWithValue(_fakeUser()),
+          ],
+          child: MaterialApp(
+            home: AiChatScreen(
+              searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
+                  parseSearchResult(wire, imageUrlBuilder: (p) => 'https://x/$p'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), '이 매물 시세 알려줘');
+      await tester.tap(find.byKey(const Key('ai_send')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: '진단 카드·산점도 렌더 중 예외가 없어야 한다');
+      expect(find.byKey(const Key('market_diagnosis_card')), findsOneWidget);
+      expect(find.byType(MarketDiagnosisChart), findsOneWidget,
+          reason: '비교군(comps)이 있으므로 산점도가 실제로 붙어야 한다');
+      // 통계 3칸·판정 배지·각주까지 실제 값으로 그려지는지(표시 항목 전부 미러 확인).
+      expect(find.text('적정'), findsOneWidget);
+      expect(find.textContaining('Built with PriorLabs-TabPFN'), findsOneWidget);
+    });
+
+    testWidgets('다건 시세 진단(2건 이상)은 단건 카드 대신 요약표를 그린다', (tester) async {
+      final wire = <String, Object?>{
+        'answer': '두 매물을 비교했어요.',
+        'listings': const <Object?>[],
+        'market_diagnoses': [wireDiagnosis(id: 'l-1'), wireDiagnosis(id: 'l-2')],
+      };
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+            currentUserProvider.overrideWithValue(_fakeUser()),
+          ],
+          child: MaterialApp(
+            home: AiChatScreen(
+              searchAiOverride: ({required query, context, listingId, required accessToken}) async =>
+                  parseSearchResult(wire, imageUrlBuilder: (p) => 'https://x/$p'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), '두 매물 다 시세 알려줘');
+      await tester.tap(find.byKey(const Key('ai_send')));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('market_diagnosis_table')), findsOneWidget);
+      expect(find.byKey(const Key('market_diagnosis_card')), findsNothing,
+          reason: '2건 이상이면 단건 카드 대신 요약표만 그려야 한다(웹과 동일 분기)');
+    });
+
+    testWidgets('initialListingSummary가 있으면 user 턴 말풍선 위에 ListingCard가 부착돼 렌더된다',
+        (tester) async {
+      const summary = ListingCardData(
+        id: 'l-1',
+        manufacturer: '기아',
+        model: '셀토스',
+        year: 2021,
+        price: 22000000,
+        mileage: 33000,
+        region: '경기',
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+            currentUserProvider.overrideWithValue(_fakeUser()),
+          ],
+          child: MaterialApp(
+            home: AiChatScreen(
+              initialQuery: '이 매물 시세 알려줘 — 기아 셀토스 2021 · 3.3만km · 2,200만원',
+              initialListingId: 'l-1',
+              initialListingSummary: summary,
+              searchAiOverride: ({required query, context, listingId, required accessToken}) async {
+                // 프리필 핸드오프가 listingId를 실제로 실어 보내는지도 함께 확인한다.
+                expect(listingId, 'l-1');
+                return const SearchResult(answer: '이 매물은 적정 가격대예요.', listings: []);
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ListingCard), findsOneWidget,
+          reason: '사용자 턴 위에 표준 ListingCard로 매물 요약이 렌더돼야 한다(전용 미니카드 아님)');
+      expect(find.text('[기아] 셀토스 · 2021년'), findsOneWidget);
+
+      // ListingCard가 말풍선(user 질의 텍스트)보다 위에 있는지(web items-end 배치 미러).
+      final cardY = tester.getTopLeft(find.byType(ListingCard)).dy;
+      final bubbleY = tester
+          .getTopLeft(find.text('이 매물 시세 알려줘 — 기아 셀토스 2021 · 3.3만km · 2,200만원'))
+          .dy;
+      expect(cardY, lessThan(bubbleY));
+    });
   });
 }

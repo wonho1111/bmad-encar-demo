@@ -126,4 +126,56 @@ void main() {
           reason: 'FR11: 딥링크로 sold 매물 id를 직접 열어도 나와선 안 된다: $u');
     }
   });
+
+  // ✎ 2026-09-01 — web 필터 통일로 추가된 5축(제조사·주행거리·배기량·인승 범위·옵션 다중선택)이
+  // "값 파싱"에서 끝나지 않고 **실제 나가는 PostgREST 쿼리**까지 이어지는지, HTTP 경계에서
+  // 직접 본다(위 status=eq.on_sale 검사와 같은 기법 — 소스에 글자가 있는지가 아니라 URL 자체를 본다).
+  test('fetchListings — 제조사·주행거리·배기량·인승 범위가 나가는 URL에 실제로 실린다', () async {
+    final repo = ListingsRepository(client: client);
+    await repo.fetchListings(const ResolvedFilters(
+      manufacturer: '현대',
+      mileageMin: 10000,
+      mileageMax: 80000,
+      displacementMin: 1500,
+      displacementMax: 2000,
+      seatsMin: 5,
+      seatsMax: 7,
+    ));
+
+    final reqs = listingsRequests();
+    expect(reqs, isNotEmpty);
+    final url = reqs.first;
+    expect(url, contains('manufacturer=eq.'), reason: '제조사 필터가 쿼리에 안 실렸다: $url');
+    expect(url, contains('mileage=gte.10000'), reason: '주행거리 최소가 쿼리에 안 실렸다: $url');
+    expect(url, contains('mileage=lte.80000'), reason: '주행거리 최대가 쿼리에 안 실렸다: $url');
+    expect(url, contains('displacement=gte.1500'), reason: '배기량 최소가 쿼리에 안 실렸다: $url');
+    expect(url, contains('displacement=lte.2000'), reason: '배기량 최대가 쿼리에 안 실렸다: $url');
+    expect(url, contains('seats=gte.5'), reason: '인승 최소가 쿼리에 안 실렸다: $url');
+    expect(url, contains('seats=lte.7'), reason: '인승 최대가 쿼리에 안 실렸다: $url');
+  });
+
+  test('fetchListings — 옵션 다중선택(전부 보유 AND)이 나가는 URL에 cs.(contains) 연산자로 실린다',
+      () async {
+    final repo = ListingsRepository(client: client);
+    await repo.fetchListings(const ResolvedFilters(options: ['선루프', '내비게이션']));
+
+    final reqs = listingsRequests();
+    expect(reqs, isNotEmpty);
+    final url = reqs.first;
+    // PostgREST의 "전부 포함"(@>) 연산자는 cs.{...} 로 인코딩된다.
+    expect(url, contains('options=cs.'), reason: '옵션 다중선택이 contains(AND)로 안 실렸다: $url');
+    expect(url, contains('%EC%84%A0%EB%A3%A8%ED%94%84'), reason: '선루프가 쿼리 값에 없다(URL 인코딩): $url');
+    expect(url, contains('%EB%82%B4%EB%B9%84%EA%B2%8C%EC%9D%B4%EC%85%98'),
+        reason: '내비게이션이 쿼리 값에 없다(URL 인코딩): $url');
+  });
+
+  test('fetchListings — 옵션 미선택(빈 리스트)이면 options 필터 자체가 나가지 않는다', () async {
+    final repo = ListingsRepository(client: client);
+    await repo.fetchListings(const ResolvedFilters());
+
+    final reqs = listingsRequests();
+    expect(reqs, isNotEmpty);
+    expect(reqs.first, isNot(contains('options=cs.')),
+        reason: '미적용(빈 선택)인데 options 필터가 나가면 아무 옵션도 없는 매물까지 걸러진다');
+  });
 }

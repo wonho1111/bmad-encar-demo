@@ -192,6 +192,14 @@ void main() {
       emptyResult: const [],
     );
 
+    // ✎ 2026-09-01 — 필터 패널이 web과 같은 축(제조사·주행거리·배기량·인승 범위·옵션 다중선택)
+    // 까지 통일되며 세로로 커졌다 — 위 "찜" 테스트가 카드 하나 때문에 뷰포트를 키운 것과 같은
+    // 이유로, 기본 800×600에선 결과 카드가 뷰포트 밖(SliverList 캐시 범위 밖)이라 안 만들어진다.
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -244,6 +252,12 @@ void main() {
         ),
       ],
     );
+
+    // 위 initialBodyType 테스트와 같은 이유(뷰포트 확장) — 커진 필터 패널 때문.
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -360,6 +374,12 @@ void main() {
     );
     addTearDown(container.dispose);
 
+    // 위 initialBodyType 테스트와 같은 이유(뷰포트 확장) — 커진 필터 패널 때문.
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     // 1) SUV 칩으로 먼저 진입 — 컨트롤러가 SUV 필터·결과를 들고 있는 상태를 만든다.
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -420,6 +440,12 @@ void main() {
       ],
       emptyResult: const [],
     );
+
+    // 위 initialBodyType 테스트와 같은 이유(뷰포트 확장) — 커진 필터 패널 때문.
+    tester.view.physicalSize = const Size(800, 2000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
       ProviderScope(
