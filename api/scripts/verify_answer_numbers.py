@@ -10,8 +10,8 @@ os.environ 승격(config._promote_env_from_dotenv)에 기대지 않고 이 스�
 outputs가 run_search_agent의 반환 계약({answer, listings, market_diagnosis, ...})과 일치한다.
 자식 런(ChatGoogleGenerativeAI·개별 도구 호출 등)은 이 계약을 안 따르므로 대상에서 뺀다.
 
-허용 집합: market_diagnosis의 {listing.price, stats 5종(min/q1/median/q3/max), tabpfn.price,
-comps[].price} + listings[].price + 그 값들 중 임의 두 값의 차(파생값, 퍼센트 계산용 값은
+허용 집합: market_diagnosis(+ 다건 market_diagnoses 각각)의 {listing.price, stats 5종(min/q1/median/
+q3/max), tabpfn.price, tabpfn.quantiles 5종, comps[].price} + listings[].price + 그 값들 중 임의 두 값의 차(파생값, 퍼센트 계산용 값은
 파생에서 제외). 만원 단위 반올림 오차 ±1만원(10,000원)까지는 같은 값으로 본다.
 
 퍼센트는 별도 계산식 3가지(percentile*100, (price-median)/median*100, (price-tabpfn)/tabpfn*100)
@@ -77,22 +77,32 @@ def parse_percent_mentions(text: str) -> list[float]:
     return out
 
 
-def _collect_allowed_money(market_diagnosis, listings):
-    """대조 허용 금액 집합(파생값 포함)을 만든다. 파생값은 두 값의 절대차(diff)만 추가한다."""
+def _collect_allowed_money(market_diagnosis, listings, market_diagnoses=None):
+    """대조 허용 금액 집합(파생값 포함)을 만든다. 파생값은 두 값의 절대차(diff)만 추가한다.
+
+    2026-09-03: (a) 다건 진단 `market_diagnoses`(agent.py, 2026-08-31 추가 — "매물 5건 시세 분석"
+    답변의 금액이 여기서 나온다)와 (b) `tabpfn.quantiles`(예측 분포 분위수, 판정 5단 전환으로 추가)를
+    허용 집합에 넣었다. 이 둘이 빠져 있어 실제 도구 값이 "의심"으로 집계됐다(실측 10건 중 3건).
+    """
     base = set()
-    if market_diagnosis:
-        listing = market_diagnosis.get("listing") or {}
+    for diag in [market_diagnosis, *(market_diagnoses or [])]:
+        if not diag:
+            continue
+        listing = diag.get("listing") or {}
         if listing.get("price") is not None:
             base.add(listing["price"])
-        stats = market_diagnosis.get("stats")
+        stats = diag.get("stats")
         if stats:
             for key in ("min", "q1", "median", "q3", "max"):
                 if stats.get(key) is not None:
                     base.add(round(stats[key]))
-        tabpfn = market_diagnosis.get("tabpfn") or {}
+        tabpfn = diag.get("tabpfn") or {}
         if tabpfn.get("price") is not None:
             base.add(tabpfn["price"])
-        for comp in market_diagnosis.get("comps") or []:
+        for value in (tabpfn.get("quantiles") or {}).values():
+            if value is not None:
+                base.add(round(value))
+        for comp in diag.get("comps") or []:
             if comp.get("price") is not None:
                 base.add(comp["price"])
     for listing in listings or []:
@@ -150,7 +160,9 @@ def evaluate_run(run: dict) -> dict:
     market_diagnosis = outputs.get("market_diagnosis")
     listings = outputs.get("listings") or []
 
-    allowed_money = _collect_allowed_money(market_diagnosis, listings)
+    allowed_money = _collect_allowed_money(
+        market_diagnosis, listings, outputs.get("market_diagnoses")
+    )
     percent_refs = _percent_reference_values(market_diagnosis)
 
     money_hits = parse_money_mentions(answer)
