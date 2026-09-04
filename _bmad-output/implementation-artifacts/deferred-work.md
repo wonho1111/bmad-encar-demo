@@ -7082,4 +7082,32 @@ location: Cloud Run encar-ai-api env(RERANKER_URL/RERANKER_TIMEOUT_SECONDS 없�
 severity: medium
 reason: 리랭커는 가이드 문서 검색(search_guides, 최대 5건)에만 걸리고 매물 검색엔 안 걸린다. dev API엔 연결돼 있으나 운영은 폴백 상태라 시연·포트폴리오에서 "리랭커 적용"이라 말하면 실제 운영 응답과 다르다. 연결 명령은 알려져 있음(gcloud run services update encar-ai-api --update-env-vars RERANKER_URL=https://encar-reranker-wiiqls2sga-du.a.run.app,RERANKER_TIMEOUT_SECONDS=15).
 trigger: 영업용 포트폴리오 문안 확정 전 사용자 결정 — (a) 운영에 연결하고 가이드 질문 1건으로 LangSmith 트레이스에서 rerank 호출을 확인하거나, (b) 문안을 "dev 환경 적용, 운영은 벡터순"으로 명시.
+status: done 2026-09-04
+resolution: 사용자가 Cloud Console에서 운영 encar-ai-api에 RERANKER_URL·RERANKER_TIMEOUT_SECONDS=15를 dev와 동일하게 추가. 2026-09-04 22:45 KST 작동 실측 — 운영 API /ai/search에 "주행거리 많은 차 사도 괜찮을까?" 전송 → LangSmith 트레이스 search_guides 9.0초 → 리랭커 Cloud Run 로그 POST /rerank 200(7.3초) → API 로그 httpx 200 OK. 리랭커 CPU 지연 7.3초는 타임아웃 15초 안이지만 답변 총 15.1초의 절반을 차지한다(관찰만, 별도 항목 없음).
+
+### DW-859: TabPFN 학습표 선택이 "기본 모델군 최신 120건"이라 실매물 규모 데이터에선 대상과 비슷한 매물이 표에 안 들어간다 — 실매물 검증 전 유사도 기준 선택으로 교체 필요
+
+origin: 시연 피드백 후속 논의(2026-09-04) — 사용자 의견 2·5("비슷한 매물이 많아야 정확") 검토 중 코드 확인
+location: api/app/market_price.py:415-422(ORDER BY year DESC, mileage ASC LIMIT 120), _tabpfn_features(세대 없음, DW-854)
+severity: high
+reason: 시드는 그랜저 47건이라 상한에 안 걸려 전부 들어갔지만, 엔카 실매물 수천 건이 들어오면 120건은 최신 연식·저주행 순으로 잘려 2019년식 IG 대상에 2025년식 GN7만 남는다(외삽). 또 표본이 작을수록 이웃 1건의 포함/제외가 예측을 100만 단위로 흔든다(DW-857 실측). 자기 자신 제외(id<>self)는 결함이 아니라 필수다 — 자기 등록가가 표에 있으면 예측이 등록가를 따라가 판정이 무의미해진다(정보 누출). 해결은 제외를 없애는 게 아니라 표본 선택과 규모다.
+trigger: 실매물 검증 하네스 작성 전(다음 수업 전) — (1) 학습표를 "같은 세부모델 우선 → 연식·주행 거리 순으로 가까운 N건"으로 바꾸고 N(60/120)은 하네스에서 정확도·지연(DW-852)으로 고른다, (2) hold-out(검증 매물을 sold로 두어 표에서 제외)과 leave-one-out 두 방식의 오차를 같이 보고해 이웃 민감도를 수치화한다.
+status: open
+
+### DW-860: 시드 감가 규칙(연식 220만·주행 1만km당 10만·옵션 12만, ±5% 노이즈)이 실시장과 맞는지 검증된 적 없다 — 시드로 한 정확도 검증은 고객용 수치로 못 쓴다
+
+origin: 시연 피드백 후속 논의(2026-09-04) — 사용자 의견 3·5
+location: api/scripts/seed_depreciation.py(KM_PER·GROUPS·noise), docs/ai-advanced/02-seed-price-calibration.md(중앙값만 보정, 기울기는 미보정)
+severity: medium
+reason: 02 문서의 엔카 보정은 세대·파워트레인별 "중앙값"만 맞췄고 연식·주행 "기울기"는 임의값이다. 시드 위에서 재는 정확도는 우리가 만든 규칙을 우리가 맞히는 것이라 고객 앞에서 근거가 못 된다. 특히 주행 1만km당 10만은 실시장보다 작을 가능성이 크다(그래서 모델의 주행 둔감이 시드에선 "정상"으로 보였다).
+trigger: 엔카 실매물 수집 후 — (1) 세대별 회귀로 연식·주행·옵션·사고 계수를 실측해 시드 규칙과 표로 대조, (2) 시연 DB의 시드를 실측 계수로 재생성(시드 v4)할지 결정. 검증 수치는 실매물 hold-out만 쓴다.
+status: open
+
+### DW-861: 파이프라인 설명 자료 부재 — 리랭커·적정가 각각 "입력/학습데이터/추론과정" 3요소와 확률분포·5단 판정의 쉬운 설명, 검증 결과 요약이 한 문서에 없다
+
+origin: 시연 피드백(2026-09-04) "파이프라인 설명을 제대로 못함" + 사용자 의견 4
+location: docs/ai-advanced/(01~04는 선정 근거·보정·실행법·시연 케이스만), 신규 05 문서 예정
+severity: medium
+reason: 코드가 유일한 정본이라 사용자가 말로 설명하려면 매번 코드를 읽어야 한다. 리랭커는 가이드 문서 5건 재정렬에만 쓰인다는 점, TabPFN은 사전학습 모델 + 요청마다 학습표를 문맥으로 넣는 두 층이라는 점, 분포에서 mean/q50/q10~q90을 읽어 판정한다는 점이 빠져 있다.
+trigger: 실매물 검증 수치가 나온 뒤(다음 수업 전) 05 문서로 작성 — 그림 2장(리랭커 흐름·적정가 흐름) + 3요소 표 + 확률분포 한 단락 + 검증 요약표. 검증: 사용자가 문서 없이 3요소×2를 말할 수 있는지.
 status: open
