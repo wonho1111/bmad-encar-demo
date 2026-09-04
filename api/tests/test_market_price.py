@@ -7,6 +7,7 @@ DB 없이 검증한다(다른 test_*.py들의 "DB 불필요 단위 테스트" �
 """
 
 import builtins
+import types
 
 import pytest
 
@@ -137,6 +138,38 @@ def test_where_clause_differs_by_step_model_vs_ilike():
     assert "%그랜저%" in step4_params
 
 
+def test_train_rows_query_orders_by_similarity_with_expected_param_order():
+    # DW-859: 학습표 SELECT는 최신순(연식 DESC)이 아니라 "대상과 가까운 순"(동일 세대→연료→
+    # 연식차→주행거리차, id ASC 타이브레이커)으로 정렬해야 한다 — 실매물 기준 기본 모델명 하나에
+    # 수천 건이 걸려, 정렬 없이 최신순으로 자르면 대상과 무관한 연식대만 남는 문제(실측)를 고친
+    # 변경이다. SQL 문자열·파라미터 순서를 리터럴로 고정한다(DB 없는 순수 함수 — 실제 정렬
+    # 동작은 tests/integration/test_market_price_train_rows_real_db.py가 실DB로 확인한다).
+    target = {
+        "id": "target-id",
+        "model": "그랜저 GN7",
+        "transmission": "자동",
+        "year": 2024,
+        "mileage": 20_000,
+        "fuel": "가솔린",
+    }
+    sql, params = market_price._train_rows_query(target, "그랜저")
+
+    assert (
+        "ORDER BY (model = %s) DESC, (fuel = %s) DESC, abs(year - %s) ASC, "
+        "abs(mileage - %s) ASC, id ASC"
+    ) in sql
+    assert "LIMIT 120" in sql
+    assert params == [
+        "target-id",
+        "자동",
+        "%그랜저%",
+        "그랜저 GN7",
+        "가솔린",
+        2024,
+        20_000,
+    ]
+
+
 def test_tabpfn_import_failure_falls_back_to_none_with_note(monkeypatch):
     # tabpfn 미설치(또는 import 실패) 경로를 강제로 재현 — 통계 계산과 별개로 엔진이 죽지 않아야 한다.
     real_import = builtins.__import__
@@ -176,3 +209,90 @@ def test_tabpfn_import_failure_falls_back_to_none_with_note(monkeypatch):
     assert price is None
     assert quantiles is None
     assert note == "tabpfn 미설치"
+
+
+def test_tabpfn_predict_adds_generation_categorical_feature(monkeypatch):
+    # DW-854: 세대(model)를 11번째 칸에 범주로 인코딩해 TabPFNRegressor에 넘기는지 — 진짜
+    # tabpfn 없이 가짜 TabPFNRegressor로 fit()/predict() 호출 인자를 그대로 기록해 검증한다
+    # (위 test_tabpfn_import_failure_falls_back_to_none_with_note와 같은 __import__ 몽키패치
+    # 패턴, 이번엔 ImportError 대신 가짜 모듈을 돌려준다).
+    real_import = builtins.__import__
+
+    class _FakeTabPFNRegressor:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+
+        def fit(self, x, y):
+            self.fit_x = x
+            self.fit_y = y
+
+        def predict(self, x, **kwargs):
+            self.predict_x = x
+            self.predict_kwargs = kwargs
+            return {
+                "mean": [20_000_000],
+                "quantiles": [
+                    [v] for v in (18_000_000, 19_000_000, 20_000_000, 21_000_000, 22_000_000)
+                ],
+            }
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = _FakeTabPFNRegressor
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, i):
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": 15_000_000,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    train_rows = [_row("그랜저 GN7", i) for i in range(6)] + [
+        _row("더 뉴 그랜저 IG", i) for i in range(6)
+    ]
+    target = {
+        "model": "그랜저 GN7",
+        "year": 2024,
+        "mileage": 20_000,
+        "displacement": 1_600,
+        "fuel": "가솔린",
+        "options": [],
+        "accident_free": True,
+    }
+
+    price, quantiles, note = market_price._tabpfn_predict(target, train_rows)
+
+    model_obj = market_price._TABPFN_MODEL
+    assert model_obj.init_kwargs["categorical_features_indices"] == [10]
+
+    fit_x = model_obj.fit_x
+    assert all(len(row) == 11 for row in fit_x)
+    predict_x = model_obj.predict_x
+    assert len(predict_x) == 1
+    assert len(predict_x[0]) == 11
+
+    # 같은 모델은 같은 코드를 공유하고, 다른 모델은 다른 코드를 받는다.
+    gn7_codes = {row[10] for row in fit_x[:6]}
+    ig_codes = {row[10] for row in fit_x[6:]}
+    assert len(gn7_codes) == 1
+    assert len(ig_codes) == 1
+    assert gn7_codes != ig_codes
+
+    # 대상(그랜저 GN7)의 코드는 학습표의 같은 모델(그랜저 GN7) 코드와 같아야 한다.
+    assert predict_x[0][10] == next(iter(gn7_codes))
+
+    assert price is not None
+    assert quantiles is not None
