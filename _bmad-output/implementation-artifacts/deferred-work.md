@@ -7056,3 +7056,30 @@ severity: medium
 reason: LangSmith 트레이스(루트 01a0671b·01a06715) 실측 — 1턴 listing_ids 5건(2c15f138·80730d06·b56ea262·94f21bc5·2fc43a83), 2턴 시세 진단(2c15f138) 정상. 3턴 "나머지 두 개랑 뭐가 다른지 비교해줘"에서 search_listings(model_keyword="쏘렌토 MQ4", year 2021)를 먼저 호출해 목록 밖 800205a1을 얻은 뒤 compare_listings([2c15f138, 80730d06, 800205a1]). 즉 답변 본문의 차 이름을 보고 재검색했고 두 번째 이후 id는 쓰지 않았다. 1c67bbd(2026-08-31, 28/28 PASS) 시점엔 통과했으므로 그 뒤 에이전트 커밋(a3b594a·8170be1·f0f8267·7eb4fbd·fb38767) 중 하나가 규칙을 약화시켰거나, 1턴 결과가 3건→5건으로 늘어 "두 개" 지칭이 모호해진 것 — 어느 쪽인지는 미확정. 병합 전 검증에서 발견했으나 프롬프트 수정+회귀 재실행(4분/회, 실 LLM 과금) 반복이 필요해 이번 병합에서 고치지 않았다(사용자에게 보고). 핵심 기능(검색·진단·비교 자체)은 동작한다.
 trigger: 에이전트 프롬프트를 다음에 손볼 때 — (1) 1c67bbd 이후 커밋을 하나씩 되돌려 MT5를 돌려 원인 커밋 특정, (2) "나머지/그중/N번째" 지칭은 context의 listing_ids로만 해석하고 search_listings 금지 규칙을 강화, (3) 31건 전부 PASS 확인 후 닫는다.
 status: open
+
+### DW-856: TabPFN 전역 인스턴스를 요청들이 락 없이 공유해 동시 요청 시 fit/predict가 섞인다 — 운영 트레이스에서 NotFittedError·가중치 FileNotFoundError 실측
+
+origin: 시연 피드백 후속 조사(2026-09-04) — LangSmith 트레이스 01a06bf1(19:22 KST, 그랜저 GN7 하이브리드 2건 동시 진단)
+location: api/app/market_price.py:149,338-347(_TABPFN_MODEL 전역, fit→predict 사이 락 없음), api/Dockerfile(가중치 미포함 — 첫 fit에서 /root/.cache/tabpfn/ 다운로드)
+severity: high
+reason: 진단은 asyncio.to_thread로 스레드풀에서 돌므로 두 요청이 겹치면 A.fit→B.fit→A.predict 순으로 섞인다. 실측: 콜드스타트 직후 동시 2건에서 한쪽은 NotFittedError(다른 스레드가 전역을 새 객체로 바꿈), 다른 쪽은 체크포인트 파일 없음(FileNotFoundError, 다운로드 경쟁). 더 나쁜 건 조용한 경우 — 둘 다 성공하되 A의 예측이 B의 학습표로 계산된다(같은 기본 모델군이면 차이가 작아 눈에 안 띈다). 시연 당일(11:26~11:38 KST)엔 순차 요청이라 안 났다. 콜드스타트 첫 진단 31.5초(가중치 44MB 다운로드+로드, 웜 3.2초).
+trigger: 영업 단계 전 운영 안정화 때 — (1) threading.Lock으로 fit+predict 구간을 직렬화하거나 요청마다 TabPFNRegressor를 새로 만들되 가중치 로딩만 공유, (2) Dockerfile 빌드 단계에서 체크포인트를 이미지에 굽기(Dockerfile.reranker와 같은 방식), (3) 동시 2건 curl로 red→green 확인.
+status: open
+
+### DW-857: 이웃한 두 매물(그랜저 GN7 하이브리드 2024/2.4만km·2025/0.7만km)의 TabPFN 적정가가 만원 단위까지 같게(4,030만) 나와 시연에서 지적됨 — 코드 결함 아님, 상쇄 효과 + 연식 효과 과소
+
+origin: 시연 피드백(2026-09-04) → LangSmith 트레이스 6건 + 로컬 재계산(운영 DB 읽기전용, 연식×주행 what-if 격자) 실측
+location: api/app/market_price.py:415-422(학습표 = 기본 모델군 47건, id<>자신), :305-314(특징 10칸, 세대 없음), :348(mean 만원 반올림)
+severity: medium
+reason: 실측 — 원 단위 예측은 다르다(로컬 A 40,337,256 / B 40,341,036, 배포 트레이스 q50 40,280,272 / 40,322,328). 같은 학습표 위에서 모델은 둘을 75~100만(2%) 벌리는데, 시드 규칙(seed_depreciation.py)의 정답 차이는 236만(5.7%: 연식 220 + 주행 17)이라 연식 효과를 절반 이하로 본다(47건이 4세대 혼합·세대 특징 없음·GN7 하이브리드 10건·±5% 노이즈). 여기에 각자 자기 행을 뺀 학습표를 쓰는데 A는 2025 중 가장 비싼 행(규칙가 +3%), B는 2024 중 가장 싼 행(−2.6%)이라 상대의 표에 들어가며 두 연식 수준이 반대 방향으로 ~80~100만씩 밀려 상쇄됐다. 주행거리 둔감(만km당 −2~4만)은 시드 규칙 자체가 만km당 10만이라 데이터와 일관 — 실매물에선 더 클 수 있음. 시드는 규칙×노이즈라 모든 매물의 노이즈 없는 정답가를 알 수 있다(검증 자산).
+trigger: 시세 엔진 검증 하네스를 만들 때(다음 수업 전) — (1) 전 매물 diagnose를 돌려 TabPFN mean vs 규칙 정답가 MAPE·판정 vs 노이즈 계수 일치율 표로 뽑고, (2) DW-854 세대 특징 추가 전후를 같은 표로 비교, (3) 웹 카드에 mean 대신 q50 또는 구간(q25~q75)을 대표값으로 보일지 결정.
+status: open
+
+### DW-858: 운영 API(encar-ai-api)에 RERANKER_URL이 없어 리랭커 사이드카가 배포돼 있어도 운영 답변엔 리랭크가 적용되지 않는다 — 포트폴리오 설명과 실제가 어긋남
+
+origin: 시연 피드백 후속 조사(2026-09-04) — 리랭커 파이프라인 읽기 + 2026-09-03 운영 env 실측 기록
+location: Cloud Run encar-ai-api env(RERANKER_URL/RERANKER_TIMEOUT_SECONDS 없음), api/app/rerank_client.py:29-30(URL 없으면 즉시 None → 벡터순 폴백), api/app/graph/agent_tools.py:352-359(search_guides만 리랭크)
+severity: medium
+reason: 리랭커는 가이드 문서 검색(search_guides, 최대 5건)에만 걸리고 매물 검색엔 안 걸린다. dev API엔 연결돼 있으나 운영은 폴백 상태라 시연·포트폴리오에서 "리랭커 적용"이라 말하면 실제 운영 응답과 다르다. 연결 명령은 알려져 있음(gcloud run services update encar-ai-api --update-env-vars RERANKER_URL=https://encar-reranker-wiiqls2sga-du.a.run.app,RERANKER_TIMEOUT_SECONDS=15).
+trigger: 영업용 포트폴리오 문안 확정 전 사용자 결정 — (a) 운영에 연결하고 가이드 질문 1건으로 LangSmith 트레이스에서 rerank 호출을 확인하거나, (b) 문안을 "dev 환경 적용, 운영은 벡터순"으로 명시.
+status: open
