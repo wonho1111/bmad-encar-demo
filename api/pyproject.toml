@@ -34,6 +34,7 @@ ai = [
 dev = [
   "pytest",
   # httpx는 이제 본 dependencies에 있다(FastAPI TestClient 백엔드로도 그대로 쓰인다).
+  "openpyxl>=3.1",  # scripts/eval_xlsx.py — 4단계 오프라인 평가 검증용 엑셀 산출
 ]
 # 3단계 시세 진단 엔진 — TabPFN 적정가 예측(HANDOFF.md §2). 설치는 하지 않는다:
 #   tabpfn 2.2.1과 sentence-transformers 6.x가 같은 venv에서 huggingface-hub 버전 충돌로
