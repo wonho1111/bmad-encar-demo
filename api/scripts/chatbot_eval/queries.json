@@ -1,0 +1,1278 @@
+[
+  {
+    "id": "C01",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "2천만원초반대로 경차 뭐있어요",
+        "listing_id": null
+      }
+    ],
+    "intent": "예산 2천만원 초반대 경차를 찾고 싶음",
+    "expected": "예산 상한을 합리적으로 해석해 경차 매물만 제시(다른 차종 섞지 않음)"
+  },
+  {
+    "id": "C02",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "SUV 중에 4천만원대 디젤로 보여줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "4천만원대 디젤 SUV를 찾고 싶음",
+    "expected": "body_type=SUV, fuel=디젤, 가격 4천만원대 조건을 모두 반영한 매물만 제시"
+  },
+  {
+    "id": "C03",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "그랜저 하이브리드 매물 있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "그랜저 하이브리드 모델 재고를 확인하고 싶음",
+    "expected": "모델명(그랜저)과 연료(하이브리드)를 모두 반영, 없으면 없다고 명확히 답함(엉뚱한 모델 제시 금지)"
+  },
+  {
+    "id": "C04",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "인천 쪽에 3천만원 밑으로 준중형 세단 있을까요",
+        "listing_id": null
+      }
+    ],
+    "intent": "인천 지역·3천만원 이하·준중형 매물을 찾고 싶음",
+    "expected": "region=인천, price_max=3000만, body_type=준중형차 조건을 모두 반영"
+  },
+  {
+    "id": "C05",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "주행거리 2만km 이내 신차급 매물 있어?",
+        "listing_id": null
+      }
+    ],
+    "intent": "주행거리가 매우 적은(2만km 이내) 매물을 찾고 싶음",
+    "expected": "mileage_max=20000 조건을 반영, 2만km 넘는 매물을 신차급이라고 지어내지 않음"
+  },
+  {
+    "id": "C06",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "회색 세단 3500만원 이하로 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "회색 세단을 3500만원 이하로 찾고 싶음",
+    "expected": "color=회색, 세단류 차종, price_max=3500만 조건을 모두 반영"
+  },
+  {
+    "id": "C07",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "K5 중에 무사고만 골라서 보여줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "K5 모델 중 무사고 매물만 보고 싶음",
+    "expected": "model=K5, accident_status=무사고 조건을 모두 반영(사고·교환 매물 섞지 않음)"
+  },
+  {
+    "id": "C08",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "LPG차량 1500이하로 뭐있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "LPG 연료차를 1500만원 이하로 찾고 싶음",
+    "expected": "fuel=LPG, price_max=1500만 조건을 반영(단위 없는 '1500'을 1500만원으로 올바르게 해석)"
+  },
+  {
+    "id": "C09",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "하이패스랑 스마트키 둘 다 있는 차 찾아줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "하이패스와 스마트키 옵션을 모두 갖춘 차를 찾고 싶음",
+    "expected": "두 옵션을 AND로 걸어 둘 다 있는 매물만 제시(하나만 있는 매물로 개수 채우지 않음)"
+  },
+  {
+    "id": "C10",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "쏘나타 디젤 2019년식 이후로 보여줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "쏘나타 디젤 모델을 2019년식 이후로 찾고 싶음",
+    "expected": "model=쏘나타, fuel=디젤, year_min=2019 조건을 모두 반영"
+  },
+  {
+    "id": "C11",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "전기차 3000 이하 있어?",
+        "listing_id": null
+      }
+    ],
+    "intent": "전기차를 3000만원 이하로 찾고 싶음",
+    "expected": "fuel=전기, price_max=3000만 조건을 반영('3000'을 3000만원으로 해석)"
+  },
+  {
+    "id": "C12",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "대전에 있는 대형 세단 5천만원대 안쪽",
+        "listing_id": null
+      }
+    ],
+    "intent": "대전 지역의 대형 세단을 5천만원대 이내로 찾고 싶음",
+    "expected": "region=대전, body_type=대형차, 가격대 조건을 반영"
+  },
+  {
+    "id": "C13",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "경기도 매물 중에 무사고 SUV 4천 이하",
+        "listing_id": null
+      }
+    ],
+    "intent": "경기도의 무사고 SUV를 4천만원 이하로 찾고 싶음",
+    "expected": "region=경기, accident_status=무사고, body_type=SUV, price_max=4000만 조건을 모두 반영"
+  },
+  {
+    "id": "C14",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "투싼 20년식 이상인거 있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "투싼을 2020년식 이상으로 찾고 싶음",
+    "expected": "model=투싼, year_min=2020 조건을 반영('20년식'을 2020년으로 정확히 해석)"
+  },
+  {
+    "id": "C15",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "부산 쪽 하이브리드 세단 3천만원 이하",
+        "listing_id": null
+      }
+    ],
+    "intent": "부산 지역 하이브리드 세단을 3천만원 이하로 찾고 싶음",
+    "expected": "region=부산, fuel=하이브리드, 세단류, price_max=3000만 조건을 모두 반영"
+  },
+  {
+    "id": "C16",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "화물차 매물있어요? 2천만원이하로",
+        "listing_id": null
+      }
+    ],
+    "intent": "화물차를 2천만원 이하로 찾고 싶음",
+    "expected": "body_type=화물차, price_max=2000만 조건을 반영(없으면 없다고 답함)"
+  },
+  {
+    "id": "C17",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "1인소유 차량 중에 준중형 2500만 이하로",
+        "listing_id": null
+      }
+    ],
+    "intent": "1인 소유 이력의 준중형차를 2500만원 이하로 찾고 싶음",
+    "expected": "is_single_owner=true, body_type=준중형차, price_max=2500만 조건을 모두 반영"
+  },
+  {
+    "id": "C18",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "비흡연 차량으로 3천만원대 세단 보여줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "비흡연 차량인 세단을 3천만원대로 찾고 싶음",
+    "expected": "is_non_smoker=true, 세단류, 가격대 조건을 모두 반영"
+  },
+  {
+    "id": "C19",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "르노 SUV 있나요 3천만원 이하로",
+        "listing_id": null
+      }
+    ],
+    "intent": "르노(르노코리아) 제조사 SUV를 3천만원 이하로 찾고 싶음",
+    "expected": "manufacturer=르노코리아, body_type=SUV, price_max=3000만 조건을 반영(제조사 표기 차이를 인식)"
+  },
+  {
+    "id": "C20",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "무사고에 열선시트 있는 경차 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "무사고이면서 열선시트 옵션이 있는 경차를 찾고 싶음",
+    "expected": "accident_status=무사고, options에 열선시트, body_type=경차 조건을 모두 반영"
+  },
+  {
+    "id": "C21",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "쌍용 렉스턴 중에 주행거리 적은 거",
+        "listing_id": null
+      }
+    ],
+    "intent": "쌍용(KG모빌리티) 렉스턴을 주행거리 낮은 순으로 보고 싶음",
+    "expected": "model=렉스턴, 주행거리 오름차순 또는 낮은 매물 위주로 제시"
+  },
+  {
+    "id": "C22",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "스포츠카 매물 있어요? 예산 5천만원 정도",
+        "listing_id": null
+      }
+    ],
+    "intent": "스포츠카를 5천만원 예산 내에서 찾고 싶음",
+    "expected": "body_type=스포츠카, price_max=5000만 조건을 반영(없으면 없다고 명확히 답함)"
+  },
+  {
+    "id": "C23",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "승합차 7인승 이상 4천만원 이하로",
+        "listing_id": null
+      }
+    ],
+    "intent": "7인승 이상 승합차를 4천만원 이하로 찾고 싶음",
+    "expected": "body_type=승합차, seats_min=7, price_max=4000만 조건을 모두 반영"
+  },
+  {
+    "id": "C24",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "제주도에 있는 매물 중에 2천만원대 SUV",
+        "listing_id": null
+      }
+    ],
+    "intent": "제주 지역의 2천만원대 SUV를 찾고 싶음",
+    "expected": "region=제주, body_type=SUV, 가격대 조건을 모두 반영"
+  },
+  {
+    "id": "C25",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "투싼이나 스포티지 중에 무사고로 3천 이하",
+        "listing_id": null
+      }
+    ],
+    "intent": "투싼 또는 스포티지 중 무사고 매물을 3천만원 이하로 찾고 싶음",
+    "expected": "model이 투싼 또는 스포티지(OR), accident_status=무사고, price_max=3000만 조건을 모두 반영"
+  },
+  {
+    "id": "C26",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "5천만원 이상 대형 SUV 있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "5천만원 이상 가격대의 대형 SUV를 찾고 싶음",
+    "expected": "price_min=5000만, body_type=SUV(대형급) 조건을 반영(이하로 잘못 해석하지 않음)"
+  },
+  {
+    "id": "C27",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "쏘렌토 디젤 4천만원 근처로 있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "쏘렌토 디젤 모델을 4천만원 근처 가격대로 찾고 싶음",
+    "expected": "model=쏘렌토, fuel=디젤, 4천만원 근접 가격대 매물을 반영"
+  },
+  {
+    "id": "C28",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "가솔린 준중형 2천만원 초반 매물",
+        "listing_id": null
+      }
+    ],
+    "intent": "가솔린 준중형차를 2천만원 초반대로 찾고 싶음",
+    "expected": "fuel=가솔린, body_type=준중형차, 가격이 2천만원 초반대인 매물을 반영"
+  },
+  {
+    "id": "C29",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "K3아니면 아반떼 2500만원이하로",
+        "listing_id": null
+      }
+    ],
+    "intent": "K3 또는 아반떼를 2500만원 이하로 찾고 싶음",
+    "expected": "model이 K3 또는 아반떼(OR), price_max=2500만 조건을 모두 반영"
+  },
+  {
+    "id": "C30",
+    "category": "검색",
+    "turns": [
+      {
+        "query": "무선충전 되는 차 3천만원 이하로 찾아줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "무선충전 옵션이 있는 차를 3천만원 이하로 찾고 싶음",
+    "expected": "options에 무선충전, price_max=3000만 조건을 모두 반영(옵션이 DB에 없으면 없다고 답함)"
+  },
+  {
+    "id": "C31",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "첫차 뭐 타면 좋을까요",
+        "listing_id": null
+      }
+    ],
+    "intent": "첫차로 적합한 차종을 추천받고 싶음(예산·용도 미제시)",
+    "expected": "조건이 없으므로 clarify로 예산·용도를 되묻거나, 가이드 지식으로 초보자 적합 차종을 검색해 제시(지식만 나열하고 매물 0건은 오답)"
+  },
+  {
+    "id": "C32",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "아이 둘 키우는데 차 뭐가 좋을까요",
+        "listing_id": null
+      }
+    ],
+    "intent": "아이 둘을 태우기 좋은 차를 추천받고 싶음",
+    "expected": "가이드의 패밀리카 매핑(중형·SUV·RV·준중형)을 근거로 매물을 제시하거나, 예산 등 부족한 조건을 되물음"
+  },
+  {
+    "id": "C33",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "연비 좋은 차로 추천 부탁해요",
+        "listing_id": null
+      }
+    ],
+    "intent": "연비가 좋은 차를 추천받고 싶음(예산 미제시)",
+    "expected": "가이드의 연료별 유지비 설명(하이브리드·전기 등)을 근거로 매물을 좁히거나 되물음"
+  },
+  {
+    "id": "C34",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "가족여행 다닐때 좋은차 있을까요",
+        "listing_id": null
+      }
+    ],
+    "intent": "가족 여행에 적합한 차를 추천받고 싶음",
+    "expected": "캠핑·레저 가이드(SUV·RV 매핑)를 근거로 매물을 제시하거나 조건을 되물음"
+  },
+  {
+    "id": "C35",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "장거리 운전 편한 차 뭐가 있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "장거리 운전에 편한 차를 추천받고 싶음",
+    "expected": "가이드의 장거리·연료 관련 내용을 근거로 매물을 좁히거나 조건(예산 등)을 되물음"
+  },
+  {
+    "id": "C36",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "여자친구랑 드라이브 다니기 좋은 차",
+        "listing_id": null
+      }
+    ],
+    "intent": "데이트·드라이브용으로 어울리는 차를 추천받고 싶음",
+    "expected": "조건이 전혀 없으므로 clarify로 예산·차종 선호를 되묻거나 합리적 근거로 소형·스포츠카 등을 제시"
+  },
+  {
+    "id": "C37",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "신혼부부한테 어울리는 차 추천해주세요",
+        "listing_id": null
+      }
+    ],
+    "intent": "신혼부부에게 어울리는 차를 추천받고 싶음",
+    "expected": "패밀리카·준중형 가이드 근거로 매물을 제시하거나 예산 등을 되물음"
+  },
+  {
+    "id": "C38",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "연로하신 부모님 태우고 다니기 편한 차",
+        "listing_id": null
+      }
+    ],
+    "intent": "부모님을 태우기 편한(승하차 편한) 차를 추천받고 싶음",
+    "expected": "조건이 없으므로 되묻거나, 승하차 편의를 근거로 SUV 등급 매물을 제시"
+  },
+  {
+    "id": "C39",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "관리 편한 차로 하나 골라줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "유지·관리가 수월한 차를 추천받고 싶음",
+    "expected": "예산 등 조건이 없으므로 되묻거나, 신뢰성 가이드 근거(무사고·낮은 주행거리)로 매물을 제시"
+  },
+  {
+    "id": "C40",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "예쁜 디자인의 차 추천해줄래?",
+        "listing_id": null
+      }
+    ],
+    "intent": "디자인이 좋은 차를 추천받고 싶음(주관적 기준)",
+    "expected": "디자인은 DB에 없는 주관적 기준이므로 되물어 다른 구체 조건(예산·차종)을 확보하거나, 매물을 지어내지 않음"
+  },
+  {
+    "id": "C41",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "캠핑카처럼 활용하기 좋은 차 있나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "캠핑 활용도가 높은 차를 추천받고 싶음",
+    "expected": "가이드의 SUV·RV·승합차 매핑을 근거로 매물을 제시하거나 예산을 되물음"
+  },
+  {
+    "id": "C42",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "골프백 실을 수 있는 차 추천",
+        "listing_id": null
+      }
+    ],
+    "intent": "적재공간이 넉넉한(골프백이 들어가는) 차를 추천받고 싶음",
+    "expected": "적재 관련 가이드 근거로 SUV·세단 등을 제시하거나 조건을 되물음"
+  },
+  {
+    "id": "C43",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "유지비 걱정 없는 차로 알려주세요",
+        "listing_id": null
+      }
+    ],
+    "intent": "유지비가 적게 드는 차를 추천받고 싶음",
+    "expected": "연료별 유지비 가이드 근거로 하이브리드·전기 등을 제시하거나 예산을 되물음"
+  },
+  {
+    "id": "C44",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "회사 출퇴근할 때 편한 차 뭐가 좋을지",
+        "listing_id": null
+      }
+    ],
+    "intent": "출퇴근용으로 편한 차를 추천받고 싶음",
+    "expected": "가이드 근거(경차·준중형 등)로 매물을 제시하거나 예산·거리 조건을 되물음"
+  },
+  {
+    "id": "C45",
+    "category": "추천",
+    "turns": [
+      {
+        "query": "반려견이랑 다니기좋은 차 있어요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "반려동물 동반에 적합한 차를 추천받고 싶음",
+    "expected": "적재·공간 관련 가이드 근거로 SUV 등을 제시하거나 조건을 되물음(반려동물 전용 데이터가 없음을 지어내지 않음)"
+  },
+  {
+    "id": "C46",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "2500만원 이하 준중형 세단 추천해줘",
+        "listing_id": null
+      },
+      {
+        "query": "그중 제일 싼 거",
+        "listing_id": null
+      }
+    ],
+    "intent": "조건 검색 후 결과 중 최저가 매물을 확인하고 싶음",
+    "expected": "2턴이 재검색 없이 1턴 목록 안에서 가장 저렴한 매물만 답해야 함"
+  },
+  {
+    "id": "C47",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "3500만원 이하 SUV 뭐 있어",
+        "listing_id": null
+      },
+      {
+        "query": "두 번째 거 시세 봐줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "검색 목록에서 두 번째 매물의 시세를 확인하고 싶음",
+    "expected": "2턴이 1턴 목록의 두 번째 매물 id로 market_price_stats를 호출해 그 결과만 근거로 답해야 함"
+  },
+  {
+    "id": "C48",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "4천만원 이하 세단 좀 보여줘",
+        "listing_id": null
+      },
+      {
+        "query": "그거 말고 하이브리드만",
+        "listing_id": null
+      }
+    ],
+    "intent": "세단 목록에서 하이브리드만 다시 좁혀 보고 싶음",
+    "expected": "fuel=하이브리드 조건을 추가 반영한 매물만 제시(직전 조건 중 세단·가격 유지)"
+  },
+  {
+    "id": "C49",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "5천만원 예산으로 살 수 있는 SUV 뭐 있어",
+        "listing_id": null
+      },
+      {
+        "query": "앞의 두 대 비교해줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "추천받은 목록 중 앞의 두 매물을 비교하고 싶음",
+    "expected": "재검색 없이 1턴 목록의 앞 두 매물 id로 compare_listings를 호출해 비교해야 함"
+  },
+  {
+    "id": "C50",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "2천만원 이하 경차 뭐 있어",
+        "listing_id": null
+      },
+      {
+        "query": "그 중에 무사고인 것만 골라줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "경차 목록 중 무사고 매물만 다시 추리고 싶음",
+    "expected": "재검색 대신 직전 목록에서 accident_status=무사고인 매물만 남겨 답해야 함"
+  },
+  {
+    "id": "C51",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "전기차 4천만원 이하로 보여줘",
+        "listing_id": null
+      },
+      {
+        "query": "이 중에 주행거리 제일 짧은 거 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "전기차 목록 중 주행거리가 가장 적은 매물을 알고 싶음",
+    "expected": "직전 목록 안에서 주행거리 최솟값 매물만 답해야 함(재검색 금지)"
+  },
+  {
+    "id": "C52",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "디젤 SUV 3천만원대로 추천해줘",
+        "listing_id": null
+      },
+      {
+        "query": "세 번째 매물 옵션 뭐 있어?",
+        "listing_id": null
+      },
+      {
+        "query": "그거 시세도 봐줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "세 번째 매물의 옵션을 먼저 확인하고 이어서 그 매물의 시세도 알고 싶음",
+    "expected": "2턴은 목록의 세 번째 매물 옵션만 답하고, 3턴은 같은 매물 id로 market_price_stats를 호출해 시세를 답해야 함(다른 매물로 새지 않음)"
+  },
+  {
+    "id": "C53",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "기아 K5 매물 좀 보여줘",
+        "listing_id": null
+      },
+      {
+        "query": "그중 연식 제일 최근거",
+        "listing_id": null
+      },
+      {
+        "query": "그거 시세 어때",
+        "listing_id": null
+      }
+    ],
+    "intent": "K5 목록 중 최신 연식 매물을 찾고 그 시세를 알고 싶음",
+    "expected": "2턴은 목록 내 최신 연식 매물을 짚고, 3턴은 같은 매물의 시세를 market_price_stats 결과로만 답해야 함"
+  },
+  {
+    "id": "C54",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "준중형 하이브리드 3천만원 이하",
+        "listing_id": null
+      },
+      {
+        "query": "1번이랑 3번 비교해줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "목록의 1번째와 3번째 매물을 비교하고 싶음",
+    "expected": "재검색 없이 지정된 두 매물 id로 compare_listings를 호출해야 함"
+  },
+  {
+    "id": "C55",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "대형 세단 5천만원 이하로 찾아줘",
+        "listing_id": null
+      },
+      {
+        "query": "그중 주행거리 제일 적은 거 시세 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "목록 중 주행거리가 가장 적은 매물의 시세를 알고 싶음",
+    "expected": "직전 목록에서 해당 매물을 특정해 market_price_stats로 시세를 답해야 함(임의 매물 지어내기 금지)"
+  },
+  {
+    "id": "C56",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "부산에 있는 SUV 매물 알려줘",
+        "listing_id": null
+      },
+      {
+        "query": "여기서 디젤만 남겨줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "부산 SUV 목록에서 디젤 매물만 다시 보고 싶음",
+    "expected": "region=부산, body_type=SUV 조건을 유지하며 fuel=디젤 조건을 추가한 매물만 제시"
+  },
+  {
+    "id": "C57",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "경기도 준중형 매물 보여줘",
+        "listing_id": null
+      },
+      {
+        "query": "그거 다 합쳐서 비교해줄 수 있어?",
+        "listing_id": null
+      },
+      {
+        "query": "그럼 그중 제일 옵션 많은 거로",
+        "listing_id": null
+      }
+    ],
+    "intent": "목록 전체 비교 후 옵션이 가장 많은 매물을 고르고 싶음",
+    "expected": "2턴은 목록 매물들(최대 4건)을 compare_listings로 비교하고, 3턴은 비교 결과에서 옵션 개수가 가장 많은 매물을 짚어 답해야 함"
+  },
+  {
+    "id": "C58",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "가솔린 소형차 2천만원 이하로",
+        "listing_id": null
+      },
+      {
+        "query": "이 중에 제일 연식 오래된 거 빼줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "목록에서 연식이 가장 오래된 매물을 제외하고 나머지를 보고 싶음",
+    "expected": "재검색 없이 직전 목록에서 최고령 매물 1건만 제외한 나머지를 제시해야 함"
+  },
+  {
+    "id": "C59",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "무사고 SUV 4천만원 이하 보여줘",
+        "listing_id": null
+      },
+      {
+        "query": "여기서 흰색만 있어?",
+        "listing_id": null
+      },
+      {
+        "query": "그럼 첫 번째 거 시세 봐줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "목록 중 흰색 매물을 확인하고 그중 첫 번째 매물의 시세를 알고 싶음",
+    "expected": "2턴은 직전 목록 안에서 흰색 매물 유무를 답하고, 3턴은 그 결과의 첫 번째 매물 id로 시세를 답해야 함"
+  },
+  {
+    "id": "C60",
+    "category": "멀티턴",
+    "turns": [
+      {
+        "query": "쏘나타나 K5 중에 무사고로 알려줘",
+        "listing_id": null
+      },
+      {
+        "query": "그중에 더 저렴한 쪽 시세 확인해줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "두 매물 중 더 저렴한 쪽의 시세를 확인하고 싶음",
+    "expected": "직전 목록에서 가격이 더 낮은 매물을 특정해 market_price_stats로만 시세를 답해야 함"
+  },
+  {
+    "id": "C61",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "성능점검기록부는 어디서 확인할 수 있어요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "성능점검기록부(중고차 상태 진단 서류) 확인 방법을 알고 싶음(순수 지식 질문)",
+    "expected": "매물 추천 범위 밖임을 정중히 안내하고 조건이 있으면 매물 검색으로 유도(지식 답변을 길게 늘어놓지 않음)"
+  },
+  {
+    "id": "C62",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "무사고 매물이랑 단순교환 매물이랑 뭐가 달라요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "사고이력 등급(무사고/단순교환/사고)의 차이를 알고 싶음(순수 지식 질문)",
+    "expected": "범위 밖임을 안내하고 필요하면 accident_status 조건으로 매물 검색을 제안(지식 설명을 상세히 하지 않음)"
+  },
+  {
+    "id": "C63",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "침수차량인지 아닌지 구별하는 팁 있을까요",
+        "listing_id": null
+      }
+    ],
+    "intent": "침수차 구별법을 알고 싶음(순수 지식 질문, DB에 침수 여부 컬럼 없음)",
+    "expected": "범위 밖임을 안내하고 무사고 조건 등 대안으로 유도(침수 여부를 안다고 지어내지 않음)"
+  },
+  {
+    "id": "C64",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "중고차도 보증기간이 남아있는 경우가 있나요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "중고차 보증 제도 자체를 알고 싶음(순수 지식 질문)",
+    "expected": "범위 밖임을 안내(DB에 보증 정보 없음)하고 매물 조건 대화로 유도"
+  },
+  {
+    "id": "C65",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "명의이전 절차가 복잡한가요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "명의이전 절차를 알고 싶음(순수 지식 질문)",
+    "expected": "범위 밖임을 안내하고 매물 조건 대화로 유도(법률·행정 절차를 상세 설명하지 않음)"
+  },
+  {
+    "id": "C66",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "리스 승계 매물은 일반 매물이랑 다르게 봐야 하나요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "리스 승계 매물의 특성을 알고 싶음(순수 지식 질문)",
+    "expected": "범위 밖임을 안내하고 매물 조건 대화로 유도"
+  },
+  {
+    "id": "C67",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "성능점검 잘 받은 무사고 차 좀 보여주세요",
+        "listing_id": null
+      }
+    ],
+    "intent": "무사고 조건을 만족하는 매물을 추천받고 싶음(지식+검색 혼합)",
+    "expected": "accident_status=무사고 조건을 반영해 실제 매물을 제시(성능점검 자체는 DB 필드가 아니므로 그 부분만 안내)"
+  },
+  {
+    "id": "C68",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "사고 이력 없는 차만 골라서 보여줄 수 있어요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "무사고 매물만 보고 싶음(구조조건 질의)",
+    "expected": "accident_status=무사고 조건을 반영한 매물을 제시"
+  },
+  {
+    "id": "C69",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "옵션 중에 나중에 팔 때 값 더 쳐주는 게 뭐가 있어요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "재판매 가치가 높은 옵션이 뭔지 알고 싶음(가이드12 주제, 순수 지식 질문)",
+    "expected": "범위 밖임을 안내하고 관련 옵션 조건으로 매물 검색을 제안하거나 되물음(지식만 나열하고 매물 0건이면 아쉬움)"
+  },
+  {
+    "id": "C70",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "주행거리랑 연식 중에 뭘 더 중요하게 봐야 해요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "주행거리와 연식 중 판단 기준을 알고 싶음(가이드11 주제, 순수 지식 질문)",
+    "expected": "범위 밖임을 안내하고 구체 조건(가격·주행거리 등)을 되물어 매물 검색으로 유도"
+  },
+  {
+    "id": "C71",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "적당한 주행거리가 어느 정도예요? 그 안에서 세단 보여주세요",
+        "listing_id": null
+      }
+    ],
+    "intent": "적정 주행거리 기준 내의 세단 매물을 추천받고 싶음(지식+검색 혼합)",
+    "expected": "가이드의 연식 대비 주행거리 기준을 근거로 mileage 조건을 반영한 세단 매물을 제시"
+  },
+  {
+    "id": "C72",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "무보증 매물이면 피하는 게 나을까요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "보증 유무에 따른 구매 판단을 조언받고 싶음(순수 지식 질문)",
+    "expected": "범위 밖임을 안내(DB에 보증 필드 없음)하고 매물 조건 대화로 유도"
+  },
+  {
+    "id": "C73",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "명의이전 안된 매물이 섞여있진 않겠죠?",
+        "listing_id": null
+      }
+    ],
+    "intent": "매물의 명의이전 상태를 신뢰할 수 있는지 확인하고 싶음(순수 지식/신뢰 질문)",
+    "expected": "범위 밖(해당 데이터 없음)임을 정직하게 안내하고 지어내지 않음"
+  },
+  {
+    "id": "C74",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "차량 성능점검표 안 보여주는 매물은 거르고 싶어요",
+        "listing_id": null
+      }
+    ],
+    "intent": "성능점검표 공개 여부로 매물을 거르고 싶음(DB에 없는 조건)",
+    "expected": "해당 조건은 지원하지 않음을 안내하고 무사고 등 대안 조건으로 유도(있는 것처럼 필터링하지 않음)"
+  },
+  {
+    "id": "C75",
+    "category": "가이드",
+    "turns": [
+      {
+        "query": "리스 승계 가능한 매물만 따로 있어요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "리스 승계 가능 매물만 보고 싶음(DB에 없는 조건)",
+    "expected": "해당 조건 데이터가 없음을 안내하고 대안을 제시(임의로 매물을 골라 리스 승계 가능하다고 지어내지 않음)"
+  },
+  {
+    "id": "C76",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 기아 레이 2021 · 3.5만km · 1190만원",
+        "listing_id": "544ae6ff-d2b1-40f1-9d61-3947870e2a84"
+      }
+    ],
+    "intent": "지정한 레이 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C77",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 현대 그랜저 GN7 2024 · 2.9만km · 4200만원",
+        "listing_id": "8174da40-afe9-436c-9f28-fd199e83edd0"
+      }
+    ],
+    "intent": "지정한 그랜저 GN7 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C78",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 현대 아반떼 AD 2020 · 8.9만km · 1695만원",
+        "listing_id": "3796aab6-7236-4dd0-acb4-3922c721a9c6"
+      }
+    ],
+    "intent": "지정한 아반떼 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C79",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 기아 쏘렌토 MQ4 2021 · 4.1만km · 3350만원",
+        "listing_id": "acb88fea-2d25-42d6-8391-29f6b48b6848"
+      }
+    ],
+    "intent": "지정한 쏘렌토 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C80",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — BMW X3 2020 · 5.5만km · 4550만원",
+        "listing_id": "f7ed9b3c-3055-400b-b725-d3b7562e61e8"
+      }
+    ],
+    "intent": "지정한 BMW X3 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C81",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 벤츠 E250 2019 · 9.2만km · 7191만원",
+        "listing_id": "ea904b26-f38f-466f-bdec-0a34df3bc618"
+      }
+    ],
+    "intent": "지정한 벤츠 E250 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C82",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 기아 니로EV 2021 · 4.3만km · 2850만원",
+        "listing_id": "4824ab13-0934-41cc-a89a-f4c08cbb7e25"
+      }
+    ],
+    "intent": "지정한 니로EV(전기차) 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C83",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 현대 아이오닉6 2023 · 1.4만km · 4450만원",
+        "listing_id": "7c907c13-3f6a-4fde-8cff-be9b42a754db"
+      }
+    ],
+    "intent": "지정한 아이오닉6 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C84",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 기아 카니발 KA4 2022 · 3.3만km · 3780만원",
+        "listing_id": "ff73b989-03db-4b23-b2df-a22658428aa6"
+      }
+    ],
+    "intent": "지정한 카니발 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C85",
+    "category": "시세",
+    "turns": [
+      {
+        "query": "이 매물 시세 알려줘 — 현대 쏘나타 2015 · 14.6만km · 1700만원",
+        "listing_id": "df7d6224-734e-4143-9eb9-7182bbdb2fa3"
+      }
+    ],
+    "intent": "지정한 쏘나타(고주행거리) 매물의 적정 시세를 확인하고 싶음",
+    "expected": "market_price_stats 결과(비교군·적정가)만 근거로 판정, 호출 없이 가격대를 추정하지 않음"
+  },
+  {
+    "id": "C86",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "요즘 코스피 전망 어때요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "주식시장 전망을 알고 싶음(매물과 무관)",
+    "expected": "정중히 범위 밖임을 안내하고 매물 대화로 유도(막다른 거절 금지)"
+  },
+  {
+    "id": "C87",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "내일 부산 날씨 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "날씨 정보를 알고 싶음(매물과 무관)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도"
+  },
+  {
+    "id": "C88",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "파스타 맛있게 만드는 법 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "요리법을 알고 싶음(매물과 무관)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도"
+  },
+  {
+    "id": "C89",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "자동차세 언제까지 내야 하나요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "자동차세 납부 기한을 알고 싶음(세금 상담, 범위 밖)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도(세금 납부일을 지어내 답하지 않음)"
+  },
+  {
+    "id": "C90",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "할부 금리 요즘 몇프로예요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "자동차 할부 금리 수준을 알고 싶음(금융 상담, 범위 밖)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도(금리 수치를 지어내지 않음)"
+  },
+  {
+    "id": "C91",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "요즘 비트코인 말고 이더리움은 어때요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "가상자산 투자 조언을 원함(매물과 무관)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도"
+  },
+  {
+    "id": "C92",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "환율이 올라서 걱정인데 어떻게 해야 하나요",
+        "listing_id": null
+      }
+    ],
+    "intent": "환율 관련 재정 조언을 원함(매물과 무관)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도"
+  },
+  {
+    "id": "C93",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "오늘 프로야구 경기 결과 알려줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "스포츠 경기 결과를 알고 싶음(매물과 무관)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도"
+  },
+  {
+    "id": "C94",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "다이어트 식단 좀 추천해줘",
+        "listing_id": null
+      }
+    ],
+    "intent": "다이어트 식단을 추천받고 싶음(매물과 무관)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도"
+  },
+  {
+    "id": "C95",
+    "category": "거절",
+    "turns": [
+      {
+        "query": "자동차 보험 다이렉트로 가입하는 게 나아요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "자동차 보험 가입 방식을 조언받고 싶음(보험 상담, 범위 밖)",
+    "expected": "범위 밖 안내 후 매물 대화로 유도(보험 가입 조언을 하지 않음)"
+  },
+  {
+    "id": "C96",
+    "category": "경계",
+    "turns": [
+      {
+        "query": "티코 프로 매물 있어요?",
+        "listing_id": null
+      }
+    ],
+    "intent": "존재하지 않는 가상의 모델(티코 프로)의 매물을 찾고 싶음",
+    "expected": "해당 모델이 없음을 명확히 안내(비슷한 이름의 다른 매물을 임의로 티코 프로라고 제시하지 않음)"
+  },
+  {
+    "id": "C97",
+    "category": "경계",
+    "turns": [
+      {
+        "query": "10만원 이하로 차 있어?",
+        "listing_id": null
+      }
+    ],
+    "intent": "비현실적으로 낮은 예산(10만원)으로 차를 찾고 싶음",
+    "expected": "해당 예산으로는 매물이 없음을 안내하거나 현실적 예산을 되물음(억지로 아무 매물이나 제시하지 않음)"
+  },
+  {
+    "id": "C98",
+    "category": "경계",
+    "turns": [
+      {
+        "query": "차",
+        "listing_id": null
+      }
+    ],
+    "intent": "조건이 전혀 없는 한 단어 질의(의도 불명)",
+    "expected": "clarify로 예산·차종·용도를 되물어야 함(조건 없이 임의 매물을 나열하지 않음)"
+  },
+  {
+    "id": "C99",
+    "category": "경계",
+    "turns": [
+      {
+        "query": "SUV 추천해줘 please 예산은 3000 정도",
+        "listing_id": null
+      }
+    ],
+    "intent": "영어가 섞인 문장으로 3000만원 예산의 SUV를 찾고 싶음",
+    "expected": "언어와 무관하게 SUV·예산 3000만원 조건을 정확히 반영해 매물을 제시"
+  },
+  {
+    "id": "C100",
+    "category": "경계",
+    "turns": [
+      {
+        "query": "안뇽 쏘나타아 가격 알려줴",
+        "listing_id": null
+      }
+    ],
+    "intent": "오타가 섞였지만 실제로는 쏘나타 가격(시세)을 알고 싶음",
+    "expected": "오타를 정상적으로 이해해 쏘나타 매물을 찾아 응답(이해 실패로 엉뚱하게 거절·되묻지 않아야 함, 매물이 여럿이면 clarify는 허용)"
+  }
+]

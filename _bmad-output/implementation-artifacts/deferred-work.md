@@ -7141,3 +7141,12 @@ severity: medium
 reason: 300건은 전체 수치의 폭이 ±5%p(적중률)·5~7%(오차율 중앙값)로 충분하지만 세대별 20건은 ±20%p로 넓다. 세대당 약 65건(총 ~1,000건)이면 세대별 폭이 ±11%p로 줄고, 새 씨앗값 표본이라 300건 결과의 재현 여부도 확인된다. 케이스당 8초라 LOO 한 방식만 돌려도 약 2.5시간(CPU, 토큰 0)이라 지금 즉시 하지 않고 최종 점검 직전에 한다.
 trigger: 최종 시연 점검표·시연 시나리오·포트폴리오 PDF 작성 시작 전 — `build_eval_db.py --keep --split-per-target 65 --seed <새 값>` → LOO 실행(hold-out은 300건에서 차이 0.9%로 확인됐으므로 생략 가능) → 요약·세대별·보정 표를 300건 결과와 나란히 보고, 그 뒤 DW-863(사고 3단계 특징) 적용 전후 비교에도 같은 1,000건을 쓴다.
 status: open
+
+### DW-865: 에이전트가 명시된 지역·차종 조건을 도구 파라미터(region·body_type)로 넘기지 않고 query_text에만 실어, 다른 지역·차급 매물을 "조건 충족"이라고 안내한다
+
+origin: 챗봇 답변 검증 v2(2026-09-08, api/scripts/chatbot_eval, 새 질의 100건, 판정기 gemini-3.1-pro-preview + 도구 원문 대조)
+location: api/app/graph/agent.py(_SYSTEM_PROMPT 도구 사용 규칙), api/app/graph/agent_tools.py(search_listings 파라미터 region·body_type), 검증 데이터 .logs/chatbot_eval/20260908/
+severity: high
+reason: 검색 30건 중 7건 constraint_violated. 예: "인천 쪽에 3천만원 밑으로 준중형 세단"(C04) → region 미지정, 경기·대구·서울 매물을 "인천 지역 매물"로 안내. "대전 대형 세단 5천만원대"(C12) → 서울 매물. "스포츠카 5천만원"(C22) → body_type 미지정, 세단·해치백 추천. 사용자에게 틀린 사실(지역)을 단정하는 유형이라 신뢰 훼손이 크다. 멀티턴 wrong_reference 6건은 DW-855와 같은 계열.
+trigger: 다음 에이전트 프롬프트 수정 때 — (1) 시스템 프롬프트에 "명시된 지역·차종·연료·예산은 반드시 해당 파라미터로 넘기고 query_text에 싣지 않는다" 규칙, (2) 결정론 후검사: 답변에 실을 매물을 명시 조건(region/body_type/fuel/price)으로 걸러 0건이면 "조건에 맞는 매물이 없어 대안을 보입니다"라고 명시, (3) 같은 100건(chatbot_eval)으로 재실행해 검색 GOOD율 70%→90% 이상 확인 후 닫는다.
+status: open
