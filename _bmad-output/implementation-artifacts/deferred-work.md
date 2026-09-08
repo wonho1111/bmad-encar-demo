@@ -7176,7 +7176,8 @@ location: api/app/graph/agent.py(_SYSTEM_PROMPT 단위 규칙), api/app/graph/ag
 severity: high
 reason: C08 "LPG차량 1500이하" → price_max=1500(원) → 0건 응답, 실제 2건. C11 "전기차 3000 이하" → 3000(원), 실제 3건. C13 "경기도 무사고 SUV 4천 이하" → 4000(원)+지역 인자 부재(DW-867), 실제 6건. C99 "예산은 3000 정도" → 2,800~3,200원. C21 "쌍용 렉스턴" → manufacturer='쌍용', DB는 'KG모빌리티'만 있어 0건(실제 1건). 매물이 있는데 없다고 말하는 유형이라 매출·신뢰에 직접 손해. 4건 모두 3차 판정기(bad_tool_args)가 잡았고 사람 라벨은 3건을 잡았다.
 trigger: DW-865(지역·차종 인자)와 같은 프롬프트 수정 묶음 — (1) 프롬프트에 "예산 숫자는 만원 단위로 해석해 원으로 변환(1500→15,000,000)" 규칙과 예시, (2) 도구 쪽 결정론 방어: price_max < 1,000,000이면 만원 단위로 간주해 ×10,000(또는 거부), 제조사 별칭 표(쌍용·쌍용자동차→KG모빌리티, 르노삼성→르노코리아), (3) chatbot_eval 100건 재실행으로 검색 GOOD율 37%→80% 이상 확인.
-status: open
+status: done 2026-09-09
+resolution: 커밋 f8bf999 — search_listings에 가격 단위 방어(100만 미만 값은 만원으로 보고 ×10,000, 경고 로그)와 제조사 별칭 표(쌍용·쌍용자동차→KG모빌리티, 르노삼성→르노코리아 등) 추가. 같은 100건 재검증(판정기 v3): bad_tool_args 7→1(남은 1건 '르노' 단독 별칭 누락은 DW-872), 검색 GOOD율 37%→73%. 단위 테스트 추가(1500→15,000,000 등, red→green 확인).
 
 ### DW-869: 시세 답변이 비교군 1~2건(표본 부족)인데도 중앙값·범위를 단정적으로 전달한다 — 주의 문구 규칙 없음
 
@@ -7185,7 +7186,8 @@ location: api/app/graph/agent.py(_SYSTEM_PROMPT 시세 설명 규칙), api/app/g
 severity: medium
 reason: 엔진은 3건 미만이면 판정을 보류(verdict_basis "표본 부족")하지만 LLM은 도구 텍스트의 중앙값·범위를 그대로 읊어 "시세 범위보다 높다"처럼 단정한다(C78·C81·C84·C85·C47·C79). 사용자 판단: 표본이 적다는 주의 문구가 반드시 있어야 한다.
 trigger: DW-865·868 프롬프트 수정 묶음에 포함 — 도구 텍스트에 "비교군 N건(3건 미만: 참고만)" 표기를 넣고 프롬프트에 "3건 미만이면 '표본이 적어 참고만 하세요'를 반드시 덧붙인다" 규칙. 3차 판정기 missing_caveat 코드로 재확인.
-status: open
+status: done 2026-09-09
+resolution: 커밋 f8bf999 — _format_market_diagnosis에 비교군 3건 미만 경고 줄 + 프롬프트 규칙 + 최종 답변 후처리 ensure_sample_caveat(코드 강제). 재검증 100건에서 missing_caveat 7→0, 시세 GOOD율 50%→100%.
 
 ### DW-870: 챗봇 답변 본문에 매물 내부 UUID가 그대로 노출된다(멀티턴 비교·시세 답변)
 
@@ -7194,7 +7196,8 @@ location: api/app/graph/agent.py(최종 답변 생성 지시), agent_tools.py(_f
 severity: low
 reason: 도구 텍스트에 id가 들어가는 건 후속 도구 호출용인데, 최종 답변에서 "(id: 8f9ad147-…)"처럼 사용자에게 노출된다. 사람 라벨은 GOOD으로 봤으나 제품 관점에서 어색하다(사용자 재검토 권고 대상).
 trigger: 프롬프트 수정 묶음에서 "답변 본문에 id를 쓰지 않는다" 규칙 + verify_answer_numbers 류 정규식 검사(UUID 패턴 0건).
-status: open
+status: done 2026-09-09
+resolution: 커밋 f8bf999 — answer_guards.strip_listing_ids로 최종 답변의 (id: uuid)·id=uuid·맨 UUID 제거(코드 강제) + 프롬프트 규칙. 재검증에서 format(id 노출) 5→0. 단위 테스트 3형태.
 
 ### DW-871: 챗봇이 제품에 없는 기능을 있는 것처럼 안내한다("성능점검기록부는 성능점검 탭에서 확인") — 정직성 규칙 부재
 
@@ -7203,4 +7206,14 @@ location: api/app/graph/agent.py(_SYSTEM_PROMPT), api/corpus(가이드 문서: �
 severity: medium
 reason: 사용자 지적: "맞긴 한데 차장님 서비스엔 없어서 애매하다"(C61), "성능점검 이력을 보고 고른 게 아니라고 정직하게 명시해야 한다"(C67). 3차 판정기 dishonest_claim 규칙은 완곡한 표현("해당 플랫폼")을 못 잡아 C61은 여전히 불일치.
 trigger: 프롬프트에 제품 기능 목록(있는 것: 매물 검색·비교·시세 진단·신뢰 속성 3종 / 없는 것: 성능점검기록부 열람·보증·명의이전 처리)을 명시하고 "없는 기능은 '이 서비스에는 없다'고 말한다" 규칙 추가. 판정기엔 C61 문구를 예시로 보강.
+status: done 2026-09-09
+resolution: 커밋 f8bf999 — 시스템 프롬프트에 제품 기능 목록(있는 것/없는 것)과 '없는 기능은 없다고 말한다' 규칙. 재검증에서 dishonest_claim 1→0, 가이드 GOOD율 87%→100%. 판정기의 완곡 표현 탐지 보강은 미완(사람 라벨 C61 불일치 1건 잔존).
+
+### DW-872: 멀티턴 재검색 차단 가드 보강분(원문 질의 기준 판정) 재검증 미실시 + 남은 인자 누락(모델 여러 개·좌석 수·'르노' 별칭·대형/중형 SUV 구분)
+
+origin: 에이전트 결함 수정 후 재검증(2026-09-09, .logs/chatbot_eval/20260909, 판정기 v3) — 남은 BAD 12건 분석
+location: api/app/graph/answer_guards.py + agent.py(가드가 이제 원문 query를 받음, f8bf999), api/app/graph/agent_tools.py(_MANUFACTURER_ALIAS_MAP, search_listings 인자에 models 목록·seats 없음, body_type 어휘에 대형/중형 SUV 구분 없음)
+severity: medium
+reason: 수정으로 전체 GOOD 62%→88%(검색 37→73, 멀티턴 27→73), wrong_reference 6→3, constraint_violated 19→8, bad_tool_args 7→1. 재검증 배치 뒤에 "가드가 contextualize 재작성 질의를 받아 지칭어('그 중에'·'이 중에')가 지워진 뒤 판정하던 결함"을 찾아 원문 질의 기준으로 고쳤으나(C50·C57·C58 대상, 회귀 테스트 red→green), Gemini API 크레딧 소진(RESOURCE_EXHAUSTED)으로 재배치·회귀 31건 실행을 못 해 개선 폭이 미확인. 남은 검색 BAD 7건은 body_type·fuel·model이 query_text에만 실리는 유형(프롬프트 규칙만 있고 코드 강제 없음), 'K3 아니면 아반떼'·'투싼이나 스포티지'(모델 여러 개)·'7인승 이상'(좌석)은 넘길 인자가 없음, '르노' 단독 별칭 누락, '대형 SUV'는 body_type 어휘(SUV 대 대형차 배타)로 표현 불가.
+trigger: Gemini 결제 조치 후 — (1) 같은 100건 재실행으로 멀티턴 wrong_reference 0·검색 GOOD율 확인, 회귀 31건(MT5 포함) 재실행, (2) search_listings에 `models: list[str]`(OR)·`seats_min` 추가, 별칭 '르노'→르노코리아, body_type·fuel·model이 query_text에만 있을 때 코드로 인자 강제(추출 실패 시 되묻기), (3) 검색 ≥90%·멀티턴 wrong_reference 0이면 DW-855·865와 함께 닫는다.
 status: open
