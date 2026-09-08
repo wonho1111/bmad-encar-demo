@@ -78,6 +78,42 @@ _BODY_TYPE_WHITELIST = {
 # listings.fuel CHECK 제약(0002)과 동일 — LLM이 '가솔린+전기' 같은 비실존 값을 지어내는 것 방지.
 _FUEL_WHITELIST = {"가솔린", "디젤", "하이브리드", "전기", "LPG"}
 
+# listings.region CHECK 제약(0002)과 동일한 17개 시·도 화이트리스트(DW-865/867) — 에이전트가
+# 명시된 지역을 query_text에만 실어 다른 지역 매물을 "조건 충족"이라 안내하는 결함 방지.
+# 별칭 맵은 사용자가 흔히 쓰는 행정구역 표기를 CHECK 허용값으로 되돌린다.
+_REGION_WHITELIST = {
+    "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
+    "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주",
+}
+_REGION_ALIAS_MAP = {
+    "경기도": "경기", "서울특별시": "서울", "서울시": "서울", "부산광역시": "부산",
+    "강원도": "강원", "강원특별자치도": "강원", "전라북도": "전북", "전북특별자치도": "전북",
+    "전라남도": "전남", "경상북도": "경북", "경상남도": "경남", "충청북도": "충북",
+    "충청남도": "충남", "제주도": "제주", "제주특별자치도": "제주", "세종시": "세종",
+}
+
+# listings.color CHECK 제약(0002)과 동일한 9색 화이트리스트 — 지역과 같은 이유·같은 방식.
+_COLOR_WHITELIST = {"흰색", "검정", "회색", "은색", "파랑", "빨강", "갈색", "녹색", "기타"}
+_COLOR_ALIAS_MAP = {
+    "검정색": "검정", "쥐색": "회색", "그레이": "회색", "파란색": "파랑",
+    "빨간색": "빨강", "진주색": "흰색", "펄": "흰색",
+}
+
+# 제조사 별칭 — LLM이 구 상호·약칭·계열사명을 그대로 넣으면 DB 실제 값과 안 맞아 매물이
+# 있어도 0건으로 샌다(DW-868 실측: "쌍용 렉스턴" → manufacturer='쌍용', DB는 'KG모빌리티'만 있음).
+_MANUFACTURER_ALIAS_MAP = {
+    "쌍용": "KG모빌리티", "쌍용자동차": "KG모빌리티",
+    "르노삼성": "르노코리아", "삼성": "르노코리아",
+    "메르세데스": "벤츠", "메르세데스-벤츠": "벤츠",
+    "현대자동차": "현대", "기아자동차": "기아",
+    "지엠": "쉐보레", "쉐비": "쉐보레",
+}
+
+# 예산 인자 단위 방어(DW-868) — "1500이하"를 만원이 아니라 원으로 오독하면(price_max=1500)
+# 실제 매물가(수백만~수천만 원)와 자릿수가 100만 배 어긋나 조용히 0건이 된다. 이 상한
+# 미만이면 만원 단위로 보고 원으로 되돌린다(실매물 최저가가 이보다 훨씬 높아 오탐 위험 없음).
+_PRICE_WON_GUARD_THRESHOLD = 1_000_000
+
 # 옵션 동의어 그룹 — sql_rag_node._DOMAIN_RULES의 프롬프트 지시(2026-08-29 사용자 승인,
 # DB 실측 옵션 문자열 기준)를 기계용 데이터로 옮긴 사본. 실측 결함(2026-09-01): "스마트크루즈"로
 # 요청하면 부분일치로는 "어댑티브크루즈" 매물(더 뉴 쏘렌토 UM 무사고 2건, DB 정답)과 영원히 못
@@ -154,9 +190,15 @@ def _sanitize_ilike_fragment(text: str) -> str:
     return text.replace("%", "").replace("_", "")
 
 
-def _format_listing_summary(listings: list[ListingCard]) -> str:
-    """번호 매긴 간결한 매물 목록(id·모델·연식·주행·가격·연료·옵션 요약) — LLM에 보일 텍스트."""
+def _format_listing_summary(listings: list[ListingCard], applied_desc: list[str] | None = None) -> str:
+    """번호 매긴 간결한 매물 목록(id·모델·연식·주행·가격·연료·옵션 요약) — LLM에 보일 텍스트.
+
+    applied_desc: 실제로 SQL에 걸린 필터를 사람이 읽을 문구로 나열한 목록(search_listings가
+    조립). 0건일 때 이 목록을 그대로 보여줘 "조건에 맞는 매물이 없습니다"를 LLM이 다른 조건
+    충족으로 오독하지 못하게 한다(DW-865 — 인자로 안 넘긴 조건은 검색이 보장하지 않는다)."""
     if not listings:
+        if applied_desc:
+            return f"조건에 맞는 매물이 없습니다 (적용 조건: {', '.join(applied_desc)})"
         return "조건에 맞는 매물이 없습니다."
     lines = []
     for i, c in enumerate(listings, start=1):
@@ -182,6 +224,8 @@ def search_listings(
     model_keyword: str | None = None,
     body_type: str | None = None,
     fuel: str | None = None,
+    region: str | None = None,
+    color: str | None = None,
     price_max: int | None = None,
     price_min: int | None = None,
     year_min: int | None = None,
@@ -211,12 +255,33 @@ def search_listings(
     single_owner_only=True면 1인소유(is_single_owner) 매물만, non_smoker_only=True면
     비흡연(is_non_smoker) 매물만 걸러진다 — 사용자가 "1인소유"·"비흡연"을 요구하면 이
     전용 인자를 써라(options_required에 문자열로 넣지 마라).
+    region은 시·도 17개 중 하나만 인식한다(예: "서울","경기") — "경기도"·"서울특별시" 같은
+    흔한 별칭은 코드가 자동으로 정규화하고, 그래도 모르는 값이면 필터를 걸지 않고 안내
+    문구를 텍스트에 덧붙인다(지어낸 지역으로 조용히 0건이 되는 것 방지, DW-865/867).
+    color는 9개 고정 색상 중 하나만 인식한다(예: "흰색","검정") — "검정색"·"그레이" 같은
+    별칭도 같은 방식으로 정규화된다.
     """
     limit = min(max(int(limit or _DEFAULT_SEARCH_LIMIT), 1), _MAX_SEARCH_LIMIT)
 
     manufacturer, body_type, model_filter = _normalize_model_keyword(
         model_keyword, manufacturer, body_type
     )
+    if manufacturer:
+        manufacturer = _MANUFACTURER_ALIAS_MAP.get(manufacturer, manufacturer)
+
+    # 지역·색상 별칭 정규화 — 모르는 값이면 필터에서 제외하고 그 사실을 tool 텍스트에 남겨
+    # LLM이 "조건에 맞다"고 착각하지 않게 한다(DW-865/867).
+    notes: list[str] = []
+    if region:
+        region = _REGION_ALIAS_MAP.get(region, region)
+        if region not in _REGION_WHITELIST:
+            notes.append(f"지역 '{region}'는 인식되지 않아 필터에서 제외")
+            region = None
+    if color:
+        color = _COLOR_ALIAS_MAP.get(color, color)
+        if color not in _COLOR_WHITELIST:
+            notes.append(f"색상 '{color}'는 인식되지 않아 필터에서 제외")
+            color = None
 
     # CHECK 허용값 검증 — LLM이 DB에 없는 축값을 지어내면(회귀 실측 H26: body_type='세단')
     # 조용히 0건이 되는 대신, 허용 목록을 담은 에러를 던져 모델이 다음 스텝에서 스스로
@@ -232,42 +297,75 @@ def search_listings(
             f"fuel '{fuel}'은(는) 존재하지 않는 값이다. 허용값: {sorted(_FUEL_WHITELIST)}."
         )
 
+    # 예산 단위 방어(DW-868) — "1500이하"처럼 만원 단위 숫자가 원 단위 인자에 그대로 들어오면
+    # 원 단위 매물가와 자릿수가 어긋나 조용히 0건이 된다. 경고 로그만 남기고 서버가 직접 고친다
+    # (클라이언트/LLM이 보낸 값은 참고지 신뢰가 아니다 — CLAUDE.md B9).
+    if price_max is not None and price_max < _PRICE_WON_GUARD_THRESHOLD:
+        logger.warning("search_listings price_max=%s를 만원 단위로 보고 원 단위로 변환(×10,000)", price_max)
+        price_max = price_max * 10_000
+    if price_min is not None and price_min < _PRICE_WON_GUARD_THRESHOLD:
+        logger.warning("search_listings price_min=%s를 만원 단위로 보고 원 단위로 변환(×10,000)", price_min)
+        price_min = price_min * 10_000
+
     clauses = ["status = 'on_sale'"]
     params: list = []
+    # 0건일 때 "조건에 맞는 매물이 없습니다"에 실제 적용된 필터를 나열하기 위한 설명 목록
+    # (DW-865) — SQL 절을 추가할 때마다 나란히 채운다(정본은 위 clauses/params, 이건 표시용).
+    applied_desc: list[str] = []
     if manufacturer:
         clauses.append("manufacturer = %s")
         params.append(manufacturer)
+        applied_desc.append(f"제조사={manufacturer}")
     if model_filter:
         clauses.append("model ILIKE %s")
         params.append(f"%{model_filter}%")
+        applied_desc.append(f"모델={model_filter}")
     if body_type:
         clauses.append("body_type = %s")
         params.append(body_type)
+        applied_desc.append(f"차종={body_type}")
     if fuel:
         clauses.append("fuel = %s")
         params.append(fuel)
+        applied_desc.append(f"연료={fuel}")
+    if region:
+        clauses.append("region = %s")
+        params.append(region)
+        applied_desc.append(f"지역={region}")
+    if color:
+        clauses.append("color = %s")
+        params.append(color)
+        applied_desc.append(f"색상={color}")
     if price_max is not None:
         clauses.append("price <= %s")
         params.append(price_max)
+        applied_desc.append(f"가격≤{price_max:,}원")
     if price_min is not None:
         clauses.append("price >= %s")
         params.append(price_min)
+        applied_desc.append(f"가격≥{price_min:,}원")
     if year_min is not None:
         clauses.append("year >= %s")
         params.append(year_min)
+        applied_desc.append(f"연식≥{year_min}")
     if year_max is not None:
         clauses.append("year <= %s")
         params.append(year_max)
+        applied_desc.append(f"연식≤{year_max}")
     if mileage_max is not None:
         clauses.append("mileage <= %s")
         params.append(mileage_max)
+        applied_desc.append(f"주행≤{mileage_max:,}km")
     if accident_free_only:
         clauses.append("accident_free = %s")
         params.append(True)
+        applied_desc.append("무사고")
     if single_owner_only:
         clauses.append("is_single_owner IS TRUE")
+        applied_desc.append("1인소유")
     if non_smoker_only:
         clauses.append("is_non_smoker IS TRUE")
+        applied_desc.append("비흡연")
     if options_required:
         # 정확 일치(&&)는 LLM이 "어댑티브 크루즈 컨트롤"처럼 띄어쓰기 풀네임을 넣으면
         # DB 실존 문자열("어댑티브크루즈")과 어긋나 0건으로 샌다(실측 결함). 공백 제거 +
@@ -284,6 +382,7 @@ def search_listings(
         # clauses에 각각 추가한다(전체가 " AND "로 결합되므로 옵션 개수만큼 EXISTS가
         # 쌓인다) — 그래서 동의어 확장도 옵션별로 독립된 %s::text[] 배열에 바인딩한다
         # (한 옵션의 동의어가 다른 옵션의 배열에 섞이면 안 된다, 옵션 단위 격리).
+        applied_desc.append(f"옵션={','.join(o for o in options_required if o and o.strip())}")
         for opt in options_required:
             if not (opt and opt.strip()):
                 continue
@@ -333,7 +432,11 @@ def search_listings(
         rows = run_select(sql, (*params, limit))
 
     listings = attach_cover_images(rows_to_cards(rows))
-    return _format_listing_summary(listings), listings
+    summary = _format_listing_summary(listings, applied_desc)
+    if notes:
+        # 인식 못 한 지역·색상 안내를 요약 앞에 붙인다 — LLM이 "조건 충족"이라 오독하지 못하게.
+        summary = "\n".join(notes) + "\n" + summary
+    return summary, listings
 
 
 @tool
@@ -383,6 +486,12 @@ def _format_market_diagnosis(result: dict) -> str:
     tabpfn_price = result["tabpfn"]["price"]
     if tabpfn_price is not None:
         lines.append(f"모델 예측 적정가: {tabpfn_price:,}원")
+    # 표본 부족 주의(DW-869) — market_price.diagnose()는 3건 미만이면 판정 자체를 보류하는데
+    # (MIN_VERDICT_SAMPLE=3, market_price.py), LLM이 위 중앙값·범위 숫자만 보고 단정적으로
+    # 전달하는 실측 결함이 있었다. 숫자는 그대로 두고(제거 아님) 주의 문구만 덧붙인다.
+    sample_count = result["criteria"]["sample_count"]
+    if sample_count < 3:
+        lines.append(f"⚠ 비교군 {sample_count}건 — 표본이 적어 참고만 하세요(판정 보류)")
     return "\n".join(lines)
 
 

@@ -17,10 +17,16 @@ id들: 카드 목록이 있으면 그 id들, 없고 단건 시세 진단만 있�
 실행:
   cd api && DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55322/postgres" \
     LANGCHAIN_PROJECT="chatbot-eval-20260908" .venv/bin/python scripts/chatbot_eval/run_batch.py
+
+출력 디렉토리는 --out CLI 인자로 지정한다(예: --out /경로/20260909). 생략하면 기존 OUT
+  환경변수(하위호환)를, 그것도 없으면 20260908 경로를 쓴다. judge.py·make_sheet.py는 여전히
+  OUT 환경변수만 읽으므로, --out으로 새 디렉토리를 지정해 이 스크립트를 돌렸다면 이어지는
+  두 스크립트는 OUT=그 경로로 맞춰 실행해야 한다.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -70,7 +76,19 @@ if not _ls_utils.tracing_is_enabled():
     )
 
 QUERIES_PATH = Path(__file__).resolve().parent / "queries.json"
-OUT_DIR = Path(os.environ.get("OUT", "/home/whlee/workspace/bmad-encar-demo/.logs/chatbot_eval/20260908"))
+
+
+def _resolve_out_dir() -> Path:
+    """--out CLI 인자를 우선하고, 없으면 기존 OUT 환경변수(하위호환)를 쓴다."""
+    parser = argparse.ArgumentParser(description="챗봇 평가 배치 실행기")
+    parser.add_argument("--out", type=str, default=None, help="응답을 저장할 디렉토리(기본: OUT 환경변수)")
+    args, _unknown = parser.parse_known_args()
+    if args.out:
+        return Path(args.out)
+    return Path(os.environ.get("OUT", "/home/whlee/workspace/bmad-encar-demo/.logs/chatbot_eval/20260908"))
+
+
+OUT_DIR = _resolve_out_dir()
 OUT_PATH = OUT_DIR / "responses.jsonl"
 
 _MAX_CALLS = 140  # 예산 상한(사용자 지시) — 재시도 포함 전체 run_search_agent 호출 수.

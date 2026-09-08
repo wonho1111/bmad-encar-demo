@@ -52,7 +52,7 @@ from pydantic import BaseModel, Field
 
 from app.config import require, settings
 from app.db.readonly import run_select
-from app.graph import router_node as _router_node
+from app.graph import answer_guards, router_node as _router_node
 from app.graph.agent_tools import AGENT_TOOLS, TOOLS_BY_NAME
 from app.graph.contextualize_node import contextualize_query
 from app.graph.guard_node import guard_node
@@ -99,8 +99,8 @@ _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전�
   빼거나 가격대를 넓혔다면) 어떤 조건을 뺐는지 답변에 반드시 명시하라.
 
 [되묻기 규칙] 참조).
-- search_listings: 구조 조건(가격·연식·주행거리·차종·연료·옵션 등)으로 매물을 최대 20건까지
-  과다조회한다. 이 20건은 최종 추천 개수가 아니라 되추릴 재료다.
+- search_listings: 구조 조건(가격·연식·주행거리·차종·연료·지역·색상·옵션 등)으로 매물을
+  최대 20건까지 과다조회한다. 이 20건은 최종 추천 개수가 아니라 되추릴 재료다.
 - search_guides: 중고차 구매 가이드 문서를 의미 검색한다. search_listings 결과가 한 조건에
   쏠려 보이면(예: 하이브리드만 5건, 특정 차급만 나옴) 이 도구로 관련 섹션을 읽고 차급·용도를
   다양하게 조합해 최종 5건 내외로 되추려라(예: 하이브리드 소형 4건+대형 3건+준중형 1건 →
@@ -110,6 +110,28 @@ _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전�
   호출해라. 시세·적정가·가격대를 한 마디라도 언급하려면 **먼저 이 도구를 호출해서 얻은
   값만** 써라 — 호출 없이 아는 대로 가격대를 말하지 마라(일반 지식으로 추정한 시세는 금지).
 - compare_listings: 매물 최대 4건의 핵심 필드를 나란히 비교한다.
+
+[도구 인자 규칙] (챗봇 답변 검증 2026-09-08~09 실측 결함 수정, DW-865·868·869·870·871)
+- 사용자가 명시한 조건(지역·색상·차종·연료·예산·연식·주행거리·무사고·제조사·모델)은
+  반드시 search_listings의 해당 인자(region·color·body_type·fuel·price_min/price_max·
+  year_min/year_max·mileage_max·accident_free_only·manufacturer·model_keyword)로 넘겨라 —
+  query_text에만 실어 보내지 마라. 인자로 넘기지 않은 조건은 검색이 보장하지 못해, 결과가
+  우연히 맞아 보여도 "조건 충족"이라 말하면 안 된다.
+- 예산 숫자는 항상 **만원** 단위로 해석해 **원**으로 변환한 뒤 인자에 넣어라(예: "1500이하"
+  → price_max=15000000, "3천만원" → 30000000 근처, "2천만원 초반" → price_min=20000000~
+  price_max=23000000). 숫자를 원 단위로 그대로 넣지 마라.
+- search_listings 결과가 0건이면 답변에서 "조건에 맞는 매물이 없습니다"를 먼저 말하고,
+  조건을 완화한 대안을 보일 때는 그 매물들 앞에 "대안"이라고 명시하라.
+- 멀티턴 지칭(그중/그 중/그거/이 중/N번째/나머지/앞의 …)이 있고 [직전 대화에서 보여준
+  매물] 블록이 있으면 반드시 그 블록의 id로만 답하고 search_listings를 다시 호출하지
+  마라(아래 [직전 목록 참조]와 동일 규칙 — 어겨도 도구 실행 자체가 코드로 거절된다).
+- 답변 본문에 매물의 내부 id(UUID)를 쓰지 마라 — 사용자에게 의미 없는 문자열이다.
+- 시세 답변에서 비교군(comps)이 3건 미만이면 "표본이 적어 참고만 하세요"라는 취지의
+  문구를 반드시 넣어라 — 중앙값·범위를 단정적으로 전달하지 마라.
+- 이 서비스가 제공하는 기능은 매물 검색·비교·시세 진단·신뢰 속성(무사고/단순교환/사고,
+  1인소유, 비흡연) 표시뿐이다. 성능점검기록부 열람·보증/보험·명의이전 등 서류 처리·금융
+  상담은 **없다** — 그런 기능을 물으면 "이 서비스에는 없다"고 명확히 밝히고, 필요하면
+  일반 지식만 짧게 안내하라(있는 기능처럼 말하지 마라).
 
 [직전 목록 참조] — 아래 [직전 대화에서 보여준 매물] 블록이 있을 때만 해당한다.
 사용자가 "그중 N번째", "아까 그 아반떼", "그 5개 비교"처럼 직전에 보여준 매물을 가리키는
@@ -383,6 +405,17 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     seen_listings: dict[str, ListingCard] = {}
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
+
+    # 멀티턴 재검색 차단(DW-855, 회귀 MT5) — 이번 턴이 직전 목록을 가리키는 지칭 표현이고
+    # 그 목록 id가 있으면, 아래 루프에서 search_listings 호출을 전부 거절한다(프롬프트만으로는
+    # 실측으로 계속 새던 규칙을 코드로 못 박는다 — answer_guards.py 모듈 docstring 참조).
+    # ⚠️ effective_query(재작성 결과)가 아니라 원문 query로 판정한다(2026-09-09 챗봇 검증 재실측
+    # 결함: contextualize_query가 "그 중에 무사고인 것만 골라줘"를 "무사고 경차 2천만원 이하"처럼
+    # 지칭 표현 없는 독립 질의로 다시 써버려, effective_query로 판정하면 이 가드가 통과해 버린다
+    # — 재작성기의 "일" 자체가 지칭어를 없애는 것이므로 재작성 이후 문자열로는 원래 감지 대상을
+    # 놓친다). 턴 내내 값이 고정이므로(query·context가 루프 중 안 바뀜) 루프 밖에서 한 번만 계산한다.
+    _recent_ids_for_guard = _recent_assistant_listing_ids(context)
+    block_followup_research = answer_guards.block_research_on_followup(query, _recent_ids_for_guard)
     # 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats 호출마다 결과를 전부
     # 모아둔다(매물을 못 찾은 호출은 artifact가 None이라 담기지 않는다). 상한
     # _MAX_MARKET_DIAGNOSES는 프롬프트·응답 크기를 무한정 키우지 않기 위한 설계 확정값 —
@@ -399,6 +432,14 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
         for tool_call in ai_msg.tool_calls:
             tool_name = tool_call.get("name")
             tools_used.append(tool_name)
+            if block_followup_research and tool_name == "search_listings":
+                # 재검색 도피 차단(DW-855) — 실행하지 않고 거절 텍스트만 돌려줘, 모델이 같은
+                # 스텝 예산 안에서 compare_listings/market_price_stats로 스스로 회복하게 한다
+                # (라우터·SQL 노드의 "재생성 재시도" 패턴과 동일한 태도, 루프를 죽이지 않는다).
+                messages.append(
+                    ToolMessage(content=answer_guards.FOLLOWUP_REFUSAL_TEXT, tool_call_id=tool_call["id"])
+                )
+                continue
             tool_obj = TOOLS_BY_NAME.get(tool_name)
             if tool_obj is None:
                 # 모델이 존재하지 않는 도구 이름을 지어낸 경우(환각) — 실행 대신 오류를
@@ -453,13 +494,19 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 1건 이하면 None(웹은 기존 market_diagnosis 단건 차트를 그대로 쓴다, additive).
     market_diagnoses = market_diagnoses_all if len(market_diagnoses_all) >= 2 else None
 
+    # 결정론 후처리(DW-870·869) — LLM이 프롬프트 규칙([도구 인자 규칙])을 놓쳐도 최종 답변을
+    # 한 번 더 지나가며 보정한다. market_diagnoses_all(노출 상한 적용 전 전체)을 써서, 진단이
+    # 1건뿐이라 market_diagnoses가 None이어도(위 >=2 게이트) 표본 부족 주의는 빠지지 않는다.
+    final_answer = answer_guards.strip_listing_ids(final.answer)
+    final_answer = answer_guards.ensure_sample_caveat(final_answer, market_diagnoses_all)
+
     logger.info(
         "run_search_agent 질의=%r → 도구=%r 매물=%d건 clarify=%s",
         effective_query, tools_used, len(listings), clarify is not None,
     )
 
     return {
-        "answer": final.answer,
+        "answer": final_answer,
         "listings": listings,
         "route": "AGENT",
         "clarify": clarify.model_dump() if clarify is not None else None,

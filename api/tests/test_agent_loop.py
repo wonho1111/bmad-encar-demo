@@ -10,11 +10,15 @@
   (4) market_diagnosis 전달 — market_price_stats 도구의(마지막) artifact가 그대로 노출되는지
   (5) 결정론적 REJECT 사전 차단 — 금융·세금·보험 신호가 있으면 LLM을 아예 호출하지 않고
       guard_node로 직행하는지(router_node._FINANCE_SIGNALS 재사용, 비용 0 경로)
+  (6) 멀티턴 재검색 차단(DW-855) — answer_guards.block_research_on_followup이 True인 턴에서
+      모델이 그래도 search_listings를 부르면, 실제 실행 없이 거절 ToolMessage만 받고 같은
+      스텝 예산 안에서 compare_listings로 회복해 최종 응답이 나오는지
 """
 
 from langchain_core.messages import SystemMessage, ToolMessage
 
 from app.graph import agent as agent_module
+from app.graph import answer_guards
 from app.schemas.ai import ClarifyPayload, ListingCard
 
 
@@ -677,3 +681,161 @@ def test_original_query_block_added_only_when_rewritten(monkeypatch):
     monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
     agent_module.run_search_agent("원문 질의")
     assert "[사용자 원문]" not in captured["system"]
+
+
+# ───────── (6) 멀티턴 재검색 차단(DW-855, answer_guards.block_research_on_followup 배선) ─────────
+
+class _BoomTool:
+    """거절돼야 할 도구 — 실제로 invoke되면 테스트를 실패시킨다(재검색 차단이 안 먹혔다는 증거)."""
+
+    def invoke(self, tool_call):
+        raise AssertionError("search_listings가 거절되지 않고 실제로 실행됐다 — 재검색 차단 실패")
+
+
+def test_followup_reference_blocks_search_listings_and_recovers_via_compare(monkeypatch):
+    """DW-855 회귀(MT5) 재현 — "나머지" 지칭 + 직전 목록 id가 있는 턴에서 모델이 그래도
+    search_listings를 부르면, 그 호출은 실행되지 않고 거절 ToolMessage(재검색 금지)만
+    돌아온다. 같은 스텝 예산 안에서 모델이 compare_listings로 회복하면 재검색 없이 최종
+    응답이 나와야 한다(2026-08-31 실측 회귀의 최소 재현, 이번엔 코드 가드가 직접 막는다)."""
+    card_a = ListingCard(id="aaa", manufacturer="기아", model="쏘렌토", year=2021, price=1, mileage=1, region="서울")
+
+    captured_tool_message_contents: list[str] = []
+
+    class _RetryToolLLM:
+        """1스텝엔 (잘못된) search_listings 재검색을, 거절을 받은 2스텝엔 compare_listings를
+        요청하는 가짜 — 모델이 거절 ToolMessage를 보고 스스로 회복하는 것까지 흉내낸다."""
+
+        def __init__(self):
+            self.invoke_count = 0
+
+        def invoke(self, messages):
+            self.invoke_count += 1
+            if self.invoke_count == 1:
+                return _FakeAIMessage(tool_calls=[
+                    {"name": "search_listings", "args": {"model_keyword": "쏘렌토"}, "id": "call-1"}
+                ])
+            if self.invoke_count == 2:
+                captured_tool_message_contents.append(messages[-1].content)  # 직전 거절 ToolMessage
+                return _FakeAIMessage(tool_calls=[
+                    {"name": "compare_listings", "args": {"listing_ids": ["aaa"]}, "id": "call-2"}
+                ])
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _RetryToolLLM()
+    final_output = agent_module._AgentFinalOutput(
+        answer="나머지 매물과 비교했어요.", selected_listing_ids=["aaa"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _BoomTool(), "compare_listings": _FakeTool("compare_listings", artifact=[card_a])},
+    )
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(
+        [("aaa", "기아", "쏘렌토", 2021, 28000000, 50000, "서울", None, None, None, None, None)]
+    ))
+
+    context = [{"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]}]
+    result = agent_module.run_search_agent("나머지 매물이랑 비교해줘", context=context)
+
+    assert result["tools_used"] == ["search_listings", "compare_listings"]
+    assert captured_tool_message_contents == [answer_guards.FOLLOWUP_REFUSAL_TEXT]
+    assert [c.id for c in result["listings"]] == ["aaa"]
+    assert result["answer"] == "나머지 매물과 비교했어요."
+
+
+def test_no_followup_reference_allows_search_listings_normally(monkeypatch):
+    """대조군 — 지칭 표현이 없는 새 조건 검색은(직전 목록 id가 있어도) 평소대로 실행된다."""
+    card_a = ListingCard(id="bbb", manufacturer="현대", model="싼타페", year=2022, price=1, mileage=1, region="서울")
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="싼타페를 찾았어요.", selected_listing_ids=["bbb"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[card_a])},
+    )
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(
+        [("aaa", "기아", "쏘렌토", 2021, 28000000, 50000, "서울", None, None, None, None, None)]
+    ))
+
+    context = [{"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]}]
+    result = agent_module.run_search_agent("이번엔 싼타페로 다시 찾아줘", context=context)
+
+    assert result["tools_used"] == ["search_listings"]
+    assert [c.id for c in result["listings"]] == ["bbb"]
+
+
+def test_followup_guard_uses_raw_query_not_contextualized_rewrite(monkeypatch):
+    """2026-09-09 챗봇 검증(20260909) C50 실측 재현 — contextualize_query가 "그 중에" 같은
+    지칭 표현을 지우고 독립 질의("무사고 경차 2천만원 이하")로 재작성해 버리면, 재작성 후
+    문자열로 재검색 차단을 판정할 경우 지칭 표현이 이미 사라져 가드가 못 잡는다(실제로 이
+    재작성이 관찰됐고, 그 결과 재검색이 새 매물을 끌어와 직전 목록을 무시했다). 재작성 전
+    원문 query로 판정해야 한다."""
+    captured_tool_message_contents: list[str] = []
+
+    class _CaptureThenStopLLM:
+        def __init__(self):
+            self.invoke_count = 0
+
+        def invoke(self, messages):
+            self.invoke_count += 1
+            if self.invoke_count == 1:
+                return _FakeAIMessage(tool_calls=[
+                    {"name": "search_listings", "args": {"accident_free_only": True}, "id": "call-1"}
+                ])
+            captured_tool_message_contents.append(messages[-1].content)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CaptureThenStopLLM()
+    final_output = agent_module._AgentFinalOutput(answer="무사고만 골랐어요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _BoomTool()})
+    # 재작성기가 지칭 표현 없는 완전히 새 문장으로 바꿔치기한 상황을 흉내낸다(실측 재현).
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: "무사고 경차 2천만원 이하")
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(
+        [("aaa", "기아", "모닝", 2019, 7900000, 62000, "서울", None, None, None, None, None)]
+    ))
+
+    context = [{"role": "assistant", "content": "6건을 찾았어요.", "listing_ids": ["aaa"]}]
+    agent_module.run_search_agent("그 중에 무사고인 것만 골라줘", context=context)
+
+    assert captured_tool_message_contents == [answer_guards.FOLLOWUP_REFUSAL_TEXT]
+
+
+# ───────── (7) 결정론 후처리 배선(DW-869·870) — 답변 id 제거 + 표본 부족 주의 보정 ─────────
+
+def test_final_answer_strips_listing_ids_and_adds_sample_caveat(monkeypatch):
+    """최종화 LLM이 답변에 UUID를 그대로 쓰고 표본 부족 주의도 빼먹었다면(가짜 최종 출력으로
+    이 상황을 직접 만든다), 반환 전에 코드가 id를 지우고 주의 문구를 붙인다."""
+    listing_uuid = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
+    diagnosis = {
+        "listing": {"id": listing_uuid}, "verdict": "적정",
+        "criteria": {"sample_count": 2},
+    }
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "market_price_stats", "args": {"listing_id": listing_uuid}, "id": "call-1"}
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer=f"이 매물은 적정가입니다 (id: {listing_uuid}).", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"market_price_stats": _FakeTool("market_price_stats", artifact=diagnosis)},
+    )
+
+    result = agent_module.run_search_agent("이 매물 시세 알려줘")
+
+    assert listing_uuid not in result["answer"]
+    assert "표본이 적어 참고만 하세요" in result["answer"]

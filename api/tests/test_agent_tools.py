@@ -261,6 +261,132 @@ def test_search_listings_returns_formatted_summary_and_cards(monkeypatch):
     assert "싼타페" in text
 
 
+# ───────── (1c) 지역·색상 인자, 제조사 별칭, 예산 단위 방어, 0건 안내(DW-865/867/868) ─────────
+
+def test_search_listings_manufacturer_alias_ssangyong_maps_to_kg_mobility(monkeypatch):
+    """DW-868 — LLM이 옛 상호 "쌍용"을 그대로 넣어도 DB 실제 값 "KG모빌리티"로 정규화된다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", manufacturer="쌍용")
+    assert "KG모빌리티" in captured["params"]
+    assert "쌍용" not in captured["params"]
+
+
+def test_search_listings_region_alias_reaches_sql(monkeypatch):
+    """DW-865/867 — region 인자가 SQL의 region = %s 절로 걸리고, "경기도" 같은 흔한 별칭은
+    CHECK 허용값 "경기"로 정규화된 채 파라미터에 바인딩된다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", region="경기도")
+    assert "region = %s" in captured["sql"]
+    assert "경기" in captured["params"]
+    assert "경기도" not in captured["params"]
+
+
+def test_search_listings_color_alias_reaches_sql(monkeypatch):
+    """color 인자가 SQL의 color = %s 절로 걸리고, "검정색" 같은 별칭은 "검정"으로 정규화된다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", color="검정색")
+    assert "color = %s" in captured["sql"]
+    assert "검정" in captured["params"]
+    assert "검정색" not in captured["params"]
+
+
+def test_search_listings_unknown_region_is_dropped_and_noted_in_text(monkeypatch):
+    """모르는 지역 값은 필터에서 빠지고(SQL에 region 절이 안 걸림), 그 사실이 tool 텍스트에
+    남아 LLM이 "조건 충족"이라 오독하지 못하게 한다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    text, _ = agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", region="화성시")
+    assert "region = %s" not in captured["sql"]
+    assert "화성시" not in captured["params"]
+    assert "지역 '화성시'는 인식되지 않아 필터에서 제외" in text
+
+
+def test_search_listings_price_max_unit_guard_converts_man_won(monkeypatch):
+    """DW-868 — price_max=1500(만원 단위로 보이는 값)은 15,000,000원으로 변환된다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", price_max=1500)
+    assert 15_000_000 in captured["params"]
+    assert 1500 not in captured["params"]
+
+
+def test_search_listings_price_min_unit_guard_converts_man_won(monkeypatch):
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", price_min=2000)
+    assert 20_000_000 in captured["params"]
+    assert 2000 not in captured["params"]
+
+
+def test_search_listings_price_max_already_won_is_unchanged(monkeypatch):
+    """이미 원 단위인 값(15,000,000)은 변환되지 않는다 — 자릿수를 오해해 15,000,000,000으로
+    부풀리면 안 된다(회귀 방지)."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc", price_max=15_000_000)
+    assert 15_000_000 in captured["params"]
+
+
+def test_search_listings_zero_results_lists_applied_filters(monkeypatch):
+    """DW-865 — 0건이면 "조건에 맞는 매물이 없습니다"에 실제 적용된 필터를 나열해, LLM이
+    다른 지역·가격대 매물을 조건 충족이라고 우기지 못하게 한다."""
+    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: [])
+    text, listings = agent_tools.search_listings.func(
+        query_text="아무거나", sort_by="price_asc", region="서울", price_max=15_000_000,
+    )
+    assert listings == []
+    assert text == "조건에 맞는 매물이 없습니다 (적용 조건: 지역=서울, 가격≤15,000,000원)"
+
+
+def test_search_listings_zero_results_without_filters_uses_bare_message(monkeypatch):
+    """필터가 하나도 없으면(회귀 방지) 기존과 동일한 짧은 문구를 그대로 쓴다."""
+    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: [])
+    text, listings = agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc")
+    assert listings == []
+    assert text == "조건에 맞는 매물이 없습니다."
+
+
 def test_search_listings_similarity_sort_calls_embed_query(monkeypatch):
     # sort_by 생략(기본 similarity) → embed_query가 호출되고 벡터절이 SQL에 붙는다.
     captured = {}
@@ -366,6 +492,35 @@ def test_market_price_stats_not_found_returns_none_artifact(monkeypatch):
     text, artifact = agent_tools.market_price_stats.func(listing_id="없는-id")
     assert artifact is None
     assert "찾을 수 없습니다" in text
+
+
+def _fake_diagnosis(sample_count: int) -> dict:
+    return {
+        "listing": {"manufacturer": "기아", "model": "쏘렌토", "year": 2021, "price": 28000000},
+        "criteria": {"step": 0, "desc": "동일 세대", "sample_count": sample_count},
+        "stats": {"min": 25000000, "q1": 26000000, "median": 27000000, "q3": 29000000, "max": 31000000},
+        "percentile": 0.4,
+        "verdict": "적정",
+        "tabpfn": {"price": 27500000, "note": "TabPFN 예측"},
+        "comps": [],
+    }
+
+
+def test_format_market_diagnosis_adds_caveat_when_sample_count_below_three():
+    """DW-869 — 비교군이 3건 미만이면 기존 숫자 서술은 그대로 두고 표본 부족 주의 문구가
+    덧붙는다(엔진 자체는 3건 미만이면 판정을 보류하는데, LLM이 숫자만 보고 단정하는 걸 막는다)."""
+    from app.graph.agent_tools import _format_market_diagnosis
+
+    text = _format_market_diagnosis(_fake_diagnosis(sample_count=2))
+    assert "비교군 2건" in text  # 기존 숫자 서술 유지
+    assert "⚠ 비교군 2건 — 표본이 적어 참고만 하세요(판정 보류)" in text
+
+
+def test_format_market_diagnosis_no_caveat_when_sample_count_sufficient():
+    from app.graph.agent_tools import _format_market_diagnosis
+
+    text = _format_market_diagnosis(_fake_diagnosis(sample_count=6))
+    assert "표본이 적어 참고만" not in text
 
 
 # ───────── (4) compare_listings ─────────
