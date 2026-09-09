@@ -40,6 +40,8 @@
 - TabPFN: **v2 확정**(tabpfn==2.2.1, Apache + "Built with PriorLabs-TabPFN" 표기 의무). R² 0.92·MAE 111만원·피크 462MB
 - 벤치 스크립트·노트북 결과: `api/scripts/bench/`
 
+**파이프라인 설명 문서 완료** (상세: [05-pipeline-explained.md](05-pipeline-explained.md))
+
 ## 2. 다음 단계 (순서대로, **단계 사이에 멈추고 사용자 승인**)
 
 | 단계 | 내용 | 핵심 결정사항 |
