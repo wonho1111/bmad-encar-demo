@@ -75,6 +75,54 @@ _BODY_TYPE_WHITELIST = {
     "SUV", "RV", "경승합차", "승합차", "화물차",
 }
 
+# body_type 별칭·크기군 매핑(DW-872 — 실측: '세단'을 그대로 넘기면 ValueError로 되묻기에
+# 도피하거나(C06·C48) 중형차 하나로만 좁혀 대형차 세단을 빠뜨림(C18)). DB CHECK 어휘엔
+# "세단"이 없고 크기 축(준중형차/중형차/대형차)만 있어, 사용자가 흔히 쓰는 상위 개념 단어를
+# 코드가 그 크기 값 목록으로 펼친다. SUV는 크기 축 자체가 어휘에 없어(소형/중형/대형 구분
+# 없이 SUV 하나) 소형·중형·대형 SUV 요청이 전부 같은 값 하나로 묶인다 — applied_desc에 그
+# 사실을 명시해 사용자 요청을 조용히 축소하지 않는다(_resolve_body_type 참조). 키는 공백
+# 정규화(연속 공백→1칸) + 소문자 비교로 찾는다(예: "SUV"·"suv" 동일 취급).
+_BODY_TYPE_ALIAS_MAP: dict[str, list[str]] = {
+    "세단": ["준중형차", "중형차", "대형차"],
+    "준중형": ["준중형차"],
+    "준중형 세단": ["준중형차"],
+    "중형": ["중형차"],
+    "중형 세단": ["중형차"],
+    "대형": ["대형차"],
+    "대형 세단": ["대형차"],
+    "소형": ["소형차"],
+    "경형": ["경차"],
+    "소형 suv": ["SUV"],
+    "중형 suv": ["SUV"],
+    "대형 suv": ["SUV"],
+    "suv": ["SUV"],
+    "승합": ["승합차"],
+    "화물": ["화물차"],
+}
+# 크기+SUV 조합 키만 따로 모은다 — bare "suv"는 애초에 크기를 말하지 않았으므로 제외하고,
+# 이 셋만 applied_desc에 "크기 구분 없음" 문구를 붙인다(_resolve_body_type 참조).
+_SUV_SIZE_ALIAS_KEYS = {"소형 suv", "중형 suv", "대형 suv"}
+
+
+def _resolve_body_type(value: str) -> tuple[list[str], str]:
+    """body_type 인자 하나를 화이트리스트 값 목록 + applied_desc 문구로 바꾼다(DW-872).
+
+    공백 정규화(연속 공백→1칸, 앞뒤 제거) + 영문 대소문자 정규화 후 별칭 맵을 찾는다.
+    별칭이면 매핑된 값 목록을 돌려주고, 아니면 정규화한 원문 그대로 1개짜리 목록을
+    돌려준다 — 모르는 값이어도 예외는 여기서 던지지 않는다(화이트리스트 검증은 호출부인
+    search_listings가 한 곳에서 하고, 에러 문구도 거기 하나만 유지한다).
+    """
+    normalized = " ".join(value.split())
+    key = normalized.lower()
+    resolved = _BODY_TYPE_ALIAS_MAP.get(key)
+    if resolved is None:
+        return [normalized], f"차종={normalized}"
+    if key in _SUV_SIZE_ALIAS_KEYS:
+        return resolved, "차종=SUV(크기 구분 없음)"
+    if resolved == [normalized]:
+        return resolved, f"차종={normalized}"
+    return resolved, f"차종={'·'.join(resolved)}({normalized})"
+
 # listings.fuel CHECK 제약(0002)과 동일 — LLM이 '가솔린+전기' 같은 비실존 값을 지어내는 것 방지.
 _FUEL_WHITELIST = {"가솔린", "디젤", "하이브리드", "전기", "LPG"}
 
@@ -103,7 +151,7 @@ _COLOR_ALIAS_MAP = {
 # 있어도 0건으로 샌다(DW-868 실측: "쌍용 렉스턴" → manufacturer='쌍용', DB는 'KG모빌리티'만 있음).
 _MANUFACTURER_ALIAS_MAP = {
     "쌍용": "KG모빌리티", "쌍용자동차": "KG모빌리티",
-    "르노삼성": "르노코리아", "삼성": "르노코리아",
+    "르노": "르노코리아", "르노삼성": "르노코리아", "삼성": "르노코리아",
     "메르세데스": "벤츠", "메르세데스-벤츠": "벤츠",
     "현대자동차": "현대", "기아자동차": "기아",
     "지엠": "쉐보레", "쉐비": "쉐보레",
@@ -165,6 +213,8 @@ def _normalize_model_keyword(
     채워져 있으면 값을 덮지 않고 겹치는 토큰만 버린다(LLM이 같은 값을 두 군데에 중복
     입력한 경우도 안전). 남는 토큰이 없으면(전부 제조사·차종이었으면) model 필터는
     생략한다 — 그래야 "현대 SUV"가 model ILIKE '%현대 SUV%'(0건 오검색)로 새지 않는다.
+    차종 자리는 화이트리스트뿐 아니라 body_type 별칭 단일 토큰(예: "세단")도 인식한다 —
+    실제 값 목록으로 펼치는 건 search_listings의 _resolve_body_type이 한다(DW-872).
     """
     if not model_keyword:
         return manufacturer, body_type, None
@@ -173,7 +223,7 @@ def _normalize_model_keyword(
         if tok in _MANUFACTURER_WHITELIST:
             manufacturer = manufacturer or tok
             continue
-        if tok in _BODY_TYPE_WHITELIST:
+        if tok in _BODY_TYPE_WHITELIST or tok.lower() in _BODY_TYPE_ALIAS_MAP:
             body_type = body_type or tok
             continue
         remaining.append(tok)
@@ -209,7 +259,8 @@ def _format_listing_summary(listings: list[ListingCard], applied_desc: list[str]
         opts = ", ".join(c.options or [])
         line = (
             f"{i}. id={c.id} {c.manufacturer} {c.model} {c.year}년식 "
-            f"{c.mileage:,}km {c.price:,}원 연료={c.fuel or '미상'}"
+            f"{c.mileage:,}km {c.price:,}원 연료={c.fuel or '미상'} "
+            f"사고={c.accident_status or '미상'} 색상={c.color or '미상'} 지역={c.region or '미상'}"
         )
         if opts:
             line += f" 옵션={opts}"
@@ -217,11 +268,34 @@ def _format_listing_summary(listings: list[ListingCard], applied_desc: list[str]
     return "\n".join(lines)
 
 
+# search_listings 전용 SELECT — 공용 단일출처 SELECT_COLUMNS(listing_cards.py, 다른 세 RAG
+# 경로와 공유)는 그대로 두고, 이 도구 결과 줄에만 필요한 color 1열을 맨 끝에 덧붙인다
+# (DW-872). SELECT_COLUMNS를 직접 넓히면 sql_rag_node·hybrid_rag_node·doc_rag_node의
+# rows_to_cards 12열 계약까지 함께 깨져 이 도구와 무관한 세 경로·테스트가 줄줄이 흔들린다.
+_SEARCH_SELECT_COLUMNS = f"{SELECT_COLUMNS}, color"
+
+
+def _rows_to_cards_with_color(rows: list[tuple]) -> list[ListingCard]:
+    """_SEARCH_SELECT_COLUMNS(12열 + color 1열)로 뽑은 행을 카드로 바꾼다.
+
+    앞 12열은 공용 rows_to_cards(단일출처, listing_cards.py)에 그대로 맡기고, 맨 끝의
+    color만 이 함수가 덧붙인다 — rows_to_cards의 12열 고정 계약(_EXPECTED_COLUMN_COUNT)을
+    건드리지 않는다. ListingCard는 frozen이 아니라 속성 대입이 그대로 된다(attach_cover_images와
+    동일한 사후 부착 방식).
+    """
+    cards = rows_to_cards([r[:-1] for r in rows])
+    for card, r in zip(cards, rows):
+        color = r[-1]
+        card.color = color if isinstance(color, str) else None
+    return cards
+
+
 @tool(response_format="content_and_artifact")
 def search_listings(
     query_text: str,
     manufacturer: str | None = None,
     model_keyword: str | None = None,
+    models: list[str] | None = None,
     body_type: str | None = None,
     fuel: str | None = None,
     region: str | None = None,
@@ -231,6 +305,7 @@ def search_listings(
     year_min: int | None = None,
     year_max: int | None = None,
     mileage_max: int | None = None,
+    seats_min: int | None = None,
     accident_free_only: bool | None = None,
     options_required: list[str] | None = None,
     single_owner_only: bool | None = None,
@@ -248,6 +323,14 @@ def search_listings(
     model_keyword는 **모델명 전용**이다(예: "쏘렌토","아반떼") — 제조사·차종을 여기 넣지
     말고 반드시 전용 인자(manufacturer/body_type)를 써라. 섞여 들어와도 코드가 토큰 단위로
     걸러내긴 하지만, 전용 인자를 쓰는 편이 더 정확하다.
+    여러 모델 중 하나를 찾는 요청("K3 아니면 아반떼")은 model_keyword 대신 models에
+    ["K3","아반떼"]처럼 목록으로 넘겨라 — 목록 안 어느 모델과든 일치하면 걸린다(OR
+    의미). model_keyword와 함께 써도 되고, 그러면 둘 다 합쳐 OR로 묶인다.
+    body_type은 DB의 세부 차종값(예: "준중형차","중형차","대형차","SUV")뿐 아니라
+    "세단"·"준중형"·"소형 SUV"처럼 사용자가 흔히 쓰는 말로 줘도 된다 — 코드가 알아서
+    실제 차급 값(들)으로 바꾼다(예: "세단"→준중형차/중형차/대형차 전부). 크기+SUV
+    조합("소형 SUV" 등)은 DB에 크기 구분이 없어 모두 "SUV" 하나로 처리된다.
+    "7인승 이상"처럼 좌석 수 하한이 있으면 seats_min에 그 숫자를 넣어라(예: seats_min=7).
     options_required는 사용자가 요구한 옵션 문자열 목록(예: ["스마트키","통풍시트"]) —
     나열한 옵션을 **전부** 갖춘 매물만 걸러진다(하나라도 빠지면 제외, AND 의미). 옵션명은
     대략적으로 적어도 된다(공백·부분일치·동의어 계열을 허용해 정규화 비교한다 — 예:
@@ -266,6 +349,17 @@ def search_listings(
     manufacturer, body_type, model_filter = _normalize_model_keyword(
         model_keyword, manufacturer, body_type
     )
+    # models(여러 모델 중 하나, OR) — model_keyword와 같은 토큰 분리를 각 항목에 적용한다
+    # (DW-872, "K3 아니면 아반떼"). manufacturer/body_type은 이미 채워져 있으면 안 덮이므로
+    # (_normalize_model_keyword 자체 방어) 반복 호출로 누적해도 안전하다.
+    model_ilike_fragments: list[str] = [model_filter] if model_filter else []
+    if models:
+        for m in models:
+            if not (m and m.strip()):
+                continue
+            manufacturer, body_type, mf = _normalize_model_keyword(m.strip(), manufacturer, body_type)
+            if mf:
+                model_ilike_fragments.append(mf)
     if manufacturer:
         manufacturer = _MANUFACTURER_ALIAS_MAP.get(manufacturer, manufacturer)
 
@@ -283,15 +377,22 @@ def search_listings(
             notes.append(f"색상 '{color}'는 인식되지 않아 필터에서 제외")
             color = None
 
-    # CHECK 허용값 검증 — LLM이 DB에 없는 축값을 지어내면(회귀 실측 H26: body_type='세단')
-    # 조용히 0건이 되는 대신, 허용 목록을 담은 에러를 던져 모델이 다음 스텝에서 스스로
-    # 고치게 한다(도구 실패 → ToolMessage → 재시도 회복은 실측 검증된 경로).
-    if body_type and body_type not in _BODY_TYPE_WHITELIST:
-        raise ValueError(
-            f"body_type '{body_type}'은(는) 존재하지 않는 값이다. "
-            f"허용값: {sorted(_BODY_TYPE_WHITELIST)}. "
-            "'세단'류는 크기 축(준중형차/중형차/대형차)으로 바꿔 지정하라."
-        )
+    # body_type 별칭·복수값 해석(DW-872) — '세단'류는 DB CHECK 어휘에 없는 상위개념이라
+    # 코드가 준중형차/중형차/대형차 등 실제 값 목록으로 펼친다(_resolve_body_type). 펼친
+    # 각 값은 그대로 기존 화이트리스트로 검증한다 — 모르는 값이면 조용히 0건이 되는 대신
+    # 허용 목록을 담은 에러를 던져 모델이 다음 스텝에서 스스로 고치게 한다(회귀 실측 H26,
+    # 도구 실패 → ToolMessage → 재시도 회복은 실측 검증된 경로).
+    body_type_list: list[str] | None = None
+    body_type_desc: str | None = None
+    if body_type:
+        body_type_list, body_type_desc = _resolve_body_type(body_type)
+        for bt in body_type_list:
+            if bt not in _BODY_TYPE_WHITELIST:
+                raise ValueError(
+                    f"body_type '{bt}'은(는) 존재하지 않는 값이다. "
+                    f"허용값: {sorted(_BODY_TYPE_WHITELIST)}. "
+                    "'세단'류는 크기 축(준중형차/중형차/대형차)으로 바꿔 지정하라."
+                )
     if fuel and fuel not in _FUEL_WHITELIST:
         raise ValueError(
             f"fuel '{fuel}'은(는) 존재하지 않는 값이다. 허용값: {sorted(_FUEL_WHITELIST)}."
@@ -316,14 +417,24 @@ def search_listings(
         clauses.append("manufacturer = %s")
         params.append(manufacturer)
         applied_desc.append(f"제조사={manufacturer}")
-    if model_filter:
-        clauses.append("model ILIKE %s")
-        params.append(f"%{model_filter}%")
-        applied_desc.append(f"모델={model_filter}")
-    if body_type:
-        clauses.append("body_type = %s")
-        params.append(body_type)
-        applied_desc.append(f"차종={body_type}")
+    if model_ilike_fragments:
+        # 1개면 기존과 동일한 단일 절, 여러 개면 OR로 묶는다(DW-872, "K3 아니면 아반떼").
+        if len(model_ilike_fragments) == 1:
+            clauses.append("model ILIKE %s")
+            params.append(f"%{model_ilike_fragments[0]}%")
+        else:
+            clauses.append("(" + " OR ".join(["model ILIKE %s"] * len(model_ilike_fragments)) + ")")
+            params.extend(f"%{f}%" for f in model_ilike_fragments)
+        applied_desc.append(f"모델={'|'.join(model_ilike_fragments)}")
+    if body_type_list:
+        # 1개면 기존과 동일한 단일 절, 여러 개면 ANY로 묶는다(DW-872, '세단'→3개 차급).
+        if len(body_type_list) == 1:
+            clauses.append("body_type = %s")
+            params.append(body_type_list[0])
+        else:
+            clauses.append("body_type = ANY(%s)")
+            params.append(body_type_list)
+        applied_desc.append(body_type_desc)
     if fuel:
         clauses.append("fuel = %s")
         params.append(fuel)
@@ -356,6 +467,10 @@ def search_listings(
         clauses.append("mileage <= %s")
         params.append(mileage_max)
         applied_desc.append(f"주행≤{mileage_max:,}km")
+    if seats_min is not None:
+        clauses.append("seats >= %s")
+        params.append(seats_min)
+        applied_desc.append(f"좌석≥{seats_min}")
     if accident_free_only:
         clauses.append("accident_free = %s")
         params.append(True)
@@ -416,7 +531,7 @@ def search_listings(
             order_prefix = "(model = %s) DESC, "
             order_params = [model_filter]
         sql = (
-            f"SELECT {SELECT_COLUMNS} FROM listings WHERE {where_sql} "
+            f"SELECT {_SEARCH_SELECT_COLUMNS} FROM listings WHERE {where_sql} "
             f"AND embedding IS NOT NULL ORDER BY {order_prefix}embedding <=> %s::vector LIMIT %s"
         )
         rows = run_select(sql, (*params, *order_params, qvec, limit))
@@ -426,12 +541,12 @@ def search_listings(
             # 검증), 함수를 직접 부르는 호출자(테스트 포함)에도 같은 방어선을 둔다(코드 방어).
             raise ValueError(f"허용되지 않은 정렬 기준입니다: {sort_by!r}")
         sql = (
-            f"SELECT {SELECT_COLUMNS} FROM listings WHERE {where_sql} "
+            f"SELECT {_SEARCH_SELECT_COLUMNS} FROM listings WHERE {where_sql} "
             f"ORDER BY {_SORT_WHITELIST[sort_by]} LIMIT %s"
         )
         rows = run_select(sql, (*params, limit))
 
-    listings = attach_cover_images(rows_to_cards(rows))
+    listings = attach_cover_images(_rows_to_cards_with_color(rows))
     summary = _format_listing_summary(listings, applied_desc)
     if notes:
         # 인식 못 한 지역·색상 안내를 요약 앞에 붙인다 — LLM이 "조건 충족"이라 오독하지 못하게.

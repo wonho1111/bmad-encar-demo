@@ -32,7 +32,13 @@ _REFERENCE_PATTERN = re.compile(
 )
 
 # 재검색을 거절할 때 도구 대신 돌려주는 ToolMessage 텍스트(그대로 고정 — agent.py가 참조).
-FOLLOWUP_REFUSAL_TEXT = "직전 목록의 매물 id로만 답해야 합니다 — 재검색 금지"
+# 뒷문장(DW-872 실측 C50: 재검색이 막히자 "목록의 매물은 모두 무사고"라고 지어냄) — 거절만
+# 하고 대안을 안 주면 모델이 목록에 없는 속성을 스스로 지어내므로, compare_listings로
+# 확인하는 경로를 함께 안내한다.
+FOLLOWUP_REFUSAL_TEXT = (
+    "직전 목록의 매물 id로만 답해야 합니다 — 재검색 금지 — 목록에 없는 속성(사고·색상 등)이 "
+    "필요하면 compare_listings에 그 매물 id들을 넘겨 확인하고, 확인 안 된 속성은 단정하지 마라"
+)
 
 
 def block_research_on_followup(query: str, context: list[str] | None) -> bool:

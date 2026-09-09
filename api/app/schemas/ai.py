@@ -98,6 +98,10 @@ class ListingCard(BaseModel):
     is_single_owner: bool | None = None
     is_non_smoker: bool | None = None
     options: list[str] | None = None  # 장비 통제어휘 배열(text[]) — Story 10.3, docs/conventions.md §11
+    # 매물 색상(listings.color) — DW-872. SELECT_COLUMNS(단일출처, listing_cards.py)에는 없다 —
+    # agent_tools.search_listings만 자기 SQL에 이 컬럼을 덧붙여 채운다(다른 세 경로는 색상을
+    # 답변 줄에 안 쓰므로 공용 12열 계약을 넓히지 않는다).
+    color: str | None = None
 
 
 class ClarifyPayload(BaseModel):

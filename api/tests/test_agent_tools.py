@@ -25,9 +25,12 @@ _LISTING_ID = "55555555-5555-4555-8555-555555555555"
 
 
 def _fake_row():
+    # 13번째 값(color)은 DW-872 — search_listings 전용 SELECT는 공용 SELECT_COLUMNS(12열)
+    # 뒤에 color 1열을 덧붙인다(_SEARCH_SELECT_COLUMNS). compare_listings는 그대로 12열이라
+    # 이 헬퍼를 쓰지 않는다(compare_listings 테스트는 자체 데이터로 검증).
     return (
         _LISTING_ID, "현대", "싼타페", 2020, 26700000, 62000, "강원",
-        "가솔린", None, None, None, ["선루프"],
+        "가솔린", None, None, None, ["선루프"], "흰색",
     )
 
 
@@ -310,6 +313,156 @@ def test_search_listings_color_alias_reaches_sql(monkeypatch):
     assert "검정색" not in captured["params"]
 
 
+# ───────── (1c-2) body_type 별칭·복수값, models, seats_min, 사고/색상/지역 표기, 르노 별칭(DW-872) ─────────
+
+def test_search_listings_body_type_sedan_alias_expands_to_any_three_values(monkeypatch):
+    """'세단'은 DB CHECK 어휘에 없는 상위개념이라 준중형차/중형차/대형차 3개로 펼쳐지고,
+    값이 여러 개라 SQL은 '=' 대신 ANY로 바뀐다(DW-872 — 이전엔 ValueError였다, C06·C48)."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="세단 보여줘", sort_by="price_asc", body_type="세단")
+    assert "body_type = ANY(%s)" in captured["sql"]
+    assert "body_type = %s" not in captured["sql"]
+    body_type_param = next(p for p in captured["params"] if isinstance(p, list) and "중형차" in p)
+    assert body_type_param == ["준중형차", "중형차", "대형차"]
+
+
+def test_search_listings_body_type_sedan_alias_still_expands_with_different_spelling(monkeypatch):
+    """red 증명을 표기 하나로만 우려내지 않기 위해, 브리프가 준 예시와 다른 표기(공백 포함)로
+    한 번 더 확인한다 — 공백 정규화 후에도 같은 별칭으로 잡혀야 한다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="세단 보여줘", sort_by="price_asc", body_type=" 세단 ")
+    assert "body_type = ANY(%s)" in captured["sql"]
+    body_type_param = next(p for p in captured["params"] if isinstance(p, list) and "중형차" in p)
+    assert body_type_param == ["준중형차", "중형차", "대형차"]
+
+
+def test_search_listings_body_type_jun_jung_hyung_alias_maps_to_single_value(monkeypatch):
+    """'준중형'은 화이트리스트 값 '준중형차' 1개로만 풀려 기존과 동일한 단일 절(=)을 쓴다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="준중형 보여줘", sort_by="price_asc", body_type="준중형")
+    assert "body_type = %s" in captured["sql"]
+    assert "body_type = ANY(%s)" not in captured["sql"]
+    assert "준중형차" in captured["params"]
+    assert "준중형" not in captured["params"]
+
+
+def test_search_listings_body_type_medium_suv_alias_maps_to_suv(monkeypatch):
+    """'중형 SUV'는 DB 어휘에 크기 구분이 없어 'SUV' 하나로 뭉개진다 — 조용히 축소하지
+    않고 그 사실을 결과 텍스트(applied_desc)에 남긴다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return []
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    text, _ = agent_tools.search_listings.func(
+        query_text="중형 SUV 보여줘", sort_by="price_asc", body_type="중형 SUV",
+    )
+    assert "body_type = %s" in captured["sql"]
+    assert "SUV" in captured["params"]
+    assert "크기 구분 없음" in text
+
+
+def test_search_listings_models_list_creates_or_clause(monkeypatch):
+    """models=["K3","아반떼"] → model ILIKE 절 2개가 OR로 묶인다(DW-872, "K3 아니면 아반떼")."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(
+        query_text="K3 아니면 아반떼", sort_by="price_asc", models=["K3", "아반떼"],
+    )
+    assert captured["sql"].count("model ILIKE %s") == 2
+    assert "(model ILIKE %s OR model ILIKE %s)" in captured["sql"]
+    assert "%K3%" in captured["params"]
+    assert "%아반떼%" in captured["params"]
+
+
+def test_search_listings_models_combines_with_model_keyword_as_or(monkeypatch):
+    """model_keyword와 models가 함께 오면 합집합(OR)이다 — 셋 다 하나의 OR 절에 들어간다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(
+        query_text="투싼이나 스포티지", sort_by="price_asc",
+        model_keyword="투싼", models=["스포티지"],
+    )
+    assert captured["sql"].count("model ILIKE %s") == 2
+    assert "%투싼%" in captured["params"]
+    assert "%스포티지%" in captured["params"]
+
+
+def test_search_listings_seats_min_filters_seats_gte(monkeypatch):
+    """'7인승 이상' → seats_min=7 → SQL은 seats >= %s, 파라미터는 7."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="7인승 이상", sort_by="price_asc", seats_min=7)
+    assert "seats >= %s" in captured["sql"]
+    assert 7 in captured["params"]
+
+
+def test_search_listings_manufacturer_alias_renault_maps_to_renault_korea(monkeypatch):
+    """'르노' 단독 별칭 누락(DW-872 근거) — manufacturer='르노'가 '르노코리아'로 정규화된다."""
+    captured = {}
+
+    def fake_run_select(sql, params=None):
+        captured["params"] = params
+        return [_fake_row()]
+
+    monkeypatch.setattr(agent_tools, "run_select", fake_run_select)
+    agent_tools.search_listings.func(query_text="르노 매물", sort_by="price_asc", manufacturer="르노")
+    assert "르노코리아" in captured["params"]
+    assert "르노" not in captured["params"]
+
+
+def test_search_listings_summary_line_includes_accident_color_region(monkeypatch):
+    """검색 결과 줄에 사고·색상·지역이 보여야 후속 질문("그중 무사고만")을 재검색 없이
+    목록만으로 거를 수 있다(DW-872 근거 C50 — 재검색 차단 후 지어내던 문제)."""
+    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: [_fake_row()])
+    text, _ = agent_tools.search_listings.func(query_text="아무거나", sort_by="price_asc")
+    assert "사고=미상" in text  # _fake_row()의 accident_status는 None
+    assert "색상=흰색" in text
+    assert "지역=강원" in text
+
+
 def test_search_listings_unknown_region_is_dropped_and_noted_in_text(monkeypatch):
     """모르는 지역 값은 필터에서 빠지고(SQL에 region 절이 안 걸림), 그 사실이 tool 텍스트에
     남아 LLM이 "조건 충족"이라 오독하지 못하게 한다."""
@@ -549,17 +702,19 @@ def test_compare_listings_empty_ids_skips_query(monkeypatch):
 
 
 def test_invalid_body_type_raises_with_allowed_values():
-    """LLM이 지어낸 축값(회귀 실측 H26: body_type='세단')은 조용한 0건 대신 허용 목록을
-    담은 에러로 되돌려 모델이 재시도하게 한다."""
+    """LLM이 지어낸 축값은 조용한 0건 대신 허용 목록을 담은 에러로 되돌려 모델이 재시도하게
+    한다. DW-872 이전엔 이 값이 '세단'이었다(회귀 실측 H26) — DW-872로 '세단'은 별칭으로
+    지원되므로(_resolve_body_type이 준중형차/중형차/대형차로 펼침, 아래 별도 테스트) 이
+    테스트는 별칭·화이트리스트 어디에도 없는 값("쿠페")으로 여전히 막히는지만 확인한다."""
     import pytest
     from app.graph import agent_tools
 
     with pytest.raises(ValueError) as exc:
         agent_tools.search_listings.invoke(
-            {"body_type": "세단", "query_text": "중형 세단"}
+            {"body_type": "쿠페", "query_text": "쿠페"}
         )
     msg = str(exc.value)
-    assert "세단" in msg and "중형차" in msg  # 잘못된 값 + 허용 안내 동시 포함
+    assert "쿠페" in msg and "중형차" in msg  # 잘못된 값 + 허용 안내 동시 포함
 
 
 def test_invalid_fuel_raises_with_allowed_values():

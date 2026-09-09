@@ -34,6 +34,14 @@ def test_block_research_on_followup_matches_various_reference_markers():
         assert answer_guards.block_research_on_followup(phrase, ["aaa"]) is True, phrase
 
 
+def test_followup_refusal_text_points_to_compare_listings_for_unlisted_attributes():
+    """DW-872 실측(C50) — 재검색이 막히자 "목록의 매물은 모두 무사고"라고 지어냈다. 거절
+    문구가 compare_listings로 확인하는 경로와 "단정 금지"를 함께 안내하는지 잠근다."""
+    assert "재검색 금지" in answer_guards.FOLLOWUP_REFUSAL_TEXT  # 기존 문구 보존
+    assert "compare_listings" in answer_guards.FOLLOWUP_REFUSAL_TEXT
+    assert "단정하지 마라" in answer_guards.FOLLOWUP_REFUSAL_TEXT
+
+
 # ───────── (2) strip_listing_ids — 3가지 UUID 노출 형태 ─────────
 
 def test_strip_listing_ids_removes_paren_id_form():
