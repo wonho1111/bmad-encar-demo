@@ -260,6 +260,7 @@ market_price.py:377).
 | 사고 매물 오차율 중앙값 | 10.4%(사고 41건; 단순교환 95건은 5.3%로 무사고 수준) | 무사고(5.2%)의 약 2배 — 6절 DW-863 |
 | 1,500만원 미만 오차율 중앙값 | 7.9% | 저가대일수록 %가 커짐 |
 | 부트스트랩 95% 신뢰구간(2,000회 재추출) | 오차율 중앙값 5.1~7.0% · ±10% 적중률 64.7~74.7% · q10~q90 적중 80.0~88.3% | 표본 300건에서 숫자가 흔들릴 수 있는 폭 |
+| 사람 판정 50건 대조(5단) | 정확 일치 52% · 한 칸 이내 90% · 3단으로 접으면 62% | 사람이 엔진보다 싸다고 본 쪽이 16건 대 8건 — 렌트·영업 이력 특징 부재 가설, DW-864에서 확인 |
 
 > 부트스트랩(같은 300건에서 무작위로 300건을 다시 뽑는 일을 2,000번 반복해, 지표가 표본
 > 운에 따라 얼마나 흔들리는지 재는 방법)은 처음 검증 때 파일로 남기지 않아 2026-09-09에
@@ -400,6 +401,7 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | 5a | LOO 대 hold-out 차이·판정 일치율 | `.logs/encar_eval/20260905/eval/compare.json` |
 | 5a | 지표 교차확인 | `.logs/encar_eval/20260905/eval/verification.xlsx`(요약 시트), `metrics_loo.json`/`metrics_holdout.json` |
 | 5a | 부트스트랩 95% 신뢰구간(2,000회) | `.logs/encar_eval/20260905/eval/bootstrap.json`(2026-09-09 계산, cases_loo.csv 기반) |
+| 5a | 사람 판정 50건 대조 | `.logs/encar_eval/20260905/eval/verification_human.xlsx`(사람판정 시트), `eval/human_verdict_agreement.json`, `report.md` §9 |
 | 5b | 판정기 v1/v2 GOOD율(41%/77%) | `.logs/chatbot_eval/20260908/judgments_v1.jsonl`, `judgments_v2.jsonl`(100행 집계) |
 | 5b | 사람 vs 판정기 일치율(74/85/97%) | `.logs/chatbot_eval/20260908/backup_pre_rereview_20260909/human_labels.json`, `human_labels.json`, `judgments_v2.jsonl`, `judgments.jsonl` 대조 |
 | 5b | 수정 전후 100건(62%→88%, 카테고리별) | `.logs/chatbot_eval/20260908/judgments.jsonl`, `.logs/chatbot_eval/20260909/judgments.jsonl`(100행 집계) |
