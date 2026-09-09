@@ -5,7 +5,7 @@
 > 관련도로 다시 정밀하게 순위 매기는 모델)와 적정가 예측(TabPFN) 각각의 **입력·학습 데이터·
 > 추론 과정** 3요소, 확률분포·5단 판정의 쉬운 설명, 실매물·챗봇 검증 결과를 한 문서에 모은다.
 > 목표는 이 문서만 읽고 자기 말로 두 파이프라인을 설명할 수 있는 것이다(코드가 유일한 정본).
-> 본문의 `파일:줄` 번호는 이 문서를 커밋한 시점의 develop 기준이며, 이후 코드가 바뀌면 8절 근거 표로 다시 대조한다.
+> 본문의 `파일:줄` 번호는 2026-09-09 수정 묶음 3(커밋 f6fdaa3) 이후 develop 기준이며, 이후 코드가 바뀌면 8절 근거 표로 다시 대조한다.
 
 ## 0. 목적과 30초 요약
 
@@ -26,26 +26,26 @@
 사용자가 채팅으로 뭔가 물으면(예: "그랜저 시세 봐줘"), 다음 순서로 처리된다.
 
 1. **에이전트**(`api/app/graph/agent.py`)가 질문을 받는다. 모델은 `gemini-3.1-flash-lite`
-   (`api/app/config.py:38`), `temperature=0`(agent.py:215-221, 같은 상태면 같은 도구를
+   (`api/app/config.py:38`), `temperature=0`(agent.py:225-231, 같은 상태면 같은 도구를
    고르게 하기 위한 재현성 설정)으로 LLM을 만들고, 도구 4종을 붙인다
-   (`bind_tools`, agent.py:401).
+   (`bind_tools`, agent.py:422).
 2. 에이전트가 상황에 맞는 **도구**를 스스로 고른다: `search_listings`(구조 조건 검색),
    `search_guides`(구매 가이드 문서 검색), `market_price_stats`(시세 진단),
-   `compare_listings`(매물 비교) — 4종 전부 `agent_tools.py:541`에 등록.
+   `compare_listings`(매물 비교) — 4종 전부 `agent_tools.py:656`에 등록.
 3. 도구가 결과를 돌려주면(여러 번 반복 가능) 에이전트가 그 결과를 근거로 최종 답을
    구조화된 형식으로 정리한다.
 4. 답변이 나가기 전 **결정론 가드**(LLM이 아니라 순수 코드 필터, `answer_guards.py`)를
-   한 번 더 거친다: 매물 내부 id를 답변 문장에서 지우고(`strip_listing_ids`, agent.py:500),
+   한 번 더 거친다: 매물 내부 id를 답변 문장에서 지우고(`strip_listing_ids`, agent.py:545),
    비교군이 3건 미만인 시세 진단이 있는데 "표본" 언급이 없으면 주의 문구를 덧붙인다
-   (`ensure_sample_caveat`, agent.py:501).
+   (`ensure_sample_caveat`, agent.py:546).
 
 리랭커는 이 흐름 중 **딱 한 곳**, 2번의 `search_guides` 안에서만 등장한다 — 실제로
-`api/app/graph/agent_tools.py` 전체에서 `rerank(`을 호출하는 곳은 457번 줄 하나뿐이다.
+`api/app/graph/agent_tools.py` 전체에서 `rerank(`을 호출하는 곳은 572번 줄 하나뿐이다.
 매물 검색(`search_listings`)이나 시세 진단에는 리랭커가 관여하지 않는다.
 
 ```mermaid
 flowchart LR
-    U["사용자 질문"] --> LOOP["에이전트 루프<br/>gemini-3.1-flash-lite, temp=0<br/>agent.py:218, 401"]
+    U["사용자 질문"] --> LOOP["에이전트 루프<br/>gemini-3.1-flash-lite, temp=0<br/>agent.py:230, 422"]
     LOOP -->|도구 선택| SL["search_listings<br/>매물 구조 조건 검색"]
     LOOP -->|도구 선택| SG["search_guides<br/>가이드 문서 검색"]
     LOOP -->|도구 선택| MP["market_price_stats<br/>시세 진단(diagnose)"]
@@ -56,12 +56,12 @@ flowchart LR
     SG --> FIN
     MP --> FIN
     CL --> FIN
-    FIN --> GD["답변 가드<br/>id 제거 · 표본부족 문구<br/>agent.py:500-501"]
+    FIN --> GD["답변 가드<br/>id 제거 · 표본부족 문구<br/>agent.py:545-546"]
     GD --> R["사용자에게 답변"]
 ```
 
 시세 진단(`market_price_stats`)은 매물 id 하나를 받아 `market_price.diagnose()`를
-호출하고(`agent_tools.py:499`), 그 결과를 텍스트로 포맷해 에이전트에 돌려준다 —
+호출하고(`agent_tools.py:619`), 그 결과를 텍스트로 포맷해 에이전트에 돌려준다 —
 3·4절에서 다루는 TabPFN 적정가 예측이 실제로 실행되는 지점이다.
 
 ---
@@ -71,7 +71,7 @@ flowchart LR
 ### 입력
 
 질의 문장(`query_text`) + 가이드 문서 후보 (제목, 본문) 쌍 목록(`search_guides`,
-`agent_tools.py:443-464`). 후보는 다음처럼 만들어진다(`find_relevant_guides_fused`,
+`agent_tools.py:558-582`). 후보는 다음처럼 만들어진다(`find_relevant_guides_fused`,
 `api/app/graph/multi_query.py:118-156`):
 
 - 원 질의를 임베딩(문장을 숫자 벡터로 바꾸는 것)해 가이드 문서 코퍼스에서 벡터 검색
@@ -103,7 +103,7 @@ Cloud Run에 별도 배포. 이유는 모델 로드에만 11.5초가 걸려 요�
 쌍을 통째로 토크나이즈해 넣고 관련도 점수 하나를 낸다 — `pairs = [[req.query, doc.text[:2000]]
 for doc in req.docs]` → `model.predict(pairs)`(`reranker_service.py:107-108`). 점수 내림차순으로
 정렬해 인덱스 목록만 돌려준다(id는 사이드카 안에서 정렬용일 뿐 — `search_guides`가 넘기는
-id는 실제로는 가이드 **제목**이다, `agent_tools.py:457`).
+id는 실제로는 가이드 **제목**이다, `agent_tools.py:572`).
 
 **임베딩 검색과의 차이**: 위 "입력"의 1차 후보 선정(pgvector `<=>`)은 질의와 문서를 **각자
 따로** 벡터로 바꾼 뒤 그 두 벡터 사이 거리를 재는 방식이다 — 문서 쪽 벡터는 미리 계산해
@@ -116,7 +116,7 @@ id는 실제로는 가이드 **제목**이다, `agent_tools.py:457`).
 **사이드카가 죽었을 때**: `RERANKER_URL` 미설정, 연결 실패, 타임아웃(기본 3초,
 `config.py:48`, 배포 환경은 `RERANKER_TIMEOUT_SECONDS`로 늘림) 어느 경우든 예외를 삼키고
 `None`을 돌려준다(`rerank_client.py:29-30,49`) — `search_guides`는 `order`가 없으면 원래
-벡터 검색 순서를 그대로 쓴다(`agent_tools.py:459-464`). 사이드카 모듈 자체가 없는 환경도
+벡터 검색 순서를 그대로 쓴다(`agent_tools.py:574-582`). 사이드카 모듈 자체가 없는 환경도
 같은 결과가 되도록 임포트 자체를 `try/except`로 감쌌다(`agent_tools.py:44-47`). 즉 리랭커는
 "있으면 개선, 없으면 원래 순서"인 선택 기능이다. 참고로 운영 배포는 2026-09-04에 연결이
 확인됐다(`/rerank` 200 응답, 7.3초, 장부 DW-858 done) — 리랭커 선정 근거는
@@ -353,13 +353,13 @@ MT6는 '세단' 문제다. 남은 결함은 6절 DW-872의 다음 수정 묶음(
 | 절 | 주장/수치 | 파일:줄 |
 |---|---|---|
 | 1 | 에이전트 모델 gemini-3.1-flash-lite | `api/app/config.py:38` |
-| 1 | LLM 생성(temperature=0)·도구 바인딩 | `api/app/graph/agent.py:215-221,401` |
-| 1 | 도구 4종 목록(AGENT_TOOLS) | `api/app/graph/agent_tools.py:541` |
-| 1 | 리랭커는 search_guides 안 rerank() 호출 1곳뿐 | `api/app/graph/agent_tools.py:457`(전체 코드베이스 검색 결과 1건) |
-| 1 | 답변 가드 호출(id 제거·표본부족 문구) | `api/app/graph/agent.py:500-501` |
-| 1 | 멀티턴 재검색 차단 호출 | `api/app/graph/agent.py:418` |
-| 1 | market_price_stats → diagnose() 호출 | `api/app/graph/agent_tools.py:498-509` |
-| 2 | search_guides 정의·리랭크 호출 | `api/app/graph/agent_tools.py:443-464` |
+| 1 | LLM 생성(temperature=0)·도구 바인딩 | `api/app/graph/agent.py:225-231,401` |
+| 1 | 도구 4종 목록(AGENT_TOOLS) | `api/app/graph/agent_tools.py:656` |
+| 1 | 리랭커는 search_guides 안 rerank() 호출 1곳뿐 | `api/app/graph/agent_tools.py:572`(전체 코드베이스 검색 결과 1건) |
+| 1 | 답변 가드 호출(id 제거·표본부족 문구) | `api/app/graph/agent.py:545-546` |
+| 1 | 멀티턴 재검색 차단 호출 | `api/app/graph/agent.py:439` |
+| 1 | market_price_stats → diagnose() 호출 | `api/app/graph/agent_tools.py:614-621` |
+| 2 | search_guides 정의·리랭크 호출 | `api/app/graph/agent_tools.py:558-582` |
 | 2 | find_relevant_guides_fused(원질의 2배 가중 + RRF) | `api/app/graph/multi_query.py:118-156` |
 | 2 | find_relevant_guide 단일 벡터검색(키워드 조건 없음) | `api/app/graph/doc_rag_node.py:60,76-79` |
 | 2 | RRF_K=60, 상위 5건 | `api/app/graph/multi_query.py:42,46` |
