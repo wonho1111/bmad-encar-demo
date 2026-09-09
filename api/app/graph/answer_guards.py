@@ -19,6 +19,8 @@
 
 import re
 
+from app.graph import agent_tools
+
 # ── (1) 멀티턴 재검색 차단 ────────────────────────────────────────────────
 #
 # 직전 목록을 가리키는 지칭 표현 — 이 중 하나라도 이번 질의에 있고 직전 목록 id가 하나라도
@@ -27,17 +29,23 @@ import re
 # \d+번째는 "5번째"처럼 숫자가 붙은 형태, 번째 단독은 "두 번째"·"세 번째"처럼 한글 수사가
 # 붙는 형태까지 부분일치로 덮는다(둘 다 있어야 "두→다섯" 전부 잡힌다는 뜻은 아니고, 후자
 # 하나만으로도 전자를 포함하지만 스펙 원문의 두 표현을 그대로 남겨 의도를 드러낸다).
+# 아래 줄(여기서·여기 중·…·그 목록)은 DW-872 update(2026-09-09 18:08) (b) 실측 추가분 —
+# "여기서 흰색만 있어?"(C59)가 이 목록 밖이라 재검색으로 샜다.
 _REFERENCE_PATTERN = re.compile(
-    r"그중|그 중|그거|이 중|이중에|\d+번째|번째|나머지|앞의|둘 다|전부 비교"
+    r"그중|그 중|그거|이 중|이중에|\d+번째|번째|나머지|앞의|둘 다|전부 비교|"
+    r"여기서|여기 중|이 매물들|이것들|그것들|위에서|위 목록|위에 있는|얘네|요 중|그 목록"
 )
 
 # 재검색을 거절할 때 도구 대신 돌려주는 ToolMessage 텍스트(그대로 고정 — agent.py가 참조).
 # 뒷문장(DW-872 실측 C50: 재검색이 막히자 "목록의 매물은 모두 무사고"라고 지어냄) — 거절만
 # 하고 대안을 안 주면 모델이 목록에 없는 속성을 스스로 지어내므로, compare_listings로
-# 확인하는 경로를 함께 안내한다.
+# 확인하는 경로를 함께 안내한다. 마지막 문장(DW-872 update 2026-09-09 18:08 (d) 실측 C53:
+# 재검색이 막히자 "목록에 없다"고 답함 — 정답은 직전 매물 id로 market_price_stats)은
+# 시세·적정가 질문 전용 경로를 추가로 안내한다.
 FOLLOWUP_REFUSAL_TEXT = (
     "직전 목록의 매물 id로만 답해야 합니다 — 재검색 금지 — 목록에 없는 속성(사고·색상 등)이 "
-    "필요하면 compare_listings에 그 매물 id들을 넘겨 확인하고, 확인 안 된 속성은 단정하지 마라"
+    "필요하면 compare_listings에 그 매물 id들을 넘겨 확인하고, 확인 안 된 속성은 단정하지 마라. "
+    "시세·적정가 질문이면 compare_listings가 아니라 그 매물 id로 market_price_stats를 호출해라"
 )
 
 
@@ -100,3 +108,97 @@ def ensure_sample_caveat(answer: str, market_diagnoses: list[dict] | None) -> st
         return answer
     n = small[0]["criteria"]["sample_count"]
     return f"{answer} 비교 가능한 매물이 {n}건뿐이라 표본이 적어 참고만 하세요."
+
+
+# ── (4) 검색 인자 자동 주입(DW-872 update 2026-09-09 18:08 (f)) ──────────────
+#
+# 실측(C02·C03): 'SUV'·'하이브리드'가 질문에 명시돼 있는데도 search_listings 인자로는 안
+# 넘기고 query_text에만 실린다 — agent.py [도구 인자 규칙]은 프롬프트 문장일 뿐이라 실측으로
+# 계속 샜다(CLAUDE.md B9 "지켜야 하는 규칙이면 실행되는 검사로 바꾼다"). 모델이 이미 채운
+# 인자는 절대 덮지 않고, **비어 있는** 인자만 원문 질의의 닫힌 어휘로 채운다 — 어휘는
+# agent_tools의 기존 화이트리스트·별칭 표를 그대로 재사용한다(새 표를 여기서 중복 정의하지
+# 않는다, 단일 출처 유지). agent_tools는 이 모듈을 임포트하지 않으므로 순환 임포트가 생기지
+# 않는다(agent.py → answer_guards → agent_tools 한 방향).
+_NEGATION_WORDS = ("말고", "빼고", "제외", "아닌", "아니고", "빼면")
+_SEATS_MIN_RE = re.compile(r"(\d)인승\s*이상")
+
+
+def _is_negated(query: str, match_end: int) -> bool:
+    """매치가 끝난 바로 뒤 6자 안에 부정어가 있으면 그 매치는 버린다(예: "SUV 말고 세단"
+    에서 SUV는 부정으로 걸러지고 세단만 남는다)."""
+    return any(neg in query[match_end:match_end + 6] for neg in _NEGATION_WORDS)
+
+
+def _find_best_match(query: str, vocab: dict[str, str]) -> str | None:
+    """vocab(소문자 검색어 → 주입값) 중 query에 부분일치(대소문자 무시 — query만 lower()
+    해서 비교, vocab 키는 호출부가 이미 소문자로 준비해 온다)하면서 부정어에 걸리지 않은
+    항목 중 **가장 긴 검색어** 하나를 고른다(동률이면 먼저 나오는 쪽) — "세단"·"준중형"·
+    "준중형 세단"이 동시에 일치할 수 있어 가장 구체적인(긴) 쪽을 쓴다."""
+    low = query.lower()
+    best: tuple[int, int, str] | None = None  # (검색어 길이, 시작 위치, 주입값)
+    for keyword, value in vocab.items():
+        idx = low.find(keyword)
+        if idx == -1 or _is_negated(query, idx + len(keyword)):
+            continue
+        if best is None or len(keyword) > best[0] or (len(keyword) == best[0] and idx < best[1]):
+            best = (len(keyword), idx, value)
+    return best[2] if best else None
+
+
+def _fuel_vocab() -> dict[str, str]:
+    return {kw.lower(): kw for kw in agent_tools._FUEL_WHITELIST}
+
+
+def _body_type_vocab() -> dict[str, str]:
+    # 별칭(세단·준중형·소형 suv …) 먼저 채우고 화이트리스트로 덮어써, "suv"/"SUV"처럼 같은
+    # 소문자 키가 겹치면 화이트리스트 표기(SUV)가 이긴다(주입값의 대소문자를 결정론으로 고정).
+    vocab = {kw.lower(): kw for kw in agent_tools._BODY_TYPE_ALIAS_MAP}
+    vocab.update({kw.lower(): kw for kw in agent_tools._BODY_TYPE_WHITELIST})
+    return vocab
+
+
+_INJECT_EXCLUDED_MANUFACTURER_KEYS = {"삼성"}
+
+
+def _manufacturer_vocab() -> dict[str, str]:
+    # 별칭은 agent_tools._MANUFACTURER_ALIAS_MAP의 값(이미 해석된 화이트리스트 값)을 그대로
+    # 주입값으로 쓴다(예: "르노"→"르노코리아") — body_type과 달리 manufacturer는 단일 문자열
+    # 인자라 여러 값으로 펼칠 필요가 없다.
+    # 자동 주입 전용 제외(DW-872 묶음 3 검토): '삼성'은 지명·전자제품 등 무관한 문맥에 흔해
+    # 질문에서 자동으로 제조사를 채우면 오탐이 크다. LLM이 명시 인자로 넘기는 경로(agent_tools)의
+    # 별칭표는 그대로 두고, 여기(질문 텍스트 스캔)에서만 뺀다.
+    vocab = {kw.lower(): resolved for kw, resolved in agent_tools._MANUFACTURER_ALIAS_MAP.items()
+             if kw not in _INJECT_EXCLUDED_MANUFACTURER_KEYS}
+    vocab.update({kw.lower(): kw for kw in agent_tools._MANUFACTURER_WHITELIST})
+    return vocab
+
+
+def infer_missing_args(query: str, args: dict) -> dict:
+    """search_listings 호출 인자 중 **모델이 비워 둔 것만** 원문 질의의 닫힌 어휘로 채운
+    새 dict를 돌려준다(원본 args는 바꾸지 않는다 — 순수 함수, 부작용 없음).
+
+    채우는 4개 필드 — fuel·body_type·manufacturer(문자열 부분일치, 가장 긴 일치 하나만)·
+    seats_min("N인승 이상" 패턴 하나뿐). 부정어(말고·빼고·제외·아닌·아니고·빼면)가 매치
+    바로 뒤 6자 안에 있으면 그 매치는 채우지 않는다(예: "SUV 말고 세단" → body_type=세단만).
+    body_type은 agent_tools.search_listings가 호출 시점에 다시 해석하는 원시 표기(예: "세단")
+    그대로 넣는다 — "세단"→[준중형차·중형차·대형차] 같은 다중값 펼치기는 이 함수의 일이
+    아니라 도구 쪽 _resolve_body_type이 이미 하는 일이다(중복 구현 금지).
+    """
+    result = dict(args)
+    if not result.get("fuel"):
+        matched = _find_best_match(query, _fuel_vocab())
+        if matched:
+            result["fuel"] = matched
+    if not result.get("body_type"):
+        matched = _find_best_match(query, _body_type_vocab())
+        if matched:
+            result["body_type"] = matched
+    if not result.get("manufacturer"):
+        matched = _find_best_match(query, _manufacturer_vocab())
+        if matched:
+            result["manufacturer"] = matched
+    if not result.get("seats_min"):
+        m = _SEATS_MIN_RE.search(query)
+        if m and not _is_negated(query, m.end()):
+            result["seats_min"] = int(m.group(1))
+    return result

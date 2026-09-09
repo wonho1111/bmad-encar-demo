@@ -566,6 +566,40 @@ def test_recent_listing_ids_merge_across_multiple_assistant_turns(monkeypatch):
     assert "4. 기아 쏘렌토 2020년식" in prompt and "(id: bbb)" in prompt
 
 
+def test_recent_listings_block_names_ids_as_the_only_valid_reference_set(monkeypatch):
+    """DW-872 update(2026-09-09 18:08) (c) 실측(C51) — 도구 결과가 5장짜리 카드보다 많을 때
+    카드 밖 매물까지 "이 중"에 포함시켰다. [직전 대화에서 보여준 매물] 블록 끝에 실제 id
+    목록과 "이 id들만 뜻한다"는 문장이 코드로 박혀 들어가는지 확인한다(프롬프트 말로만
+    설명하던 규칙을 값 자체로 다시 못박는 부분)."""
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda query, context=None: query)
+
+    rows = [
+        ("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]}]
+    agent_module.run_search_agent("이 중에 저렴한 거", context=context)
+
+    prompt = [m for m in captured_messages if isinstance(m, SystemMessage)][0].content
+    assert "직전에 사용자에게 보여준 매물 id" in prompt
+    assert "[aaa, bbb]" in prompt  # 병합된 순서 그대로 값 자체가 문장에 실린다.
+    assert "이 중/그중" in prompt
+    assert "보여주지 않은 매물은 제외" in prompt
+
+
 # ───────── 다건 시세 진단(market_diagnoses, 2026-08-31) ─────────
 
 class _SequentialFakeTool:
@@ -631,6 +665,14 @@ def test_system_prompt_covers_per_listing_verdict_rule():
 def test_system_prompt_covers_attribute_consistency_rule():
     # 매물 속성(연료·연식 등) 서술이 도구가 돌려준 실제 값과 어긋나면 안 된다는 규칙.
     assert "실제 값과" in agent_module._SYSTEM_PROMPT
+
+
+def test_system_prompt_covers_market_price_stats_for_followup_price_questions():
+    # DW-872 update(2026-09-09 18:08) (d) 실측(C53) — 재검색이 막히자 "목록에 없다"고
+    # 답했다. 시세·적정가 후속 질문은 compare_listings가 아니라 market_price_stats로
+    # 가라는 규칙이 프롬프트에도 있어야 한다(answer_guards.FOLLOWUP_REFUSAL_TEXT와 같은 안내).
+    assert "compare_listings가 아니라" in agent_module._SYSTEM_PROMPT
+    assert "market_price_stats를 호출해라" in agent_module._SYSTEM_PROMPT
 
 
 def test_market_diagnoses_none_when_only_one_call(monkeypatch):
@@ -807,6 +849,75 @@ def test_followup_guard_uses_raw_query_not_contextualized_rewrite(monkeypatch):
     agent_module.run_search_agent("그 중에 무사고인 것만 골라줘", context=context)
 
     assert captured_tool_message_contents == [answer_guards.FOLLOWUP_REFUSAL_TEXT]
+
+
+# ───────── (8) 검색 인자 자동 주입(DW-872 update 2026-09-09 18:08 (f)) ─────────
+
+def test_search_listings_args_auto_filled_from_query_and_result_text_prefixed(monkeypatch):
+    """실측(C02·C03) — 'SUV'가 질문에 있어도 도구 인자 없이 query_text에만 실렸다. 모델이
+    body_type을 비워 뒀으면 코드가 원문 질의에서 채워 **그 인자로 실제 도구를 실행**하고
+    (모델이 이미 준 query_text는 그대로 두고), 도구 결과 텍스트 맨 앞에 "(질문에서 자동
+    적용" 접두를 붙여 모델에게 알리는지 확인한다."""
+    captured_tool_message_contents: list[str] = []
+    received_tool_calls: list[dict] = []
+
+    class _CapturingSearchTool:
+        def invoke(self, tool_call):
+            received_tool_calls.append(tool_call)
+            return ToolMessage(content="1. id=aaa 현대 투싼 SUV", tool_call_id=tool_call["id"], artifact=[])
+
+    class _CaptureThenStopLLM:
+        def __init__(self):
+            self.invoke_count = 0
+
+        def invoke(self, messages):
+            self.invoke_count += 1
+            if self.invoke_count == 1:
+                return _FakeAIMessage(tool_calls=[
+                    {"name": "search_listings", "args": {"query_text": "SUV 추천"}, "id": "call-1"}
+                ])
+            captured_tool_message_contents.append(messages[-1].content)
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CaptureThenStopLLM()
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _CapturingSearchTool()})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    agent_module.run_search_agent("SUV 있어?")
+
+    # 모델이 비운 body_type이 원문 질의("SUV 있어?")에서 채워져 실제 실행 인자에 반영된다.
+    assert received_tool_calls[0]["args"]["body_type"] == "SUV"
+    # 모델이 이미 준 query_text는 덮지 않는다.
+    assert received_tool_calls[0]["args"]["query_text"] == "SUV 추천"
+    assert captured_tool_message_contents[0].startswith("(질문에서 자동 적용")
+
+
+def test_search_listings_args_unchanged_when_model_already_filled_them(monkeypatch):
+    """모델이 이미 body_type을 채웠으면(예: "세단") 원문에 다른 차종 표현이 있어도 절대
+    덮지 않는다 — 자동 주입은 "비어 있을 때만" 채운다."""
+    received_tool_calls: list[dict] = []
+
+    class _CapturingSearchTool:
+        def invoke(self, tool_call):
+            received_tool_calls.append(tool_call)
+            return ToolMessage(content="ok", tool_call_id=tool_call["id"], artifact=[])
+
+    tool_llm = _SequenceToolLLM([
+        _FakeAIMessage(tool_calls=[
+            {"name": "search_listings", "args": {"body_type": "세단"}, "id": "call-1"}
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ])
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _CapturingSearchTool()})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    agent_module.run_search_agent("SUV 아니면 세단 3천만원대")
+
+    assert received_tool_calls[0]["args"]["body_type"] == "세단"
 
 
 # ───────── (7) 결정론 후처리 배선(DW-869·870) — 답변 id 제거 + 표본 부족 주의 보정 ─────────

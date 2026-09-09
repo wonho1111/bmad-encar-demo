@@ -34,12 +34,32 @@ def test_block_research_on_followup_matches_various_reference_markers():
         assert answer_guards.block_research_on_followup(phrase, ["aaa"]) is True, phrase
 
 
+def test_block_research_on_followup_matches_newly_added_reference_markers():
+    """DW-872 update(2026-09-09 18:08) (b) 실측(C59) — "여기서 흰색만 있어?"가 가드 지칭
+    패턴 밖이라 재검색으로 샜다. 새로 추가한 지칭 표현이 전부 잡히는지 잠근다."""
+    phrases = (
+        "여기서 흰색만 있어?", "여기 중에 저렴한 거", "이 매물들 중에 골라줘",
+        "이것들 다 비교해줘", "그것들 시세 알려줘", "위에서 첫 번째", "위 목록 중에",
+        "위에 있는 거 비교해줘", "얘네 중에 뭐가 나아", "요 중에 무사고만", "그 목록에서 하나만",
+    )
+    for phrase in phrases:
+        assert answer_guards.block_research_on_followup(phrase, ["aaa"]) is True, phrase
+
+
 def test_followup_refusal_text_points_to_compare_listings_for_unlisted_attributes():
     """DW-872 실측(C50) — 재검색이 막히자 "목록의 매물은 모두 무사고"라고 지어냈다. 거절
     문구가 compare_listings로 확인하는 경로와 "단정 금지"를 함께 안내하는지 잠근다."""
     assert "재검색 금지" in answer_guards.FOLLOWUP_REFUSAL_TEXT  # 기존 문구 보존
     assert "compare_listings" in answer_guards.FOLLOWUP_REFUSAL_TEXT
     assert "단정하지 마라" in answer_guards.FOLLOWUP_REFUSAL_TEXT
+
+
+def test_followup_refusal_text_points_to_market_price_stats_for_price_questions():
+    """DW-872 update(2026-09-09 18:08) (d) 실측(C53) — 재검색이 막히자 "목록에 없다"고
+    답했다. 정답은 직전 매물 id로 market_price_stats를 호출하는 것 — 거절 문구가 그
+    경로도 안내하는지 잠근다(compare_listings 안내와는 별개 문장)."""
+    assert "market_price_stats" in answer_guards.FOLLOWUP_REFUSAL_TEXT
+    assert "compare_listings가 아니라" in answer_guards.FOLLOWUP_REFUSAL_TEXT
 
 
 # ───────── (2) strip_listing_ids — 3가지 UUID 노출 형태 ─────────
@@ -93,3 +113,61 @@ def test_ensure_sample_caveat_no_change_when_no_diagnoses():
     answer = "이 매물은 적정 수준의 가격입니다."
     assert answer_guards.ensure_sample_caveat(answer, None) == answer
     assert answer_guards.ensure_sample_caveat(answer, []) == answer
+
+
+# ───────── (4) infer_missing_args — DW-872 update(2026-09-09 18:08) (f) 실측 C02·C03 ─────────
+#
+# "SUV"·"하이브리드"가 질문에 있어도 search_listings 인자 없이 query_text에만 실렸다.
+# 모델이 비운 인자만 원문 질의의 닫힌 어휘(agent_tools 화이트리스트·별칭)로 채우는지,
+# 이미 채운 인자는 절대 안 덮는지, 부정어 뒤 6자는 걸러지는지를 스펙 표 그대로 잠근다.
+
+def test_infer_missing_args_fills_body_type_and_fuel_when_empty():
+    assert answer_guards.infer_missing_args("SUV 중에 4천만원대 디젤", {}) == {
+        "body_type": "SUV", "fuel": "디젤",
+    }
+
+
+def test_infer_missing_args_negation_guard_excludes_negated_body_type():
+    # "SUV 말고 세단" — SUV는 부정어(말고) 6자 안이라 빠지고 세단만 채워진다.
+    assert answer_guards.infer_missing_args("SUV 말고 세단 3천", {}) == {"body_type": "세단"}
+
+
+def test_infer_missing_args_keeps_existing_arg_value():
+    # 모델이 이미 채운 fuel="가솔린"은 질의에 "하이브리드"가 있어도 덮지 않는다.
+    assert answer_guards.infer_missing_args("그랜저 하이브리드", {"fuel": "가솔린"}) == {"fuel": "가솔린"}
+
+
+def test_infer_missing_args_fills_seats_min_and_body_type():
+    assert answer_guards.infer_missing_args("7인승 이상 SUV", {}) == {"seats_min": 7, "body_type": "SUV"}
+
+
+def test_infer_missing_args_fills_fuel_for_electric_car_phrase():
+    # "전기차"는 별도 별칭 없이도 화이트리스트 "전기"가 부분일치로 잡힌다.
+    assert answer_guards.infer_missing_args("전기차 4천만원 이하", {}) == {"fuel": "전기"}
+
+
+def test_infer_missing_args_fills_manufacturer_alias():
+    assert answer_guards.infer_missing_args("르노 차", {}) == {"manufacturer": "르노코리아"}
+
+
+def test_infer_missing_args_does_not_mutate_input_dict():
+    original = {}
+    answer_guards.infer_missing_args("SUV 3천만원", original)
+    assert original == {}  # 순수 함수 — 원본 args는 바뀌지 않는다.
+
+
+def test_infer_missing_args_unknown_wording_stays_empty():
+    # 화이트리스트 밖 축약어('하브' 등)는 채우지 않는다 — 오탐(잘못된 필터) 방지.
+    assert answer_guards.infer_missing_args("하브 그랜저 좋아요", {}) == {}
+
+
+def test_infer_missing_args_body_type_case_insensitive():
+    # 소문자 'suv'로 써도 화이트리스트 표기(SUV)로 채운다 — 대소문자 표기 차이로 새지 않는다.
+    assert answer_guards.infer_missing_args("suv 있나요", {}) == {"body_type": "SUV"}
+
+
+def test_infer_missing_args_does_not_inject_manufacturer_from_bare_samsung():
+    """'삼성'은 지명(삼성역)·가전 등 무관 문맥이 흔해 질문 스캔 자동 주입에서는 제외한다(르노코리아 오탐 방지)."""
+    from app.graph.answer_guards import infer_missing_args
+    assert "manufacturer" not in infer_missing_args("삼성역 근처 SUV 3천만원 이하", {})
+    assert infer_missing_args("르노삼성 SUV", {}).get("manufacturer") == "르노코리아"

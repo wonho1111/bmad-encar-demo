@@ -79,6 +79,11 @@ _MAX_STEPS = 6
 # 다건 시세 진단(market_diagnoses) 수집 상한(설계 확정값) — 2026-08-31 사용자 승인.
 _MAX_MARKET_DIAGNOSES = 5
 
+# search_listings 인자 자동 주입(answer_guards.infer_missing_args)이 채운 필드를 사람이
+# 읽는 문구로 바꿀 때 쓰는 라벨 — agent_tools.search_listings의 applied_desc 표기와 맞춘다
+# (DW-872 update 2026-09-09 18:08 (f)).
+_ARG_INJECT_LABELS = {"fuel": "연료", "body_type": "차종", "manufacturer": "제조사", "seats_min": "좌석수"}
+
 _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전트다. 아래 도구를 이용해
 사용자의 조건에 맞는 매물을 찾고, 필요하면 근거를 곁들여 추천한다.
 
@@ -128,6 +133,8 @@ _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전�
 - 위 상황(멀티턴 지칭 + 재검색 거절)에서 "그중 무사고만" 같은 후속 질문에 목록에 이미
   나온 사고·색상·지역은 그 표기를 그대로 쓰고, 목록에 없는 속성을 물으면 추측하지 말고
   compare_listings로 그 매물 id들을 확인한 뒤 답하라 — 확인하지 않은 속성은 단정하지 마라.
+- 위 상황에서 "그거 시세 어때" 같은 시세·적정가 후속 질문은 compare_listings가 아니라
+  그 매물 id로 market_price_stats를 호출해라 — 재검색 금지는 이 경우에도 그대로다.
 - 답변 본문에 매물의 내부 id(UUID)를 쓰지 마라 — 사용자에게 의미 없는 문자열이다.
 - 시세 답변에서 비교군(comps)이 3건 미만이면 "표본이 적어 참고만 하세요"라는 취지의
   문구를 반드시 넣어라 — 중앙값·범위를 단정적으로 전달하지 마라.
@@ -312,20 +319,31 @@ def _recent_assistant_listing_ids(context: list | None) -> list[str]:
 def _format_recent_listings_block(cards: list[ListingCard], ordered_ids: list[str]) -> str | None:
     """조회된 카드들을 원래 id 순서(여러 턴을 병합한 순서 — 최근 턴 매물이 앞, "N번째"
     지시어와 대응)대로 번호를 새로 매겨 요약한다. DB에 없는(존재하지 않는) id는 조용히
-    건너뛴다(강건성)."""
+    건너뛴다(강건성).
+
+    끝에 붙는 한 줄(DW-872 update 2026-09-09 18:08 (c) 실측 C51: 도구 결과가 카드보다 많을
+    때 카드 밖 매물까지 "이 중"에 포함시킴)은 [직전 목록 참조]가 이미 말로 설명하는 규칙을
+    실제 id 목록 값으로 다시 못박는다 — 모델이 이번 턴에 도구를 더 불러 결과가 늘어나도,
+    "이 중/그중"은 여기 적힌 id들만 가리킨다는 뜻이다."""
     by_id = {c.id: c for c in cards}
     lines = []
+    matched_ids = []
     for lid in ordered_ids:
         card = by_id.get(lid)
         if card is None:
             continue  # 존재하지 않는 id 무시(강건성) — 팔린 매물·잘못된 id 등.
+        matched_ids.append(lid)
         lines.append(
             f"{len(lines) + 1}. {card.manufacturer} {card.model} {card.year}년식 · "
             f"{card.price:,}원 · {card.mileage:,}km (id: {card.id})"
         )
     if not lines:
         return None
-    return "[직전 대화에서 보여준 매물]\n" + "\n".join(lines)
+    reinforcement = (
+        f"직전에 사용자에게 보여준 매물 id: [{', '.join(matched_ids)}] — '이 중/그중'은 이 "
+        "id들만 뜻한다. 도구 결과에 더 있었더라도 보여주지 않은 매물은 제외."
+    )
+    return "[직전 대화에서 보여준 매물]\n" + "\n".join(lines) + "\n" + reinforcement
 
 
 def _recent_listings_prompt_block(context: list | None) -> str | None:
@@ -452,6 +470,25 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                     ToolMessage(content=f"알 수 없는 도구입니다: {tool_name}", tool_call_id=tool_call["id"])
                 )
                 continue
+
+            injected_note = None
+            if tool_name == "search_listings":
+                # 질문에 명시된 조건을 도구 인자에 자동 주입(DW-872 update 2026-09-09 18:08
+                # (f) 실측 C02·C03: 'SUV'·'하이브리드'가 질문에 있어도 인자 없이 query_text
+                # 에만 실린다 — [도구 인자 규칙]은 프롬프트 문장일 뿐이라 실측으로 계속
+                # 샜다, CLAUDE.md B9 "실행되는 검사로 바꾼다"). 모델이 이미 채운 인자는
+                # 그대로 두고, 비어 있는 fuel/body_type/manufacturer/seats_min만 원문 질의
+                # (query, contextualize 이전 — 재검색 가드와 같은 이유로 원문을 쓴다)에서
+                # 채운다. tool_call은 ai_msg.tool_calls의 항목을 그대로 참조하므로, 여기서
+                # args를 바꾸면 이후 메시지 기록에도 실제로 실행된 인자가 남는다.
+                original_args = tool_call.get("args") or {}
+                filled_args = answer_guards.infer_missing_args(query, original_args)
+                injected = {k: v for k, v in filled_args.items() if original_args.get(k) != v}
+                if injected:
+                    tool_call["args"] = filled_args
+                    desc = ", ".join(f"{_ARG_INJECT_LABELS.get(k, k)}={v}" for k, v in injected.items())
+                    injected_note = f"(질문에서 자동 적용: {desc})"
+
             try:
                 tool_msg = tool_obj.invoke(tool_call)
             except Exception as exc:  # 도구 내부 오류(DB·검증 등) — 루프를 죽이지 않고 모델에 알린다.
@@ -460,6 +497,11 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                     ToolMessage(content=f"도구 실행 중 오류가 발생했습니다: {exc}", tool_call_id=tool_call["id"])
                 )
                 continue
+            if injected_note:
+                # 도구 결과 텍스트 맨 앞에 붙여 모델이 어떤 조건이 자동으로 걸렸는지 알게
+                # 한다(그러지 않으면 모델이 자기가 안 넣은 필터가 왜 걸렸는지 모른 채 결과를
+                # 서술하게 된다).
+                tool_msg.content = f"{injected_note}\n{tool_msg.content}"
 
             messages.append(tool_msg)
             artifact = getattr(tool_msg, "artifact", None)
