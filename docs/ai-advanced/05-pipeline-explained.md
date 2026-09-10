@@ -64,6 +64,12 @@ flowchart LR
 호출하고(`agent_tools.py:619`), 그 결과를 텍스트로 포맷해 에이전트에 돌려준다 —
 3·4절에서 다루는 TabPFN 적정가 예측이 실제로 실행되는 지점이다.
 
+> **▶ 데이터 형식·단위**
+> - 요청은 `POST /ai/search`(`routers/ai.py:46,49`) 하나뿐이다 — 본문은 `query`(질문 문자열) + `context`(직전 대화, 최대 12턴 배열, `schemas/ai.py:51-63`). 각 턴은 `role`("user"|"assistant") · `content`(문자열) · `listing_ids`(그 턴이 보여준 매물 id 문자열 배열, 어시스턴트 턴에만 있고 최대 20개, `schemas/ai.py:33-48`)로 이뤄진다.
+> - 에이전트 최종 출력(`_AgentFinalOutput`, `agent.py:217-222`)은 세 칸이다 — `answer`(답변 문자열) · `selected_listing_ids`(UUID 문자열 배열. UUID는 전 세계에서 겹치지 않게 무작위로 만드는 긴 식별자 문자열이고, DB의 `listings.id`가 실제로 이 타입이다, `supabase/migrations/0002_listings.sql:27`) · `clarify`(`{question: 문자열, chips: 문자열 배열}` 또는 없음, `schemas/ai.py:107-115`).
+> - 도구가 LLM에 돌려주는 매물 한 줄 요약(`_format_listing_summary`, `agent_tools.py:260-263`) 형식: `번호. id=UUID 제조사 모델 연식년식 주행,km 가격,원 연료=… 사고=… 색상=… 지역=…` — 주행거리·가격에 천 단위 쉼표가 붙고 가격은 원 단위다(만원 아님).
+> - 매물 카드(`ListingCard`, `schemas/ai.py:74-104`) 주요 필드: `price`(정수, 원) · `mileage`(정수, km) · `year`(정수, 연식) · `fuel`(문자열, 가솔린/디젤/하이브리드/전기/LPG 중 하나 또는 없음) · `accident_status`(문자열 3값: 무사고/단순교환/사고) · `options`(문자열 배열). 단, `displacement`(배기량, cc)는 이 카드엔 없다 — DB 컬럼일 뿐이고(`supabase/migrations/0002_listings.sql:15,50`) 3절 TabPFN 입력에서 DB 행을 직접 읽을 때만 쓰인다.
+
 ---
 
 ## 2. 리랭커 3요소
@@ -121,6 +127,13 @@ id는 실제로는 가이드 **제목**이다, `agent_tools.py:572`).
 "있으면 개선, 없으면 원래 순서"인 선택 기능이다. 참고로 운영 배포는 2026-09-04에 연결이
 확인됐다(`/rerank` 200 응답, 7.3초, 장부 DW-858 done) — 리랭커 선정 근거는
 [01-model-skill-selection.md §3](01-model-skill-selection.md)에 있다.
+
+> **▶ 데이터 형식·단위**
+> - 임베딩: `gemini-embedding-001` 모델을 768차원으로 줄여 쓰고(`config.py:36,39`) 코드가 직접 L2 정규화(벡터 길이를 1로 맞추는 것)한다(`embeddings.py:1-9,19-22,56,61`). pgvector(Postgres에 벡터 검색을 더하는 확장) 컬럼은 `vector(768)`, 인덱스는 `vector_cosine_ops` — 거리 연산자 `<=>`는 코사인 거리(1−코사인 유사도, 정의상 범위 0~2, 0에 가까울수록 유사)다. 가이드 게이트 상수: `_GUIDE_TOP_K=5` · `_GUIDE_MARGIN=0.05` · `_GUIDE_DISTANCE_CEILING=0.45`(`doc_rag_node.py:39,42,47`).
+> - 리랭커 요청/응답은 JSON(데이터를 `{키: 값}` 구조의 글로 주고받는 표준 형식)이다(`reranker_service.py:66-82`) — 요청 `{query: 문자열, docs: [{id: 문자열, text: 문자열}, …]}`(문서는 최대 50건 `MAX_DOCS`, 본문은 2000자에서 자름 `MAX_TEXT_CHARS`, `reranker_service.py:28-29,107`), 응답 `{scores: [{id: 문자열, score: 실수}, …]}`(점수 내림차순 정렬).
+> - **점수는 원점수(logit, 모델이 마지막에 내는 가공 전 실수)가 아니라 0~1 확률형이다** — 이 모델(num_labels=1)은 활성함수 기본값이 시그모이드(값을 0~1 사이로 눌러 넣는 함수)라 `predict()`가 자동 적용한다. 이 리포에 캐시된 모델로 직접 재현: 관련 있는 예시 0.898, 무관한 예시 0.0000175(2026-09-10 로컬 재현, sentence-transformers 6.0.0).
+> - 클라이언트(`rerank_client.py:22-49`)는 `POST {RERANKER_URL}/rerank`를 부르고, 타임아웃 기본 3초(`config.py:48`)이며 실패·타임아웃·URL 미설정이면 예외 없이 `None`을 돌려준다 — 반환은 인덱스 목록 또는 `None` 둘 중 하나뿐이다.
+> - 예시(값은 설명용 — 실제 매물 데이터 아님): 후보 3건 제목만 있을 때 점수 [0.91, 0.02, 0.55] → 내림차순 순서 [0, 2, 1](0번이 1등, 2번이 2등, 1번이 꼴찌).
 
 ---
 
@@ -195,6 +208,15 @@ market_price.py:377).
 | 4 | 세대 해제(기본 모델명 매칭) |
 | 5 | 연료 조건 해제 |
 
+> **▶ 데이터 형식·단위**
+> - 입력 11칸을 코드 순서 그대로 나열하면(`_tabpfn_features`+`_tabpfn_features_with_model`, `market_price.py:129,304-320`): ①연식(정수) ②주행거리(정수, km) ③배기량(정수, cc) ④~⑧연료 원핫(one-hot, 해당하는 한 칸만 1이고 나머지는 0인 표시법) 5칸(순서 가솔린·디젤·하이브리드·전기·LPG) ⑨옵션 개수(정수) ⑩무사고 여부(1 또는 0) ⑪세대(model) 범주 코드(이번 예측 1회 안에서만 유효한 정수). G-1 매물(그랜저 GN7 하이브리드 2024년식·23,987km·무사고·옵션 2개, `04-demo-cases.md:107-115`)로 채우면 `[2024, 23987, 1598, 0,0,1,0,0, 2, 1, 세대코드]` — 하이브리드라 원핫 3번째 칸(index 2)만 1이다(배기량 1,598cc는 운영 시드의 그 매물 행에서 읽었고, 이 벡터는 2026-09-10에 `_tabpfn_features`를 실제로 실행해 얻은 값이다).
+> - 학습표: 행=매물(최대 120건, `_TABPFN_TRAIN_LIMIT`), 열=위 11칸, 정답값 `y`는 매물의 `price`를 가공 없이 그대로 쓴다(원 단위 정수, `market_price.py:369-370`). 형태로 보면 특징 `x`는 n행×11열, `y`는 길이 n인 1차원 목록, 대상은 1행×11열이다(코드는 파이썬 리스트를 그대로 넘기고 TabPFN 내부에서 배열로 바뀐다 — 명시적 numpy 변환 코드는 없음).
+> - 출력: `predict(output_type="full", quantiles=[.10,.25,.50,.75,.90])`가 돌려주는 결과에서 코드가 실제로 읽는 키는 `mean`과 `quantiles` 둘뿐이다(`market_price.py:148-149,369-381`). `mean`(원 단위 실수)을 10,000으로 나눠 반올림한 뒤 다시 10,000을 곱해 `price`로 쓴다 — 값은 여전히 원 단위 정수이고 1만원 배수로만 반올림된 것이다(예: 40,337,256 → 40,340,000). `quantiles`는 `q10`~`q90` 다섯 키, 각각 원 단위 정수(이쪽은 반올림만 하고 1만원 배수로 맞추지 않음).
+> - `diagnose()` 반환 dict(`market_price.py:513-526`): `listing`(매물 요약, `market_price.py:385-399`) · `criteria`(비교군 사다리 단계·설명·건수) · `stats`(비교군 min/q1/median/q3/max, 원 단위 정수 또는 None) · `percentile`(**0~1 사이 소수다 — 0~100이 아니다**, `market_price.py:232-240`) · `verdict`(5단 또는 3단 문자열 또는 None) · `verdict_basis`("분위수"|"사분위"|"표본 부족") · `tabpfn`(`{price, note, quantiles}`) · `comps`(비교 매물 목록, 각 `{id, model, year, mileage, price}`, `market_price.py:402-409`). 이 dict 형태를 강제하는 별도 pydantic 응답 모델은 없다 — API 응답에서는 그냥 `dict | None`으로만 선언돼 있다(`schemas/ai.py:129,134`).
+> - 챗봇 텍스트(`_format_market_diagnosis`, `agent_tools.py:585-610`)는 가격을 전부 원 단위로만 쓴다("만원"으로 바꾸지 않음) — `percentile`을 표시할 때만 ×100 해서 "하위 22%" 식으로 보여준다(`agent_tools.py:594-595`). 화면(웹)에서 보이는 "○○만원" 표기는 별도 함수가 한다 — `formatPrice`/`formatStatPrice`(`web/src/lib/price.ts:26-31,42-45`, 예: 41,120,000원 → "4,112만원"). DB·입력폼은 항상 원 단위 그대로다(`web/src/lib/constants.ts:47-56`).
+> - 소요 시간(CPU, 로컬 PC 실측): 학습표 53행 1.6초 · 120행(상한) 8.3초 · 200행 18.5초 · 284행 39.5초 — 행이 늘수록 시간이 거의 제곱으로 는다(`deferred-work.md:7029`, DW-852).
+> - 흐름 한 벌(G-1, 2026-09-10 현재 엔진 커밋 f6fdaa3으로 운영 시드를 읽기 전용으로 실행한 값, 소요 5.3초): 입력 행(2024년식·23,987km·1,598cc·하이브리드·무사고·옵션 2개·호가 38,040,000원) → 특징 벡터 `[2024, 23987, 1598, 0,0,1,0,0, 2, 1, 세대코드]` → 학습표 47행(`tabpfn.note`="기본 모델군 47건 학습") → `diagnose()` 출력: `tabpfn.price`=39,880,000원(mean을 만원 배수로 반올림) · `tabpfn.quantiles`={q10: 38,409,008, q25: 39,153,096, q50: 39,892,220, q75: 40,627,288, q90: 41,332,508}(원) · `criteria`={step: 0, sample_count: 9} · `stats`={min: 36,650,000, q1: 38,080,000, median: 38,500,000, q3: 40,050,000, max: 42,650,000}(원) · `percentile`=0.222 · `verdict`="저렴"(`verdict_basis`="분위수") → 챗봇 문구는 원 단위 그대로, 웹 카드는 "적정가 3,988만원"으로 표시. 참고: 04 문서 시점(09-03 엔진, 세대 특징 없음)에는 같은 매물이 적정가 4,034만원·q10 3,893만원이었다(`04-demo-cases.md:112`) — 3절 "같은 조건인데…" 소절이 말하는 변화가 이 차이다.
+
 ### 같은 조건인데 왜 적정가가 같게 나왔나
 
 2026-09-04 시연에서 지적된 사례: 그랜저 GN7 하이브리드 2024년식·23,987km·무사고·호가
@@ -235,6 +257,10 @@ market_price.py:377).
 뽑은, 화면 통계용 표본)이 3건 미만이면 분포가 있든 없든 아예 판정을 매기지 않는다
 (market_price.py:118,283-304). 즉 "폭이 넓다"는 모델이 자신 없다는 신호이고, "판정 보류"는
 애초에 비교할 매물 자체가 너무 적다는 신호다 — 서로 다른 문제다.
+
+> **▶ 데이터 형식·단위**
+> - G-1(그랜저 GN7 하이브리드 2024년식·23,987km·호가 38,040,000원)의 다섯 지점(2026-09-10 현재 엔진 실행값, 원): q10 38,409,008 · q25 39,153,096 · q50 39,892,220 · q75 40,627,288 · q90 41,332,508. 가운데 절반 폭(q75−q25)=1,474,192원으로 q50의 3.7%. 호가 38,040,000 < q10 38,409,008이므로 "저렴". 04 문서 시점 값(q10 3,893만원, 폭 3.5%, `04-demo-cases.md:110,112`)과 비교하면 세대 특징을 넣은 뒤 분포 전체가 조금 아래로 내려왔다.
+> - 판정 규칙을 숫자로 보면: G-1 호가 3,804만원 < q10 3,841만원(2026-09-10 실행값) → "저렴" 배지(경계값 이름 전체는 `04-demo-cases.md` §0 참조). 폭이 넓을수록 이웃 매물 가격이 들쭉날쭉하다는 뜻이고, G-1처럼 좁으면(3.7%) 작은 차이로도 등급이 갈린다.
 
 ---
 
@@ -311,6 +337,10 @@ MT6는 '세단' 문제다.
 이전 세 번 모두 GOOD이었다가 이번에만 BAD라 모델 비결정성으로 분류했다. 회귀 31건은 28 PASS — MT6('세단')는 통과했고,
 MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료 조건을 제대로 걸자 0건이 된 것으로 S15·S16과 같은 데이터 의존이다.
 
+> **▶ 데이터 형식·단위**
+> - 오차율(MdAPE, %) = `|예측 적정가 − 호가| ÷ 호가 × 100`의 중앙값. 적중률(%) = 오차가 기준(±10%·±20%·q10~q90 구간 등) 이내에 든 건수 ÷ 전체 건수 × 100. 일치율·GOOD율(%)도 같은 식(해당 건수 ÷ 전체 건수 × 100)이다.
+> - **호가**는 판매자가 매물에 붙인 가격(`listings.price`)이지, 실제로 거래가 체결된 실거래가가 아니다 — 이 문서와 04 문서의 "가격"·"적정가 대비 %"는 전부 이 호가를 기준으로 한다.
+
 ---
 
 ## 6. 한계와 남은 일
@@ -351,6 +381,21 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | 적중률(hit rate) | 오차가 특정 % 이내에 든 사례의 비율(예: ±10% 적중률) |
 | 판정기(LLM judge) | 다른 AI의 답변이 적절한지 GOOD/BAD로 채점하는 LLM. 여기서는 사람 채점 대신 대량 채점용으로 쓰고, 사람 라벨과 대조해 신뢰도를 확인 |
 | 일치율(Agreement) | 사람 라벨과 판정기 라벨이 같은 사례의 비율 |
+| 원핫(one-hot) | 여러 칸 중 해당하는 하나만 1이고 나머지는 전부 0으로 표시하는 방법(예: 연료 5칸 중 하이브리드면 그 칸만 1) |
+| 범주형 변수(categorical) | 순서·크기 비교가 의미 없는 분류값(예: 세대명) — 숫자로 바꿔도 크고 작음으로 비교하면 안 됨 |
+| 벡터·차원 | 벡터=숫자를 여러 개 순서대로 늘어놓은 것, 차원=그 안에 든 숫자 개수(768차원=숫자 768개) |
+| 코사인 거리 | 두 벡터의 방향이 얼마나 다른지 재는 값(1−코사인 유사도). 0에 가까울수록 비슷, 범위는 0~2 |
+| pgvector | Postgres DB에 벡터 저장·유사도 검색 기능을 더해 주는 확장(extension) |
+| 사이드카 | 본 서버와 별도 프로세스로 독립적으로 띄우는 보조 서비스 |
+| 타임아웃 | 정해진 시간 안에 응답이 없으면 기다리기를 포기하고 실패로 처리하는 것 |
+| 토크나이즈 | 문장을 모델이 처리할 수 있는 작은 단위(토큰)로 쪼개는 전처리 |
+| logit(원점수) | 모델이 마지막에 내는, 확률로 바꾸기 전의 가공되지 않은 실수 점수 |
+| 학습표 vs 비교군 | 학습표=TabPFN이 그 자리에서 학습에 쓰는 최대 120건, 비교군=화면 통계·사분위 폴백용으로 사다리로 뽑는 별도 표본 |
+| 호가 | 판매자가 매물에 붙인 가격. 실제로 거래된 실거래가가 아니다 |
+| UUID | 전 세계에서 겹치지 않도록 무작위로 만드는 긴 식별자 문자열 |
+| JSON | 데이터를 `{키: 값}` 구조의 글로 주고받는 표준 형식 |
+| 만원 반올림 | 원 단위 값을 1만원의 배수로 반올림하는 것(값은 여전히 원 단위 정수) |
+| q10~q90 | TabPFN이 한 번의 추론으로 같이 내는 다섯 지점(10·25·50·75·90번째 백분위수)을 줄여 부르는 말 |
 
 ---
 
@@ -367,6 +412,13 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | 1 | 답변 가드 호출(id 제거·표본부족 문구) | `api/app/graph/agent.py:545-546` |
 | 1 | 멀티턴 재검색 차단 호출 | `api/app/graph/agent.py:439` |
 | 1 | market_price_stats → diagnose() 호출 | `api/app/graph/agent_tools.py:614-621` |
+| 1 | 채팅 요청 스키마(query·context·ConversationTurn) | `api/app/schemas/ai.py:33-63` |
+| 1 | ListingCard 필드·단위(price 원·mileage km 등) | `api/app/schemas/ai.py:74-104` |
+| 1 | ClarifyPayload·SearchResponse 필드 | `api/app/schemas/ai.py:107-134` |
+| 1 | 에이전트 최종 출력 스키마(answer·selected_listing_ids·clarify) | `api/app/graph/agent.py:217-222` |
+| 1 | /ai/search 엔드포인트 경로 | `api/app/routers/ai.py:46,49` |
+| 1 | 도구→LLM 매물 요약 한 줄 포맷 | `api/app/graph/agent_tools.py:243-268` |
+| 1 | listings.id는 uuid 타입, displacement는 cc(ListingCard엔 없음) | `supabase/migrations/0002_listings.sql:15,27,50` |
 | 2 | search_guides 정의·리랭크 호출 | `api/app/graph/agent_tools.py:558-582` |
 | 2 | find_relevant_guides_fused(원질의 2배 가중 + RRF) | `api/app/graph/multi_query.py:118-156` |
 | 2 | find_relevant_guide 단일 벡터검색(키워드 조건 없음) | `api/app/graph/doc_rag_node.py:60,76-79` |
@@ -378,6 +430,10 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | 2 | 임포트 자체 실패 시도 None | `api/app/graph/agent_tools.py:44-47` |
 | 2 | RERANKER_URL·타임아웃 기본값(3.0초) | `api/app/config.py:41-48` |
 | 2 | 운영 리랭커 연결 실측(7.3초, 200 OK) | `_bmad-output/implementation-artifacts/deferred-work.md:7080-7089`(DW-858) |
+| 2 | 임베딩 모델·차원·L2 정규화 | `api/app/embeddings.py:1-9,19-22,56,61` |
+| 2 | 가이드 게이트 상수 값(TOP_K·MARGIN·CEILING) | `api/app/graph/doc_rag_node.py:39,42,47` |
+| 2 | 리랭커 요청/응답 모델·MAX_DOCS·MAX_TEXT_CHARS | `api/reranker_service.py:28-29,66-82` |
+| 2 | 리랭커 점수는 시그모이드 적용(0~1, logit 아님) | `api/reranker_service.py:107-108`(호출부) — 로컬 재현 실측(2026-09-10, sentence-transformers 6.0.0, BAAI/bge-reranker-v2-m3 config num_labels=1) |
 | 3 | 특징 10칸 정의 | `api/app/market_price.py:309-320` |
 | 3 | 세대 범주 11번째 칸 | `api/app/market_price.py:321-329` |
 | 3 | TabPFN 예측(output_type=full) | `api/app/market_price.py:330-384` |
@@ -397,6 +453,14 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | 3 | 같은 적정가 원인 분석(원 단위 값·연식 효과·자기 제외) | `_bmad-output/implementation-artifacts/deferred-work.md:7070-7078`(DW-857) |
 | 3 | 세대 특징 추가 후 수치(3,988만/4,029만) | `_bmad-output/implementation-artifacts/deferred-work.md:7050`(DW-854) |
 | 3 | 판정 정정(자기 제외는 필수 장치) | `demo-feedback-2026-09-04-plan.md`(메모리 노트) |
+| 3 | 연료 원핫 순서(가솔린·디젤·하이브리드·전기·LPG) | `api/app/market_price.py:129` |
+| 3 | 분위수 키(q10~q90)·x/y 구성·mean 반올림 | `api/app/market_price.py:148-149,369-381` |
+| 3 | listing/comp 요약 딕셔너리 필드 | `api/app/market_price.py:385-409` |
+| 3 | 비교군 통계 SQL·percentile은 0~1 소수 | `api/app/market_price.py:232-240` |
+| 3 | 챗봇 텍스트는 원 단위 표시(percentile만 ×100) | `api/app/graph/agent_tools.py:585-610` |
+| 3 | 화면 "만원" 표시 변환 함수(DB·API는 원 단위 그대로) | `web/src/lib/price.ts:26-31,42-45`, `web/src/lib/constants.ts:47-56` |
+| 3 | DW-852 CPU 실측 4구간(53행→1.6초…284행→39.5초) | `_bmad-output/implementation-artifacts/deferred-work.md:7029` |
+| 3·4 | G-1 현재 엔진 실행값(특징 벡터·학습표 47행·quantiles·stats·percentile·verdict, 5.3초) | 2026-09-10 `market_price.diagnose()` 운영 시드 읽기 전용 실행(커밋 f6fdaa3 코드, 이 문서 작성 중 실측) |
 | 5a | 실매물 300건 검증 설계·결과 표 | `.logs/encar_eval/20260905/report.md:112-152` |
 | 5a | LOO 대 hold-out 차이·판정 일치율 | `.logs/encar_eval/20260905/eval/compare.json` |
 | 5a | 지표 교차확인 | `.logs/encar_eval/20260905/eval/verification.xlsx`(요약 시트), `metrics_loo.json`/`metrics_holdout.json` |
