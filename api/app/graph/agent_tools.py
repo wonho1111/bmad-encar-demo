@@ -204,6 +204,12 @@ _COMPARE_MAX = 4
 # search_guides가 LLM에 넘기는 섹션당 본문 글자수 상한(doc_rag_node류와 동일 사상 — 프롬프트 비대화 방지).
 _GUIDE_CONTENT_CHAR_CAP = 1200
 
+# search_guides가 관련 문서를 하나도 못 찾았을 때 돌려주는 고정 문구 — 모듈 상수로 빼서
+# agent.py의 강제 호출 게이트(DW-873)가 "가이드 0건"을 문자열 비교로 판별할 때 재사용한다
+# (find_relevant_guides_fused의 top-5 상대 게이트를 다시 구현하지 않고 이 도구의 실제 반환값을
+# 그대로 신뢰하는 방식).
+NO_GUIDES_FOUND_TEXT = "관련 가이드 문서를 찾지 못했습니다."
+
 
 def _normalize_model_keyword(
     model_keyword: str | None, manufacturer: str | None, body_type: str | None
@@ -565,7 +571,7 @@ def search_guides(query_text: str) -> str:
     qvec_literal = _vec_literal(embed_query(query_text))
     guides = find_relevant_guides_fused(query_text, qvec_literal)
     if not guides:
-        return "관련 가이드 문서를 찾지 못했습니다."
+        return NO_GUIDES_FOUND_TEXT
 
     if rerank is not None:
         try:

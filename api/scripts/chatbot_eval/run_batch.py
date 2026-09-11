@@ -78,18 +78,33 @@ if not _ls_utils.tracing_is_enabled():
 QUERIES_PATH = Path(__file__).resolve().parent / "queries.json"
 
 
-def _resolve_out_dir() -> Path:
-    """--out CLI 인자를 우선하고, 없으면 기존 OUT 환경변수(하위호환)를 쓴다."""
+def _parse_args() -> argparse.Namespace:
+    """--out(출력 디렉토리)·--category(콤마 구분 부분집합, 예: "가이드" 또는 "거절,경계")를
+    함께 파싱한다. --category 생략 시 queries.json 전체(기존 동작, 회귀 0)를 돈다 — DW-873
+    재검증(가이드 15건만 2회, 거절+경계 15건만 1회)처럼 카테고리 단위로 좁혀 돌릴 때 쓴다."""
     parser = argparse.ArgumentParser(description="챗봇 평가 배치 실행기")
     parser.add_argument("--out", type=str, default=None, help="응답을 저장할 디렉토리(기본: OUT 환경변수)")
+    parser.add_argument(
+        "--category", type=str, default=None,
+        help="콤마로 구분한 category 부분집합만 실행(예: '가이드' 또는 '거절,경계'). 생략 시 전체.",
+    )
     args, _unknown = parser.parse_known_args()
+    return args
+
+
+def _resolve_out_dir(args: argparse.Namespace) -> Path:
+    """--out CLI 인자를 우선하고, 없으면 기존 OUT 환경변수(하위호환)를 쓴다."""
     if args.out:
         return Path(args.out)
     return Path(os.environ.get("OUT", "/home/whlee/workspace/bmad-encar-demo/.logs/chatbot_eval/20260908"))
 
 
-OUT_DIR = _resolve_out_dir()
+_ARGS = _parse_args()
+OUT_DIR = _resolve_out_dir(_ARGS)
 OUT_PATH = OUT_DIR / "responses.jsonl"
+_CATEGORY_FILTER = (
+    {c.strip() for c in _ARGS.category.split(",") if c.strip()} if _ARGS.category else None
+)
 
 _MAX_CALLS = 140  # 예산 상한(사용자 지시) — 재시도 포함 전체 run_search_agent 호출 수.
 _QUOTA_RETRY_MAX = 3
@@ -302,6 +317,9 @@ def _load_done_ids() -> set[str]:
 
 def main() -> None:
     items = json.loads(QUERIES_PATH.read_text(encoding="utf-8"))
+    if _CATEGORY_FILTER is not None:
+        items = [it for it in items if it.get("category") in _CATEGORY_FILTER]
+        print(f"--category 필터 적용: {sorted(_CATEGORY_FILTER)} → {len(items)}건")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     done_ids = _load_done_ids()
     if done_ids:

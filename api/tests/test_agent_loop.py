@@ -950,3 +950,86 @@ def test_final_answer_strips_listing_ids_and_adds_sample_caveat(monkeypatch):
 
     assert listing_uuid not in result["answer"]
     assert "표본이 적어 참고만 하세요" in result["answer"]
+
+
+# ───────── (9) DW-873 — 첫 응답이 도구 호출 없을 때 search_guides 강제 호출 ─────────
+#
+# 배경: 가이드(구매 지식) 질문 15건 중 13건에서 에이전트가 도구를 한 번도 안 부르고 모델
+# 자체 지식으로만 답했다(4회 실측 모두 search_guides 호출 2건뿐). 키워드로 "가이드 질문인지"
+# 미리 판별하지 않고, "첫 LLM 응답이 도구 호출 없이 바로 최종 답을 낸다"는 행동 자체를
+# 트리거로 삼아 search_guides를 강제로 한 번 실행해본다.
+
+
+class _BoomGuideTool:
+    """search_guides가 호출되면 안 되는 시나리오에서, 실제로 invoke되면 테스트를 실패시킨다."""
+
+    def invoke(self, tool_call):
+        raise AssertionError("이미 도구를 부른 턴인데 search_guides가 그래도 강제 호출됐다")
+
+
+def test_no_tool_call_first_response_forces_search_guides(monkeypatch):
+    """(a) 첫 응답이 도구 호출 없이 바로 답을 내면 search_guides가 강제로 호출되고, 가이드가
+    1건 이상이면 그 결과를 대화에 얹어 tool_llm을 한 번 더 불러 최종 답을 만든다."""
+    responses = [
+        _FakeAIMessage(tool_calls=[]),  # 1스텝 — 도구 없이 바로 답하려던 첫 응답.
+        _FakeAIMessage(tool_calls=[]),  # 2스텝 — 가이드 보강 후 자연 종료.
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="가이드 내용을 참고해 안내드려요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_guides": _FakeTool("search_guides", content="[침수차 감별 가이드]\n실내 냄새·안전벨트 이물질 확인…")},
+    )
+
+    result = agent_module.run_search_agent("침수차량인지 아닌지 구별하는 팁 있을까요")
+
+    assert tool_llm.invoke_count == 2  # 가이드 보강 후 tool_llm을 한 번 더 호출했다.
+    assert result["tools_used"] == ["search_guides"]
+    assert result["answer"] == "가이드 내용을 참고해 안내드려요."
+
+
+def test_no_tool_call_first_response_with_zero_guides_keeps_original_answer(monkeypatch):
+    """(b) search_guides를 강제로 호출했지만 관련 가이드가 0건(상대 게이트 탈락)이면, 대화에
+    아무것도 얹지 않고 tool_llm을 다시 부르지 않은 채 첫 응답 기반 답을 그대로 쓴다."""
+    tool_llm = _SequenceToolLLM([_FakeAIMessage(tool_calls=[])])  # 응답 1개뿐 — 더 불리면 IndexError.
+    final_output = agent_module._AgentFinalOutput(
+        answer="원래 답변을 그대로 드립니다.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_guides": _FakeTool("search_guides", content=agent_module.NO_GUIDES_FOUND_TEXT)},
+    )
+
+    result = agent_module.run_search_agent("오늘 날씨 어때요")
+
+    assert tool_llm.invoke_count == 1  # 가이드 0건이라 tool_llm을 다시 부르지 않았다.
+    assert result["tools_used"] == ["search_guides"]  # 호출 자체는 시도했다(다른 도구와 동일 관례).
+    assert result["answer"] == "원래 답변을 그대로 드립니다."
+
+
+def test_tool_call_already_made_this_turn_skips_forced_search_guides(monkeypatch):
+    """(c) 같은 턴에서 이미 도구를 한 번이라도 불렀다면(1스텝에 search_listings 호출), 그 뒤
+    자연 종료(2스텝, 도구 없음)에는 강제 search_guides를 적용하지 않는다."""
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="검색 결과로 답변드려요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[]), "search_guides": _BoomGuideTool()},
+    )
+
+    result = agent_module.run_search_agent("3천만원 이하 SUV 보여줘")
+
+    assert tool_llm.invoke_count == 2  # 기존 배선 그대로(가이드 강제 호출로 늘어나지 않음).
+    assert result["tools_used"] == ["search_listings"]  # search_guides는 tools_used에 없다.
+    assert result["answer"] == "검색 결과로 답변드려요."

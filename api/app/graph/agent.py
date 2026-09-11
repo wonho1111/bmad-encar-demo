@@ -53,7 +53,7 @@ from pydantic import BaseModel, Field
 from app.config import require, settings
 from app.db.readonly import run_select
 from app.graph import answer_guards, router_node as _router_node
-from app.graph.agent_tools import AGENT_TOOLS, TOOLS_BY_NAME
+from app.graph.agent_tools import AGENT_TOOLS, NO_GUIDES_FOUND_TEXT, TOOLS_BY_NAME
 from app.graph.contextualize_node import contextualize_query
 from app.graph.guard_node import guard_node
 from app.graph.listing_cards import SELECT_COLUMNS, rows_to_cards
@@ -448,7 +448,32 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
         ai_msg = tool_llm.invoke(messages)
         messages.append(ai_msg)
         if not ai_msg.tool_calls:
-            break  # 자연 종료 — 모델이 더 이상 도구를 요청하지 않는다.
+            if _step == 0:
+                # DW-873 — 이번 대화에서 모델이 도구를 한 번도 안 부르고 첫 응답에서 바로
+                # 최종 답을 낸 턴(가이드/구매 지식 질문이 실측 13/15건 이렇게 샜다: 모델
+                # 자체 지식으로만 답해 가이드 코퍼스·리랭커 경로를 안 탄다). 키워드로 "가이드
+                # 질문인지" 미리 판별하지 않고, 이 행동(도구 미호출) 자체를 트리거로 삼아
+                # search_guides를 강제로 한 번 실행해본다 — 실제로 관련 가이드가 있으면
+                # 그 결과를 대화에 얹어 모델이 다음 스텝에서 근거를 갖고 다시 답하게 한다.
+                guide_tool = TOOLS_BY_NAME.get("search_guides")
+                if guide_tool is not None:
+                    forced_call = {
+                        "name": "search_guides", "args": {"query_text": query}, "id": "forced-search-guides",
+                        "type": "tool_call",  # BaseTool.invoke가 ToolCall로 인식해 args만 꺼내 쓰게 한다.
+                    }
+                    tools_used.append("search_guides")
+                    try:
+                        guide_msg = guide_tool.invoke(forced_call)
+                    except Exception as exc:  # 도구 실패는 첫 답 유지 — 루프를 죽이지 않는다.
+                        logger.warning("DW-873 강제 search_guides 실행 실패 — 첫 응답 유지: %r", exc)
+                        guide_msg = None
+                    if guide_msg is not None and guide_msg.content != NO_GUIDES_FOUND_TEXT:
+                        # 가이드 1건 이상 — 결과를 대화에 넣고(기존 도구 dispatch와 동일하게
+                        # ToolMessage로) 다음 스텝에서 tool_llm을 한 번 더 불러 답하게 한다.
+                        messages.append(guide_msg)
+                        continue
+                    # 가이드 0건(상대 게이트 탈락)이거나 도구 실행 자체가 실패 — 첫 답을 그대로 쓴다.
+            break  # 자연 종료 — 모델이 더 이상 도구를 요청하지 않는다(또는 위 가이드 보강 불필요).
 
         for tool_call in ai_msg.tool_calls:
             tool_name = tool_call.get("name")
