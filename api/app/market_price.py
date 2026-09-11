@@ -35,6 +35,7 @@
 
 import logging
 import re
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +152,12 @@ _TABPFN_QUANTILE_KEYS = ("q10", "q25", "q50", "q75", "q90")
 # TabPFN 모델 객체 캐시 — 재로드(가중치 로딩)를 피하기 위해 모듈 레벨에 1회만 생성한다.
 # fit()은 매 호출마다 비교군으로 다시 하므로(sklearn 스타일), 캐시하는 건 객체 생성 비용뿐이다.
 _TABPFN_MODEL = None
+
+# DW-856: 전역 _TABPFN_MODEL은 요청마다 새 데이터로 fit()한 뒤 그 상태로 predict()하는
+# 공유 객체다 — 동시 요청이 겹치면 fit/predict가 뒤섞인다(운영에서 NotFittedError·
+# FileNotFoundError 실측). fit()부터 predict()까지를 이 락으로 직렬화해 한 번에 한 요청만
+# 그 구간을 돌게 한다.
+_TABPFN_LOCK = threading.Lock()
 
 
 def _base_model(model: str) -> str:
@@ -362,18 +369,19 @@ def _tabpfn_predict(
         for i, m in enumerate(sorted({r["model"] for r in train_rows} | {target["model"]}))
     }
 
-    global _TABPFN_MODEL
-    if _TABPFN_MODEL is None:
-        _TABPFN_MODEL = TabPFNRegressor(device="cpu", categorical_features_indices=[10])
-
     x = [_tabpfn_features_with_model(c, codes) for c in train_rows]
     y = [c["price"] for c in train_rows]
-    _TABPFN_MODEL.fit(x, y)
-    out = _TABPFN_MODEL.predict(
-        [_tabpfn_features_with_model(target, codes)],
-        output_type="full",
-        quantiles=list(_TABPFN_QUANTILES),
-    )
+
+    global _TABPFN_MODEL
+    with _TABPFN_LOCK:
+        if _TABPFN_MODEL is None:
+            _TABPFN_MODEL = TabPFNRegressor(device="cpu", categorical_features_indices=[10])
+        _TABPFN_MODEL.fit(x, y)
+        out = _TABPFN_MODEL.predict(
+            [_tabpfn_features_with_model(target, codes)],
+            output_type="full",
+            quantiles=list(_TABPFN_QUANTILES),
+        )
     price = int(round(float(out["mean"][0]) / 10_000)) * 10_000
     quantiles = {
         key: int(round(float(values[0])))

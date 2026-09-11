@@ -7,6 +7,8 @@ DB 없이 검증한다(다른 test_*.py들의 "DB 불필요 단위 테스트" �
 """
 
 import builtins
+import threading
+import time
 import types
 
 import pytest
@@ -296,3 +298,75 @@ def test_tabpfn_predict_adds_generation_categorical_feature(monkeypatch):
 
     assert price is not None
     assert quantiles is not None
+
+
+def test_tabpfn_predict_serializes_concurrent_requests_via_lock(monkeypatch):
+    # DW-856: 전역 _TABPFN_MODEL은 요청마다 fit()한 뒤 그 상태로 predict()하는 공유 객체라,
+    # 두 요청이 겹치면 A가 fit()한 학습표를 B의 fit()이 덮어쓴 뒤 A가 predict()할 수 있다
+    # (운영에서 NotFittedError·가중치 FileNotFoundError로 실측). 진짜 tabpfn 없이, fit()이
+    # 학습표(y)를 공유 객체에 저장하고 predict()가 "느린 추론"을 흉내 내려 잠깐 sleep한 뒤
+    # 그 시점에 저장돼 있는 y로 값을 만드는 가짜 모델을 넣어, 두 스레드가 서로 다른 학습표로
+    # 거의 동시에 _tabpfn_predict를 호출했을 때 각자 자기 학습표 기준 값을 받는지 확인한다.
+    real_import = builtins.__import__
+
+    class _FakeTabPFNModel:
+        def __init__(self):
+            self.trained_on = None
+
+        def fit(self, x, y):
+            self.trained_on = list(y)
+
+        def predict(self, x, **kwargs):
+            time.sleep(0.2)  # 그 사이 다른 스레드의 fit()이 끼어들 수 있는 창
+            value = sum(self.trained_on) / len(self.trained_on)
+            return {"mean": [value], "quantiles": [[value]] * 5}
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = lambda **kwargs: _FakeTabPFNModel()
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, i, price):
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": price,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    train_rows_a = [_row("아반떼", i, 10_000_000) for i in range(10)]
+    target_a = _row("아반떼", 0, 10_000_000)
+
+    train_rows_b = [_row("쏘나타", i, 50_000_000) for i in range(10)]
+    target_b = _row("쏘나타", 0, 50_000_000)
+
+    results = {}
+
+    def _call(key, target, train_rows, delay):
+        time.sleep(delay)
+        price, _quantiles, _note = market_price._tabpfn_predict(target, train_rows)
+        results[key] = price
+
+    thread_a = threading.Thread(target=_call, args=("a", target_a, train_rows_a, 0.0))
+    thread_b = threading.Thread(target=_call, args=("b", target_b, train_rows_b, 0.05))
+
+    thread_a.start()
+    thread_b.start()
+    thread_a.join(timeout=5)
+    thread_b.join(timeout=5)
+
+    # 락이 있으면 A는 자기 학습표(1천만) 기준, B는 자기 학습표(5천만) 기준 값을 각각 받는다.
+    # 락이 없으면 B의 fit()이 A의 predict() sleep 중에 전역 상태를 덮어써 A도 5천만을 받는다.
+    assert results["a"] == 10_000_000
+    assert results["b"] == 50_000_000
