@@ -130,7 +130,9 @@ _DISPLACEMENT_SUFFIX_RE = re.compile(r"^\d\.\d$")
 _FUEL_ORDER = ["가솔린", "디젤", "하이브리드", "전기", "LPG"]
 
 # 대상가와 비교군을 만들 때 재사용할 comps 필드 — TabPFN 특징 계산에도 그대로 쓴다.
-_COMP_COLUMNS = "id, model, year, mileage, price, displacement, fuel, options, accident_free"
+_COMP_COLUMNS = (
+    "id, model, generation, year, mileage, price, displacement, fuel, options, accident_free"
+)
 
 # comps는 산점도용으로 최대 이만큼만 가져온다(설계 확정값). TabPFN 학습도 이 표본을
 # 그대로 재사용한다 — 사다리 표본 규모(수~십수 건, v3 표 기준)에서는 60건 상한이
@@ -326,12 +328,13 @@ def _tabpfn_features(row: dict) -> list:
 
 
 def _tabpfn_features_with_model(row: dict, codes: dict) -> list:
-    """_tabpfn_features의 10칸에 세대(model) 범주 코드를 11번째 칸으로 더한다(DW-854, 2026-09-05).
+    """_tabpfn_features의 10칸에 세대 범주 코드를 11번째 칸으로 더한다(DW-854, 2026-09-05;
+    DW-874, 2026-09-12: 코드 키를 generation 우선으로 교체).
 
-    codes는 호출 1회(학습표+대상)에서만 유효한 model→정수 매핑이다(_tabpfn_predict가 만든다) —
+    codes는 호출 1회(학습표+대상)에서만 유효한 세대키→정수 매핑이다(_tabpfn_predict가 만든다) —
     TabPFNRegressor(categorical_features_indices=[10])가 이 칸을 범주형으로 다루게 한다.
     """
-    return _tabpfn_features(row) + [codes[row["model"]]]
+    return _tabpfn_features(row) + [codes[row.get("generation") or row["model"]]]
 
 
 def _tabpfn_predict(
@@ -349,8 +352,9 @@ def _tabpfn_predict(
 
     2026-09-05 개정(DW-854): 특징 벡터가 10칸에서 11칸(세대 범주 포함)으로 늘었다 — 기존
     10칸(연식·주행거리·배기량·연료 원핫 5칸·옵션 개수·무사고 여부)은 `_tabpfn_features`가
-    그대로 내고(다른 코드·테스트가 그 10칸을 그대로 쓴다), 11번째 칸에 model 문자열을 정수로
-    인코딩해 더한다(`_tabpfn_features_with_model`). 그랜저 GN7과 더 뉴 그랜저 IG처럼 연식·
+    그대로 내고(다른 코드·테스트가 그 10칸을 그대로 쓴다), 11번째 칸에 세대(generation, 없으면
+    model로 폴백 — DW-874, 2026-09-12) 문자열을 정수로 인코딩해 더한다(`_tabpfn_features_with_model`).
+    그랜저 GN7과 더 뉴 그랜저 IG처럼 연식·
     배기량대가 겹쳐도 가격대가 크게 다른 세대를(모듈 docstring "동일 세대 원칙" 참조) 모델이
     직접 구분하게 하려는 목적이다. 코드(codes)는 이번 호출의 학습표+대상 안에서만 유효한
     임의 정수이고, `.fit()`을 매 호출마다 다시 하므로(위 설명대로 sklearn 스타일) 호출 간에
@@ -366,7 +370,12 @@ def _tabpfn_predict(
 
     codes = {
         m: i
-        for i, m in enumerate(sorted({r["model"] for r in train_rows} | {target["model"]}))
+        for i, m in enumerate(
+            sorted(
+                {r.get("generation") or r["model"] for r in train_rows}
+                | {target.get("generation") or target["model"]}
+            )
+        )
     }
 
     x = [_tabpfn_features_with_model(c, codes) for c in train_rows]

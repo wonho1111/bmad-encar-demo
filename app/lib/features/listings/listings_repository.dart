@@ -261,7 +261,8 @@ class ListingsRepository {
     // created_at 같은 시드 행 순서가 새로고침마다 뒤집히지 않도록 id 를 2차 정렬키로(결정적 정렬).
     final rows = await query
         .order('created_at', ascending: false)
-        .order('id', ascending: false);
+        .order('id', ascending: false)
+        .limit(200); // 임시 상한 — 페이지네이션은 DW-878
 
     // 대표사진(목록 카드용) — 반환된 매물 id 전체로 listing_images 를 배치 조회한다.
     // web attachCoverImages 의 미러이되, 청크는 두지 않는다 — `fetchListings`는 페이지네이션

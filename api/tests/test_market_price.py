@@ -300,6 +300,145 @@ def test_tabpfn_predict_adds_generation_categorical_feature(monkeypatch):
     assert quantiles is not None
 
 
+def test_tabpfn_predict_uses_generation_over_model_for_categorical_code(monkeypatch):
+    # DW-874: model 문자열 표기가 달라도(공백 유무 등) generation이 같으면 같은 범주 코드를
+    # 받아야 한다 — model 그대로 썼다면 "아반떼MD"/"아반떼 MD"가 서로 다른 코드를 받는다.
+    real_import = builtins.__import__
+
+    class _FakeTabPFNRegressor:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+
+        def fit(self, x, y):
+            self.fit_x = x
+            self.fit_y = y
+
+        def predict(self, x, **kwargs):
+            self.predict_x = x
+            return {
+                "mean": [20_000_000],
+                "quantiles": [
+                    [v] for v in (18_000_000, 19_000_000, 20_000_000, 21_000_000, 22_000_000)
+                ],
+            }
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = _FakeTabPFNRegressor
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, generation, i):
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "generation": generation,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": 15_000_000,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    # model 표기는 다르지만("아반떼MD" vs "아반떼 MD") generation은 둘 다 "아반떼 MD".
+    train_rows = [_row("아반떼MD", "아반떼 MD", i) for i in range(5)] + [
+        _row("아반떼 MD", "아반떼 MD", i) for i in range(5)
+    ]
+    target = {
+        "model": "아반떼 MD",
+        "generation": "아반떼 MD",
+        "year": 2024,
+        "mileage": 20_000,
+        "displacement": 1_600,
+        "fuel": "가솔린",
+        "options": [],
+        "accident_free": True,
+    }
+
+    market_price._tabpfn_predict(target, train_rows)
+
+    fit_x = market_price._TABPFN_MODEL.fit_x
+    codes = {row[10] for row in fit_x}
+    assert len(codes) == 1  # 표기가 갈려도 generation이 같으면 같은 코드 하나뿐이어야 한다.
+
+
+def test_tabpfn_predict_falls_back_to_model_when_generation_missing(monkeypatch):
+    # DW-874: generation이 없는 행(구형 시드·수동 등록 등)은 model 문자열로 폴백해야 한다 —
+    # KeyError 없이 동작하고, generation 없는 행끼리는 model 기준으로 코드가 갈린다.
+    real_import = builtins.__import__
+
+    class _FakeTabPFNRegressor:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+
+        def fit(self, x, y):
+            self.fit_x = x
+            self.fit_y = y
+
+        def predict(self, x, **kwargs):
+            self.predict_x = x
+            return {
+                "mean": [20_000_000],
+                "quantiles": [
+                    [v] for v in (18_000_000, 19_000_000, 20_000_000, 21_000_000, 22_000_000)
+                ],
+            }
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = _FakeTabPFNRegressor
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, i):
+        # generation 키가 아예 없는 행 — .get("generation")이 None을 돌려줘 model로 폴백해야 한다.
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": 15_000_000,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    train_rows = [_row("그랜저", i) for i in range(5)] + [_row("K5", i) for i in range(5)]
+    target = {
+        "model": "그랜저",
+        "year": 2024,
+        "mileage": 20_000,
+        "displacement": 1_600,
+        "fuel": "가솔린",
+        "options": [],
+        "accident_free": True,
+    }
+
+    price, quantiles, _note = market_price._tabpfn_predict(target, train_rows)
+
+    fit_x = market_price._TABPFN_MODEL.fit_x
+    grandeur_codes = {row[10] for row in fit_x[:5]}
+    k5_codes = {row[10] for row in fit_x[5:]}
+    assert len(grandeur_codes) == 1
+    assert len(k5_codes) == 1
+    assert grandeur_codes != k5_codes
+    assert price is not None
+    assert quantiles is not None
+
+
 def test_tabpfn_predict_serializes_concurrent_requests_via_lock(monkeypatch):
     # DW-856: 전역 _TABPFN_MODEL은 요청마다 fit()한 뒤 그 상태로 predict()하는 공유 객체라,
     # 두 요청이 겹치면 A가 fit()한 학습표를 B의 fit()이 덮어쓴 뒤 A가 predict()할 수 있다

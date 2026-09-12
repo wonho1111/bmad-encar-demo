@@ -7274,3 +7274,13 @@ severity: medium
 reason: 가이드 15건을 같은 코드·같은 로컬 DB로 두 번 돌린 결과 **답변 텍스트 15건이 전부 글자 단위로 동일**(에이전트 temperature=0)했는데, 판정만 C62·C67이 GOOD→BAD로 뒤집혀 13/15 → 11/15가 됐다. 즉 회차 간 차이는 챗봇이 아니라 판정기의 비결정성이다. 이 잡음이 지금까지의 모든 GOOD율(62%→93%, 가이드 87% 등)에 섞여 있고, 폭은 이번 표본에서 15건 중 2건(약 13%p). 사람 일치율 97%도 판정기를 1회 실행한 결과다.
 trigger: DW-855 회차와 1,000건 최종 검증(DW-864) 전에 — (a) 같은 응답 세트를 2~3회 채점해 뒤집히는 건수를 재고 보고서·문서 05에 "채점 잡음 ±N건"으로 명시, (b) 필요하면 다수결(3회 중 2회) 채점으로 바꾸고 비용을 확인, (c) 뒤집힌 사례(C62·C67)의 근거문을 비교해 루브릭의 어느 규칙이 흔들리는지 특정.
 status: open
+
+### DW-878: Flutter 매물 목록(fetchListings)이 판매중 전량을 한 번에 받는다 — 페이지네이션 없음, 엔카 7,081건 적재 뒤엔 상한 200건 임시 적용
+
+origin: E 단계(엔카 실매물 운영 적재) 준비 중 확인(2026-09-12), app/lib/features/listings/listings_repository.dart:262-284 주석 자체가 "실 서비스 규모로 자라면 페이지네이션이 먼저 필요"라고 예고
+location: app/lib/features/listings/listings_repository.dart(fetchListings — .range()/.limit() 없음, 커버 사진 .inFilter() 단일 쿼리), 웹은 web/src/app/(user)/search/page.tsx PAGE_SIZE=24로 이미 페이지네이션
+severity: medium
+reason: 판매중이 158→약 7,200건이 되면 앱이 목록 한 번에 7천 행 + 커버 사진 id 7천 개를 URL에 실어 414/지연이 난다. 제대로 된 수정은 웹처럼 페이지(무한 스크롤) 도입이지만 repository API·화면·테스트가 함께 바뀌어 E 범위를 넘는다(사용자 결정 2026-09-12: 임시 상한 후 부채 등재). 임시 조치 = `.limit(200)` + 이 항목 참조 주석.
+trigger: 포트폴리오 PDF 뒤 정리 스프린트(DW-875 묶음) — 웹 search/page.tsx의 24건 페이지 방식을 앱에 이식(range 기반), 커버 사진 조회는 web attachCoverImages처럼 50건 청크. 그때 임시 .limit(200) 제거.
+status: open
+
