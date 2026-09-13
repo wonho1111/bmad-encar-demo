@@ -509,3 +509,17 @@ def test_tabpfn_predict_serializes_concurrent_requests_via_lock(monkeypatch):
     # 락이 없으면 B의 fit()이 A의 predict() sleep 중에 전역 상태를 덮어써 A도 5천만을 받는다.
     assert results["a"] == 10_000_000
     assert results["b"] == 50_000_000
+
+
+# ── DW-863: TabPFN 사고 특징 3단계(무사고 2·단순교환 1·사고 0) ─────────────────────────
+def test_accident_level_orders_three_states_and_falls_back_to_binary():
+    base = {"year": 2020, "mileage": 1, "displacement": 1, "fuel": "가솔린", "options": []}
+    lv = lambda **kw: market_price._tabpfn_features({**base, **kw})[9]
+    assert lv(accident_status="무사고", accident_free=True) == 2
+    assert lv(accident_status="단순교환", accident_free=False) == 1
+    assert lv(accident_status="사고", accident_free=False) == 0
+    # 단순교환은 사고와 구분돼야 한다(종전 이진 특징은 둘 다 0이었다).
+    assert lv(accident_status="단순교환", accident_free=False) != lv(accident_status="사고", accident_free=False)
+    # accident_status 미입력(NULL) 행은 종전 이진값으로 폴백.
+    assert lv(accident_status=None, accident_free=True) == 2
+    assert lv(accident_status=None, accident_free=False) == 0

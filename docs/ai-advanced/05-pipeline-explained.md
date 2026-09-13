@@ -150,7 +150,7 @@ id는 실제로는 가이드 **제목**이다, `agent_tools.py:578`).
 
 ### 입력
 
-`_tabpfn_features`(market_price.py:316-327)가 매물 1건에서 뽑는 **10칸**:
+`_tabpfn_features`(market_price.py:330-341)가 매물 1건에서 뽑는 **10칸**:
 
 | # | 특징 | 비고 |
 |---|---|---|
@@ -159,11 +159,11 @@ id는 실제로는 가이드 **제목**이다, `agent_tools.py:578`).
 | 3 | 배기량(displacement) | |
 | 4-8 | 연료 원핫 5칸 | 가솔린·디젤·하이브리드·전기·LPG 중 해당 칸만 1(`_fuel_onehot`, `_FUEL_ORDER`) |
 | 9 | 옵션 개수(len(options)) | |
-| 10 | 무사고 여부(int(bool(accident_free))) | 사고·단순교환을 구분 못 함 — 6절 DW-863 |
+| 10 | 사고 이력 3단계(`_accident_level`: 무사고 2·단순교환 1·사고 0, accident_status가 비면 accident_free로 폴백) | 2026-09-13 DW-863 개정 — 종전엔 무사고 여부 이진(int(bool(accident_free)))이라 단순교환·사고가 같은 값이었다 |
 
-`_tabpfn_features_with_model`(market_price.py:328-336)이 여기에 **11번째 칸**을 더한다 —
+`_tabpfn_features_with_model`(market_price.py:342-350)이 여기에 **11번째 칸**을 더한다 —
 매물의 `model` 문자열(예: "더 뉴 그랜저 IG")을 이번 예측 1회 안에서만 유효한 정수로 바꾼
-값이다. `TabPFNRegressor(categorical_features_indices=[10])`(market_price.py:378)로 이
+값이다. `TabPFNRegressor(categorical_features_indices=[10])`(market_price.py:392)로 이
 칸을 범주형(순서 없는 분류값)으로 다루게 해, 연식·배기량대가 겹쳐도 세대가 다르면 가격대가
 다른 것(예: 그랜저 GN7 vs 더 뉴 그랜저 IG)을 모델이 구분하게 한다(DW-854).
 
@@ -172,35 +172,35 @@ id는 실제로는 가이드 **제목**이다, `agent_tools.py:578`).
 1. **모델(TabPFN 가중치)**: Prior Labs가 표 형태 데이터(행=매물, 열=특징) 예측용으로 **합성
    데이터로 사전학습**한 모델이다. 이 모델의 학습 데이터는 Prior Labs가 만든 합성 표들이고
    우리는 그걸 보지도 바꾸지도 않는다 — 로컬 체크포인트
-   `tabpfn-v2-regressor`를 그대로 불러와 CPU로 돌린다(`device="cpu"`, market_price.py:378).
+   `tabpfn-v2-regressor`를 그대로 불러와 CPU로 돌린다(`device="cpu"`, market_price.py:392).
    선정 근거는 [01-model-skill-selection.md §4](01-model-skill-selection.md).
-2. **학습표(입력)** — 우리가 매 요청마다 만든다: `_train_rows_query`(market_price.py:420-450)가
+2. **학습표(입력)** — 우리가 매 요청마다 만든다: `_train_rows_query`(market_price.py:434-464)가
    DB에서 뽑는다 — 조건은 판매중(`status='on_sale'`), 자기 자신 제외(`id <> %s`, leave-one-out:
    진단 대상을 학습표에서 빼는 것 — 안 빼면 자기 가격을 자기가 보고 맞히는 유출이 된다),
    같은 변속기, 기본 모델명 `ILIKE`(예: "그랜저" 포함). 정렬은 **대상과 가까운 순** —
    ① 모델 문자열 일치 ② 연료 일치 ③ 연식 차이 작은 순 ④ 주행거리 차이 작은 순
-   (market_price.py:437-439), 상한 `_TABPFN_TRAIN_LIMIT=120`건(market_price.py:145,
+   (market_price.py:451-453), 상한 `_TABPFN_TRAIN_LIMIT=120`건(market_price.py:159,
    DW-859: 예전엔 최신순이라 대상과 무관한 표본이 섞였다). 이 학습표는 TabPFN에
    **문맥(그때그때 주는 참고 자료)으로만** 들어간다 — 사전학습된 모델이 그 표를 보고
-   그 자리에서 `.fit()`(market_price.py:379)해 예측하는 것이지, 모델 가중치 자체를
+   그 자리에서 `.fit()`(market_price.py:393)해 예측하는 것이지, 모델 가중치 자체를
    갱신하는 별도 학습 단계가 아니다.
 
 ### 추론
 
-`_tabpfn_predict`(market_price.py:337-392)가 학습표로 `.fit()`한 뒤 대상 1건을
-`predict(output_type="full", quantiles=[0.10,0.25,0.50,0.75,0.90])`(market_price.py:381-384)로
+`_tabpfn_predict`(market_price.py:351-406)가 학습표로 `.fit()`한 뒤 대상 1건을
+`predict(output_type="full", quantiles=[0.10,0.25,0.50,0.75,0.90])`(market_price.py:395-398)로
 예측한다. `output_type="full"`은 값 하나가 아니라 **예측 분포**를 낸다 — 평균(mean)과
 분위수(q10~q90, 4절에서 설명)를 한 번의 추론으로 같이 준다. "적정가"는 이 평균을 **만원
 단위로 반올림**한 값이다(`price = int(round(float(out["mean"][0]) / 10_000)) * 10_000`,
-market_price.py:385).
+market_price.py:399).
 
-판정은 분위수 5단이 먼저다(`_verdict_by_quantiles`, market_price.py:271-289): q10 미만
+판정은 분위수 5단이 먼저다(`_verdict_by_quantiles`, market_price.py:285-303): q10 미만
 "저렴" · q25 미만 "다소 저렴" · q75 이하 "적정" · q90 이하 "다소 높음" · 그 위 "높음". 단
-두 가지 예외가 있다(`_verdict_and_basis`, market_price.py:290-311):
+두 가지 예외가 있다(`_verdict_and_basis`, market_price.py:304-325):
 
-- **학습표가 `_TABPFN_MIN_COMPS=10`건 미만**(market_price.py:141)이면 TabPFN 예측 자체를
+- **학습표가 `_TABPFN_MIN_COMPS=10`건 미만**(market_price.py:155)이면 TabPFN 예측 자체를
   안 하고(`tabpfn_quantiles=None`), 비교군(아래 사다리로 뽑은 통계용 표본)의 사분위
-  (q1/q3)로 3단 판정(`_verdict`, market_price.py:258-270)으로 폴백한다.
+  (q1/q3)로 3단 판정(`_verdict`, market_price.py:272-284)으로 폴백한다.
 - **비교군이 `MIN_VERDICT_SAMPLE=3`건 미만**(market_price.py:119)이면 사분위든 분위수든
   판정을 아예 매기지 않고 보류한다(`verdict_basis="표본 부족"`) — 표본 1~2건으로 "저렴/높음"
   배지를 다는 게 통계적으로 근거가 안 되기 때문.
@@ -219,13 +219,13 @@ market_price.py:385).
 | 5 | 연료 조건 해제 |
 
 > **▶ 데이터 형식·단위**
-> - 입력 11칸을 코드 순서 그대로 나열하면(`_tabpfn_features`+`_tabpfn_features_with_model`, `market_price.py:130,304-320`): ①연식(정수) ②주행거리(정수, km) ③배기량(정수, cc) ④~⑧연료 원핫(one-hot, 해당하는 한 칸만 1이고 나머지는 0인 표시법) 5칸(순서 가솔린·디젤·하이브리드·전기·LPG) ⑨옵션 개수(정수) ⑩무사고 여부(1 또는 0) ⑪세대(model) 범주 코드(이번 예측 1회 안에서만 유효한 정수). G-1 매물(그랜저 GN7 하이브리드 2024년식·23,987km·무사고·옵션 2개, `04-demo-cases.md:107-115`)로 채우면 `[2024, 23987, 1598, 0,0,1,0,0, 2, 1, 세대코드]` — 하이브리드라 원핫 3번째 칸(index 2)만 1이다(배기량 1,598cc는 운영 시드의 그 매물 행에서 읽었고, 이 벡터는 2026-09-10에 `_tabpfn_features`를 실제로 실행해 얻은 값이다).
-> - 학습표: 행=매물(최대 120건, `_TABPFN_TRAIN_LIMIT`), 열=위 11칸, 정답값 `y`는 매물의 `price`를 가공 없이 그대로 쓴다(원 단위 정수, `market_price.py:372-373`). 형태로 보면 특징 `x`는 n행×11열, `y`는 길이 n인 1차원 목록, 대상은 1행×11열이다(코드는 파이썬 리스트를 그대로 넘기고 TabPFN 내부에서 배열로 바뀐다 — 명시적 numpy 변환 코드는 없음).
-> - 출력: `predict(output_type="full", quantiles=[.10,.25,.50,.75,.90])`가 돌려주는 결과에서 코드가 실제로 읽는 키는 `mean`과 `quantiles` 둘뿐이다(`market_price.py:149-150,369-381`). `mean`(원 단위 실수)을 10,000으로 나눠 반올림한 뒤 다시 10,000을 곱해 `price`로 쓴다 — 값은 여전히 원 단위 정수이고 1만원 배수로만 반올림된 것이다(예: 40,337,256 → 40,340,000). `quantiles`는 `q10`~`q90` 다섯 키, 각각 원 단위 정수(이쪽은 반올림만 하고 1만원 배수로 맞추지 않음).
-> - `diagnose()` 반환 dict(`market_price.py:521-534`): `listing`(매물 요약, `market_price.py:393-407`) · `criteria`(비교군 사다리 단계·설명·건수) · `stats`(비교군 min/q1/median/q3/max, 원 단위 정수 또는 None) · `percentile`(**0~1 사이 소수다 — 0~100이 아니다**, `market_price.py:239-247`) · `verdict`(5단 또는 3단 문자열 또는 None) · `verdict_basis`("분위수"|"사분위"|"표본 부족") · `tabpfn`(`{price, note, quantiles}`) · `comps`(비교 매물 목록, 각 `{id, model, year, mileage, price}`, `market_price.py:410-417`). 이 dict 형태를 강제하는 별도 pydantic 응답 모델은 없다 — API 응답에서는 그냥 `dict | None`으로만 선언돼 있다(`schemas/ai.py:129,134`).
+> - 입력 11칸을 코드 순서 그대로 나열하면(`_tabpfn_features`+`_tabpfn_features_with_model`, `market_price.py:130,318-334`): ①연식(정수) ②주행거리(정수, km) ③배기량(정수, cc) ④~⑧연료 원핫(one-hot, 해당하는 한 칸만 1이고 나머지는 0인 표시법) 5칸(순서 가솔린·디젤·하이브리드·전기·LPG) ⑨옵션 개수(정수) ⑩사고 이력 3단계(무사고 2·단순교환 1·사고 0, 2026-09-13 개정) ⑪세대(model) 범주 코드(이번 예측 1회 안에서만 유효한 정수). G-1 매물(그랜저 GN7 하이브리드 2024년식·23,987km·무사고·옵션 2개, `04-demo-cases.md:107-115`)로 채우면 `[2024, 23987, 1598, 0,0,1,0,0, 2, 2, 세대코드]` — 하이브리드라 원핫 3번째 칸(index 2)만 1이다(배기량 1,598cc는 운영 시드의 그 매물 행에서 읽었고, 이 벡터는 2026-09-13에 개정된 `_tabpfn_features`를 실제로 실행해 얻은 값이다(10번째 칸이 무사고=2)).
+> - 학습표: 행=매물(최대 120건, `_TABPFN_TRAIN_LIMIT`), 열=위 11칸, 정답값 `y`는 매물의 `price`를 가공 없이 그대로 쓴다(원 단위 정수, `market_price.py:386-387`). 형태로 보면 특징 `x`는 n행×11열, `y`는 길이 n인 1차원 목록, 대상은 1행×11열이다(코드는 파이썬 리스트를 그대로 넘기고 TabPFN 내부에서 배열로 바뀐다 — 명시적 numpy 변환 코드는 없음).
+> - 출력: `predict(output_type="full", quantiles=[.10,.25,.50,.75,.90])`가 돌려주는 결과에서 코드가 실제로 읽는 키는 `mean`과 `quantiles` 둘뿐이다(`market_price.py:163-164,383-395`). `mean`(원 단위 실수)을 10,000으로 나눠 반올림한 뒤 다시 10,000을 곱해 `price`로 쓴다 — 값은 여전히 원 단위 정수이고 1만원 배수로만 반올림된 것이다(예: 40,337,256 → 40,340,000). `quantiles`는 `q10`~`q90` 다섯 키, 각각 원 단위 정수(이쪽은 반올림만 하고 1만원 배수로 맞추지 않음).
+> - `diagnose()` 반환 dict(`market_price.py:535-548`): `listing`(매물 요약, `market_price.py:407-421`) · `criteria`(비교군 사다리 단계·설명·건수) · `stats`(비교군 min/q1/median/q3/max, 원 단위 정수 또는 None) · `percentile`(**0~1 사이 소수다 — 0~100이 아니다**, `market_price.py:253-261`) · `verdict`(5단 또는 3단 문자열 또는 None) · `verdict_basis`("분위수"|"사분위"|"표본 부족") · `tabpfn`(`{price, note, quantiles}`) · `comps`(비교 매물 목록, 각 `{id, model, year, mileage, price}`, `market_price.py:424-431`). 이 dict 형태를 강제하는 별도 pydantic 응답 모델은 없다 — API 응답에서는 그냥 `dict | None`으로만 선언돼 있다(`schemas/ai.py:129,134`).
 > - 챗봇 텍스트(`_format_market_diagnosis`, `agent_tools.py:591-616`)는 가격을 전부 원 단위로만 쓴다("만원"으로 바꾸지 않음) — `percentile`을 표시할 때만 ×100 해서 "하위 22%" 식으로 보여준다(`agent_tools.py:600-601`). 화면(웹)에서 보이는 "○○만원" 표기는 별도 함수가 한다 — `formatPrice`/`formatStatPrice`(`web/src/lib/price.ts:26-31,42-45`, 예: 41,120,000원 → "4,112만원"). DB·입력폼은 항상 원 단위 그대로다(`web/src/lib/constants.ts:47-56`).
 > - 소요 시간(CPU, 로컬 PC 실측): 학습표 53행 1.6초 · 120행(상한) 8.3초 · 200행 18.5초 · 284행 39.5초 — 행이 늘수록 시간이 거의 제곱으로 는다(`deferred-work.md:7029`, DW-852).
-> - 흐름 한 벌(G-1, 2026-09-10 현재 엔진 커밋 f6fdaa3으로 운영 시드를 읽기 전용으로 실행한 값, 소요 5.3초): 입력 행(2024년식·23,987km·1,598cc·하이브리드·무사고·옵션 2개·호가 38,040,000원) → 특징 벡터 `[2024, 23987, 1598, 0,0,1,0,0, 2, 1, 세대코드]` → 학습표 47행(`tabpfn.note`="기본 모델군 47건 학습") → `diagnose()` 출력: `tabpfn.price`=39,880,000원(mean을 만원 배수로 반올림) · `tabpfn.quantiles`={q10: 38,409,008, q25: 39,153,096, q50: 39,892,220, q75: 40,627,288, q90: 41,332,508}(원) · `criteria`={step: 0, sample_count: 9} · `stats`={min: 36,650,000, q1: 38,080,000, median: 38,500,000, q3: 40,050,000, max: 42,650,000}(원) · `percentile`=0.222 · `verdict`="저렴"(`verdict_basis`="분위수") → 챗봇 문구는 원 단위 그대로, 웹 카드는 "적정가 3,988만원"으로 표시. 참고: 04 문서 시점(09-03 엔진, 세대 특징 없음)에는 같은 매물이 적정가 4,034만원·q10 3,893만원이었다(`04-demo-cases.md:112`) — 3절 "같은 조건인데…" 소절이 말하는 변화가 이 차이다.
+> - 흐름 한 벌(G-1, 2026-09-10 현재 엔진 커밋 f6fdaa3으로 운영 시드를 읽기 전용으로 실행한 값, 소요 5.3초): 입력 행(2024년식·23,987km·1,598cc·하이브리드·무사고·옵션 2개·호가 38,040,000원) → 특징 벡터 `[2024, 23987, 1598, 0,0,1,0,0, 2, 2, 세대코드]` → 학습표 47행(`tabpfn.note`="기본 모델군 47건 학습") → `diagnose()` 출력: `tabpfn.price`=39,880,000원(mean을 만원 배수로 반올림) · `tabpfn.quantiles`={q10: 38,409,008, q25: 39,153,096, q50: 39,892,220, q75: 40,627,288, q90: 41,332,508}(원) · `criteria`={step: 0, sample_count: 9} · `stats`={min: 36,650,000, q1: 38,080,000, median: 38,500,000, q3: 40,050,000, max: 42,650,000}(원) · `percentile`=0.222 · `verdict`="저렴"(`verdict_basis`="분위수") → 챗봇 문구는 원 단위 그대로, 웹 카드는 "적정가 3,988만원"으로 표시. 참고: 04 문서 시점(09-03 엔진, 세대 특징 없음)에는 같은 매물이 적정가 4,034만원·q10 3,893만원이었다(`04-demo-cases.md:112`) — 3절 "같은 조건인데…" 소절이 말하는 변화가 이 차이다.
 
 ### 같은 조건인데 왜 적정가가 같게 나왔나
 
@@ -265,7 +265,7 @@ market_price.py:385).
 
 판정 보류(`verdict_basis="표본 부족"`)가 나오는 조건은 분포 폭과는 별개다 — 비교군(사다리로
 뽑은, 화면 통계용 표본)이 3건 미만이면 분포가 있든 없든 아예 판정을 매기지 않는다
-(market_price.py:119,283-304). 즉 "폭이 넓다"는 모델이 자신 없다는 신호이고, "판정 보류"는
+(market_price.py:119,297-318). 즉 "폭이 넓다"는 모델이 자신 없다는 신호이고, "판정 보류"는
 애초에 비교할 매물 자체가 너무 적다는 신호다 — 서로 다른 문제다.
 
 > **▶ 데이터 형식·단위**
@@ -293,7 +293,7 @@ market_price.py:385).
 | LOO 대 hold-out 판정 일치율 | 93.3% | — |
 | 기준선 — 비교군 중앙값 | 오차율 중앙값 7.8% · ±10% 60% | TabPFN보다 낮은 정확도 |
 | 기준선 — 세대별 회귀 | 오차율 중앙값 7.1% · ±10% 62% | TabPFN보다 낮은 정확도 |
-| 사고 매물 오차율 중앙값 | 10.4%(사고 41건; 단순교환 95건은 5.3%로 무사고 수준) | 무사고(5.2%)의 약 2배 — 6절 DW-863 |
+| 사고 매물 오차율 중앙값 | 10.4%(사고 41건; 단순교환 95건은 5.3%로 무사고 수준) | 무사고(5.2%)의 약 2배 — 6절 DW-863. 2026-09-13 3단계 특징 채택 후 같은 300건에서 9.7% |
 | 1,500만원 미만 오차율 중앙값 | 7.9% | 저가대일수록 %가 커짐 |
 | 부트스트랩 95% 신뢰구간(2,000회 재추출) | 오차율 중앙값 5.1~7.0% · ±10% 적중률 64.7~74.7% · q10~q90 적중 80.0~88.3% | 표본 300건에서 숫자가 흔들릴 수 있는 폭 |
 | 사람 판정 50건 대조(5단) | 정확 일치 52% · 한 칸 이내 90% · 3단으로 접으면 62% | 사람이 엔진보다 싸다고 본 쪽이 16건 대 8건 — 렌트·영업 이력 특징 부재 가설, DW-864에서 확인 |
@@ -365,7 +365,7 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | DW-856 | TabPFN 전역 인스턴스를 요청들이 락 없이 공유해 동시 요청 시 fit/predict가 섞임(운영 트레이스 실측) | 영업 단계 전 — 락으로 직렬화하거나 요청마다 새 인스턴스, 가중치는 이미지에 포함 |
 | DW-860 | 시드 감가 규칙이 실시장과 맞는지 검증된 적 없음(시드로 한 정확도 검증은 고객용 수치로 못 씀) | 세대별 회귀로 실측 계수를 시드 규칙과 대조해 시드 v4 재생성 여부 결정 |
 | DW-862 | 시세 진단 카드가 예측 내용보다 비교군 SQL 통계·계산 과정을 앞세움(사용자 시연 피드백) | 4단계 검증 수치 확정 후 헤드라인을 적정가 범위+한 문장 판정으로, 통계는 접힘 영역으로 개편 |
-| DW-863 | TabPFN 사고 특징이 무사고/그 외 이진이라 단순교환과 사고를 구분 못함(사고 매물 오차 2배 실측) | 특징을 3단계 서열 또는 원핫으로 바꿔 같은 300건으로 재측정 후 채택 |
+| DW-863 | (닫힘 2026-09-13) 사고 특징을 3단계 서열로 개정. 같은 300건 재측정: 사고 매물 MdAPE 10.4→9.7%, ±10% 46→51%, ±20% 78→88%(개선 34·악화 7); 단순교환 5.3→5.9%(개선 35·악화 59); 무사고 5.2→5.3%; 전체 5.8→5.8%, 판정 일치 89.7%. '사고만 구분' 이진은 전체 6.4%로 탈락 | 단순교환 손실은 DW-864(1,000건)에서 재확인 |
 | DW-864 | 최종 검증을 300건이 아닌 약 1,000건(새 표본)으로 한 번 더 | 최종 시연 점검표·포트폴리오 PDF 작성 시작 전 새 시드로 LOO 재실행 |
 | DW-865 | (닫힘 2026-09-09) 명시된 지역·차종·연료가 도구 인자로 안 넘어가 다른 조건의 차를 "조건 충족"으로 안내 | 지역·색상 인자 신설, 차종 별칭·복수값, 질문 명시 조건 자동 주입으로 해소 — 3차 검색 GOOD 97%, 조건 위반 19→1 |
 | DW-866 | 운영 시드 매물 중 가격이 현실과 동떨어진 건이 있음(보정된 3개 모델군 외) | 포트폴리오 이후, 운영 매물 전수를 엔카 실측 중앙값과 대조해 ±30% 밖 목록화 |
@@ -445,29 +445,29 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 | 2 | 가이드 게이트 상수 값(TOP_K·MARGIN·CEILING) | `api/app/graph/doc_rag_node.py:39,42,47` |
 | 2 | 리랭커 요청/응답 모델·MAX_DOCS·MAX_TEXT_CHARS | `api/reranker_service.py:28-29,66-82` |
 | 2 | 리랭커 점수는 시그모이드 적용(0~1, logit 아님) | `api/reranker_service.py:107-108`(호출부) — 로컬 재현 실측(2026-09-10, sentence-transformers 6.0.0, BAAI/bge-reranker-v2-m3 config num_labels=1) |
-| 3 | 특징 10칸 정의 | `api/app/market_price.py:316-327` |
-| 3 | 세대 범주 11번째 칸 | `api/app/market_price.py:328-336` |
-| 3 | TabPFN 예측(output_type=full) | `api/app/market_price.py:337-392` |
-| 3 | 적정가=mean 만원 반올림 | `api/app/market_price.py:385` |
-| 3 | 학습표 쿼리(정렬 4단·LIMIT) | `api/app/market_price.py:420-450` |
-| 3 | _TABPFN_TRAIN_LIMIT=120 | `api/app/market_price.py:145` |
-| 3 | _TABPFN_MIN_COMPS=10 | `api/app/market_price.py:141` |
+| 3 | 특징 10칸 정의 | `api/app/market_price.py:330-341` |
+| 3 | 세대 범주 11번째 칸 | `api/app/market_price.py:342-350` |
+| 3 | TabPFN 예측(output_type=full) | `api/app/market_price.py:351-406` |
+| 3 | 적정가=mean 만원 반올림 | `api/app/market_price.py:399` |
+| 3 | 학습표 쿼리(정렬 4단·LIMIT) | `api/app/market_price.py:434-464` |
+| 3 | _TABPFN_TRAIN_LIMIT=120 | `api/app/market_price.py:159` |
+| 3 | _TABPFN_MIN_COMPS=10 | `api/app/market_price.py:155` |
 | 3 | MIN_VERDICT_SAMPLE=3(판정 보류) | `api/app/market_price.py:119` |
 | 3 | MIN_SAMPLE=5(사다리 중단 기준) | `api/app/market_price.py:112` |
-| 3 | 5단 판정 함수 | `api/app/market_price.py:271-289` |
-| 3 | 사분위 3단 폴백 함수 | `api/app/market_price.py:258-270` |
-| 3 | 판정+근거 결합 함수 | `api/app/market_price.py:290-311` |
+| 3 | 5단 판정 함수 | `api/app/market_price.py:285-303` |
+| 3 | 사분위 3단 폴백 함수 | `api/app/market_price.py:272-284` |
+| 3 | 판정+근거 결합 함수 | `api/app/market_price.py:304-325` |
 | 3 | 완화 사다리 6단 정의 | `api/app/market_price.py:55-111` |
-| 3 | diagnose() 전체 흐름 | `api/app/market_price.py:453-534` |
+| 3 | diagnose() 전체 흐름 | `api/app/market_price.py:467-548` |
 | 3 | G-1 매물(2024·23,987km·3,804만원) | `docs/ai-advanced/04-demo-cases.md:107-115` |
 | 3 | G-3 매물(2025·6,593km·4,265만원) | `docs/ai-advanced/04-demo-cases.md:128-136` |
 | 3 | 같은 적정가 원인 분석(원 단위 값·연식 효과·자기 제외) | `_bmad-output/implementation-artifacts/deferred-work.md:7070-7078`(DW-857) |
 | 3 | 세대 특징 추가 후 수치(3,988만/4,029만) | `_bmad-output/implementation-artifacts/deferred-work.md:7050`(DW-854) |
 | 3 | 판정 정정(자기 제외는 필수 장치) | `demo-feedback-2026-09-04-plan.md`(메모리 노트) |
 | 3 | 연료 원핫 순서(가솔린·디젤·하이브리드·전기·LPG) | `api/app/market_price.py:130` |
-| 3 | 분위수 키(q10~q90)·x/y 구성·mean 반올림 | `api/app/market_price.py:149-150,369-381` |
-| 3 | listing/comp 요약 딕셔너리 필드 | `api/app/market_price.py:393-417` |
-| 3 | 비교군 통계 SQL·percentile은 0~1 소수 | `api/app/market_price.py:239-247` |
+| 3 | 분위수 키(q10~q90)·x/y 구성·mean 반올림 | `api/app/market_price.py:163-164,383-395` |
+| 3 | listing/comp 요약 딕셔너리 필드 | `api/app/market_price.py:407-431` |
+| 3 | 비교군 통계 SQL·percentile은 0~1 소수 | `api/app/market_price.py:253-261` |
 | 3 | 챗봇 텍스트는 원 단위 표시(percentile만 ×100) | `api/app/graph/agent_tools.py:591-616` |
 | 3 | 화면 "만원" 표시 변환 함수(DB·API는 원 단위 그대로) | `web/src/lib/price.ts:26-31,42-45`, `web/src/lib/constants.ts:47-56` |
 | 3 | DW-852 CPU 실측 4구간(53행→1.6초…284행→39.5초) | `_bmad-output/implementation-artifacts/deferred-work.md:7029` |

@@ -131,8 +131,22 @@ _FUEL_ORDER = ["가솔린", "디젤", "하이브리드", "전기", "LPG"]
 
 # 대상가와 비교군을 만들 때 재사용할 comps 필드 — TabPFN 특징 계산에도 그대로 쓴다.
 _COMP_COLUMNS = (
-    "id, model, generation, year, mileage, price, displacement, fuel, options, accident_free"
+    "id, model, generation, year, mileage, price, displacement, fuel, options, accident_free, "
+    "accident_status"
 )
+
+# TabPFN 10번째 특징 — 사고 이력 3단계 서열(DW-863, 2026-09-13). 300건 실매물 검증에서 오차가
+# 큰 건 '사고'뿐이고(MdAPE 10.4%) 단순교환은 무사고와 같은 수준(5.3% vs 5.2%)인데, 종전 이진
+# 특징 int(accident_free)는 단순교환을 사고와 한 값(0)으로 묶었다. 서열은 감가 방향과 같다
+# (무사고 > 단순교환 > 사고). accident_status가 NULL(미입력)인 행은 종전 이진값으로 폴백한다.
+_ACCIDENT_LEVEL = {"무사고": 2, "단순교환": 1, "사고": 0}
+
+
+def _accident_level(row: dict) -> int:
+    status = row.get("accident_status")
+    if status in _ACCIDENT_LEVEL:
+        return _ACCIDENT_LEVEL[status]
+    return 2 if row.get("accident_free") else 0
 
 # comps는 산점도용으로 최대 이만큼만 가져온다(설계 확정값). TabPFN 학습도 이 표본을
 # 그대로 재사용한다 — 사다리 표본 규모(수~십수 건, v3 표 기준)에서는 60건 상한이
@@ -323,7 +337,7 @@ def _tabpfn_features(row: dict) -> list:
         row["displacement"],
         *_fuel_onehot(row["fuel"]),
         len(options),
-        int(bool(row["accident_free"])),
+        _accident_level(row),
     ]
 
 
@@ -351,7 +365,7 @@ def _tabpfn_predict(
     mean을 만원 단위로 반올림한 값(웹·앱·I7 불변식 계약 유지), quantiles는 원 단위 정수.
 
     2026-09-05 개정(DW-854): 특징 벡터가 10칸에서 11칸(세대 범주 포함)으로 늘었다 — 기존
-    10칸(연식·주행거리·배기량·연료 원핫 5칸·옵션 개수·무사고 여부)은 `_tabpfn_features`가
+    10칸(연식·주행거리·배기량·연료 원핫 5칸·옵션 개수·사고 이력 3단계)은 `_tabpfn_features`가
     그대로 내고(다른 코드·테스트가 그 10칸을 그대로 쓴다), 11번째 칸에 세대(generation, 없으면
     model로 폴백 — DW-874, 2026-09-12) 문자열을 정수로 인코딩해 더한다(`_tabpfn_features_with_model`).
     그랜저 GN7과 더 뉴 그랜저 IG처럼 연식·
