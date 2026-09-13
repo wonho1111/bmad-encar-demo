@@ -41,7 +41,7 @@ def _csv_row(**overrides) -> dict:
         "year": "2023", "price": "35000000", "mileage": "20000", "color": "흰색",
         "fuel": "하이브리드", "transmission": "자동", "displacement": "1598", "seats": "5",
         "region": "서울", "accident_free": "True", "accident_status": "무사고",
-        "options": '["005", "029", "001"]', "encar_id": "12345",
+        "options": '["005", "029", "001"]', "encar_id": "12345", "usage_change": "",
     }
     base.update(overrides)
     return base
@@ -148,3 +148,39 @@ def test_prod_get_all_single_short_page(monkeypatch):
     monkeypatch.setattr(load_encar_listings, "prod_rest",
                         lambda *a, **k: (200, [{"id": 1}, {"id": 2}]))
     assert len(load_encar_listings.prod_get_all("listings?select=id", "t", "a")) == 2
+
+
+# ── DW-880: usage_history 매핑·백필 계획 ──────────────────────────────────────────────
+def test_transform_row_maps_usage_change_to_usage_history():
+    base = {"manufacturer": "현대", "model": "그랜저 GN7", "body_type": "대형차", "year": "2023",
+            "price": "1", "mileage": "1", "color": "흰색", "fuel": "가솔린", "transmission": "자동",
+            "displacement": "1", "seats": "5", "region": "서울", "accident_free": "True",
+            "accident_status": "무사고", "options": "", "encar_id": "1"}
+    f = lambda u: load_encar_listings.transform_row({**base, "usage_change": u}, 0, {}, ["s"])["usage_history"]
+    assert f("") == "없음"
+    assert f("렌트") == "렌트"
+    assert f("영업용") == "영업용"
+    import pytest
+    with pytest.raises(KeyError):
+        f("리스")  # 모르는 값은 조용히 넘기지 않는다
+
+
+def test_plan_usage_backfill_matches_by_key_and_skips_already_filled():
+    rows = [
+        {"seller_id": "s1", "model": "A", "year": 2020, "price": 100, "mileage": 5, "usage_history": "렌트"},
+        {"seller_id": "s1", "model": "B", "year": 2021, "price": 200, "mileage": 6, "usage_history": "없음"},
+        {"seller_id": "s1", "model": "C", "year": 2022, "price": 300, "mileage": 7, "usage_history": "렌트"},
+    ]
+    existing = [
+        {"id": "id-a", "seller_id": "s1", "model": "A", "year": 2020, "price": 100, "mileage": 5, "usage_history": None},
+        {"id": "id-b", "seller_id": "s1", "model": "B", "year": 2021, "price": 200, "mileage": 6, "usage_history": "없음"},
+    ]
+    plan = load_encar_listings.plan_usage_backfill(rows, existing)
+    assert plan == {"렌트": ["id-a"]}  # B는 이미 같은 값 → 멱등 건너뜀, C는 DB에 없음
+
+
+def test_plan_usage_backfill_refuses_key_collision():
+    import pytest
+    dup = {"seller_id": "s1", "model": "A", "year": 2020, "price": 100, "mileage": 5, "usage_history": None}
+    with pytest.raises(SystemExit):
+        load_encar_listings.plan_usage_backfill([], [{"id": "1", **dup}, {"id": "2", **dup}])

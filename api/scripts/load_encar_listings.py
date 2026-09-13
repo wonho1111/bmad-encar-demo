@@ -100,11 +100,15 @@ DEMOTE_EXTRA_ACCOUNTS = [
 
 IDEMPOTENCY_COLS = ("seller_id", "model", "year", "price", "mileage")
 
+# CSV usage_change(엔카 usageChangeTypes) → listings.usage_history(0039). 빈 문자열은 '없음'(이력이
+# 없다고 확인됨 — NULL(모름)과 구분, 0039 코멘트). 그 외 값이 나오면 조용히 넘기지 않고 죽인다.
+USAGE_MAP = {"": "없음", "렌트": "렌트", "영업용": "영업용"}
+
 LISTING_INSERT_COLS = [
     "id", "seller_id", "status", "manufacturer", "model", "body_type", "year", "price",
     "mileage", "color", "fuel", "transmission", "displacement", "seats", "region",
     "accident_free", "accident_status", "options", "description", "generation", "source",
-    "embedding",
+    "usage_history", "embedding",
 ]
 LOCAL_INSERT_SQL = (
     f"INSERT INTO public.listings ({', '.join(LISTING_INSERT_COLS)}) "
@@ -205,6 +209,7 @@ def transform_row(row: dict, index: int, option_map: dict, seller_ids: list[str]
         "description": None,
         "generation": derive_generation(model),
         "source": SOURCE,
+        "usage_history": USAGE_MAP[row["usage_change"]],
         "encar_id": row["encar_id"],  # DB에는 안 넣음 — 캐시 키·멱등 확인용
     }
 
@@ -540,6 +545,7 @@ def run_apply_prod(csv_rows: list[dict], option_map: dict, demote_seed: bool) ->
                     "accident_free": r["accident_free"], "accident_status": r["accident_status"],
                     "options": r["options"], "description": r["description"],
                     "generation": r["generation"], "source": r["source"],
+                    "usage_history": r["usage_history"],
                     "embedding": str(cache[r["encar_id"]]),
                 }
                 for r in batch
@@ -578,6 +584,76 @@ def run_apply_prod(csv_rows: list[dict], option_map: dict, demote_seed: bool) ->
             print(f"[apply-prod demote-seed] {email}: {len(no_photo_ids)}건 sold 전환")
 
 
+# ── 5) --backfill-usage: 이미 적재된 엔카 행에 usage_history만 채운다(0039 이후, DW-880) ──────
+def plan_usage_backfill(rows: list[dict], existing: list[dict]) -> dict[str, list[str]]:
+    """usage_history 값 → 채울 listing id 목록. existing = DB의 엔카 행(id·usage_history·키 컬럼).
+
+    이미 같은 값이면 건너뛴다(멱등). 키 충돌(같은 키에 행 2개)은 없다고 가정하지 않고 검사한다 —
+    E-6 검증 SQL로 0건이었지만, 이 함수는 순수 계산이라 단위 테스트가 그 가정을 다시 깬다.
+    """
+    by_key: dict[tuple, dict] = {}
+    for e in existing:
+        key = (str(e["seller_id"]), e["model"], int(e["year"]), int(e["price"]), int(e["mileage"]))
+        if key in by_key:
+            raise SystemExit(f"[backfill-usage] 키 충돌: {key} — 같은 키의 행이 2개, 자동 매칭 불가")
+        by_key[key] = e
+    plan: dict[str, list[str]] = {}
+    for r in rows:
+        e = by_key.get((r["seller_id"], r["model"], r["year"], r["price"], r["mileage"]))
+        if e is None or e.get("usage_history") == r["usage_history"]:
+            continue
+        plan.setdefault(r["usage_history"], []).append(str(e["id"]))
+    return plan
+
+
+def run_backfill_usage_local(csv_rows: list[dict], option_map: dict) -> None:
+    with psycopg.connect(LOCAL_DSN) as conn:
+        seller_ids, _ = resolve_seller_ids(conn)
+        rows = [transform_row(r, i, option_map, seller_ids) for i, r in enumerate(csv_rows)]
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, seller_id, model, year, price, mileage, usage_history "
+                        "FROM public.listings WHERE source = %s", (SOURCE,))
+            cols = [d.name for d in cur.description]
+            existing = [dict(zip(cols, r)) for r in cur.fetchall()]
+        plan = plan_usage_backfill(rows, existing)
+        with conn.cursor() as cur:
+            for value, ids in plan.items():
+                cur.execute("UPDATE public.listings SET usage_history = %s WHERE id = ANY(%s::uuid[])",
+                            (value, ids))
+        conn.commit()
+    summary = {v: len(i) for v, i in plan.items()}
+    print(f"[backfill-usage local] 채움: {summary} (엔카 행 {len(existing)}건 중)")
+
+
+def run_backfill_usage_prod(csv_rows: list[dict], option_map: dict, apply: bool) -> None:
+    """운영: 판매자 토큰으로 자기 엔카 행을 GET(페이지)한 뒤 값별로 id=in.(…) PATCH(200건 단위).
+    apply=False면 계획만 출력한다(쓰기 0)."""
+    anon, seed_pw = load_prod_credentials()
+    seller_ids = [sid for sid, _ in SEED_ACCOUNTS]
+    rows = [transform_row(r, i, option_map, seller_ids) for i, r in enumerate(csv_rows)]
+    tokens = {sid: prod_login(email, seed_pw, anon) for sid, email in SEED_ACCOUNTS}
+    total = 0
+    for seller_id, email in SEED_ACCOUNTS:
+        existing = prod_get_all(
+            "listings?select=id,seller_id,model,year,price,mileage,usage_history"
+            f"&seller_id=eq.{seller_id}&source=eq.{SOURCE}", tokens[seller_id], anon,
+        )
+        plan = plan_usage_backfill([r for r in rows if r["seller_id"] == seller_id], existing)
+        n = sum(len(v) for v in plan.values())
+        summary = {v: len(i) for v, i in plan.items()}
+        print(f"[backfill-usage prod{'' if apply else ' dry-run'}] {email}: 엔카 {len(existing)}건, "
+              f"채울 것 {n}건 {summary}")
+        total += n
+        if not apply:
+            continue
+        for value, ids in plan.items():
+            for i in range(0, len(ids), PROD_BATCH):
+                chunk = ids[i : i + PROD_BATCH]
+                prod_rest("PATCH", f"listings?id=in.({','.join(chunk)})", tokens[seller_id], anon,
+                          {"usage_history": value}, {"Prefer": "return=minimal"})
+    print(f"[backfill-usage prod] {'완료' if apply else '계획'} 합계 {total}건")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -590,10 +666,12 @@ def main() -> None:
     ap.add_argument("--apply-prod", action="store_true",
                      help="운영 REST POST — 구현만 되어 있음, 사람이 명시 승인 후에만 사용")
     ap.add_argument("--dry-run-prod", action="store_true", help="운영 GET만, 계획 수치 출력")
+    ap.add_argument("--backfill-usage", choices=["local", "prod-dry-run", "prod"],
+                     help="0039 usage_history를 이미 적재된 엔카 행에 채움(DW-880). prod는 사람 승인 후")
     args = ap.parse_args()
 
-    if not any([args.embed, args.local, args.apply_prod, args.dry_run_prod]):
-        ap.error("--embed/--local/--apply-prod/--dry-run-prod 중 하나 이상 지정하세요.")
+    if not any([args.embed, args.local, args.apply_prod, args.dry_run_prod, args.backfill_usage]):
+        ap.error("--embed/--local/--apply-prod/--dry-run-prod/--backfill-usage 중 하나 이상 지정하세요.")
     if args.demote_seed and not (args.local or args.apply_prod):
         ap.error("--demote-seed는 --local 또는 --apply-prod와 함께 써야 합니다.")
 
@@ -613,6 +691,11 @@ def main() -> None:
 
     if args.apply_prod:
         run_apply_prod(csv_rows, option_map, args.demote_seed)
+
+    if args.backfill_usage == "local":
+        run_backfill_usage_local(csv_rows, option_map)
+    elif args.backfill_usage:
+        run_backfill_usage_prod(csv_rows, option_map, apply=(args.backfill_usage == "prod"))
 
 
 if __name__ == "__main__":
