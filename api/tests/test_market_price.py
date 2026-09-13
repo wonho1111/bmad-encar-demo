@@ -278,23 +278,23 @@ def test_tabpfn_predict_adds_generation_categorical_feature(monkeypatch):
     price, quantiles, note = market_price._tabpfn_predict(target, train_rows)
 
     model_obj = market_price._TABPFN_MODEL
-    assert model_obj.init_kwargs["categorical_features_indices"] == [11]
+    assert model_obj.init_kwargs["categorical_features_indices"] == [10]
 
     fit_x = model_obj.fit_x
-    assert all(len(row) == 12 for row in fit_x)
+    assert all(len(row) == 11 for row in fit_x)
     predict_x = model_obj.predict_x
     assert len(predict_x) == 1
-    assert len(predict_x[0]) == 12
+    assert len(predict_x[0]) == 11
 
     # 같은 모델은 같은 코드를 공유하고, 다른 모델은 다른 코드를 받는다.
-    gn7_codes = {row[11] for row in fit_x[:6]}
-    ig_codes = {row[11] for row in fit_x[6:]}
+    gn7_codes = {row[10] for row in fit_x[:6]}
+    ig_codes = {row[10] for row in fit_x[6:]}
     assert len(gn7_codes) == 1
     assert len(ig_codes) == 1
     assert gn7_codes != ig_codes
 
     # 대상(그랜저 GN7)의 코드는 학습표의 같은 모델(그랜저 GN7) 코드와 같아야 한다.
-    assert predict_x[0][11] == next(iter(gn7_codes))
+    assert predict_x[0][10] == next(iter(gn7_codes))
 
     assert price is not None
     assert quantiles is not None
@@ -365,7 +365,7 @@ def test_tabpfn_predict_uses_generation_over_model_for_categorical_code(monkeypa
     market_price._tabpfn_predict(target, train_rows)
 
     fit_x = market_price._TABPFN_MODEL.fit_x
-    codes = {row[11] for row in fit_x}
+    codes = {row[10] for row in fit_x}
     assert len(codes) == 1  # 표기가 갈려도 generation이 같으면 같은 코드 하나뿐이어야 한다.
 
 
@@ -430,8 +430,8 @@ def test_tabpfn_predict_falls_back_to_model_when_generation_missing(monkeypatch)
     price, quantiles, _note = market_price._tabpfn_predict(target, train_rows)
 
     fit_x = market_price._TABPFN_MODEL.fit_x
-    grandeur_codes = {row[11] for row in fit_x[:5]}
-    k5_codes = {row[11] for row in fit_x[5:]}
+    grandeur_codes = {row[10] for row in fit_x[:5]}
+    k5_codes = {row[10] for row in fit_x[5:]}
     assert len(grandeur_codes) == 1
     assert len(k5_codes) == 1
     assert grandeur_codes != k5_codes
@@ -523,15 +523,3 @@ def test_accident_level_orders_three_states_and_falls_back_to_binary():
     # accident_status 미입력(NULL) 행은 종전 이진값으로 폴백.
     assert lv(accident_status=None, accident_free=True) == 2
     assert lv(accident_status=None, accident_free=False) == 0
-
-
-# ── DW-880: TabPFN 렌트·영업용 이력 플래그(11번째 칸, 0-index 10) ──────────────────────
-def test_usage_flag_marks_rent_and_commercial_only():
-    base = {"year": 2020, "mileage": 1, "displacement": 1, "fuel": "가솔린", "options": [], "accident_free": True}
-    f = lambda **kw: market_price._tabpfn_features({**base, **kw})
-    assert len(f()) == 11
-    assert f(usage_history="렌트")[10] == 1
-    assert f(usage_history="영업용")[10] == 1
-    assert f(usage_history="없음")[10] == 0
-    assert f(usage_history=None)[10] == 0  # 시드·사용자 매물(미입력)은 종전과 동일
-    assert f()[10] == 0  # 키 자체가 없어도(옛 행 dict) 죽지 않는다

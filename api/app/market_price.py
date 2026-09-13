@@ -132,7 +132,7 @@ _FUEL_ORDER = ["가솔린", "디젤", "하이브리드", "전기", "LPG"]
 # 대상가와 비교군을 만들 때 재사용할 comps 필드 — TabPFN 특징 계산에도 그대로 쓴다.
 _COMP_COLUMNS = (
     "id, model, generation, year, mileage, price, displacement, fuel, options, accident_free, "
-    "accident_status, usage_history"
+    "accident_status"
 )
 
 # TabPFN 10번째 특징 — 사고 이력 3단계 서열(DW-863, 2026-09-13). 300건 실매물 검증에서 오차가
@@ -147,16 +147,6 @@ def _accident_level(row: dict) -> int:
     if status in _ACCIDENT_LEVEL:
         return _ACCIDENT_LEVEL[status]
     return 2 if row.get("accident_free") else 0
-
-
-# TabPFN 12번째 특징 — 렌트·영업용 이력 플래그(DW-880, 2026-09-13). 엔카 7,081건 회귀에서 렌트 이력
-# 차는 같은 조건에서 중앙값 −6.9% 싸게 팔리는데 특징에 없어 엔진이 +3.3% 높게 봤다(955건 실측).
-# NULL(미입력)과 '없음'은 같은 0으로 둔다 — 시드·사용자 매물은 값이 없어 종전과 동일하게 동작한다.
-_USAGE_FLAGGED = {"렌트", "영업용"}
-
-
-def _usage_flag(row: dict) -> int:
-    return 1 if row.get("usage_history") in _USAGE_FLAGGED else 0
 
 # comps는 산점도용으로 최대 이만큼만 가져온다(설계 확정값). TabPFN 학습도 이 표본을
 # 그대로 재사용한다 — 사다리 표본 규모(수~십수 건, v3 표 기준)에서는 60건 상한이
@@ -348,16 +338,15 @@ def _tabpfn_features(row: dict) -> list:
         *_fuel_onehot(row["fuel"]),
         len(options),
         _accident_level(row),
-        _usage_flag(row),
     ]
 
 
 def _tabpfn_features_with_model(row: dict, codes: dict) -> list:
-    """_tabpfn_features의 11칸에 세대 범주 코드를 12번째 칸으로 더한다(DW-880으로 10→11칸, 2026-09-13)(DW-854, 2026-09-05;
+    """_tabpfn_features의 10칸에 세대 범주 코드를 11번째 칸으로 더한다(DW-854, 2026-09-05;
     DW-874, 2026-09-12: 코드 키를 generation 우선으로 교체).
 
     codes는 호출 1회(학습표+대상)에서만 유효한 세대키→정수 매핑이다(_tabpfn_predict가 만든다) —
-    TabPFNRegressor(categorical_features_indices=[11])가 이 칸을 범주형으로 다루게 한다.
+    TabPFNRegressor(categorical_features_indices=[10])가 이 칸을 범주형으로 다루게 한다.
     """
     return _tabpfn_features(row) + [codes[row.get("generation") or row["model"]]]
 
@@ -376,7 +365,7 @@ def _tabpfn_predict(
     mean을 만원 단위로 반올림한 값(웹·앱·I7 불변식 계약 유지), quantiles는 원 단위 정수.
 
     2026-09-05 개정(DW-854): 특징 벡터가 10칸에서 11칸(세대 범주 포함)으로 늘었다 — 기존
-    11칸(연식·주행거리·배기량·연료 원핫 5칸·옵션 개수·사고 이력 3단계·렌트/영업 이력)은 `_tabpfn_features`가
+    10칸(연식·주행거리·배기량·연료 원핫 5칸·옵션 개수·사고 이력 3단계)은 `_tabpfn_features`가
     그대로 내고(다른 코드·테스트가 그 10칸을 그대로 쓴다), 11번째 칸에 세대(generation, 없으면
     model로 폴백 — DW-874, 2026-09-12) 문자열을 정수로 인코딩해 더한다(`_tabpfn_features_with_model`).
     그랜저 GN7과 더 뉴 그랜저 IG처럼 연식·
@@ -409,7 +398,7 @@ def _tabpfn_predict(
     global _TABPFN_MODEL
     with _TABPFN_LOCK:
         if _TABPFN_MODEL is None:
-            _TABPFN_MODEL = TabPFNRegressor(device="cpu", categorical_features_indices=[11])
+            _TABPFN_MODEL = TabPFNRegressor(device="cpu", categorical_features_indices=[10])
         _TABPFN_MODEL.fit(x, y)
         out = _TABPFN_MODEL.predict(
             [_tabpfn_features_with_model(target, codes)],
