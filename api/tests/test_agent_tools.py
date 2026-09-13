@@ -591,7 +591,8 @@ def test_search_guides_no_reranker_keeps_original_order(monkeypatch):
         agent_tools, "find_relevant_guides_fused", lambda q, qvec: [_GUIDE_A, _GUIDE_B]
     )
     monkeypatch.setattr(agent_tools, "rerank", None)  # 사이드카 없음/미설정 취급.
-    text = agent_tools.search_guides.func(query_text="가족용 SUV 추천")
+    # 질의 토큰("패밀리카")이 제목에 있어야 DW-876 어휘 근거 게이트를 통과한다.
+    text = agent_tools.search_guides.func(query_text="패밀리카 추천")
     # 원래 순서(A가 먼저) 그대로 나온다.
     assert text.index("패밀리카 가이드") < text.index("출퇴근용 가이드")
 
@@ -603,7 +604,8 @@ def test_search_guides_reranker_reorders_when_available(monkeypatch):
     )
     # 리랭커가 [1, 0] 순서(B가 먼저)를 돌려주면 그 순서로 재정렬돼야 한다.
     monkeypatch.setattr(agent_tools, "rerank", lambda query, docs: [1, 0])
-    text = agent_tools.search_guides.func(query_text="가족용 SUV 추천")
+    # 질의 토큰("패밀리카")이 제목에 있어야 DW-876 어휘 근거 게이트를 통과한다.
+    text = agent_tools.search_guides.func(query_text="패밀리카 추천")
     assert text.index("출퇴근용 가이드") < text.index("패밀리카 가이드")
 
 
@@ -612,6 +614,58 @@ def test_search_guides_no_guides_found(monkeypatch):
     monkeypatch.setattr(agent_tools, "find_relevant_guides_fused", lambda q, qvec: [])
     text = agent_tools.search_guides.func(query_text="아무거나")
     assert "찾지 못했습니다" in text
+
+
+# ───────── (2-1) DW-876 — 어휘 근거 게이트(_extract_content_tokens·_guides_lexically_grounded) ─────────
+#
+# 배경: 강제 search_guides 호출이 주제 밖 가이드도 "찾음"으로 받는 실측 결함(명의이전 질문에
+# 전기차 보조금 가이드, 무사고/단순교환 비교 질문에 예산·가성비 가이드) — 리랭커 점수가
+# 로컬에 없고 벡터 거리로는 못 가른다. 질의 내용어가 가이드 본문에 하나도 없으면 막는다.
+
+def test_extract_content_tokens_strips_josa_and_stopwords():
+    tokens = agent_tools._extract_content_tokens("명의이전 절차가 복잡한가요?")
+    # "절차가"·"복잡한가요"는 stopword 통째로 제거, "명의이전"만 내용어로 남는다.
+    assert tokens == ["명의이전"]
+
+
+def test_extract_content_tokens_strips_trailing_josa_from_content_word():
+    tokens = agent_tools._extract_content_tokens(
+        "무사고 매물이랑 단순교환 매물이랑 뭐가 달라요?"
+    )
+    # "매물이랑"은 조사 "이랑"을 떼 "매물"로, "뭐가"·"달라요"는 stopword로 제거, 중복은 1개만.
+    assert tokens == ["무사고", "매물", "단순교환"]
+
+
+def test_extract_content_tokens_keeps_unlisted_function_words():
+    tokens = agent_tools._extract_content_tokens("적당한 주행거리가 어느 정도예요?")
+    # "주행거리가"는 조사 "가"를 떼 "주행거리"로 남는다. stopword 집합에 없는 "어느" 등은
+    # 과다 제거하지 않고 그대로 둔다(보수적 게이트 — 못 가른다고 정상 질의를 막지 않는다).
+    assert "주행거리" in tokens
+    assert "적당한" in tokens
+
+
+def test_search_guides_gate_blocks_when_no_token_overlaps_content(monkeypatch):
+    """DW-876 실측 사례 — 명의이전 질문에 전기차 보조금 가이드가 걸리면 어휘 근거 게이트가
+    막고 NO_GUIDES_FOUND_TEXT를 돌려준다(가이드 본문에 "명의이전"이 전혀 없음)."""
+    monkeypatch.setattr(agent_tools, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(
+        agent_tools, "find_relevant_guides_fused",
+        lambda q, qvec: [("전기차 보조금 가이드", "국고보조금과 지자체보조금을 확인하세요.")],
+    )
+    text = agent_tools.search_guides.func(query_text="명의이전 절차가 복잡한가요?")
+    assert text == agent_tools.NO_GUIDES_FOUND_TEXT
+
+
+def test_search_guides_gate_passes_when_token_overlaps_content(monkeypatch):
+    """토큰이 하나라도 본문에 있으면(보수적 게이트) 막지 않고 그대로 통과시킨다."""
+    monkeypatch.setattr(agent_tools, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(
+        agent_tools, "find_relevant_guides_fused",
+        lambda q, qvec: [("명의이전 절차 가이드", "명의이전은 관할 관청에서 처리합니다.")],
+    )
+    text = agent_tools.search_guides.func(query_text="명의이전 절차가 복잡한가요?")
+    assert text != agent_tools.NO_GUIDES_FOUND_TEXT
+    assert "명의이전 절차 가이드" in text
 
 
 # ───────── (3) market_price_stats ─────────

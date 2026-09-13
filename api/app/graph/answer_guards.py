@@ -11,6 +11,11 @@
 2·3은 LLM이 프롬프트 규칙을 놓쳐도 최종 답변을 한 번 더 지나가며 결정론적으로 보정한다
 (사람이 매번 확인하지 않아도 되는 안전망 — "재검색 금지"는 사전 차단, 이 둘은 사후 보정).
 
+DW-855 3차 재검증(2026-09-09)에서 재검색은 막혔는데도 순번("첫 번째")·극값("제일 싼")·
+비교("더 저렴한 쪽") 지칭을 모델이 직전 목록에서 잘못 읽는 유형이 남아, `resolve_list_reference`
+(아래 (5))를 추가했다 — 지칭을 코드가 직접 id로 확정해 agent.py가 프롬프트 힌트·도구
+인자 교체·최종 선택 좁히기 세 지점에 쓴다.
+
 이 모듈은 agent.py의 도구 디스패치 루프와 최종화 단계에서 호출된다(agent.py가 유일한
 호출자) — 여기서는 순수 함수만 두고 LangChain 메시지 타입(ToolMessage 등)은 agent.py가
 조립한다(이 모듈이 agent.py를 임포트하지 않게 해 순환 임포트를 피한다).
@@ -171,6 +176,84 @@ def _manufacturer_vocab() -> dict[str, str]:
              if kw not in _INJECT_EXCLUDED_MANUFACTURER_KEYS}
     vocab.update({kw.lower(): kw for kw in agent_tools._MANUFACTURER_WHITELIST})
     return vocab
+
+
+# ── (5) 직전 목록 지칭 결정론 해석(DW-855) ────────────────────────────────
+#
+# 실측(DW-855 3차 재검증, 2026-09-09): 재검색은 코드로 막혔고 직전 목록 id도 프롬프트에
+# 명시되는데도, 모델이 순번("첫 번째")·극값("제일 싼")·비교("더 저렴한 쪽") 지칭을 직전
+# 목록에서 잘못 읽는 유형이 남았다(C48·C50·C59·C60). "프롬프트 규칙을 강화"하는 대신
+# CLAUDE.md B9대로 **코드가 직접 지칭을 풀어 id로 확정**한다 — 순수 함수, LLM 호출 없음.
+_ORDINAL_WORD_RE = re.compile(r"(첫|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번째")
+_ORDINAL_DIGIT_JJAE_RE = re.compile(r"(\d+)\s*번째")
+_ORDINAL_DIGIT_BEON_RE = re.compile(r"(\d+)\s*번(?!째)")
+_ORDINAL_WORD_MAP = {
+    "첫": 1, "두": 2, "세": 3, "네": 4, "다섯": 5,
+    "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10,
+}
+
+
+def _resolve_ordinal(query: str) -> int | None:
+    """"첫 번째"·"두 번째"(한글 수사)·"2번째"(숫자+번째)·"1번"(숫자+번) 지칭에서 순번을
+    뽑는다. 여럿 섞여 있으면 한글 수사 → 숫자+번째 → 숫자+번 순으로 먼저 찾은 것을 쓴다
+    (문장에 먼저 등장하는 것을 따로 고르지 않는다 — "부정어·범위 밖 표현은 건드리지
+    않는다"는 스펙대로, "말고"류 정정 표현까지 해석하려 들지 않는다)."""
+    m = _ORDINAL_WORD_RE.search(query)
+    if m:
+        return _ORDINAL_WORD_MAP.get(m.group(1))
+    m = _ORDINAL_DIGIT_JJAE_RE.search(query)
+    if m:
+        return int(m.group(1))
+    m = _ORDINAL_DIGIT_BEON_RE.search(query)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+# 극값·비교 지칭 → (카드 속성, 오름차순 여부). 비교("더 저렴한 쪽"/"둘 중 싼 거")는 카드가
+# 정확히 몇 장이든 같은 결정 규칙(직전 목록 전체에서 최솟/최댓값)으로 처리한다 — "그중 더
+# 저렴한 쪽"이 가리키는 부분집합을 따로 추적하지 않는다(스펙 범위 밖, 카드 목록 자체가 이미
+# 그 턴에서 다룬 대상들이라는 전제).
+_EXTREME_RULES: list[tuple[re.Pattern, str, bool]] = [
+    (re.compile(r"(가장|제일)\s*(싸|저렴|싼)"), "price", True),
+    (re.compile(r"(가장|제일)\s*(비싸|비쌈|비싼)"), "price", False),
+    (re.compile(r"더\s*(싸|저렴)\w*\s*쪽|둘\s*중\s*(싸|저렴)"), "price", True),
+    (re.compile(r"더\s*비싼\s*쪽|둘\s*중\s*비싼"), "price", False),
+    (re.compile(r"(가장|제일)\s*(최신|신형)"), "year", False),
+    (re.compile(r"(가장|제일)\s*오래된"), "year", True),
+    (re.compile(r"주행.{0,4}짧은"), "mileage", True),
+    (re.compile(r"주행.{0,4}긴"), "mileage", False),
+]
+
+
+def resolve_list_reference(query: str, cards: list) -> list[str] | None:
+    """직전 목록 카드에서 순번·극값·비교 지칭을 결정적으로 풀어 매물 id 목록을 돌려준다.
+
+    cards: 직전 대화가 실제로 보여준 순서 그대로의 카드 목록(agent._format_recent_listings_block
+    과 동일한 순서 — "N번째"가 이 순서를 그대로 가리킨다). id·price·year·mileage 속성만
+    읽는다(ListingCard 계약, app/schemas/ai.py — 셋 다 non-null).
+
+    지칭이 없거나(순번·극값·비교 패턴 미검출) 카드가 비어 있으면 None. 순번이 카드 범위를
+    벗어나면(예: 카드 2장인데 "5번째") 그 순번은 버리고 극값·비교 패턴을 계속 찾는다 —
+    "5번째"가 극값 표현이 아니면 최종적으로 None(부정어·범위 밖 표현은 건드리지 않는다).
+    """
+    if not cards:
+        return None
+
+    ordinal = _resolve_ordinal(query)
+    if ordinal is not None and 1 <= ordinal <= len(cards):
+        return [cards[ordinal - 1].id]
+
+    for pattern, field, ascending in _EXTREME_RULES:
+        if not pattern.search(query):
+            continue
+        values = [(getattr(card, field), card.id) for card in cards]
+        if not values:
+            continue
+        chosen = min(values) if ascending else max(values)
+        return [chosen[1]]
+
+    return None
 
 
 def infer_missing_args(query: str, args: dict) -> dict:

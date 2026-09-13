@@ -346,6 +346,57 @@ def _format_recent_listings_block(cards: list[ListingCard], ordered_ids: list[st
     return "[직전 대화에서 보여준 매물]\n" + "\n".join(lines) + "\n" + reinforcement
 
 
+def _cards_for_ids(ids: list[str]) -> list[ListingCard]:
+    """id 목록으로 DB를 조회해(SELECT만) 존재하는 매물만 그 순서대로 카드로 돌려준다
+    (DW-855 순번·극값·비교 지칭 해석용, answer_guards.resolve_list_reference에 넘길 재료).
+
+    _recent_listings_prompt_block과 별도로 한 번 더 조회한다 — 그 함수는 프롬프트용
+    문자열만 만들고, 여기는 resolve_list_reference가 읽을 실제 ListingCard 객체가 필요해
+    기존 함수 시그니처(테스트가 몽키패치하는 지점)를 건드리지 않고 새로 둔다. DB 장애·
+    비UUID 등 조회 실패는 빈 리스트로 폴백한다(지칭 해석은 있으면 좋은 보조 기능 — 실패해도
+    루프를 막지 않는다).
+    """
+    if not ids:
+        return []
+    try:
+        rows = run_select(
+            f"SELECT {SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' AND id = ANY(%s::uuid[])",
+            (ids,),
+        )
+        cards = rows_to_cards(rows)
+    except Exception as exc:  # DB 장애·비UUID 등 — 힌트 없이 진행(경고 로그만, fail-loud 아님).
+        logger.warning("직전 목록 지칭 해석용 매물 조회 실패 — 지칭 해석 없이 진행: %r", exc)
+        return []
+    by_id = {c.id: c for c in cards}
+    return [by_id[lid] for lid in ids if lid in by_id]
+
+
+def _apply_reference_resolution(
+    tool_name: str, args: dict, resolved_ids: list[str] | None, recent_ids: list[str]
+) -> tuple[dict, bool]:
+    """DW-855 — 풀린 지칭 id(순번·극값·비교, answer_guards.resolve_list_reference)로
+    market_price_stats/compare_listings 인자를 교체한다. 인자가 비어 있거나 직전 목록 밖
+    id를 가리킬 때만 바꾼다 — 모델이 이미 직전 목록 안의 맞는 id를 스스로 채웠으면 그대로
+    둔다(과잉 개입 방지).
+    """
+    if not resolved_ids:
+        return args, False
+    recent_set = set(recent_ids)
+    if tool_name == "market_price_stats":
+        current = args.get("listing_id")
+        if not current or current not in recent_set:
+            new_args = dict(args)
+            new_args["listing_id"] = resolved_ids[0]
+            return new_args, True
+    elif tool_name == "compare_listings":
+        current = args.get("listing_ids") or []
+        if not current or any(lid not in recent_set for lid in current):
+            new_args = dict(args)
+            new_args["listing_ids"] = resolved_ids
+            return new_args, True
+    return args, False
+
+
 def _recent_listings_prompt_block(context: list | None) -> str | None:
     """직전 대화의 매물 id들로 DB를 조회해(SELECT만) 시스템 프롬프트용 요약 블록을 만든다.
 
@@ -422,10 +473,6 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     tool_llm = base_llm.bind_tools(AGENT_TOOLS)
 
     original = query if effective_query != query else None  # 재작성이 실제로 일어난 턴만 원문 병기
-    messages: list = [SystemMessage(_system_prompt(listing_id, context, original)), HumanMessage(effective_query)]
-    seen_listings: dict[str, ListingCard] = {}
-    tools_used: list[str] = []
-    market_diagnosis: dict | None = None
 
     # 멀티턴 재검색 차단(DW-855, 회귀 MT5) — 이번 턴이 직전 목록을 가리키는 지칭 표현이고
     # 그 목록 id가 있으면, 아래 루프에서 search_listings 호출을 전부 거절한다(프롬프트만으로는
@@ -437,6 +484,26 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 놓친다). 턴 내내 값이 고정이므로(query·context가 루프 중 안 바뀜) 루프 밖에서 한 번만 계산한다.
     _recent_ids_for_guard = _recent_assistant_listing_ids(context)
     block_followup_research = answer_guards.block_research_on_followup(query, _recent_ids_for_guard)
+
+    # 멀티턴 지칭 결정론 해석(DW-855 3차 재검증) — 순번("첫 번째")·극값("제일 싼")·비교("더
+    # 저렴한 쪽") 지칭을 직전 목록 카드에서 코드가 직접 풀어 (a) 시스템 프롬프트 힌트,
+    # (b) 도구 인자 교체(아래 루프), (c) 최종 selected_listing_ids 교집합 좁히기(맨 아래)에
+    # 쓴다. block_followup_research와 같은 이유로 원문 query로 판정한다. 카드가 없거나
+    # 지칭이 없으면 None — 세 지점 모두 조용히 그대로 진행한다(회귀 0).
+    _recent_cards_for_reference = _cards_for_ids(_recent_ids_for_guard)
+    _resolved_reference_ids = answer_guards.resolve_list_reference(query, _recent_cards_for_reference)
+
+    system_prompt_text = _system_prompt(listing_id, context, original)
+    if _resolved_reference_ids:
+        system_prompt_text += (
+            f"\n\n[이번 질문이 가리키는 매물]\n이번 질문이 가리키는 매물: "
+            f"{', '.join(_resolved_reference_ids)}"
+        )
+    messages: list = [SystemMessage(system_prompt_text), HumanMessage(effective_query)]
+    seen_listings: dict[str, ListingCard] = {}
+    tools_used: list[str] = []
+    market_diagnosis: dict | None = None
+
     # 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats 호출마다 결과를 전부
     # 모아둔다(매물을 못 찾은 호출은 artifact가 None이라 담기지 않는다). 상한
     # _MAX_MARKET_DIAGNOSES는 프롬프트·응답 크기를 무한정 키우지 않기 위한 설계 확정값 —
@@ -449,31 +516,81 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
         messages.append(ai_msg)
         if not ai_msg.tool_calls:
             if _step == 0:
-                # DW-873 — 이번 대화에서 모델이 도구를 한 번도 안 부르고 첫 응답에서 바로
+                # DW-873/876 — 이번 대화에서 모델이 도구를 한 번도 안 부르고 첫 응답에서 바로
                 # 최종 답을 낸 턴(가이드/구매 지식 질문이 실측 13/15건 이렇게 샜다: 모델
                 # 자체 지식으로만 답해 가이드 코퍼스·리랭커 경로를 안 탄다). 키워드로 "가이드
-                # 질문인지" 미리 판별하지 않고, 이 행동(도구 미호출) 자체를 트리거로 삼아
-                # search_guides를 강제로 한 번 실행해본다 — 실제로 관련 가이드가 있으면
-                # 그 결과를 대화에 얹어 모델이 다음 스텝에서 근거를 갖고 다시 답하게 한다.
-                guide_tool = TOOLS_BY_NAME.get("search_guides")
-                if guide_tool is not None:
-                    forced_call = {
-                        "name": "search_guides", "args": {"query_text": query}, "id": "forced-search-guides",
-                        "type": "tool_call",  # BaseTool.invoke가 ToolCall로 인식해 args만 꺼내 쓰게 한다.
-                    }
-                    tools_used.append("search_guides")
-                    try:
-                        guide_msg = guide_tool.invoke(forced_call)
-                    except Exception as exc:  # 도구 실패는 첫 답 유지 — 루프를 죽이지 않는다.
-                        logger.warning("DW-873 강제 search_guides 실행 실패 — 첫 응답 유지: %r", exc)
-                        guide_msg = None
-                    if guide_msg is not None and guide_msg.content != NO_GUIDES_FOUND_TEXT:
-                        # 가이드 1건 이상 — 결과를 대화에 넣고(기존 도구 dispatch와 동일하게
-                        # ToolMessage로) 다음 스텝에서 tool_llm을 한 번 더 불러 답하게 한다.
-                        messages.append(guide_msg)
-                        continue
-                    # 가이드 0건(상대 게이트 탈락)이거나 도구 실행 자체가 실패 — 첫 답을 그대로 쓴다.
-            break  # 자연 종료 — 모델이 더 이상 도구를 요청하지 않는다(또는 위 가이드 보강 불필요).
+                # 질문인지" 미리 판별하지 않고, 이 행동(도구 미호출) 자체를 트리거로 삼는다 —
+                # 다만 질의에 매물 조건 어휘(차종·연료·제조사·좌석수 — answer_guards.
+                # infer_missing_args가 인식하는 닫힌 어휘)가 있으면(C71류) search_guides가
+                # 아니라 search_listings를 강제한다(DW-876 (c): 조건이 있는 질문까지 가이드
+                # 게이트로 새는 결함 — 예산·연식·거리는 이 함수가 못 잡지만, 이 트리거는
+                # "조건이 하나라도 있는지"만 보면 되므로 충분하다).
+                inferred_condition_args = answer_guards.infer_missing_args(query, {})
+                if inferred_condition_args:
+                    listings_tool = TOOLS_BY_NAME.get("search_listings")
+                    if listings_tool is not None:
+                        forced_call = {
+                            "name": "search_listings",
+                            "args": {"query_text": query, **inferred_condition_args},
+                            "id": "forced-search-listings",
+                            "type": "tool_call",
+                        }
+                        tools_used.append("search_listings")
+                        try:
+                            listings_msg = listings_tool.invoke(forced_call)
+                        except Exception as exc:  # 도구 실패는 첫 답 유지 — 루프를 죽이지 않는다.
+                            logger.warning("DW-876 강제 search_listings 실행 실패 — 첫 응답 유지: %r", exc)
+                            listings_msg = None
+                        if listings_msg is not None:
+                            messages.append(listings_msg)
+                            artifact = getattr(listings_msg, "artifact", None)
+                            if artifact:
+                                for card in artifact:
+                                    seen_listings[card.id] = card
+                            continue
+                else:
+                    # 조건 어휘가 없음 — 순수 지식형 질문으로 보고 search_guides를 강제로 한 번
+                    # 실행해본다(DW-873 기존 동작). 실제로 관련 가이드가 있으면 그 결과를 대화에
+                    # 얹어 모델이 다음 스텝에서 근거를 갖고 다시 답하게 한다.
+                    guide_tool = TOOLS_BY_NAME.get("search_guides")
+                    if guide_tool is not None:
+                        forced_call = {
+                            "name": "search_guides", "args": {"query_text": query}, "id": "forced-search-guides",
+                            "type": "tool_call",  # BaseTool.invoke가 ToolCall로 인식해 args만 꺼내 쓰게 한다.
+                        }
+                        tools_used.append("search_guides")
+                        try:
+                            guide_msg = guide_tool.invoke(forced_call)
+                        except Exception as exc:  # 도구 실패는 첫 답 유지 — 루프를 죽이지 않는다.
+                            logger.warning("DW-873 강제 search_guides 실행 실패 — 첫 응답 유지: %r", exc)
+                            guide_msg = None
+                        if guide_msg is not None:
+                            if guide_msg.content != NO_GUIDES_FOUND_TEXT:
+                                # 가이드 1건 이상 — 결과를 대화에 넣고(기존 도구 dispatch와
+                                # 동일하게 ToolMessage로) 다음 스텝에서 tool_llm을 한 번 더
+                                # 불러 답하게 한다.
+                                messages.append(guide_msg)
+                                continue
+                            # DW-876(b) — 가이드 게이트가 0건을 확인해줬다. 모델이 자체 지식으로
+                            # 낸 첫 답(근거 없는 "안내했다"류 정직성 결함, C63·C67 실측)을 버리고
+                            # guard_node와 동일한 고정 거절+유도 문구로 교체한다(REJECT 경로의
+                            # 기존 상수를 재사용 — 새 문구를 만들지 않아 문구 drift를 막는다).
+                            guard = guard_node(query)
+                            logger.info(
+                                "DW-876 강제 search_guides 0건 — 범위 밖 안내로 교체: 질의=%r", query
+                            )
+                            return {
+                                "answer": guard["answer"],
+                                "listings": [],
+                                "route": "AGENT",
+                                "clarify": None,
+                                "narrowed_by": guard["narrowed_by"],
+                                "market_diagnosis": None,
+                                "market_diagnoses": None,
+                                "tools_used": tools_used,
+                            }
+                        # 도구 실행 자체가 실패 — 첫 답을 그대로 쓴다.
+            break  # 자연 종료 — 모델이 더 이상 도구를 요청하지 않는다(또는 위 보강 불필요).
 
         for tool_call in ai_msg.tool_calls:
             tool_name = tool_call.get("name")
@@ -513,6 +630,16 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                     tool_call["args"] = filled_args
                     desc = ", ".join(f"{_ARG_INJECT_LABELS.get(k, k)}={v}" for k, v in injected.items())
                     injected_note = f"(질문에서 자동 적용: {desc})"
+            elif tool_name in ("market_price_stats", "compare_listings"):
+                # 풀린 지칭 id로 인자 교체(DW-855) — 비어 있거나 직전 목록 밖 id일 때만 바꾼다.
+                original_args = tool_call.get("args") or {}
+                new_args, changed = _apply_reference_resolution(
+                    tool_name, original_args, _resolved_reference_ids, _recent_ids_for_guard
+                )
+                if changed:
+                    tool_call["args"] = new_args
+                    ref_desc = new_args.get("listing_id") or ", ".join(new_args.get("listing_ids", []))
+                    injected_note = f"(질문에서 자동 적용: 지칭 매물={ref_desc})"
 
             try:
                 tool_msg = tool_obj.invoke(tool_call)
@@ -546,6 +673,17 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     final = _finalize(base_llm, messages, found_count=len(seen_listings))
 
     listings = [seen_listings[lid] for lid in final.selected_listing_ids if lid in seen_listings]
+
+    if _recent_ids_for_guard and answer_guards._REFERENCE_PATTERN.search(query):
+        # (c) DW-855 — 직전 목록을 가리키는 질문(기존 재검색 차단과 동일한 패턴 기준)이면
+        # 최종 selected_listing_ids를 직전 목록 id와의 교집합으로 좁힌다. 모델이 엉뚱한
+        # 매물을 끼워 넣었어도 걸러지지만, 교집합이 비면(모델이 직전 목록 밖 id만 골랐다면)
+        # 무리하게 비우지 않고 원래 선택을 그대로 둔다.
+        recent_set = set(_recent_ids_for_guard)
+        narrowed_ids = [lid for lid in final.selected_listing_ids if lid in recent_set]
+        if narrowed_ids:
+            listings = [seen_listings[lid] for lid in narrowed_ids if lid in seen_listings]
+
     clarify = final.clarify
     if clarify is not None and listings:
         # 모순 응답 방지(회귀 실측 S1): 매물을 골라놓고 clarify까지 채우면 검색 결과가 우선 —

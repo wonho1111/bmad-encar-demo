@@ -27,6 +27,7 @@ selected_listing_ids 검증·market_diagnosis 노출에 쓸 매물 카드·진�
 """
 
 import logging
+import re
 from typing import Literal
 
 from langchain_core.tools import tool
@@ -209,6 +210,46 @@ _GUIDE_CONTENT_CHAR_CAP = 1200
 # (find_relevant_guides_fused의 top-5 상대 게이트를 다시 구현하지 않고 이 도구의 실제 반환값을
 # 그대로 신뢰하는 방식).
 NO_GUIDES_FOUND_TEXT = "관련 가이드 문서를 찾지 못했습니다."
+
+# 어휘 근거 게이트(DW-876) — 리랭커 점수가 로컬에 없고 벡터 거리로는 주제 밖 가이드(예:
+# "명의이전 절차가 복잡한가요?"에 전기차 보조금 가이드)를 못 가른다. 정교한 형태소 분석
+# 대신 흔한 조사를 떼고 소수 기능어만 걸러내는 간단한 방식이다 — 오탐(정상 질의를 막음)을
+# 피하려 보수적으로만 다듬는다(질의에서 뽑을 내용어가 없으면 아예 막지 않는다).
+_GUIDE_GATE_STOPWORDS = {
+    "뭐가", "달라요", "있을까요", "절차가", "복잡한가요", "있어", "알려줘", "궁금",
+}
+_GUIDE_GATE_TRAILING_JOSA = ("이랑", "이나", "은", "는", "이", "가", "을", "를", "의", "에", "로", "도", "만")
+_GUIDE_GATE_HANGUL_WORD_RE = re.compile(r"[가-힣]{2,}")
+
+
+def _extract_content_tokens(query_text: str) -> list[str]:
+    """질의에서 한글 내용어 토큰을 뽑는다(2글자 이상 한글 연속 + 조사·소수 기능어 제거).
+
+    형태소 분석기가 아니라 어절 끝의 흔한 조사를 떼고 고정된 소수 기능어 stopword만
+    걸러내는 간단한 규칙이다(과설계 금지 — 어휘 근거 게이트 하나에만 쓴다).
+    """
+    tokens: list[str] = []
+    for word in _GUIDE_GATE_HANGUL_WORD_RE.findall(query_text):
+        if word in _GUIDE_GATE_STOPWORDS:
+            continue
+        for josa in _GUIDE_GATE_TRAILING_JOSA:
+            if word.endswith(josa) and len(word) - len(josa) >= 2:
+                word = word[: -len(josa)]
+                break
+        if word not in tokens:
+            tokens.append(word)
+    return tokens
+
+
+def _guides_lexically_grounded(tokens: list[str], guides: list[tuple[str, str]]) -> bool:
+    """토큰 중 하나라도 가이드 제목·본문에 부분 문자열로 있으면 통과(보수적 게이트).
+
+    질의에서 내용어 토큰을 하나도 못 뽑았으면(전부 조사·기능어) 막지 않는다.
+    """
+    if not tokens:
+        return True
+    combined = "\n".join(f"{title}\n{content}" for title, content in guides)
+    return any(tok in combined for tok in tokens)
 
 
 def _normalize_model_keyword(
@@ -571,6 +612,11 @@ def search_guides(query_text: str) -> str:
     qvec_literal = _vec_literal(embed_query(query_text))
     guides = find_relevant_guides_fused(query_text, qvec_literal)
     if not guides:
+        return NO_GUIDES_FOUND_TEXT
+
+    tokens = _extract_content_tokens(query_text)
+    if not _guides_lexically_grounded(tokens, guides):
+        logger.info("DW-876 어휘 근거 게이트 발동 — 질의=%r 내용어 토큰=%r", query_text, tokens)
         return NO_GUIDES_FOUND_TEXT
 
     if rerank is not None:

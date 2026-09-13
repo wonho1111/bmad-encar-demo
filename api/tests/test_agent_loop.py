@@ -18,6 +18,7 @@
 from langchain_core.messages import SystemMessage, ToolMessage
 
 from app.graph import agent as agent_module
+from app.graph import agent_tools
 from app.graph import answer_guards
 from app.schemas.ai import ClarifyPayload, ListingCard
 
@@ -991,9 +992,11 @@ def test_no_tool_call_first_response_forces_search_guides(monkeypatch):
     assert result["answer"] == "가이드 내용을 참고해 안내드려요."
 
 
-def test_no_tool_call_first_response_with_zero_guides_keeps_original_answer(monkeypatch):
-    """(b) search_guides를 강제로 호출했지만 관련 가이드가 0건(상대 게이트 탈락)이면, 대화에
-    아무것도 얹지 않고 tool_llm을 다시 부르지 않은 채 첫 응답 기반 답을 그대로 쓴다."""
+def test_no_tool_call_first_response_with_zero_guides_returns_out_of_scope_answer(monkeypatch):
+    """(b, DW-876) search_guides를 강제로 호출했지만 관련 가이드가 0건(상대 게이트 탈락)이면,
+    모델이 자체 지식으로 낸 첫 응답을 버리고 guard_node와 동일한 고정 거절+유도 문구로
+    답한다(근거 없이 "안내했다"고 답하는 정직성 결함 방지, C63·C67 실측). structured-output
+    최종화(_finalize)까지 가지 않고 여기서 바로 반환하므로 tool_llm은 1회만 호출된다."""
     tool_llm = _SequenceToolLLM([_FakeAIMessage(tool_calls=[])])  # 응답 1개뿐 — 더 불리면 IndexError.
     final_output = agent_module._AgentFinalOutput(
         answer="원래 답변을 그대로 드립니다.", selected_listing_ids=[], clarify=None,
@@ -1008,7 +1011,11 @@ def test_no_tool_call_first_response_with_zero_guides_keeps_original_answer(monk
 
     assert tool_llm.invoke_count == 1  # 가이드 0건이라 tool_llm을 다시 부르지 않았다.
     assert result["tools_used"] == ["search_guides"]  # 호출 자체는 시도했다(다른 도구와 동일 관례).
-    assert result["answer"] == "원래 답변을 그대로 드립니다."
+    # guard_node의 고정 거절 문구로 교체됐다(모델의 원래 답변이 아니다).
+    assert result["answer"] == agent_module.guard_node("오늘 날씨 어때요")["answer"]
+    assert result["answer"] != "원래 답변을 그대로 드립니다."
+    assert result["listings"] == []
+    assert result["clarify"] is None
 
 
 def test_tool_call_already_made_this_turn_skips_forced_search_guides(monkeypatch):
@@ -1033,3 +1040,122 @@ def test_tool_call_already_made_this_turn_skips_forced_search_guides(monkeypatch
     assert tool_llm.invoke_count == 2  # 기존 배선 그대로(가이드 강제 호출로 늘어나지 않음).
     assert result["tools_used"] == ["search_listings"]  # search_guides는 tools_used에 없다.
     assert result["answer"] == "검색 결과로 답변드려요."
+
+
+def test_forced_search_guides_gate_rejects_off_topic_guide(monkeypatch):
+    """(e, DW-876) 강제 호출 블록이 실제 search_guides 도구(스텁 아님)를 부르는 상황에서,
+    어휘 근거 게이트가 주제 밖 가이드(질의 "명의이전" vs 가이드 "전기차 보조금")를 걸러
+    NO_GUIDES_FOUND_TEXT로 되돌리면, (b)와 동일하게 guard_node 거절 문구로 답한다."""
+    tool_llm = _SequenceToolLLM([_FakeAIMessage(tool_calls=[])])  # 응답 1개뿐 — 더 불리면 IndexError.
+    final_output = agent_module._AgentFinalOutput(
+        answer="원래 답변을 그대로 드립니다.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    # 실제 search_guides 도구를 그대로 쓴다(스텁이 아니라 게이트 로직까지 함께 탄다) —
+    # DB·임베딩 호출부만 가짜로 치환한다.
+    monkeypatch.setattr(agent_tools, "embed_query", lambda q: [0.1])
+    monkeypatch.setattr(
+        agent_tools, "find_relevant_guides_fused",
+        lambda q, qvec: [("전기차 보조금 가이드", "국고보조금과 지자체보조금을 확인하세요.")],
+    )
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_guides": agent_tools.search_guides})
+
+    result = agent_module.run_search_agent("명의이전 절차가 복잡한가요?")
+
+    assert tool_llm.invoke_count == 1  # 게이트가 0건 취급해 tool_llm을 다시 부르지 않았다.
+    assert result["tools_used"] == ["search_guides"]
+    assert result["answer"] == agent_module.guard_node("명의이전 절차가 복잡한가요?")["answer"]
+    assert result["answer"] != "원래 답변을 그대로 드립니다."
+
+
+def test_no_tool_call_first_response_with_conditions_forces_search_listings(monkeypatch):
+    """(d, DW-876 (c)) 첫 응답이 도구 호출 없이 바로 답을 냈는데 질의에 매물 조건 어휘(예:
+    "세단" — answer_guards.infer_missing_args가 인식하는 닫힌 어휘)가 있으면 search_guides가
+    아니라 search_listings를 강제한다 — C71류("적당한 주행거리…세단 보여주세요")가 가이드
+    게이트로 새던 결함(DW-876) 방지."""
+    responses = [
+        _FakeAIMessage(tool_calls=[]),  # 1스텝 — 도구 없이 바로 답하려던 첫 응답.
+        _FakeAIMessage(tool_calls=[]),  # 2스텝 — 강제 검색 결과를 보고 자연 종료.
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="조건에 맞는 세단을 안내드려요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+
+    class _BoomGuideTool2:
+        def invoke(self, tool_call):
+            raise AssertionError("조건이 있는 질문인데 search_guides가 강제 호출됐다")
+
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {
+            "search_listings": _FakeTool("search_listings", artifact=[]),
+            "search_guides": _BoomGuideTool2(),
+        },
+    )
+
+    result = agent_module.run_search_agent("적당한 주행거리가 어느 정도예요? 그 안에서 세단 보여주세요")
+
+    assert tool_llm.invoke_count == 2  # 강제 검색 후 한 번 더 불려 최종 답을 만들었다.
+    assert result["tools_used"] == ["search_listings"]  # search_guides는 아예 호출되지 않았다.
+    assert result["answer"] == "조건에 맞는 세단을 안내드려요."
+
+
+# ───────── (10) 직전 목록 지칭 결정론 해석 배선(DW-855 3차 재검증) ─────────
+
+
+class _CapturingFakeTool:
+    """invoke가 실제로 받은 tool_call args를 기록하는 가짜 도구(DW-855 인자 교체 검증용)."""
+
+    def __init__(self, name, artifact=None, content="ok"):
+        self.name = name
+        self._artifact = artifact
+        self._content = content
+        self.received_args = []
+
+    def invoke(self, tool_call):
+        self.received_args.append(tool_call.get("args"))
+        return ToolMessage(content=self._content, tool_call_id=tool_call["id"], artifact=self._artifact)
+
+
+def test_ordinal_reference_replaces_empty_market_price_stats_listing_id(monkeypatch):
+    """"그중 두 번째" 같은 순번 지칭을 코드가 직전 목록 카드에서 직접 풀어
+    (answer_guards.resolve_list_reference), 모델이 listing_id를 비워 부른 market_price_stats
+    호출에 그 id를 채워 넣는지 확인한다(인자 교체 — DW-855 3차 재검증 후속)."""
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def __init__(self):
+            self.invoke_count = 0
+
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            self.invoke_count += 1
+            if self.invoke_count == 1:
+                return _FakeAIMessage(
+                    tool_calls=[{"name": "market_price_stats", "args": {"listing_id": ""}, "id": "call-1"}]
+                )
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="적정가로 보여요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    market_tool = _CapturingFakeTool(
+        "market_price_stats", artifact={"listing": {"id": "bbb"}, "verdict": "적정"}
+    )
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"market_price_stats": market_tool})
+
+    rows = [
+        ("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]}]
+    result = agent_module.run_search_agent("그중 두 번째 매물 시세 분석해줘", context=context)
+
+    assert market_tool.received_args == [{"listing_id": "bbb"}]  # 순번 2 → bbb로 교체됐다.
+    assert result["answer"] == "적정가로 보여요."

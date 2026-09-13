@@ -171,3 +171,56 @@ def test_infer_missing_args_does_not_inject_manufacturer_from_bare_samsung():
     from app.graph.answer_guards import infer_missing_args
     assert "manufacturer" not in infer_missing_args("삼성역 근처 SUV 3천만원 이하", {})
     assert infer_missing_args("르노삼성 SUV", {}).get("manufacturer") == "르노코리아"
+
+
+# ───────── (5) resolve_list_reference — DW-855 3차 재검증(순번·극값·비교) ─────────
+
+from app.schemas.ai import ListingCard  # noqa: E402 — 기존 파일 상단 임포트 관례를 그대로 따른다.
+
+
+def _card(id_, price, year, mileage):
+    return ListingCard(
+        id=id_, manufacturer="현대", model="아반떼", year=year, price=price,
+        mileage=mileage, region="서울",
+    )
+
+
+_THREE_CARDS = [_card("id1", 9_260_000, 2017, 106_062), _card("id2", 25_000_000, 2020, 50_000),
+                _card("id3", 15_000_000, 2019, 80_000)]
+
+
+def test_resolve_list_reference_ordinal_word():
+    assert answer_guards.resolve_list_reference("그중 두 번째 거 시세 봐줘", _THREE_CARDS) == ["id2"]
+
+
+def test_resolve_list_reference_ordinal_digit_jjae():
+    assert answer_guards.resolve_list_reference("2번째 매물 비교해줘", _THREE_CARDS) == ["id2"]
+
+
+def test_resolve_list_reference_ordinal_digit_beon():
+    assert answer_guards.resolve_list_reference("1번 매물 시세 알려줘", _THREE_CARDS) == ["id1"]
+
+
+def test_resolve_list_reference_extreme_cheapest():
+    assert answer_guards.resolve_list_reference("제일 싼 거 시세 봐줘", _THREE_CARDS) == ["id1"]
+
+
+def test_resolve_list_reference_extreme_most_expensive():
+    assert answer_guards.resolve_list_reference("가장 비싼 매물 알려줘", _THREE_CARDS) == ["id2"]
+
+
+def test_resolve_list_reference_comparison_cheaper_side():
+    assert answer_guards.resolve_list_reference("그중에 더 저렴한 쪽 시세 확인해줘", _THREE_CARDS) == ["id1"]
+
+
+def test_resolve_list_reference_none_without_reference():
+    assert answer_guards.resolve_list_reference("3천만원 이하 SUV 보여줘", _THREE_CARDS) is None
+
+
+def test_resolve_list_reference_none_without_cards():
+    assert answer_guards.resolve_list_reference("그중 두 번째 거 시세 봐줘", []) is None
+
+
+def test_resolve_list_reference_ordinal_out_of_range_falls_through_to_none():
+    # 카드 3장인데 "5번째"는 범위 밖이다 — 극값 패턴도 아니므로 최종 None(건드리지 않는다).
+    assert answer_guards.resolve_list_reference("5번째 매물 보여줘", _THREE_CARDS) is None
