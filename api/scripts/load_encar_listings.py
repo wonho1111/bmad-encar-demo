@@ -428,6 +428,25 @@ def prod_rest(method: str, path: str, token: str, anon: str, body=None, extra=No
         return r.status, (json.loads(raw) if raw else None)
 
 
+def prod_get_all(path: str, token: str, anon: str, page: int = 1000) -> list[dict]:
+    """GET을 offset 페이지로 끝까지 모아 돌려준다.
+
+    Supabase REST는 요청당 최대 1,000행(max-rows)만 돌려주고 limit=10000 같은 큰 값은 조용히
+    잘린다 — E-6 운영 적재 직후 멱등성 검사(dry-run)가 7,081건 중 4,341건을 "없음"으로 오판한
+    실측 원인. 이 도우미 없이는 --apply-prod 재실행이 중복을 만든다.
+    path에는 limit/offset을 넣지 않는다.
+    """
+    out: list[dict] = []
+    offset = 0
+    while True:
+        sep = "&" if "?" in path else "?"
+        _, rows = prod_rest("GET", f"{path}{sep}limit={page}&offset={offset}", token, anon)
+        out.extend(rows)
+        if len(rows) < page:
+            return out
+        offset += page
+
+
 def load_prod_credentials() -> tuple[str, str]:
     """(anon key, 시드 비밀번호) — push_to_prod.py와 동일 출처 파일에서 읽는다."""
     anon = _read_kv_line(REPO_ROOT / "web" / ".env.prod", "NEXT_PUBLIC_SUPABASE_ANON_KEY")
@@ -446,14 +465,14 @@ def run_dry_run_prod(csv_rows: list[dict], option_map: dict) -> None:
     dry_accounts = [(sid, email, seed_pw) for sid, email in SEED_ACCOUNTS] + list(DEMOTE_EXTRA_ACCOUNTS)
     for seller_id, email, pw in dry_accounts:
         token = prod_login(email, pw, anon)
-        _, mine = prod_rest(
-            "GET",
-            "listings?select=id,model,year,price,mileage,status,listing_images(id)"
-            f"&seller_id=eq.{seller_id}&limit=5000",
+        mine = prod_get_all(
+            "listings?select=id,model,year,price,mileage,status,source,listing_images(id)"
+            f"&seller_id=eq.{seller_id}",
             token, anon,
         )
         on_sale = [m for m in mine if m["status"] == "on_sale"]
-        no_photo = [m for m in on_sale if not m["listing_images"]]
+        # --demote-seed 대상과 같은 조건(무출처 시드만) — 엔카 행(source 있음)은 세지 않는다.
+        no_photo = [m for m in on_sale if not m["listing_images"] and m.get("source") is None]
         print(f"  {email}: 전체 {len(mine)}건 · 판매중 {len(on_sale)}건 · "
               f"판매중+사진없음 {len(no_photo)}건")
         all_existing.update(
@@ -489,8 +508,8 @@ def run_apply_prod(csv_rows: list[dict], option_map: dict, demote_seed: bool) ->
 
     existing: set[tuple] = set()
     for seller_id, email in SEED_ACCOUNTS:
-        _, mine = prod_rest(
-            "GET", f"listings?select=model,year,price,mileage&seller_id=eq.{seller_id}&limit=10000",
+        mine = prod_get_all(
+            f"listings?select=model,year,price,mileage&seller_id=eq.{seller_id}",
             tokens[seller_id], anon,
         )
         existing.update((str(seller_id), m["model"], m["year"], m["price"], m["mileage"]) for m in mine)
@@ -542,8 +561,7 @@ def run_apply_prod(csv_rows: list[dict], option_map: dict, demote_seed: bool) ->
             (sid, email, prod_login(email, pw, anon)) for sid, email, pw in DEMOTE_EXTRA_ACCOUNTS
         ]
         for seller_id, email, token in demote_targets:
-            _, mine = prod_rest(
-                "GET",
+            mine = prod_get_all(
                 "listings?select=id,listing_images(id)&status=eq.on_sale"
                 f"&seller_id=eq.{seller_id}&source=is.null",
                 token, anon,

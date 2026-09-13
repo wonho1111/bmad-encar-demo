@@ -122,3 +122,29 @@ def test_transform_row_round_robins_seller_by_index():
 def test_transform_row_blank_accident_status_becomes_none():
     row = load_encar_listings.transform_row(_csv_row(accident_status="", options="[]"), 0, {}, ["s0"])
     assert row["accident_status"] is None
+
+
+def test_prod_get_all_pages_past_supabase_row_cap(monkeypatch):
+    """REST가 요청당 1,000행까지만 돌려줘도 offset으로 끝까지 모은다(E-6 실측: limit=10000이
+    조용히 잘려 멱등성 검사가 4,341건을 '없음'으로 오판)."""
+    total = 2_360
+    calls: list[str] = []
+
+    def fake_rest(method, path, token, anon, body=None, extra=None):
+        calls.append(path)
+        assert method == "GET"
+        params = dict(kv.split("=") for kv in path.split("?", 1)[1].split("&"))
+        limit, offset = int(params["limit"]), int(params["offset"])
+        return 200, [{"id": i} for i in range(offset, min(offset + limit, total))]
+
+    monkeypatch.setattr(load_encar_listings, "prod_rest", fake_rest)
+    rows = load_encar_listings.prod_get_all("listings?select=id&seller_id=eq.x", "t", "a")
+    assert [r["id"] for r in rows] == list(range(total))
+    assert len(calls) == 3  # 1000 + 1000 + 360
+    assert all("limit=1000" in c for c in calls)
+
+
+def test_prod_get_all_single_short_page(monkeypatch):
+    monkeypatch.setattr(load_encar_listings, "prod_rest",
+                        lambda *a, **k: (200, [{"id": 1}, {"id": 2}]))
+    assert len(load_encar_listings.prod_get_all("listings?select=id", "t", "a")) == 2

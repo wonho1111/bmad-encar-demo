@@ -7028,6 +7028,7 @@ location: api/app/market_price.py(_tabpfn_predict, 학습표 SELECT LIMIT 120), 
 severity: medium
 reason: 이 PC CPU 실측 predict 1건: 53행 1.6초 / 120행 8.3초 / 200행 18.5초 / 284행 39.5초(행수 2.3배→시간 5배, 트랜스포머 문맥 길이 n² 성질). 아반떼(53행)는 괜찮지만 그랜저처럼 기본 모델군이 120건 상한에 닿는 모델은 요청당 ~8초. Cloud Run(2Gi) CPU에서의 값은 미측정. 튜터 세션 범위 밖이라 고치지 않았다.
 trigger: Cloud Run에서 그랜저 계열 매물로 /api/market-price 지연을 실측한 뒤, 8초를 넘으면 (a) 학습표 상한 120→60~80 축소(예측 품질 영향은 verify_market_engine 스윕으로 확인) 또는 (b) n_estimators 8→4 축소 중 실측으로 고른다. 어느 쪽이든 아반떼 53건 보정 검사(q90 위≈5건)가 유지되는지 재확인.
+update(2026-09-13, E-6 뒤 운영 실측): 엔카 7,081건 적재 후 Cloud Run 진단 1건 — 콜드 41.6초, 웜 18.0초(그랜저 GN7, 학습표 120건). 로컬 리허설 9.5~13초보다 느리다. 시연 전 N=60/120 비교 결정 필요(DW-875 묶음이지만 시연 체감에 직결).
 status: open
 
 ### DW-853: 띄어쓰기 없는 모델명("아반떼MD")은 기본 모델명 추출이 통째로 잡혀 TabPFN 학습표가 0건이 된다
@@ -7037,7 +7038,8 @@ location: api/app/market_price.py(_base_model: 첫 토큰을 기본명으로 씀
 severity: low
 reason: _base_model("아반떼MD")="아반떼MD" → ILIKE '%아반떼MD%'가 자기 자신 외 아무것도 못 찾아 학습표 0건 → tabpfn price/quantiles None, 사분위 폴백으로 조용히 넘어간다(크래시 아님). 사다리(exact/base)도 같은 접두를 쓰므로 비교군도 좁아진다. 데이터 1건이라 세션에서 고치지 않았다.
 trigger: 시드/등록 데이터 정규화를 손볼 때 — (a) DB 값 "아반떼MD"→"아반떼 MD" 수정(데이터 더하기·고치기 마이그레이션) 또는 (b) _base_model에서 한글+영문 붙은 토큰을 분리. 고친 뒤 verify_market_engine.py I7(학습표 N≥10)로 해당 매물이 tabpfn 예측을 받는지 확인.
-status: open
+status: done 2026-09-13
+resolution: DW-874와 함께 해소(2026-09-13). 0038 백필 정규식이 '아반떼MD'→generation '아반떼 MD'로 채워 같은 세대로 묶이고, TabPFN 11번째 특징이 generation을 우선 사용(b7b0212). model 열 원문은 손대지 않음(더하기만).
 
 ### DW-854: TabPFN 특징 벡터에 세대 정보가 없어 세대 교체 연식(예: 2020 아반떼 AD vs CN7)에서 판정이 왜곡된다
 
@@ -7246,7 +7248,8 @@ location: api/app/market_price.py:156(_base_model — 모델군은 '더 뉴/올 
 severity: medium
 reason: 운영 시드(2026-09-12 읽기 전용 조회, 판매중) 4개 모델군에서 (1) 세대 표기 없음 — "그랜저"(2022, 1대)·"아반떼"(2020, 1)·"쏘렌토"(2021~23, 2)·"아반떼 하이브리드"(2023, 1)·"K5"(2016, 1): 각자 고유 코드를 받아 같은 세대 매물과 묶이지 않는다. (2) 같은 세대 다른 표기 — "아반떼 MD"/"아반떼MD"(DW-853), "그랜저 GN7"(연료=하이브리드 1대)/"그랜저 GN7 하이브리드". (3) 트림이 세대를 쪼갬 — "그랜저 IG 3.0"·"더 뉴 그랜저 IG 3.3"이 별도 코드(배기량은 이미 3번째 특징이라 중복이고 코드당 표본만 줄어든다). 실매물 300건 검증은 수집기가 모델명을 정규화한 데이터(targets.json our_model, 트림은 seed_group 열로 분리)라 이 문제를 측정하지 못했다 — 검증 수치가 운영 시드에 그대로 옮겨진다는 보장이 없다. 영향 크기는 미측정.
 trigger: 시드 v4(DW-860)·가격 현실성(DW-866) 작업 때 함께 — (a) listings에 세대(generation) 열을 nullable로 추가하고 시드·등록 폼에서 채우거나, 최소한 model 표기를 '[더 뉴 ]모델군 세대코드' 규칙으로 정규화(연료·트림 접미 제거, 띄어쓰기 통일, 세대 없는 행 보정) — 마이그레이션은 더하기만; (b) 11번째 특징을 정규화된 세대 코드로 교체; (c) 1,000건 검증(DW-864)에 운영 시드 표기 그대로의 표본을 일부 섞어 전후 비교. DW-853은 이 항목의 한 사례로 함께 닫는다.
-status: open
+status: done 2026-09-13
+resolution: E-6 운영 적용(2026-09-13)으로 해소. 0038(listings.generation·source, b7b0212)을 운영에 적용 — 기존 316건 중 175건 세대 백필(나머지는 '그랜저'·'K5'처럼 세대 표기 없음 → NULL 폴백, 의도). 엔카 실매물 7,081건 적재(source='encar_eval_20260905', generation 11종 전부 채움·NULL 0·임베딩 NULL 0·중복 0), 사진 없는 시드 132건 sold 전환 → 운영 판매중 7,239(시드 158+엔카 7,081). TabPFN 11번째 특징은 generation 우선(b7b0212). 실측: 그랜저 GN7 2023 진단 → 비교군 105건·TabPFN 120건 학습·판정 '다소 높음'. 운영 seller 계정 REST에 1,000행 상한이 있어 로더 멱등성 검사가 4,341건을 '없음'으로 오판한 결함을 발견·수정(prod_get_all 페이지네이션, 테스트 2건, 수정 후 dry-run 0건). (c) 운영 시드 표기 그대로의 전후 비교는 DW-864(1,000건)에서.
 
 ### DW-875: 포트폴리오 PDF 전 범위에서 뺀 열린 항목 묶음(사용자 결정 2026-09-12) — 선택 항목 6건 + 이전 에픽 잔여 DW-800~842
 
@@ -7282,5 +7285,6 @@ location: app/lib/features/listings/listings_repository.dart(fetchListings — .
 severity: medium
 reason: 판매중이 158→약 7,200건이 되면 앱이 목록 한 번에 7천 행 + 커버 사진 id 7천 개를 URL에 실어 414/지연이 난다. 제대로 된 수정은 웹처럼 페이지(무한 스크롤) 도입이지만 repository API·화면·테스트가 함께 바뀌어 E 범위를 넘는다(사용자 결정 2026-09-12: 임시 상한 후 부채 등재). 임시 조치 = `.limit(200)` + 이 항목 참조 주석.
 trigger: 포트폴리오 PDF 뒤 정리 스프린트(DW-875 묶음) — 웹 search/page.tsx의 24건 페이지 방식을 앱에 이식(range 기반), 커버 사진 조회는 web attachCoverImages처럼 50건 청크. 그때 임시 .limit(200) 제거.
+update(2026-09-13): E-6 운영 적재 완료 — 판매중 7,239건이므로 임시 .limit(200)이 실제로 걸리는 상태.
 status: open
 
