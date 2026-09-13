@@ -52,7 +52,7 @@ from pydantic import BaseModel, Field
 
 from app.config import require, settings
 from app.db.readonly import run_select
-from app.graph import answer_guards, router_node as _router_node
+from app.graph import agent_tools, answer_guards, router_node as _router_node
 from app.graph.agent_tools import AGENT_TOOLS, NO_GUIDES_FOUND_TEXT, TOOLS_BY_NAME
 from app.graph.contextualize_node import contextualize_query
 from app.graph.guard_node import guard_node
@@ -316,6 +316,29 @@ def _recent_assistant_listing_ids(context: list | None) -> list[str]:
     return merged[:_RECENT_LISTINGS_MERGE_CAP]
 
 
+# 조건 전환 후속질의 판정어(C48, "그거 말고 하이브리드만") — 재검색 차단 대상 턴에서 이
+# 단어가 있으면 "직전 목록 참조"가 아니라 "직전 조건을 유지한 채 새 조건 추가"로 본다.
+_FOLLOWUP_EXCLUSION_WORDS = ("말고", "다른", "빼고", "제외")
+
+
+def _first_user_query(context: list | None) -> str | None:
+    """context에서 사용자가 쓴 **첫** 턴의 원문을 찾는다(C48 — 조건 전환 후속질의에서 직전
+    조건을 유지하려면 첫 턴의 조건 어휘가 필요하다). context는 오래된 턴이 앞이므로
+    (_recent_assistant_listing_ids와 동일 관례) 앞에서부터 찾아 첫 user 턴을 쓴다."""
+    if not context:
+        return None
+    for turn in context:
+        role = getattr(turn, "role", None) or (turn.get("role") if isinstance(turn, dict) else None)
+        if role != "user":
+            continue
+        content = getattr(turn, "content", None)
+        if content is None and isinstance(turn, dict):
+            content = turn.get("content")
+        if content:
+            return content
+    return None
+
+
 def _format_recent_listings_block(cards: list[ListingCard], ordered_ids: list[str]) -> str | None:
     """조회된 카드들을 원래 id 순서(여러 턴을 병합한 순서 — 최근 턴 매물이 앞, "N번째"
     지시어와 대응)대로 번호를 새로 매겨 요약한다. DB에 없는(존재하지 않는) id는 조용히
@@ -350,20 +373,26 @@ def _cards_for_ids(ids: list[str]) -> list[ListingCard]:
     """id 목록으로 DB를 조회해(SELECT만) 존재하는 매물만 그 순서대로 카드로 돌려준다
     (DW-855 순번·극값·비교 지칭 해석용, answer_guards.resolve_list_reference에 넘길 재료).
 
+    color까지 함께 조회한다(agent_tools._SEARCH_SELECT_COLUMNS·_rows_to_cards_with_color
+    재사용 — C50·C59 실측: "그 중에 무사고인 것만"·"여기서 흰색만 있어?" 같은 속성 좁힘
+    지칭을 answer_guards.narrow_by_attribute가 풀려면 accident_status·fuel(SELECT_COLUMNS에
+    이미 있음)뿐 아니라 color도 필요하다).
+
     _recent_listings_prompt_block과 별도로 한 번 더 조회한다 — 그 함수는 프롬프트용
-    문자열만 만들고, 여기는 resolve_list_reference가 읽을 실제 ListingCard 객체가 필요해
-    기존 함수 시그니처(테스트가 몽키패치하는 지점)를 건드리지 않고 새로 둔다. DB 장애·
-    비UUID 등 조회 실패는 빈 리스트로 폴백한다(지칭 해석은 있으면 좋은 보조 기능 — 실패해도
-    루프를 막지 않는다).
+    문자열만 만들고, 여기는 resolve_list_reference·narrow_by_attribute가 읽을 실제
+    ListingCard 객체가 필요해 기존 함수 시그니처(테스트가 몽키패치하는 지점)를 건드리지
+    않고 새로 둔다. DB 장애·비UUID 등 조회 실패는 빈 리스트로 폴백한다(지칭 해석은 있으면
+    좋은 보조 기능 — 실패해도 루프를 막지 않는다).
     """
     if not ids:
         return []
     try:
         rows = run_select(
-            f"SELECT {SELECT_COLUMNS} FROM listings WHERE status = 'on_sale' AND id = ANY(%s::uuid[])",
+            f"SELECT {agent_tools._SEARCH_SELECT_COLUMNS} FROM listings "
+            "WHERE status = 'on_sale' AND id = ANY(%s::uuid[])",
             (ids,),
         )
-        cards = rows_to_cards(rows)
+        cards = agent_tools._rows_to_cards_with_color(rows)
     except Exception as exc:  # DB 장애·비UUID 등 — 힌트 없이 진행(경고 로그만, fail-loud 아님).
         logger.warning("직전 목록 지칭 해석용 매물 조회 실패 — 지칭 해석 없이 진행: %r", exc)
         return []
@@ -493,11 +522,36 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     _recent_cards_for_reference = _cards_for_ids(_recent_ids_for_guard)
     _resolved_reference_ids = answer_guards.resolve_list_reference(query, _recent_cards_for_reference)
 
+    # 조건 전환 후속질의(C48, "그거 말고 하이브리드만") — 재검색 차단 대상이면서 제외어가
+    # 있으면, 거절 대신 첫 턴 조건 + 이번 턴 조건을 합쳐 search_listings 인자를 채운다(아래
+    # 루프의 차단 분기·인자 주입 분기 둘 다 이 플래그를 본다). 첫 턴 원문이 없으면(단일턴 등)
+    # 이번 턴 원문만으로 채운다 — 합칠 게 없을 뿐 차단은 여전히 풀린다.
+    _followup_switch = block_followup_research and any(w in query for w in _FOLLOWUP_EXCLUSION_WORDS)
+    _listings_infer_query = query
+    if _followup_switch:
+        first_turn_query = _first_user_query(context)
+        if first_turn_query:
+            _listings_infer_query = f"{first_turn_query} {query}"
+
+    # 직전 목록 속성 좁힘(C50·C59) — 재검색 차단 대상 턴에서 사고 상태·색상·연료로 목록을
+    # 좁히는 질의면, 코드가 직접 카드 속성을 비교해 id를 걸러낸다(모델이 도구 원문을 다시
+    # 해석하다 반대로 답하는 실측 결함 방지). None이면 좁힘 대상이 아니라는 뜻(다른 지칭과
+    # 섞이지 않게 아래 세 지점 모두 조용히 그대로 진행).
+    _narrowed_ids_by_attribute = (
+        answer_guards.narrow_by_attribute(query, _recent_cards_for_reference) if block_followup_research else None
+    )
+
     system_prompt_text = _system_prompt(listing_id, context, original)
     if _resolved_reference_ids:
         system_prompt_text += (
             f"\n\n[이번 질문이 가리키는 매물]\n이번 질문이 가리키는 매물: "
             f"{', '.join(_resolved_reference_ids)}"
+        )
+    if _narrowed_ids_by_attribute is not None:
+        narrowed_desc = ", ".join(_narrowed_ids_by_attribute) if _narrowed_ids_by_attribute else "없음"
+        system_prompt_text += (
+            f"\n\n[조건에 맞는 직전 매물]\n이번 질문의 조건(사고 상태·색상·연료)에 맞는 "
+            f"직전 매물: {narrowed_desc}"
         )
     messages: list = [SystemMessage(system_prompt_text), HumanMessage(effective_query)]
     seen_listings: dict[str, ListingCard] = {}
@@ -575,30 +629,40 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                             # 낸 첫 답(근거 없는 "안내했다"류 정직성 결함, C63·C67 실측)을 버리고
                             # guard_node와 동일한 고정 거절+유도 문구로 교체한다(REJECT 경로의
                             # 기존 상수를 재사용 — 새 문구를 만들지 않아 문구 drift를 막는다).
-                            guard = guard_node(query)
-                            logger.info(
-                                "DW-876 강제 search_guides 0건 — 범위 밖 안내로 교체: 질의=%r", query
-                            )
-                            return {
-                                "answer": guard["answer"],
-                                "listings": [],
-                                "route": "AGENT",
-                                "clarify": None,
-                                "narrowed_by": guard["narrowed_by"],
-                                "market_diagnosis": None,
-                                "market_diagnoses": None,
-                                "tools_used": tools_used,
-                            }
+                            # ⚠️ C36 실측(2026-09-14): 이 조기 반환은 질의에 매물 검색 의도
+                            # (answer_guards.has_listing_intent — 구조 조건 어휘·예산 패턴·
+                            # "추천"류 문구)가 전혀 없을 때만 옳다. "여자친구랑 드라이브 다니기
+                            # 좋은 차"처럼 추천 의도가 있는데도 여기서 "범위 밖"으로 잘라버리면
+                            # 정당한 추천 요청을 거절하게 된다 — 그런 경우엔 반환하지 않고 아래
+                            # break로 흘려보내, 루프 종료 후 "search_listings 미호출" 강제
+                            # 블록(아래)이 직접 검색을 시도하게 한다.
+                            if not answer_guards.has_listing_intent(query):
+                                guard = guard_node(query)
+                                logger.info(
+                                    "DW-876 강제 search_guides 0건 — 범위 밖 안내로 교체: 질의=%r", query
+                                )
+                                return {
+                                    "answer": guard["answer"],
+                                    "listings": [],
+                                    "route": "AGENT",
+                                    "clarify": None,
+                                    "narrowed_by": guard["narrowed_by"],
+                                    "market_diagnosis": None,
+                                    "market_diagnoses": None,
+                                    "tools_used": tools_used,
+                                }
                         # 도구 실행 자체가 실패 — 첫 답을 그대로 쓴다.
             break  # 자연 종료 — 모델이 더 이상 도구를 요청하지 않는다(또는 위 보강 불필요).
 
         for tool_call in ai_msg.tool_calls:
             tool_name = tool_call.get("name")
             tools_used.append(tool_name)
-            if block_followup_research and tool_name == "search_listings":
+            if block_followup_research and tool_name == "search_listings" and not _followup_switch:
                 # 재검색 도피 차단(DW-855) — 실행하지 않고 거절 텍스트만 돌려줘, 모델이 같은
                 # 스텝 예산 안에서 compare_listings/market_price_stats로 스스로 회복하게 한다
                 # (라우터·SQL 노드의 "재생성 재시도" 패턴과 동일한 태도, 루프를 죽이지 않는다).
+                # _followup_switch(C48)면 거절하지 않고 아래로 흘려보낸다 — "그거 말고
+                # 하이브리드만"은 직전 목록 참조가 아니라 조건을 바꿔 다시 찾으라는 뜻이다.
                 messages.append(
                     ToolMessage(content=answer_guards.FOLLOWUP_REFUSAL_TEXT, tool_call_id=tool_call["id"])
                 )
@@ -623,8 +687,12 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                 # (query, contextualize 이전 — 재검색 가드와 같은 이유로 원문을 쓴다)에서
                 # 채운다. tool_call은 ai_msg.tool_calls의 항목을 그대로 참조하므로, 여기서
                 # args를 바꾸면 이후 메시지 기록에도 실제로 실행된 인자가 남는다.
+                # _followup_switch(C48)면 이번 턴 원문 대신 "첫 턴+이번 턴" 합친 문자열로
+                # 채운다 — 그래야 "그거 말고 하이브리드만"에서 빠진 세단·예산 조건을 첫 턴
+                # ("4천만원 이하 세단 좀 보여줘")에서 되찾는다.
                 original_args = tool_call.get("args") or {}
-                filled_args = answer_guards.infer_missing_args(query, original_args)
+                infer_query = _listings_infer_query if _followup_switch else query
+                filled_args = answer_guards.infer_missing_args(infer_query, original_args)
                 injected = {k: v for k, v in filled_args.items() if original_args.get(k) != v}
                 if injected:
                     tool_call["args"] = filled_args
@@ -670,11 +738,48 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 지금까지 쌓인 messages로 최종 구조화 응답을 1회 만든다(설계: "도구 결과까지로 강제
     # 최종 응답" — 자연 종료 경로도 같은 structured-output 관문을 거쳐야 계약이 일정하다).
 
+    # C36·C71 실측 — 질의에 매물 검색 의도(answer_guards.has_listing_intent)가 있는데도
+    # 루프가 끝날 때까지 search_listings가 한 번도 안 불렸으면(모델이 search_guides만
+    # 부르고 끝냈거나, 처음부터 도구 없이 답했거나) 여기서 직접 한 번 강제 실행한다. 트리거는
+    # "첫 응답에 도구 호출 없음"이 아니라 "search_listings 미호출" 자체다 — C71처럼 모델이
+    # search_guides를 스스로 불러(위 step==0 강제 블록을 타지 않고) 도구 미호출 조건을
+    # 피해가도 여기서 다시 걸린다. _finalize가 이 강제 호출 결과까지 포함한 messages로
+    # 재답변을 만든다(별도 LLM 재호출 불필요).
+    if "search_listings" not in tools_used and answer_guards.has_listing_intent(query):
+        listings_tool = TOOLS_BY_NAME.get("search_listings")
+        if listings_tool is not None:
+            forced_call = {
+                "name": "search_listings",
+                "args": {"query_text": query, **answer_guards.infer_missing_args(query, {})},
+                "id": "forced-search-listings-post-loop",
+                "type": "tool_call",
+            }
+            tools_used.append("search_listings")
+            try:
+                listings_msg = listings_tool.invoke(forced_call)
+            except Exception as exc:  # 도구 실패는 지금까지의 대화로 최종화 — 루프를 죽이지 않는다.
+                logger.warning("C36/C71 사후 강제 search_listings 실행 실패 — 기존 응답 유지: %r", exc)
+                listings_msg = None
+            if listings_msg is not None:
+                messages.append(listings_msg)
+                artifact = getattr(listings_msg, "artifact", None)
+                if artifact:
+                    for card in artifact:
+                        seen_listings[card.id] = card
+
     final = _finalize(base_llm, messages, found_count=len(seen_listings))
 
     listings = [seen_listings[lid] for lid in final.selected_listing_ids if lid in seen_listings]
 
-    if _recent_ids_for_guard and answer_guards._REFERENCE_PATTERN.search(query):
+    if _narrowed_ids_by_attribute is not None:
+        # C50·C59 — 속성 좁힘(사고 상태·색상·연료)이 감지된 턴이다. 모델의
+        # selected_listing_ids를 신뢰하지 않고 코드가 직접 계산한 집합을 그대로 최종
+        # 결과로 확정한다(CLAUDE.md B9 — 중요한 값은 서버가 직접 구한다, LLM이 도구 원문을
+        # 다시 읽고 반대로 답하는 실측 결함을 원천 차단). 비어 있으면 listings도 그대로
+        # 빈 목록이 된다("조건에 맞는 매물 없음").
+        recent_cards_by_id = {c.id: c for c in _recent_cards_for_reference}
+        listings = [recent_cards_by_id[lid] for lid in _narrowed_ids_by_attribute if lid in recent_cards_by_id]
+    elif _recent_ids_for_guard and answer_guards._REFERENCE_PATTERN.search(query):
         # (c) DW-855 — 직전 목록을 가리키는 질문(기존 재검색 차단과 동일한 패턴 기준)이면
         # 최종 selected_listing_ids를 직전 목록 id와의 교집합으로 좁힌다. 모델이 엉뚱한
         # 매물을 끼워 넣었어도 걸러지지만, 교집합이 비면(모델이 직전 목록 밖 id만 골랐다면)

@@ -337,6 +337,32 @@ def _rows_to_cards_with_color(rows: list[tuple]) -> list[ListingCard]:
     return cards
 
 
+def _run_similarity_select(sql: str, params: tuple) -> list[tuple]:
+    """벡터 유사도(HNSW ANN) 정렬 SELECT 전용 실행 — run_select와 달리 쿼리 실행 전에
+    hnsw.iterative_scan을 relaxed_order로 켠다(pgvector 0.8+, 로컬 실측 extversion 0.8.2).
+
+    실측 결함(C60, 2026-09-14): search_listings(models=["쏘나타","K5"], accident_free_only=True)가
+    로컬 DB(on_sale 7,239건)에서 0건을 냈다. 원인은 models 토큰 분리·ILIKE·status 조건이 아니라
+    HNSW 인덱스 자체다 — 기본 설정(iterative_scan 꺼짐)에서는 벡터 정렬 인덱스 스캔이 유사도
+    상위 후보만 ef_search개 훑고 나서 WHERE 필터를 사후 적용한다(사전 필터링이 아니다, 벡터
+    검색은 doc_rag_node._vec_literal 근처 주석에도 같은 함정이 적혀 있다). 이 필터(모델 2종+
+    무사고)는 매우 선택적이라(7,239건 중 6건, 0.08%) 그 6건이 기본 후보 범위 밖에 있어 LIMIT
+    20을 못 채우는 정도가 아니라 0건이 된다 — 로컬 재현: 같은 WHERE에서 벡터 ORDER BY만
+    떼면 6건, 얹으면 0건(SET 전), SET LOCAL hnsw.iterative_scan=relaxed_order를 얹으면 다시
+    6건이 돌아온다. relaxed_order는 필터를 만족하는 행을 찾을 때까지(또는 인덱스를 다 훑을
+    때까지) 후보를 반복 확장한다 — 근사 최근접이라는 성격은 그대로 유지된다(완전한 유사도순
+    보장은 없음, relaxed라는 이름 그대로). 이 도구의 용도(과다조회 재료 최대 20건)엔 그걸로
+    충분하다. SET LOCAL이라 트랜잭션 스코프 밖으로 새지 않는다(readonly.py의 SET LOCAL ROLE과
+    동일 원칙) — run_select는 실행문 1개만 받으므로 이 함수는 readonly_connection을 직접 열어
+    SET LOCAL과 본 쿼리를 같은 트랜잭션에서 순서대로 실행한다.
+    """
+    with readonly_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SET LOCAL hnsw.iterative_scan = relaxed_order")
+            cur.execute(sql, params)
+            return cur.fetchall()
+
+
 @tool(response_format="content_and_artifact")
 def search_listings(
     query_text: str,
@@ -581,7 +607,7 @@ def search_listings(
             f"SELECT {_SEARCH_SELECT_COLUMNS} FROM listings WHERE {where_sql} "
             f"AND embedding IS NOT NULL ORDER BY {order_prefix}embedding <=> %s::vector LIMIT %s"
         )
-        rows = run_select(sql, (*params, *order_params, qvec, limit))
+        rows = _run_similarity_select(sql, (*params, *order_params, qvec, limit))
     else:
         if sort_by not in _SORT_WHITELIST:
             # 정상 경로에서는 Literal 타입이 LLM 호출 이전에 걸러주지만(langchain 스키마

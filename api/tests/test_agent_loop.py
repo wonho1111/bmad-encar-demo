@@ -356,9 +356,16 @@ def test_no_listing_id_keeps_base_system_prompt(monkeypatch):
 
 
 def _fake_run_select_for(rows_by_call):
-    """agent_module.run_select를 몽키패치할 가짜 — 호출될 때마다 rows_by_call을 그대로 돌려준다."""
+    """agent_module.run_select를 몽키패치할 가짜 — 호출될 때마다 rows_by_call을 그대로 돌려준다.
+
+    SQL에 "color"가 있으면(agent._cards_for_ids가 agent_tools._SEARCH_SELECT_COLUMNS로 color
+    까지 조회하는 지점, C50·C59 속성 좁힘용) 각 행 끝에 color 값(None)을 붙여 열 폭을 맞춘다 —
+    호출부 대부분(12열 rows_by_call)은 색상을 직접 검증하지 않으므로 None으로 충분하다. 그 외
+    호출(_recent_listings_prompt_block의 SELECT_COLUMNS, 12열)은 그대로 돌려준다."""
 
     def _fake(sql, params):
+        if "color" in sql:
+            return [(*row, None) for row in rows_by_call]
         return rows_by_call
 
     return _fake
@@ -1159,3 +1166,157 @@ def test_ordinal_reference_replaces_empty_market_price_stats_listing_id(monkeypa
 
     assert market_tool.received_args == [{"listing_id": "bbb"}]  # 순번 2 → bbb로 교체됐다.
     assert result["answer"] == "적정가로 보여요."
+
+
+# ───────── (11) C36·C71 — search_listings 미호출 사후 강제(post-loop, has_listing_intent) ─────────
+#
+# 배경: aeba16a 100건 평가에서 남은 5건 중 2건. C36("여자친구랑 드라이브 다니기 좋은 차")는
+# search_guides만 불렸고 0건이라 조기 "범위 밖" 거절로 샜다(추천 질문인데). C71("적당한
+# 주행거리가 어느 정도예요? 그 안에서 세단 보여주세요")은 모델이 search_guides를 스스로
+# 불러 기존 "첫 응답에 도구 호출 없음" 트리거를 아예 안 탔다. 트리거를 "search_listings
+# 미호출" 자체로 바꿔 루프 종료 후 한 번 더 확인한다(answer_guards.has_listing_intent).
+
+def test_c36_guide_zero_hit_with_recommend_words_does_not_reject_and_forces_search(monkeypatch):
+    """C36 — 조건 어휘는 없지만 "좋은 차"(추천 문구)가 있으면, search_guides가 0건이어도
+    guard_node 거절로 바꾸지 않고 루프 종료 후 search_listings를 강제 실행해 답한다."""
+    tool_llm = _SequenceToolLLM([_FakeAIMessage(tool_calls=[])])  # 응답 1개뿐 — 더 불리면 IndexError.
+    final_output = agent_module._AgentFinalOutput(
+        answer="드라이브에 어울리는 차를 안내드려요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {
+            "search_guides": _FakeTool("search_guides", content=agent_module.NO_GUIDES_FOUND_TEXT),
+            "search_listings": _FakeTool("search_listings", artifact=[]),
+        },
+    )
+
+    result = agent_module.run_search_agent("여자친구랑 드라이브 다니기 좋은 차")
+
+    assert tool_llm.invoke_count == 1  # 가이드 0건 이후 tool_llm을 다시 부르지 않았다(finalize만).
+    assert result["tools_used"] == ["search_guides", "search_listings"]
+    assert result["answer"] == "드라이브에 어울리는 차를 안내드려요."
+    # guard_node의 고정 거절 문구가 아니다 — "범위 밖"으로 잘리지 않았다.
+    assert result["answer"] != agent_module.guard_node("여자친구랑 드라이브 다니기 좋은 차")["answer"]
+
+
+def test_c71_model_calls_search_guides_itself_still_forces_search_listings(monkeypatch):
+    """C71 — 모델이 (강제 블록을 거치지 않고) search_guides를 스스로 호출해 자연 종료해도,
+    질의에 조건 어휘("세단")가 있으므로 루프 종료 후 search_listings가 강제 실행된다."""
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "search_guides", "args": {"query_text": "주행거리 세단"}, "id": "call-1"}
+        ]),
+        _FakeAIMessage(tool_calls=[]),  # 가이드 결과를 보고도 검색 없이 자연 종료.
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="조건에 맞는 세단을 안내드려요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {
+            "search_guides": _FakeTool("search_guides", content="[주행거리 가이드]\n연식 대비 기준…"),
+            "search_listings": _FakeTool("search_listings", artifact=[]),
+        },
+    )
+
+    result = agent_module.run_search_agent("적당한 주행거리가 어느 정도예요? 그 안에서 세단 보여주세요")
+
+    assert tool_llm.invoke_count == 2  # 강제 블록(step==0)은 안 탔다 — 모델이 직접 불렀으므로.
+    assert result["tools_used"] == ["search_guides", "search_listings"]
+    assert result["answer"] == "조건에 맞는 세단을 안내드려요."
+
+
+# ───────── (12) C48 — 조건 전환 후속질의("그거 말고 하이브리드만") ─────────
+
+def test_c48_exclusion_word_switches_condition_instead_of_blocking(monkeypatch):
+    """C48 — 직전 목록 지칭 재검색 차단 대상 턴이라도 제외어("말고")가 있으면 거절하지 않고,
+    첫 턴 원문 + 이번 턴 원문을 합쳐 infer_missing_args로 인자를 채운 뒤 그대로 실행한다."""
+    captured_tool = _CapturingFakeTool("search_listings", artifact=[])
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "search_listings", "args": {"fuel": "하이브리드"}, "id": "call-1"}
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="하이브리드만 골랐어요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": captured_tool})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for([]))
+
+    context = [
+        {"role": "user", "content": "4천만원 이하 세단 좀 보여줘"},
+        {"role": "assistant", "content": "3건을 찾았어요.", "listing_ids": ["aaa"]},
+    ]
+    result = agent_module.run_search_agent("그거 말고 하이브리드만", context=context)
+
+    # 거절 ToolMessage가 아니라 실제로 실행됐고, 첫 턴의 세단·예산 조건이 합쳐져 채워졌다.
+    assert captured_tool.received_args == [
+        {"fuel": "하이브리드", "body_type": "세단", "price_max": 40_000_000}
+    ]
+    assert result["answer"] == "하이브리드만 골랐어요."
+
+
+# ───────── (13) C50·C59 — 직전 목록 속성 좁힘 ─────────
+
+def test_c50_narrows_final_listings_to_accident_free_subset(monkeypatch):
+    """C50 — "그 중에 무사고인 것만 골라줘"는 모델의 selected_listing_ids와 무관하게 코드가
+    계산한 무사고 부분집합으로 최종 listings를 확정한다(모델이 반대로 답하는 결함 방지)."""
+    tool_llm = _SequenceToolLLM([_FakeAIMessage(tool_calls=[])])
+    final_output = agent_module._AgentFinalOutput(
+        answer="무사고 매물만 안내드려요.", selected_listing_ids=["aaa", "bbb"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    rows = [
+        ("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", "가솔린", "단순교환", None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]}]
+    result = agent_module.run_search_agent("그 중에 무사고인 것만 골라줘", context=context)
+
+    assert [c.id for c in result["listings"]] == ["aaa"]  # 무사고 1건만 남는다.
+
+
+def test_c59_color_narrow_with_no_match_forces_empty_listings(monkeypatch):
+    """C59 — "여기서 흰색만 있어?"인데 흰색이 하나도 없으면, 모델이 compare_listings로 이미
+    seen_listings에 "aaa"를 채워놓고 그걸 selected_listing_ids로 골랐어도 최종 listings는
+    빈 목록으로 확정된다("조건에 맞는 매물 없음") — 코드가 계산한 색상 집합이 우선한다."""
+    card_a = ListingCard(id="aaa", manufacturer="현대", model="아반떼", year=2017, price=1, mileage=1, region="서울")
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "compare_listings", "args": {"listing_ids": ["aaa"]}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="흰색 매물은 없어요.", selected_listing_ids=["aaa"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"compare_listings": _FakeTool("compare_listings", artifact=[card_a])},
+    )
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    base_row = ("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None)
+
+    def _fake_run_select(sql, params):
+        if "color" in sql:
+            return [(*base_row, "검정")]
+        return [base_row]
+
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select)
+
+    context = [{"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]}]
+    result = agent_module.run_search_agent("여기서 흰색만 있어?", context=context)
+
+    assert result["listings"] == []

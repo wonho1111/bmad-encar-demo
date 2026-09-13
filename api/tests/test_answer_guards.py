@@ -142,8 +142,11 @@ def test_infer_missing_args_fills_seats_min_and_body_type():
 
 
 def test_infer_missing_args_fills_fuel_for_electric_car_phrase():
-    # "전기차"는 별도 별칭 없이도 화이트리스트 "전기"가 부분일치로 잡힌다.
-    assert answer_guards.infer_missing_args("전기차 4천만원 이하", {}) == {"fuel": "전기"}
+    # "전기차"는 별도 별칭 없이도 화이트리스트 "전기"가 부분일치로 잡힌다. "4천만원 이하"도
+    # 예산 패턴(C48)에 걸려 price_max가 함께 채워진다.
+    assert answer_guards.infer_missing_args("전기차 4천만원 이하", {}) == {
+        "fuel": "전기", "price_max": 40_000_000,
+    }
 
 
 def test_infer_missing_args_fills_manufacturer_alias():
@@ -224,3 +227,99 @@ def test_resolve_list_reference_none_without_cards():
 def test_resolve_list_reference_ordinal_out_of_range_falls_through_to_none():
     # 카드 3장인데 "5번째"는 범위 밖이다 — 극값 패턴도 아니므로 최종 None(건드리지 않는다).
     assert answer_guards.resolve_list_reference("5번째 매물 보여줘", _THREE_CARDS) is None
+
+
+# ───────── (7) _parse_budget_max·has_listing_intent (C36·C48·C71) ─────────
+
+def test_parse_budget_max_cheonman_pattern():
+    assert answer_guards._parse_budget_max("4천만원 이하 세단 보여줘") == 40_000_000
+
+
+def test_parse_budget_max_baekman_pattern():
+    assert answer_guards._parse_budget_max("8백만원 이내로요") == 8_000_000
+
+
+def test_parse_budget_max_man_pattern():
+    assert answer_guards._parse_budget_max("1500만원까지 생각중이에요") == 15_000_000
+
+
+def test_parse_budget_max_none_without_suffix():
+    # "이하/이내/까지"가 없으면(예: 단순 언급) 예산으로 보지 않는다 — 과설계 금지.
+    assert answer_guards._parse_budget_max("4천만원짜리 차 있나요") is None
+
+
+def test_has_listing_intent_true_for_structural_vocab():
+    # infer_missing_args가 인식하는 구조 조건 어휘(body_type=SUV)만으로도 True.
+    assert answer_guards.has_listing_intent("SUV 있나요") is True
+
+
+def test_has_listing_intent_true_for_budget_pattern():
+    assert answer_guards.has_listing_intent("4천만원 이하로 뭐 살 수 있어요") is True
+
+
+def test_has_listing_intent_true_for_recommend_words():
+    # C36 — 구조 조건도 예산도 없지만 "좋은 차"가 있으면 매물 추천 의도로 본다.
+    assert answer_guards.has_listing_intent("여자친구랑 드라이브 다니기 좋은 차") is True
+
+
+def test_has_listing_intent_false_for_pure_knowledge_question():
+    assert answer_guards.has_listing_intent("침수차량인지 아닌지 구별하는 팁 있을까요") is False
+
+
+# ───────── (8) narrow_by_attribute (C50·C59) ─────────
+
+def _attr_card(id_, *, accident_status=None, color=None, fuel=None):
+    card = ListingCard(
+        id=id_, manufacturer="현대", model="아반떼", year=2020, price=10_000_000,
+        mileage=50_000, region="서울",
+    )
+    card.accident_status = accident_status
+    card.color = color
+    card.fuel = fuel
+    return card
+
+
+_NARROW_CARDS = [
+    _attr_card("id1", accident_status="무사고", color="흰색", fuel="가솔린"),
+    _attr_card("id2", accident_status="단순교환", color="검정", fuel="하이브리드"),
+    _attr_card("id3", accident_status="무사고", color="은색", fuel="가솔린"),
+]
+
+
+def test_narrow_by_attribute_accident_status():
+    # C50 — "그 중에 무사고인 것만 골라줘" → 무사고 2건(id1·id3)만 남는다.
+    assert answer_guards.narrow_by_attribute("그 중에 무사고인 것만 골라줘", _NARROW_CARDS) == ["id1", "id3"]
+
+
+def test_narrow_by_attribute_color_with_no_match_returns_empty_list():
+    # C59 — "여기서 흰색만 있어?"는 흰색 1건(id1)만 남긴다. 다른 케이스로 흰색이 전혀 없는
+    # 목록을 주면 빈 리스트(조건에 맞는 매물 없음)를 돌려준다 — None이 아니다.
+    assert answer_guards.narrow_by_attribute("여기서 흰색만 있어?", _NARROW_CARDS) == ["id1"]
+    no_white = [_attr_card("id9", accident_status="무사고", color="검정", fuel="가솔린")]
+    assert answer_guards.narrow_by_attribute("여기서 흰색만 있어?", no_white) == []
+
+
+def test_narrow_by_attribute_none_without_matching_vocab():
+    # 사고 상태·색상·연료 어휘가 전혀 없으면 좁히지 않는다(순번·극값 등 다른 지칭과 안 섞임).
+    assert answer_guards.narrow_by_attribute("그중 두 번째 거 보여줘", _NARROW_CARDS) is None
+
+
+def test_narrow_by_attribute_none_without_cards():
+    assert answer_guards.narrow_by_attribute("그 중에 무사고인 것만", []) is None
+
+
+# ───────── (9) infer_missing_args manufacturer 정규화(C19) ─────────
+
+def test_infer_missing_args_normalizes_manufacturer_even_when_already_set():
+    # 모델이 이미 manufacturer="르노"를 채워도(비어 있지 않음) 별칭 사전으로 정규화한다 —
+    # 기존 "비어 있을 때만 채운다" 규칙의 예외(다른 필드는 그대로 유지).
+    assert answer_guards.infer_missing_args(
+        "르노 SUV 있나요 3천만원 이하로", {"manufacturer": "르노", "body_type": "SUV"}
+    ) == {"manufacturer": "르노코리아", "body_type": "SUV", "price_max": 30_000_000}
+
+
+def test_infer_missing_args_manufacturer_unaffected_when_no_alias():
+    # 별칭 사전에 없는 값(이미 정확한 CHECK 표기)은 그대로 둔다.
+    assert answer_guards.infer_missing_args("현대차 좋아요", {"manufacturer": "현대"}) == {
+        "manufacturer": "현대",
+    }

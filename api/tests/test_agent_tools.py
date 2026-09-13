@@ -540,30 +540,69 @@ def test_search_listings_zero_results_without_filters_uses_bare_message(monkeypa
     assert text == "조건에 맞는 매물이 없습니다."
 
 
+class _CapturingSimilarityCursor:
+    """_run_similarity_select(agent_tools.py, C60)가 여는 커서 흉내 — SET LOCAL과 본
+    쿼리를 순서대로 받는다(readonly_connection 대신, 실제 DB 없이 SQL/params만 검증)."""
+
+    def __init__(self, rows):
+        self._rows = rows
+        self.executed: list[tuple] = []
+
+    def execute(self, sql, params=None):
+        self.executed.append((sql, params))
+
+    def fetchall(self):
+        return self._rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+class _CapturingSimilarityConn:
+    def __init__(self, rows):
+        self.cursor_obj = _CapturingSimilarityCursor(rows)
+
+    def cursor(self):
+        return self.cursor_obj
+
+
+def _patch_similarity_readonly_connection(monkeypatch, rows):
+    """agent_tools.readonly_connection을 몽키패치해 _run_similarity_select가 실제 DB
+    없이 SQL·params만 기록하게 한다. 실행된 커서(그 executed 목록)를 돌려준다."""
+    conn = _CapturingSimilarityConn(rows)
+
+    @contextlib.contextmanager
+    def fake_readonly_connection():
+        yield conn
+
+    monkeypatch.setattr(agent_tools, "readonly_connection", fake_readonly_connection)
+    return conn.cursor_obj
+
+
 def test_search_listings_similarity_sort_calls_embed_query(monkeypatch):
     # sort_by 생략(기본 similarity) → embed_query가 호출되고 벡터절이 SQL에 붙는다.
-    captured = {}
     monkeypatch.setattr(agent_tools, "embed_query", lambda q: [0.1, 0.2, 0.3])
-    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: (
-        captured.update(sql=sql, params=params), [_fake_row()]
-    )[1])
+    cursor = _patch_similarity_readonly_connection(monkeypatch, [_fake_row()])
     agent_tools.search_listings.func(query_text="쏘렌토 같은 SUV")
-    assert "ORDER BY embedding <=> %s::vector" in captured["sql"]
+    # executed[0]는 SET LOCAL hnsw.iterative_scan(C60), executed[1]이 본 쿼리다.
+    assert "hnsw.iterative_scan" in cursor.executed[0][0]
+    assert "ORDER BY embedding <=> %s::vector" in cursor.executed[1][0]
 
 
 def test_search_listings_prioritizes_exact_model_match_when_similarity_sort(monkeypatch):
     # D(2026-08-31, 실측 P4 연장): model_keyword가 있으면 유사도 정렬보다 "정확 세대 일치"가
     # 먼저 온다 — "그랜저 IG"로 검색하면 부분일치("더 뉴 그랜저 IG")보다 정확히 "그랜저 IG"인
     # 매물이 먼저 나와야 세대 혼동이 없다.
-    captured = {}
     monkeypatch.setattr(agent_tools, "embed_query", lambda q: [0.1, 0.2, 0.3])
-    monkeypatch.setattr(agent_tools, "run_select", lambda sql, params=None: (
-        captured.update(sql=sql, params=params), [_fake_row()]
-    )[1])
+    cursor = _patch_similarity_readonly_connection(monkeypatch, [_fake_row()])
     agent_tools.search_listings.func(query_text="그랜저 IG 보여줘", model_keyword="그랜저 IG")
-    assert "ORDER BY (model = %s) DESC, embedding <=> %s::vector" in captured["sql"]
+    sql, params = cursor.executed[1]
+    assert "ORDER BY (model = %s) DESC, embedding <=> %s::vector" in sql
     # 파라미터 순서: WHERE절 바인딩(model ILIKE 포함) → 정확일치 보조값 → 벡터 → limit.
-    assert captured["params"][-3] == "그랜저 IG"  # 정확일치 보조 파라미터
+    assert params[-3] == "그랜저 IG"  # 정확일치 보조 파라미터
 
 
 def test_search_listings_explicit_sort_by_not_affected_by_exact_match_boost(monkeypatch):

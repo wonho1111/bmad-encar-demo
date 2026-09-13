@@ -165,6 +165,48 @@ def _body_type_vocab() -> dict[str, str]:
 _INJECT_EXCLUDED_MANUFACTURER_KEYS = {"삼성"}
 
 
+# 예산 상한 패턴(DW-876 계열 실측 C48) — "N천만원/N백만원/N만원" + "이하/이내/까지" 최소
+# 조합만 인식한다(과설계 금지, 복잡한 예산 표현·하한은 범위 밖). 천만원 단위를 먼저 찾아야
+# 한다 — "4천만원"에서 만원 패턴이 먼저 매치되면 "4"만 남아 자릿수가 100만 배 어긋난다.
+_BUDGET_SUFFIX = r"(?:이하|이내|까지)"
+_BUDGET_CHEONMAN_RE = re.compile(rf"(\d+)\s*천만원\s*{_BUDGET_SUFFIX}")
+_BUDGET_BAEKMAN_RE = re.compile(rf"(\d+)\s*백만원\s*{_BUDGET_SUFFIX}")
+_BUDGET_MAN_RE = re.compile(rf"(\d+)\s*만원\s*{_BUDGET_SUFFIX}")
+
+
+def _parse_budget_max(query: str) -> int | None:
+    """질의에서 예산 상한(원 단위)을 뽑는다. 세 패턴 중 먼저 매치되는 것 하나만 쓴다."""
+    m = _BUDGET_CHEONMAN_RE.search(query)
+    if m:
+        return int(m.group(1)) * 10_000_000
+    m = _BUDGET_BAEKMAN_RE.search(query)
+    if m:
+        return int(m.group(1)) * 1_000_000
+    m = _BUDGET_MAN_RE.search(query)
+    if m:
+        return int(m.group(1)) * 10_000
+    return None
+
+
+# 매물 검색 의도를 나타내는 추천/조회 문구(C36 실측) — infer_missing_args의 구조 조건
+# 어휘·예산 패턴 둘 다 없어도 이 문구가 있으면 "매물 추천 의도"로 본다.
+_LISTING_INTENT_WORDS = ("추천", "좋은 차", "뭐 있", "보여")
+
+
+def has_listing_intent(query: str) -> bool:
+    """질의에 매물 검색 의도 어휘가 있는지 판정한다(DW-876 계열 실측 C36·C71 — 가이드
+    게이트의 조기 "범위 밖" 거절이 매물 추천 의도까지 삼키는 결함 수정).
+
+    세 가지 중 하나라도 있으면 True: (1) infer_missing_args가 채우는 구조 조건 어휘
+    (연료·차종·제조사·좌석수), (2) 예산 금액 패턴(_parse_budget_max), (3) 추천을 요청하는
+    문구(_LISTING_INTENT_WORDS)."""
+    if infer_missing_args(query, {}):
+        return True
+    if _parse_budget_max(query) is not None:
+        return True
+    return any(w in query for w in _LISTING_INTENT_WORDS)
+
+
 def _manufacturer_vocab() -> dict[str, str]:
     # 별칭은 agent_tools._MANUFACTURER_ALIAS_MAP의 값(이미 해석된 화이트리스트 값)을 그대로
     # 주입값으로 쓴다(예: "르노"→"르노코리아") — body_type과 달리 manufacturer는 단일 문자열
@@ -256,16 +298,74 @@ def resolve_list_reference(query: str, cards: list) -> list[str] | None:
     return None
 
 
+# ── (6) 직전 목록 속성 좁힘(DW-872 계열 실측 C50·C59) ─────────────────────
+#
+# 실측: 재검색은 코드로 막혔고 직전 목록 id도 프롬프트에 명시되는데도, 모델이 목록에 실제로
+# 있는 사고 상태·색상을 반대로 말했다(예: "목록은 모두 무사고"라고 지어냄, C50 — 도구 원문을
+# 읽고도 반대로 답함). "그 중에 무사고인 것만"·"여기서 흰색만 있어?" 같은 후속 질의는 코드가
+# 직접 카드 속성을 비교해 id를 걸러낸다 — LLM이 도구 텍스트를 다시 해석하지 않게 한다.
+_ACCIDENT_STATUS_VALUES_ORDERED = ("무사고", "단순교환", "사고")
+
+
+def _match_accident_status(query: str) -> str | None:
+    """사고 상태 어휘를 찾는다. "무사고"·"단순교환"을 "사고"보다 먼저 검사해야 한다 —
+    "무사고"에도 "사고"라는 부분 문자열이 들어 있어 순서를 바꾸면 항상 "사고"만 잡힌다."""
+    for value in _ACCIDENT_STATUS_VALUES_ORDERED:
+        if value in query:
+            return value
+    return None
+
+
+def _color_vocab() -> dict[str, str]:
+    vocab = {kw.lower(): resolved for kw, resolved in agent_tools._COLOR_ALIAS_MAP.items()}
+    vocab.update({kw.lower(): kw for kw in agent_tools._COLOR_WHITELIST})
+    return vocab
+
+
+def narrow_by_attribute(query: str, cards: list) -> list[str] | None:
+    """후속 지칭 질의가 사고 상태·색상·연료로 직전 목록을 좁히면, 그 조건에 맞는 카드 id만
+    걸러 돌려준다(빈 리스트 포함 — 조건에 맞는 매물이 없다는 뜻). 셋 다 매치되지 않으면
+    None(좁히지 않음 — 순번·극값 등 다른 지칭과 섞이지 않는다).
+
+    cards: color까지 채워진 ListingCard 목록이어야 한다(agent._cards_for_ids가 color 포함
+    SELECT로 조회해 넘긴다 — 이 함수는 card.color가 이미 채워져 있다고 가정한다)."""
+    if not cards:
+        return None
+    accident = _match_accident_status(query)
+    color = _find_best_match(query, _color_vocab())
+    fuel = _find_best_match(query, _fuel_vocab())
+    if accident is None and color is None and fuel is None:
+        return None
+    matched = []
+    for card in cards:
+        if accident is not None and card.accident_status != accident:
+            continue
+        if color is not None and card.color != color:
+            continue
+        if fuel is not None and card.fuel != fuel:
+            continue
+        matched.append(card.id)
+    return matched
+
+
 def infer_missing_args(query: str, args: dict) -> dict:
     """search_listings 호출 인자 중 **모델이 비워 둔 것만** 원문 질의의 닫힌 어휘로 채운
     새 dict를 돌려준다(원본 args는 바꾸지 않는다 — 순수 함수, 부작용 없음).
 
-    채우는 4개 필드 — fuel·body_type·manufacturer(문자열 부분일치, 가장 긴 일치 하나만)·
-    seats_min("N인승 이상" 패턴 하나뿐). 부정어(말고·빼고·제외·아닌·아니고·빼면)가 매치
-    바로 뒤 6자 안에 있으면 그 매치는 채우지 않는다(예: "SUV 말고 세단" → body_type=세단만).
-    body_type은 agent_tools.search_listings가 호출 시점에 다시 해석하는 원시 표기(예: "세단")
-    그대로 넣는다 — "세단"→[준중형차·중형차·대형차] 같은 다중값 펼치기는 이 함수의 일이
-    아니라 도구 쪽 _resolve_body_type이 이미 하는 일이다(중복 구현 금지).
+    채우는 필드 — fuel·body_type·manufacturer(문자열 부분일치, 가장 긴 일치 하나만)·
+    seats_min("N인승 이상" 패턴 하나뿐)·price_max(예산 패턴, _parse_budget_max). 부정어(말고·
+    빼고·제외·아닌·아니고·빼면)가 매치 바로 뒤 6자 안에 있으면 그 매치는 채우지 않는다(예:
+    "SUV 말고 세단" → body_type=세단만). body_type은 agent_tools.search_listings가 호출
+    시점에 다시 해석하는 원시 표기(예: "세단") 그대로 넣는다 — "세단"→[준중형차·중형차·대형차]
+    같은 다중값 펼치기는 이 함수의 일이 아니라 도구 쪽 _resolve_body_type이 이미 하는 일이다
+    (중복 구현 금지).
+
+    manufacturer는 다른 세 필드와 달리 **이미 값이 있어도** 별칭 사전으로 정규화한다(C19
+    실측 — 모델이 manufacturer="르노"를 스스로 채우면 "비어 있을 때만 주입"하는 기존 규칙은
+    건드리지 않아 CHECK 허용값 밖 표기가 그대로 남는다). 이 정규화는 defense-in-depth다 —
+    agent_tools.search_listings도 SQL을 짜기 직전에 같은 별칭 사전으로 한 번 더 정규화하므로
+    검색 결과 자체는 이미 정확했지만(로컬 실측 확인), 도구 호출 인자 로그·판정에 정규화 전
+    표기가 그대로 남아 CHECK 목록과 어긋나 보인다.
     """
     result = dict(args)
     if not result.get("fuel"):
@@ -276,7 +376,11 @@ def infer_missing_args(query: str, args: dict) -> dict:
         matched = _find_best_match(query, _body_type_vocab())
         if matched:
             result["body_type"] = matched
-    if not result.get("manufacturer"):
+    if result.get("manufacturer"):
+        result["manufacturer"] = agent_tools._MANUFACTURER_ALIAS_MAP.get(
+            result["manufacturer"], result["manufacturer"]
+        )
+    else:
         matched = _find_best_match(query, _manufacturer_vocab())
         if matched:
             result["manufacturer"] = matched
@@ -284,4 +388,8 @@ def infer_missing_args(query: str, args: dict) -> dict:
         m = _SEATS_MIN_RE.search(query)
         if m and not _is_negated(query, m.end()):
             result["seats_min"] = int(m.group(1))
+    if not result.get("price_max"):
+        budget = _parse_budget_max(query)
+        if budget is not None:
+            result["price_max"] = budget
     return result
