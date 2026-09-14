@@ -1103,7 +1103,7 @@ void main() {
 
       // ② 한 문장 판정 — percentile 0.4 → round(0.4*10)=4. "100대 중" 식 실제 대수 표현은
       // 어디에도 없어야 한다(작업 지시 6 — 헤드라인·판정 문구가 실제 대수처럼 안 읽히는지).
-      expect(find.text('AI 예상으로는 이런 조건의 차 열에 4이 이 매물보다 쌉니다'), findsOneWidget);
+      expect(find.text('AI 예상으로는 이런 조건의 차 열에 넷이 이 매물보다 쌉니다'), findsOneWidget);
       expect(find.textContaining('대 중'), findsNothing);
       expect(find.text('적정'), findsOneWidget); // 기존 판정 배지는 옆에 작게 유지.
 

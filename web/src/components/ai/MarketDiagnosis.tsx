@@ -177,16 +177,19 @@ export function formatHeadline(range: PriceRange): string {
   return `이런 조건이면 보통 ${toManString(range.low)}~${toManString(range.high)}만원`;
 }
 
-// 한 문장 판정(②) — 백분위를 "열 대 중 N대가 이 매물보다 쌉니다" 형태로 푼다. 실제 비교군 건수
+// 한 문장 판정(②) — 백분위를 "열에 N(한글 수사)이 이 매물보다 쌉니다" 형태로 푼다. 실제 비교군 건수
 // (예: "100대 중 90대")를 쓰지 않는다 — sample_count가 작을 때(예: 9건) 그 숫자를 그대로 말하면
 // 표본이 작다는 인상을 주고, 사용자가 실제 대수로 오해하기 쉽다(DW-862). "열"은 항상 10으로 고정한
 // 비유 단위다. 순수 함수(단위테스트 대상) — percentile은 호출부에서 shouldShowPercentileChip으로
 // 먼저 걸러진 값만 넘긴다.
+const KOREAN_COUNT = ['', '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉'];
+
 export function buildJudgementSentence(percentile: number): string {
-  const n = Math.round(percentile * 10);
+  const n = Math.round(Math.max(0, Math.min(1, percentile)) * 10);
   if (n <= 0) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.';
   if (n >= 10) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.';
-  return `AI 예상으로는 이런 조건의 차 열 대 중 ${n}대가 이 매물보다 쌉니다.`;
+  // "열에 아홉" 꼴(사용자 확정 문구 2026-09-05). "열 대 중 N대"는 실제 대수로 읽혀 금지 — E2E 실측(2026-09-14)에서 걸림.
+  return `AI 예상으로는 이런 조건의 차 열에 ${KOREAN_COUNT[n]}이 이 매물보다 쌉니다.`;
 }
 
 // 타일 2개 아래 백분율 비교(④) — 기준은 항상 tabpfn.price(모델 예측 적정가) 하나뿐이다. 순수 함수.

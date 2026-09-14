@@ -425,9 +425,12 @@ String? headlineText(MarketDiagnosisData data) {
 /// "거의 전부"로 바꾼다.
 String? verdictSentence(double? percentile) {
   if (percentile == null) return null;
-  final n = (percentile * 10).round().clamp(0, 10);
-  final nText = n == 0 ? '거의 없음' : (n == 10 ? '거의 전부' : '$n');
-  return 'AI 예상으로는 이런 조건의 차 열에 $nText이 이 매물보다 쌉니다';
+  final n = (percentile.clamp(0.0, 1.0) * 10).round();
+  if (n <= 0) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다';
+  if (n >= 10) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다';
+  // "열에 아홉" 꼴(사용자 확정 문구 2026-09-05) — 웹 buildJudgementSentence와 동일 문장.
+  const count = ['', '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉'];
+  return 'AI 예상으로는 이런 조건의 차 열에 ${count[n]}이 이 매물보다 쌉니다';
 }
 
 /// ④ 타일 비교 문구 — "AI 적정가보다 N% 높음/낮음" 하나만 낸다(기존 diffLabel처럼 부호 있는

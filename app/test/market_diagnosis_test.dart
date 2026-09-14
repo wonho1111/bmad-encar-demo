@@ -278,15 +278,15 @@ void main() {
 
   group('verdictSentence', () {
     test('percentile 0.3 → round(3)=3, 그대로 숫자로 낸다', () {
-      expect(verdictSentence(0.3), 'AI 예상으로는 이런 조건의 차 열에 3이 이 매물보다 쌉니다');
+      expect(verdictSentence(0.3), 'AI 예상으로는 이런 조건의 차 열에 셋이 이 매물보다 쌉니다');
     });
 
     test('percentile 0(경계) → "거의 없음"("0대" 같은 실제 대수처럼 안 읽히게)', () {
-      expect(verdictSentence(0), 'AI 예상으로는 이런 조건의 차 열에 거의 없음이 이 매물보다 쌉니다');
+      expect(verdictSentence(0), 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다');
     });
 
     test('percentile 1(경계) → "거의 전부"', () {
-      expect(verdictSentence(1), 'AI 예상으로는 이런 조건의 차 열에 거의 전부이 이 매물보다 쌉니다');
+      expect(verdictSentence(1), 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다');
     });
 
     test('percentile이 null이면 null(판정 근거 자체가 없다)', () {

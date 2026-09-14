@@ -194,8 +194,8 @@ describe('formatHeadline', () => {
 // DW-862 재구성 — 한 문장 판정(②): 백분위를 "열 대 중 N대" 비유로 푼다. 실제 비교군 건수(예: "100대
 // 중 90대")는 절대 쓰지 않는다 — 이 검사가 그 금지를 직접 고정한다.
 describe('buildJudgementSentence', () => {
-  it('percentile=0.3이면 열 대 중 3대가 이 매물보다 쌉니다', () => {
-    expect(buildJudgementSentence(0.3)).toBe('AI 예상으로는 이런 조건의 차 열 대 중 3대가 이 매물보다 쌉니다.');
+  it('percentile=0.3이면 열에 셋이 이 매물보다 쌉니다', () => {
+    expect(buildJudgementSentence(0.3)).toBe('AI 예상으로는 이런 조건의 차 열에 셋이 이 매물보다 쌉니다.');
   });
 
   it('percentile=0에 가까우면(반올림 0) "거의 없습니다" 문구로 바뀐다', () => {
@@ -211,6 +211,7 @@ describe('buildJudgementSentence', () => {
       const sentence = buildJudgementSentence(p);
       expect(sentence).not.toMatch(/\d+대\s*중/);
       expect(sentence).not.toContain('100대');
+      expect(sentence).not.toContain('대 중');
     }
   });
 });
@@ -238,7 +239,8 @@ describe('MarketDiagnosis — 렌더 계약(DW-862 재구성)', () => {
     const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: 'LLM이 지어낸 문장' }));
 
     expect(html).toContain('이런 조건이면 보통 2,050~2,450만원');
-    expect(html).toContain('열 대 중 3대가 이 매물보다 쌉니다');
+    expect(html).toContain('열에 셋이 이 매물보다 쌉니다');
+    expect(html).not.toContain('대 중');
     expect(html).not.toContain('100대 중');
     // answer(LLM 자유 문장)는 더는 화면에 그리지 않는다 — 기계적 정보를 그대로 옮겨 말하곤 했기 때문.
     expect(html).not.toContain('LLM이 지어낸 문장');
