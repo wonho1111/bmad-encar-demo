@@ -329,3 +329,9 @@ describe('MarketDiagnosis — 렌더 계약(DW-862 재구성)', () => {
     expect(html).toContain('비슷한 차 실제 호가 기준');
   });
 });
+
+// 조사 — "하나"는 받침이 없어 "하나가", 나머지 수사는 "이"(2026-09-15 실측 C07 "열에 하나이").
+it('한 문장 판정의 조사가 수사에 맞는다(하나가 / 둘이)', () => {
+  expect(buildJudgementSentence(0.1)).toContain('열에 하나가 이 매물보다');
+  expect(buildJudgementSentence(0.2)).toContain('열에 둘이 이 매물보다');
+});

@@ -206,7 +206,7 @@ export function buildJudgementSentence(ratio: number): string {
   if (n <= 0) return 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.';
   if (n >= 10) return 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.';
   // "열에 아홉" 꼴(사용자 확정 문구 2026-09-05). "열 대 중 N대"는 실제 대수로 읽혀 금지 — E2E 실측(2026-09-14)에서 걸림.
-  return `AI 예상으로는 비슷한 조건의 차 열에 ${KOREAN_COUNT[n]}이 이 매물보다 쌉니다.`;
+  return `AI 예상으로는 비슷한 조건의 차 열에 ${KOREAN_COUNT[n]}${n === 1 ? '가' : '이'} 이 매물보다 쌉니다.`;
 }
 
 // 타일 2개 아래 백분율 비교(④) — 기준은 항상 tabpfn.price(모델 예측 적정가) 하나뿐이다. 순수 함수.
