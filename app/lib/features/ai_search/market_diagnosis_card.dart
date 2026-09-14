@@ -5,10 +5,18 @@
 //
 // 재구성 요지: 예전엔 assistant 자유 서술(answer)을 헤드라인 자리에 그대로 넣었지만, 이제
 // 헤드라인·한 문장 판정 둘 다 market_diagnosis.dart의 순수 함수(headlineText·
-// verdictSentence)가 구조화된 값(tabpfn.quantiles·percentile 등)만으로 만든다 — LLM 자유
-// 서술에 기대던 숫자 표현을 없애 "100대 중 90대" 같은 과신 표현이 카드에 섞일 여지 자체를
-// 지운다. answer 파라미터는 호출부(ai_chat_screen.dart)가 여전히 넘기지만(콜사이트 변경은
-// 범위 밖) 이 카드는 더 이상 쓰지 않는다.
+// resolveJudgementRatio·buildJudgementSentence)가 구조화된 값(tabpfn.quantiles·
+// tabpfn.cdfAtPrice·percentile 등)만으로 만든다 — LLM 자유 서술에 기대던 숫자 표현을 없애
+// "100대 중 90대" 같은 과신 표현이 카드에 섞일 여지 자체를 지운다. answer 파라미터는
+// 호출부(ai_chat_screen.dart)가 여전히 넘기지만(콜사이트 변경은 범위 밖) 이 카드는 더 이상
+// 쓰지 않는다.
+//
+// 2026-09-14 2차 개정(DW-885): 한 문장 판정이 배지(verdict, TabPFN 분위수 기준)와 다른
+// 산출식(비교군 percentile)을 써서 어긋나던 결함을 수정 — tabpfn.cdfAtPrice(분위수 곡선
+// 기준 누적 비율, verdict와 같은 산출식)가 있으면 그걸 우선 쓰고 없으면 percentile로
+// 폴백한다(resolveJudgementRatio). 헤드라인 문구도 "이런 조건이면"→"비슷한 조건이면"으로
+// 바뀌었고, "자세히" 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
+// (DW-884, buildCompsListView).
 //
 // 기존 통계·산점도·비교군 칩은 지우지 않고 ExpansionTile("자세히", 기본 닫힘) 안으로
 // 옮겼다 — 초보 사용자가 한눈에 볼 정보(헤드라인·판정·타일 2개)와 더 볼 사람만 펼치는
@@ -36,8 +44,10 @@ class MarketDiagnosisCard extends StatelessWidget {
     final verdictBadge = buildVerdictBadge(data.verdict, data.verdictBasis);
     final showPercentileChip = shouldShowPercentileChip(data.percentile, data.criteria.sampleCount);
     final headline = headlineText(data);
-    final sentence = verdictSentence(data.percentile);
+    final judgementRatio = resolveJudgementRatio(data.tabpfn.cdfAtPrice, data.percentile);
+    final sentence = showPercentileChip && judgementRatio != null ? buildJudgementSentence(judgementRatio) : null;
     final compareLabel = tabpfnDiffLabel(listing.price, data.tabpfn.price);
+    final compsListView = buildCompsListView(data.comps);
 
     return Column(
       key: const Key('market_diagnosis_card'),
@@ -174,13 +184,22 @@ class MarketDiagnosisCard extends StatelessWidget {
                 const Text('비교 매물 목록',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.inkSecondary)),
                 const SizedBox(height: 6),
-                for (final c in data.comps)
+                for (final c in compsListView.shown)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Text(
                       '${c.model} · ${c.year}년식 · ${formatManKm(c.mileage)} · ${wonText(c.price)}',
                       style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
                     ),
+                  ),
+                // 목록은 60건 상한(DW-884) — 점 그림(market_diagnosis_price_chart.dart)은
+                // comps 전부를 찍지만, 줄마다 텍스트인 이 목록은 500건을 그대로 나열하면
+                // 접힘 영역이 지나치게 길어진다.
+                if (compsListView.moreCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text('외 ${compsListView.moreCount}대',
+                        style: const TextStyle(fontSize: 12, color: AppColors.inkMuted)),
                   ),
               ],
             ],

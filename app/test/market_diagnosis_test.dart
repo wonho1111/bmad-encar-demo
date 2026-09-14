@@ -3,6 +3,7 @@
 // 검증한다(app 기존 관례 — market_diagnosis.dart는 상태 없는 표현 로직만 둔다).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app/features/ai_search/market_diagnosis.dart';
+import 'package:app/features/ai_search/market_diagnosis_price_chart.dart' show buildDensityCurve;
 
 Map<String, Object?> _wireListing({
   String id = 'l-1',
@@ -148,6 +149,19 @@ void main() {
       expect(data.tabpfn.price, 23500000);
       expect(data.tabpfn.quantiles?.q10, 20000000);
       expect(data.tabpfn.quantiles?.q90, 27000000);
+      expect(data.tabpfn.cdfAtPrice, isNull); // 픽스처엔 없음 — 기본은 null.
+    });
+
+    test('tabpfn.cdf_at_price(DW-885 additive)가 있으면 double로 파싱한다', () {
+      final wire = _wireDiagnosis()
+        ..['tabpfn'] = {
+          'price': 23500000,
+          'note': 'TabPFN 예측',
+          'quantiles': {'q10': 20000000, 'q25': 21500000, 'q50': 23500000, 'q75': 25500000, 'q90': 27000000},
+          'cdf_at_price': 0.8,
+        };
+      final data = MarketDiagnosisData.fromMap(wire);
+      expect(data!.tabpfn.cdfAtPrice, 0.8);
     });
 
     test('Map이 아니면 null', () {
@@ -207,13 +221,14 @@ void main() {
       expect(data!.stats, isNull);
     });
 
-    test('tabpfn이 없거나 깨지면 {price:null, note:"", quantiles:null}로 안전 폴백한다', () {
+    test('tabpfn이 없거나 깨지면 {price:null, note:"", quantiles:null, cdfAtPrice:null}로 안전 폴백한다', () {
       final wire = _wireDiagnosis()..['tabpfn'] = 'oops';
       final data = MarketDiagnosisData.fromMap(wire);
       expect(data, isNotNull);
       expect(data!.tabpfn.price, isNull);
       expect(data.tabpfn.note, '');
       expect(data.tabpfn.quantiles, isNull);
+      expect(data.tabpfn.cdfAtPrice, isNull);
     });
 
     test('quantiles 필드 일부가 깨지면 quantiles만 null로 폴백한다(price·note는 살린다)', () {
@@ -252,16 +267,18 @@ void main() {
 
   // 카드 재구성(2026-09-14, DW-862) — 헤드라인·한 문장 판정·타일 비교 문구를 만드는 순수
   // 함수들. 전부 재계산 없이 wire 값을 그대로 문장에 끼워 넣는지만 본다.
+  //
+  // 2026-09-14 2차 개정(DW-885) — 헤드라인 문구 "이런 조건이면"→"비슷한 조건이면".
   group('headlineText', () {
     test('tabpfn.quantiles가 있으면 q25~q75를 만원 반올림해 우선 쓴다', () {
       final data = _diagnosisWithStep(0);
-      expect(headlineText(data), '이런 조건이면 보통 2,150~2,550만원');
+      expect(headlineText(data), '비슷한 조건이면 보통 2,150~2,550만원');
     });
 
     test('quantiles가 없으면 stats(q1~q3)로 폴백하고 근거 문구를 덧붙인다', () {
       final wire = _wireDiagnosis()..['tabpfn'] = {'price': 23500000, 'note': ''};
       final data = MarketDiagnosisData.fromMap(wire)!;
-      expect(headlineText(data), '이런 조건이면 보통 2,100~2,500만원 · 비슷한 차 실제 호가 기준');
+      expect(headlineText(data), '비슷한 조건이면 보통 2,100~2,500만원 · 비슷한 차 실제 호가 기준');
     });
 
     test('quantiles도 stats도 없으면 null(카드가 대체 문구를 보여준다)', () {
@@ -276,21 +293,66 @@ void main() {
     });
   });
 
-  group('verdictSentence', () {
-    test('percentile 0.3 → round(3)=3, 그대로 숫자로 낸다', () {
-      expect(verdictSentence(0.3), 'AI 예상으로는 이런 조건의 차 열에 셋이 이 매물보다 쌉니다');
+  // DW-885 — 배지(verdict)와 한 문장 판정이 서로 다른 산출식을 써서 어긋난 결함 수정:
+  // 분위수 곡선 기반 cdfAtPrice가 있으면 그걸 우선 쓰고, 없으면(TabPFN 미예측) 종전
+  // percentile로 폴백한다(web resolveJudgementRatio 미러).
+  group('resolveJudgementRatio', () {
+    test('cdfAtPrice가 있으면 percentile을 무시하고 그 값을 쓴다', () {
+      expect(resolveJudgementRatio(0.8, 0.3), 0.8);
     });
 
-    test('percentile 0(경계) → "거의 없음"("0대" 같은 실제 대수처럼 안 읽히게)', () {
-      expect(verdictSentence(0), 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다');
+    test('cdfAtPrice가 null이면(TabPFN 미예측) percentile로 폴백한다', () {
+      expect(resolveJudgementRatio(null, 0.3), 0.3);
     });
 
-    test('percentile 1(경계) → "거의 전부"', () {
-      expect(verdictSentence(1), 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다');
+    test('cdfAtPrice가 0이어도(경계값) percentile로 폴백하지 않는다', () {
+      // 0은 null이 아니라 "유효한 비율 0.0"이다 — falsy 값 취급 버그를 막는 회귀 검사.
+      expect(resolveJudgementRatio(0, 0.9), 0);
     });
 
-    test('percentile이 null이면 null(판정 근거 자체가 없다)', () {
-      expect(verdictSentence(null), isNull);
+    test('둘 다 없으면 null', () {
+      expect(resolveJudgementRatio(null, null), isNull);
+    });
+  });
+
+  group('buildJudgementSentence', () {
+    test('ratio=0.3이면 열에 셋이 이 매물보다 쌉니다', () {
+      expect(buildJudgementSentence(0.3), 'AI 예상으로는 비슷한 조건의 차 열에 셋이 이 매물보다 쌉니다');
+    });
+
+    test('ratio 0(경계) → "거의 없음"("0대" 같은 실제 대수처럼 안 읽히게)', () {
+      expect(buildJudgementSentence(0), 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 없습니다');
+    });
+
+    test('ratio 1(경계) → "거의 전부"', () {
+      expect(buildJudgementSentence(1), 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다');
+    });
+  });
+
+  // DW-884 — "자세히"의 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
+  // (comps 자체는 API에서 최대 500건까지 올 수 있다, web buildCompsListView 미러).
+  group('buildCompsListView', () {
+    List<MarketDiagnosisComp> makeComps(int n) => [
+          for (var i = 0; i < n; i++)
+            MarketDiagnosisComp(id: 'c-$i', model: '셀토스', year: 2021, mileage: 10000, price: 1),
+        ];
+
+    test('60건 이하면 전부 보여주고 moreCount는 0이다', () {
+      final view = buildCompsListView(makeComps(60));
+      expect(view.shown.length, 60);
+      expect(view.moreCount, 0);
+    });
+
+    test('60건을 넘으면(경계: 61건) 60건만 보여주고 나머지는 moreCount로 센다', () {
+      final view = buildCompsListView(makeComps(61));
+      expect(view.shown.length, 60);
+      expect(view.moreCount, 1);
+    });
+
+    test('500건이면 60건 + "외 440대"에 해당하는 개수다', () {
+      final view = buildCompsListView(makeComps(500));
+      expect(view.shown.length, 60);
+      expect(view.moreCount, 440);
     });
   });
 
@@ -309,6 +371,65 @@ void main() {
 
     test('tabpfn.price가 없으면(표본 부족) null', () {
       expect(tabpfnDiffLabel(22000000, null), isNull);
+    });
+  });
+
+  // buildDensityCurve(market_diagnosis_price_chart.dart, DW-885 재작업) — 분위수 구간 밀도를
+  // 가우시안 커널로 평활한 밀도 곡선의 불변식만 고정한다(DOM·CustomPainter 없이 순수 함수만).
+  // 왜 필요한가: 종전 방식(분위수마다 고정 높이 + 스플라인)은 q25·q50처럼 이웃 분위수가
+  // 가까우면 오버슈트로 정점 근처가 움푹 파였다(운영 캡처 다수) — 그 불변식(파임 없음)을
+  // q25·q50이 가까운 입력으로 직접 고정한다(web MarketDiagnosisPriceChart.test.ts 미러).
+  group('buildDensityCurve', () {
+    // 정점 인덱스를 찾고, 정점 왼쪽이 단조 증가·오른쪽이 단조 감소인지 본다(파임 없음 검사).
+    bool isUnimodalNoDip(List<({double x, double y})> points) {
+      var peakIdx = 0;
+      for (var i = 1; i < points.length; i++) {
+        if (points[i].y > points[peakIdx].y) peakIdx = i;
+      }
+      for (var i = 1; i <= peakIdx; i++) {
+        if (points[i].y < points[i - 1].y - 1e-9) return false;
+      }
+      for (var i = peakIdx + 1; i < points.length; i++) {
+        if (points[i].y > points[i - 1].y + 1e-9) return false;
+      }
+      return true;
+    }
+
+    test('정점을 1로 정규화한다', () {
+      const q = MarketDiagnosisQuantiles(q10: 18000000, q25: 20500000, q50: 22500000, q75: 24500000, q90: 26000000);
+      final curve = buildDensityCurve(q);
+      final maxY = curve.map((p) => p.y).reduce((a, b) => a > b ? a : b);
+      expect(maxY, closeTo(1, 1e-6));
+    });
+
+    test('q25·q50이 가까운 입력에서도 정점 왼쪽은 단조 증가·오른쪽은 단조 감소한다(파임 없음)', () {
+      // q25·q50 간격(100)이 q10·q25 간격(900)보다 훨씬 좁아, 그 구간(질량 0.25)의 밀도가
+      // 크게 튀어 오른다 — 종전 스플라인이 실제로 파이던 조건.
+      const q = MarketDiagnosisQuantiles(q10: 1000, q25: 1900, q50: 2000, q75: 3000, q90: 4000);
+      final curve = buildDensityCurve(q);
+      expect(isUnimodalNoDip(curve), isTrue);
+    });
+
+    test('분위수 간격이 고른 입력에서도 파임이 없다', () {
+      const q = MarketDiagnosisQuantiles(q10: 1000, q25: 2000, q50: 2500, q75: 3000, q90: 4000);
+      final curve = buildDensityCurve(q);
+      expect(isUnimodalNoDip(curve), isTrue);
+    });
+
+    test('그리드 점 개수는 요구 범위(60~80) 안이다', () {
+      const q = MarketDiagnosisQuantiles(q10: 1000, q25: 2000, q50: 2500, q75: 3000, q90: 4000);
+      final curve = buildDensityCurve(q);
+      expect(curve.length, greaterThanOrEqualTo(60));
+      expect(curve.length, lessThanOrEqualTo(80));
+    });
+
+    test('좁은 구간([q25,q50])이 넓은 구간([q10,q25])보다 밀도가 높다 — 정점이 좁은 쪽으로 몰린다', () {
+      const q = MarketDiagnosisQuantiles(q10: 1000, q25: 1900, q50: 2000, q75: 3000, q90: 4000);
+      final curve = buildDensityCurve(q);
+      final peak = curve.reduce((max, p) => p.y > max.y ? p : max);
+      // 정점 x가 q25~q50(좁은 구간, 1,900~2,000) 근처여야 한다 — q10~q25(넓은 구간)에 있으면 안 된다.
+      expect(peak.x, greaterThan(1800));
+      expect(peak.x, lessThan(2200));
     });
   });
 }
