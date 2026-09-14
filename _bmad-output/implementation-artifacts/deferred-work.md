@@ -7335,7 +7335,8 @@ location: api/app/graph/agent_tools.py(search_listings similarity 분기 → `_r
 severity: high
 reason: pgvector HNSW는 유사도 상위 후보(ef_search 기본 40)만 스캔한 뒤 WHERE를 적용한다. 판매중이 158→7,239건이 되면서 models·accident 같은 선택적 필터(해당 6건 = 0.08%)가 후보 40건 밖으로 밀려 결과가 비고, 에이전트는 "조건에 맞는 매물이 없다"고 답한다(C60 1·2턴 모두). E-6 전에는 전체가 수백 건이라 드러나지 않았다. 웹 /search(PostgREST 필터, 벡터 정렬 없음)와 시세 엔진(벡터 미사용)은 무관 — 에이전트 의미검색 경로만.
 trigger: 다음 운영 배포(develop push → Cloud Run) 때 d95d135가 나가면 해소. 배포 뒤 운영 API로 C60 질의 1회 실측(0건 아님 확인). 근본 대안(ef_search 상향·필터 우선 서브쿼리)은 relaxed_order로 충분하면 안 함. 설계 대안(사용자 2026-09-14 '조건 검색엔 벡터 정렬이 필요 없을 듯'): 구조 조건(models·body_type·fuel·accident 등)이 하나라도 있으면 기본 정렬을 SQL(연식 DESC 등)로 두고, 조건 없는 모호 질의('가족용 편한 차')만 벡터 정렬 — 인덱스 함정 자체를 피하고 단순해진다. 결과 순서가 바뀌므로 회귀 31건·추천 15건 재확인 필요. 이번 회차엔 미적용(relaxed_order로 해소).
-status: open
+status: done 2026-09-15
+resolution: d95d135(SET LOCAL hnsw.iterative_scan = relaxed_order)를 2026-09-14 develop push로 Cloud Run dev(encar-ai-api-dev, 리비전 00163 이후)에 배포. 운영 API 실측(2026-09-15): '쏘나타나 K5 중에 무사고' → 6건 반환(쏘나타 2015·K5 2016·K5 DL3 2024·쏘나타 DN8 2020 …), 배포 전 0건. 운영 웹(bmad-encar-demo.vercel.app)도 이 dev API를 가리키므로 운영에서도 해소. 근본 대안(조건 검색은 SQL 정렬 기본)은 trigger 메모대로 미적용 — 필요 시 별도 항목.
 
 ### DW-883: 검색 결과가 있는데 매물을 한 건도 제시하지 않고 예산·차종을 되묻는 답변(C42·C68·C71) — 강제 제시 규칙은 없는 매물을 지어내는 부작용
 
