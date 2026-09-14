@@ -42,6 +42,11 @@ def test_ladder_has_six_steps_with_trim_release_before_generation_release():
         ("더 뉴 그랜저 IG", "그랜저"),
         ("올 뉴 쏘렌토", "쏘렌토"),
         ("아반떼 CN7 하이브리드", "아반떼"),
+        # DW-853 재개방: 한글 바로 뒤에 공백 없이 붙은 세대코드 — split()이 통째로 한 토큰으로
+        # 묶어 ILIKE 비교군을 하나도 못 찾던 결함(운영 실측).
+        ("아반떼MD", "아반떼"),
+        ("K5 DL3", "K5"),  # 영문으로 시작하면 경계가 없어 그대로(첫 토큰)
+        ("i30", "i30"),  # 한글이 아예 없으면 그대로
     ],
 )
 def test_base_model_extraction(model, expected):
@@ -83,6 +88,26 @@ def test_verdict_by_quantiles_boundaries():
     assert market_price._verdict_by_quantiles(4_001, q) == "높음"        # q90 초과
 
 
+@pytest.mark.parametrize(
+    "price, expected",
+    [
+        (500, 0.0),  # 양끝: q10 미만 → 0.0
+        (1_000, 0.10),  # 경계: 정확히 q10
+        (2_250, 0.375),  # 중간: q25(2_000,.25)~q50(2_500,.50) 구간 선형 보간
+        (4_500, 1.0),  # 양끝: q90 초과 → 1.0
+    ],
+)
+def test_cdf_at_price_boundaries_and_interpolation(price, expected):
+    # DW-885: 배지(verdict)와 한 문장 판정이 서로 다른 산출식을 써서 어긋난 결함 — 분위수 곡선
+    # 위에서 직접 누적 비율을 구해 웹이 같은 숫자를 쓰게 한다.
+    q = {"q10": 1_000, "q25": 2_000, "q50": 2_500, "q75": 3_000, "q90": 4_000}
+    assert market_price._cdf_at_price(price, q) == pytest.approx(expected)
+
+
+def test_cdf_at_price_none_when_quantiles_missing():
+    assert market_price._cdf_at_price(1_500, None) is None
+
+
 def test_verdict_and_basis_sample_size_boundary():
     # 2026-08-31 실측 결함(F4, 소표본 과신 판정) 수정 — 비교군 <3건이면 verdict를 보류한다.
     # 경계값을 리터럴로 고정: 0건/2건(보류) vs 3건(판정)을 직접 확인한다.
@@ -105,6 +130,23 @@ def test_verdict_and_basis_prefers_tabpfn_when_available_and_sample_sufficient()
     assert market_price._verdict_and_basis(3, 1_000_000, stats, q) == ("적정", "분위수")
     # 표본 부족 보류(F4)는 분위수가 있어도 먼저 적용된다.
     assert market_price._verdict_and_basis(2, 1_100_001, stats, q) == (None, "표본 부족")
+
+
+def test_sample_comps_evenly_includes_min_and_max_price():
+    # DW-884: 종전 `ORDER BY price LIMIT MAX_COMPS`는 가장 싼 매물만 골라 비교군 산점도가 저가
+    # 쪽으로 쏠렸다 — 균등 간격(every-k) 표본은 가격순 전체에서 뽑아 최저가·최고가를 포함한
+    # 분포 양끝을 살려야 한다(운영 실측 8건 캡처).
+    rows = [{"price": i} for i in range(600)]  # _comps_sql과 동일하게 가격순 오름차순 전제
+    sampled = market_price._sample_comps_evenly(rows)
+    assert len(sampled) == market_price.MAX_COMPS
+    prices = {r["price"] for r in sampled}
+    assert 0 in prices
+    assert 599 in prices
+
+
+def test_sample_comps_evenly_passthrough_when_within_limit():
+    rows = [{"price": i} for i in range(10)]
+    assert market_price._sample_comps_evenly(rows) == rows
 
 
 def test_where_clause_differs_by_step_model_vs_ilike():

@@ -7363,3 +7363,12 @@ reason: 두 값의 출처가 다르다 — 문장은 percentile(비교군 내 �
 trigger: 덱 5쪽 스타일(5색 구간) 적용 시 문장과 배지를 같은 축(분위수 구간)에서 만들고, 문장은 구간별 고정 문구 5개로. 웹·앱 동시.
 status: open
 
+### DW-886: 모델군·세대·트림이 model 문자열 하나에 섞여 있어 텍스트 규칙으로만 구분한다 — 엔카식 계층(제조사 > 모델군 > 세대 > 배기량/트림) 정규 구조가 없다
+
+origin: 사용자 지적(2026-09-14, 시세 카드 8건 실측 뒤 — "아반떼MD" 띄어쓰기로 비교군 0건, "모델·세대 구분이 텍스트로 나뉘는 게 걸린다")
+location: listings.model(자유 문자열)·generation(0038, 정규식 백필)·api/app/market_price.py `_base_model`(첫 토큰)·`_train_rows_query`(ILIKE)·등록 폼(자유 입력), 엔카 수집기 targets.json(15개 Model=세대 값)
+severity: medium
+reason: 세대 열을 더해 TabPFN 특징은 안정됐지만, 비교군·학습표 조회와 등록 폼은 여전히 문자열 규칙에 기대 표기 흔들림(띄어쓰기·'더 뉴'·연료 접미·배기량 트림)이 그대로 결함으로 이어진다(DW-853·874가 그 사례). 엔카는 모델군→세대→배기량 목록을 미리 등록해 선택하게 한다.
+trigger: 시드 v4·등록 폼 개편(DW-860·881) 때 — (a) 참조 테이블 `car_models(manufacturer, family, generation, display_name)`(더하기만) + listings.family/generation FK는 nullable, (b) 등록 폼은 선택식(제조사→모델군→세대), 자유 입력은 폴백, (c) 조회·학습표는 family/generation 열 우선, 문자열 규칙은 폴백. 엔카 15세대 + 시드 모델군으로 초기 표 작성. 범위가 커 포트폴리오 뒤.
+status: open
+

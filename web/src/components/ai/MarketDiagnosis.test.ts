@@ -10,15 +10,18 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildCompsListView,
   buildCriteriaChips,
   buildJudgementSentence,
   buildPriceRange,
   buildTabpfnDiffLabel,
   buildVerdictBadge,
   formatHeadline,
+  resolveJudgementRatio,
   verdictBasisLabel,
   formatManKm,
   shouldShowPercentileChip,
+  type MarketDiagnosisComp,
   type MarketDiagnosisData,
 } from './MarketDiagnosis';
 import MarketDiagnosis from './MarketDiagnosis';
@@ -184,35 +187,87 @@ describe('buildPriceRange', () => {
 });
 
 describe('formatHeadline', () => {
-  it('만원 단위로 반올림해 "이런 조건이면 보통 A~B만원" 문장을 만든다', () => {
+  it('만원 단위로 반올림해 "비슷한 조건이면 보통 A~B만원" 문장을 만든다', () => {
+    // 2026-09-14 문구 개정(DW-885): "이런 조건이면" → "비슷한 조건이면".
     expect(formatHeadline({ low: 20_500_000, high: 24_500_000, approximate: false })).toBe(
-      '이런 조건이면 보통 2,050~2,450만원',
+      '비슷한 조건이면 보통 2,050~2,450만원',
     );
   });
 });
 
-// DW-862 재구성 — 한 문장 판정(②): 백분위를 "열 대 중 N대" 비유로 푼다. 실제 비교군 건수(예: "100대
+// DW-862 재구성 — 한 문장 판정(②): 비율을 "열 대 중 N대" 비유로 푼다. 실제 비교군 건수(예: "100대
 // 중 90대")는 절대 쓰지 않는다 — 이 검사가 그 금지를 직접 고정한다.
+// 2026-09-14 문구 개정(DW-885): "이런 조건의 차" → "비슷한 조건의 차".
 describe('buildJudgementSentence', () => {
-  it('percentile=0.3이면 열에 셋이 이 매물보다 쌉니다', () => {
-    expect(buildJudgementSentence(0.3)).toBe('AI 예상으로는 이런 조건의 차 열에 셋이 이 매물보다 쌉니다.');
+  it('ratio=0.3이면 열에 셋이 이 매물보다 쌉니다', () => {
+    expect(buildJudgementSentence(0.3)).toBe('AI 예상으로는 비슷한 조건의 차 열에 셋이 이 매물보다 쌉니다.');
   });
 
-  it('percentile=0에 가까우면(반올림 0) "거의 없습니다" 문구로 바뀐다', () => {
-    expect(buildJudgementSentence(0.04)).toBe('AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.');
+  it('ratio=0에 가까우면(반올림 0) "거의 없습니다" 문구로 바뀐다', () => {
+    expect(buildJudgementSentence(0.04)).toBe('AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.');
   });
 
-  it('percentile=1에 가까우면(반올림 10) "거의 전부입니다" 문구로 바뀐다', () => {
-    expect(buildJudgementSentence(0.96)).toBe('AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.');
+  it('ratio=1에 가까우면(반올림 10) "거의 전부입니다" 문구로 바뀐다', () => {
+    expect(buildJudgementSentence(0.96)).toBe('AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.');
   });
 
-  it('어떤 percentile을 넣어도 실제 대수 표현("100대 중"류)이 나오지 않는다', () => {
+  it('어떤 ratio를 넣어도 실제 대수 표현("100대 중"류)이 나오지 않는다', () => {
     for (const p of [0, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 1]) {
       const sentence = buildJudgementSentence(p);
       expect(sentence).not.toMatch(/\d+대\s*중/);
       expect(sentence).not.toContain('100대');
       expect(sentence).not.toContain('대 중');
     }
+  });
+});
+
+// DW-885 — 배지(verdict)와 한 문장 판정이 서로 다른 산출식을 써서 어긋난 결함 수정: 분위수 곡선
+// 기반 cdf_at_price가 있으면 그걸 우선 쓰고, 없으면(TabPFN 미예측) 종전 percentile로 폴백한다.
+describe('resolveJudgementRatio', () => {
+  it('cdf_at_price가 있으면 percentile을 무시하고 그 값을 쓴다', () => {
+    expect(resolveJudgementRatio(0.8, 0.3)).toBe(0.8);
+  });
+
+  it('cdf_at_price가 null이면(TabPFN 미예측) percentile로 폴백한다', () => {
+    expect(resolveJudgementRatio(null, 0.3)).toBe(0.3);
+  });
+
+  it('cdf_at_price가 undefined면(구 응답 호환) percentile로 폴백한다', () => {
+    expect(resolveJudgementRatio(undefined, 0.3)).toBe(0.3);
+  });
+
+  it('cdf_at_price가 0이어도(경계값) percentile로 폴백하지 않는다', () => {
+    // 0은 null/undefined가 아니라 "유효한 비율 0.0"이다 — falsy 값 취급 버그를 막는 회귀 검사.
+    expect(resolveJudgementRatio(0, 0.9)).toBe(0);
+  });
+
+  it('둘 다 없으면 null', () => {
+    expect(resolveJudgementRatio(null, null)).toBeNull();
+  });
+});
+
+// DW-884 — "자세히"의 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
+// (comps 자체는 API에서 최대 500건까지 올 수 있다, MAX_COMPS 500).
+describe('buildCompsListView', () => {
+  const makeComps = (n: number): MarketDiagnosisComp[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `c-${i}`, model: '셀토스', year: 2021, mileage: 10_000, price: 1 }));
+
+  it('60건 이하면 전부 보여주고 moreCount는 0이다', () => {
+    const view = buildCompsListView(makeComps(60));
+    expect(view.shown).toHaveLength(60);
+    expect(view.moreCount).toBe(0);
+  });
+
+  it('60건을 넘으면(경계: 61건) 60건만 보여주고 나머지는 moreCount로 센다', () => {
+    const view = buildCompsListView(makeComps(61));
+    expect(view.shown).toHaveLength(60);
+    expect(view.moreCount).toBe(1);
+  });
+
+  it('500건이면 60건 + "외 440대"에 해당하는 개수다', () => {
+    const view = buildCompsListView(makeComps(500));
+    expect(view.shown).toHaveLength(60);
+    expect(view.moreCount).toBe(440);
   });
 });
 
@@ -238,12 +293,24 @@ describe('MarketDiagnosis — 렌더 계약(DW-862 재구성)', () => {
     data.tabpfn.quantiles = { q10: 18_000_000, q25: 20_500_000, q50: 22_500_000, q75: 24_500_000, q90: 26_000_000 };
     const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: 'LLM이 지어낸 문장' }));
 
-    expect(html).toContain('이런 조건이면 보통 2,050~2,450만원');
+    expect(html).toContain('비슷한 조건이면 보통 2,050~2,450만원');
     expect(html).toContain('열에 셋이 이 매물보다 쌉니다');
     expect(html).not.toContain('대 중');
     expect(html).not.toContain('100대 중');
     // answer(LLM 자유 문장)는 더는 화면에 그리지 않는다 — 기계적 정보를 그대로 옮겨 말하곤 했기 때문.
     expect(html).not.toContain('LLM이 지어낸 문장');
+  });
+
+  it('tabpfn.cdf_at_price가 있으면 percentile 대신 그 값으로 한 문장 판정을 계산한다(DW-885)', () => {
+    // percentile=0.3(열에 셋)이지만 cdf_at_price=0.8을 주면 문장은 cdf 기준(열에 여덟)이어야
+    // 한다 — 배지(verdict, 분위수 5단 기준)와 문장이 서로 다른 산출식을 쓰던 결함의 재현·고정.
+    const data = diagnosisWithStep(0);
+    data.tabpfn.quantiles = { q10: 18_000_000, q25: 20_500_000, q50: 22_500_000, q75: 24_500_000, q90: 26_000_000 };
+    data.tabpfn.cdf_at_price = 0.8;
+    const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: '' }));
+
+    expect(html).toContain('열에 여덟이 이 매물보다 쌉니다');
+    expect(html).not.toContain('열에 셋이 이 매물보다 쌉니다');
   });
 
   it('접힘 영역(자세히)은 기본 닫힘이다(open 속성 없음)', () => {

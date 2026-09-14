@@ -31,6 +31,16 @@
   "full") 한 번에 같이 나와(실측 1.46s→1.49s) 지연 추가는 없다. 응답엔 `tabpfn.quantiles`를
   더했고(더하기만), verdict_basis 값은 "적정가"→"분위수", verdict 값에 "다소 저렴"/"다소 높음"이
   추가됐다(웹·앱은 verdict 문자열을 그대로 배지로 쓴다).
+
+**2026-09-14 개정(사용자 결정, 운영 실측 8건 캡처, 결함 3건 수정)**: (1) DW-884 — comps가
+  `ORDER BY price LIMIT MAX_COMPS`라 가장 싼 매물만 골라 산점도가 저가 쪽으로 쏠렸다. MAX_COMPS를
+  60→500으로 올리고, 매칭 매물이 500건을 넘으면 가격순 전체에서 균등 간격(every-k)으로 500건을
+  뽑는다(`_sample_comps_evenly`) — 최저가·최고가가 항상 포함돼 분포 양끝이 살아있다. (2) DW-885 —
+  웹의 판정 배지(verdict, 분위수 5단)와 한 문장 판정(종전엔 비교군 percentile로 따로 계산)이
+  서로 다른 산출식을 써서 어긋났다. 응답에 `tabpfn.cdf_at_price`를 더해(더하기만) 분위수 곡선
+  위에서 직접 구한 누적 비율을 웹이 쓰게 한다(`_cdf_at_price`). (3) DW-853 재개방 — "아반떼MD"처럼
+  한글 뒤에 공백 없이 붙은 세대코드가 `_base_model`의 split()에 걸려 기본 모델명을 못 뽑던 결함을
+  0038 마이그레이션의 백필 규칙과 같은 정규식으로 고쳤다.
 """
 
 import logging
@@ -126,6 +136,10 @@ _GENERATION_PREFIXES = ("더 뉴 ", "올 뉴 ")
 # 트림(배기량) 표기로 보고 제거한다(_family_model). "더 뉴 그랜저 IG 3.3" → "더 뉴 그랜저 IG".
 _DISPLACEMENT_SUFFIX_RE = re.compile(r"^\d\.\d$")
 
+# 한글 바로 뒤에 공백 없이 붙은 영문/숫자 세대코드 경계(_base_model, DW-853 재개방) — 0038
+# 마이그레이션의 generation 백필 정규식과 같은 원리("아반떼MD" → "아반떼 MD").
+_KOREAN_ALNUM_BOUNDARY_RE = re.compile(r"([가-힣])([A-Za-z0-9])")
+
 # TabPFN 특징 벡터의 연료 원핫 순서(listings.fuel CHECK 목록, 0002_listings.sql과 동일 순서).
 _FUEL_ORDER = ["가솔린", "디젤", "하이브리드", "전기", "LPG"]
 
@@ -158,10 +172,12 @@ _USAGE_FLAGGED = {"렌트", "영업용"}
 def _usage_flag(row: dict) -> int:
     return 1 if row.get("usage_history") in _USAGE_FLAGGED else 0
 
-# comps는 산점도용으로 최대 이만큼만 가져온다(설계 확정값). TabPFN 학습도 이 표본을
-# 그대로 재사용한다 — 사다리 표본 규모(수~십수 건, v3 표 기준)에서는 60건 상한이
-# 거의 걸리지 않아 별도 쿼리를 두 번 쏘지 않는 단순화다(판단 사항, 보고에 명시).
-MAX_COMPS = 60
+# comps는 산점도용으로 이 상한까지 가져온다(설계 확정값). 2026-09-14 개정(DW-884, 운영 실측):
+# 종전 60건 + `ORDER BY price LIMIT MAX_COMPS`는 가장 싼 60대만 보여줘 비교군 점이 항상 저가
+# 쪽으로 쏠렸다(매칭 매물이 60건을 넘을 때마다 발생). 상한을 500으로 올리고, 매칭 매물이
+# 500건을 넘으면 가격순 전체에서 균등 간격으로 500건을 뽑아(_sample_comps_evenly) 분포 전체가
+# 대표되게 한다 — comps 필드 자체는 그대로다(더하기만).
+MAX_COMPS = 500
 
 # TabPFN 적정가를 내려면 비교군이 이 이상이어야 한다(설계 확정값).
 _TABPFN_MIN_COMPS = 10
@@ -187,12 +203,20 @@ _TABPFN_LOCK = threading.Lock()
 
 
 def _base_model(model: str) -> str:
-    """"더 뉴 "/"올 뉴 " 접두를 제거한 뒤 첫 토큰(기본 모델명)을 반환한다."""
+    """"더 뉴 "/"올 뉴 " 접두를 제거한 뒤 첫 토큰(기본 모델명)을 반환한다.
+
+    2026-09-14 재개방(DW-853, 운영 실측): "아반떼MD"처럼 한글 모델명 바로 뒤에 공백 없이
+    세대코드가 붙은 표기는 split()이 통째로 한 토큰("아반떼MD")으로 묶어버려 ILIKE 비교군을
+    하나도 못 찾았다. 0038 마이그레이션의 generation 백필 규칙과 같은 원리로, 한글 바로 뒤에
+    오는 영문/숫자 앞에 공백을 넣은 뒤 토큰을 나눈다. 영문으로 시작하는 모델("K5 DL3", "i30")은
+    이 경계가 없어 그대로 둔다(요구사항 확정).
+    """
     stripped = model
     for prefix in _GENERATION_PREFIXES:
         if stripped.startswith(prefix):
             stripped = stripped[len(prefix):]
             break
+    stripped = _KOREAN_ALNUM_BOUNDARY_RE.sub(r"\1 \2", stripped)
     tokens = stripped.split()
     return tokens[0] if tokens else stripped
 
@@ -275,10 +299,23 @@ def _stats_sql(where_sql: str) -> str:
 
 
 def _comps_sql(where_sql: str) -> str:
-    return (
-        f"SELECT {_COMP_COLUMNS} FROM public.listings "
-        f"WHERE {where_sql} ORDER BY price LIMIT {MAX_COMPS}"
-    )
+    # LIMIT을 SQL에 걸지 않는다 — 균등 간격 표본(_sample_comps_evenly)을 뽑으려면 가격순 전체가
+    # 있어야 한다(DW-884). MAX_COMPS 상한은 결과를 파이썬에서 자른 뒤에만 적용된다.
+    return f"SELECT {_COMP_COLUMNS} FROM public.listings WHERE {where_sql} ORDER BY price"
+
+
+def _sample_comps_evenly(rows: list[dict]) -> list[dict]:
+    """가격순(_comps_sql) rows가 MAX_COMPS를 넘으면 균등 간격(every-k)으로 MAX_COMPS건을 뽑는다.
+
+    2026-09-14(DW-884, 운영 실측 8건 캡처): 종전 `ORDER BY price LIMIT MAX_COMPS`는 가장 싼
+    매물만 골라 비교군 산점도가 저가 쪽으로 쏠렸다. rows가 가격순 오름차순이라는 전제 하에,
+    등간격 인덱스로 뽑으면 0번(최저가)·마지막(최고가) 행이 항상 포함돼 분포 양끝이 살아있다.
+    """
+    n = len(rows)
+    if n <= MAX_COMPS:
+        return rows
+    step = (n - 1) / (MAX_COMPS - 1)
+    return [rows[round(i * step)] for i in range(MAX_COMPS)]
 
 
 def _verdict(price: int, q1: float, q3: float) -> str:
@@ -311,6 +348,36 @@ def _verdict_by_quantiles(price: int, q: dict) -> str:
     if price <= q["q90"]:
         return "다소 높음"
     return "높음"
+
+
+def _cdf_at_price(price: int, quantiles: dict | None) -> float | None:
+    """TabPFN 분위수 5단(q10~q90)을 잇는 구간별 선형 보간으로 이 매물 price의 누적 비율(0~1)을 구한다.
+
+    2026-09-14 개정(DW-885, 운영 실측): 웹의 헤드라인 배지(verdict, 분위수 5단 판정)와 한 문장
+    판정(종전엔 비교군 사분위에서 따로 계산한 percentile)이 서로 다른 산출식을 써서 문구·배지가
+    어긋났다(예: 배지는 "적정"인데 문장은 "열에 여덟이 더 쌉니다"). 분위수 곡선 위에서 직접
+    누적 비율을 구해 verdict와 같은 숫자를 웹이 쓸 수 있게 한다. q10 미만이면 0.0, q90 초과면
+    1.0으로 캡한다(분포 꼬리 밖을 외삽하지 않는다는 판단). quantiles가 없으면(TabPFN 미예측) None.
+    """
+    if quantiles is None:
+        return None
+    points = [
+        (quantiles["q10"], 0.10),
+        (quantiles["q25"], 0.25),
+        (quantiles["q50"], 0.50),
+        (quantiles["q75"], 0.75),
+        (quantiles["q90"], 0.90),
+    ]
+    if price < points[0][0]:
+        return 0.0
+    if price > points[-1][0]:
+        return 1.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if x0 <= price <= x1:
+            if x1 == x0:
+                return y0
+            return y0 + (y1 - y0) * (price - x0) / (x1 - x0)
+    return points[-1][1]  # 방어적 폴백 — 위 경계 처리로 여기 도달하지 않는다
 
 
 def _verdict_and_basis(
@@ -509,7 +576,7 @@ def diagnose(listing_id: str, conn) -> dict | None:
                 break
 
         cur.execute(_comps_sql(where_sql), where_params)
-        comp_rows = cur.fetchall()
+        comp_rows = _sample_comps_evenly(cur.fetchall())
 
         # TabPFN 학습 표본은 화면 비교군과 분리해 더 넓게 잡는다 — 사다리(동종 비교)는
         # 5건이면 멈추는데 TabPFN 최소 표본은 10건이라, 동종 비교가 잘 될수록 예측이
@@ -563,6 +630,11 @@ def diagnose(listing_id: str, conn) -> dict | None:
         "percentile": percentile,
         "verdict": verdict,
         "verdict_basis": verdict_basis,
-        "tabpfn": {"price": tabpfn_price, "note": tabpfn_note, "quantiles": tabpfn_quantiles},
+        "tabpfn": {
+            "price": tabpfn_price,
+            "note": tabpfn_note,
+            "quantiles": tabpfn_quantiles,
+            "cdf_at_price": _cdf_at_price(target["price"], tabpfn_quantiles),
+        },
         "comps": [_comp_summary(r) for r in comp_rows],
     }

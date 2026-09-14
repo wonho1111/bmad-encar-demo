@@ -65,10 +65,14 @@ export type MarketDiagnosisData = {
   // 판정을 보류한다, api/app/market_price.py MIN_VERDICT_SAMPLE).
   verdict_basis: '분위수' | '적정가' | '사분위' | '표본 부족' | null;
   // quantiles: TabPFN 예측 분포의 분위수(원 단위, 2026-09-03 additive) — 표본 부족·미설치면 null.
+  // cdf_at_price: 분위수 곡선 위에서 이 매물 price의 누적 비율(0~1, 2026-09-14 DW-885 additive) —
+  // verdict(배지)와 같은 산출식이라 한 문장 판정도 이 값을 우선 쓴다(resolveJudgementRatio 참조).
+  // quantiles가 없으면(TabPFN 미예측) 이 값도 null.
   tabpfn: {
     price: number | null;
     note: string;
     quantiles?: { q10: number; q25: number; q50: number; q75: number; q90: number } | null;
+    cdf_at_price?: number | null;
   };
   comps: MarketDiagnosisComp[];
 };
@@ -174,22 +178,35 @@ function toManString(won: number): string {
 }
 
 export function formatHeadline(range: PriceRange): string {
-  return `이런 조건이면 보통 ${toManString(range.low)}~${toManString(range.high)}만원`;
+  return `비슷한 조건이면 보통 ${toManString(range.low)}~${toManString(range.high)}만원`;
 }
 
-// 한 문장 판정(②) — 백분위를 "열에 N(한글 수사)이 이 매물보다 쌉니다" 형태로 푼다. 실제 비교군 건수
+// 한 문장 판정(②) — 비율을 "열에 N(한글 수사)이 이 매물보다 쌉니다" 형태로 푼다. 실제 비교군 건수
 // (예: "100대 중 90대")를 쓰지 않는다 — sample_count가 작을 때(예: 9건) 그 숫자를 그대로 말하면
 // 표본이 작다는 인상을 주고, 사용자가 실제 대수로 오해하기 쉽다(DW-862). "열"은 항상 10으로 고정한
-// 비유 단위다. 순수 함수(단위테스트 대상) — percentile은 호출부에서 shouldShowPercentileChip으로
-// 먼저 걸러진 값만 넘긴다.
+// 비유 단위다. 순수 함수(단위테스트 대상) — 비율은 호출부에서 resolveJudgementRatio·
+// shouldShowPercentileChip으로 먼저 걸러진 값만 넘긴다.
 const KOREAN_COUNT = ['', '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉'];
 
-export function buildJudgementSentence(percentile: number): string {
-  const n = Math.round(Math.max(0, Math.min(1, percentile)) * 10);
-  if (n <= 0) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.';
-  if (n >= 10) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.';
+// 2026-09-14 개정(DW-885, 운영 실측): 판정 배지(verdict, 분위수 5단)와 이 문장이 서로 다른
+// 산출식(문장은 비교군 percentile, 배지는 TabPFN 분위수)을 써서 어긋났다 — 배지는 "적정"인데
+// 문장은 "열에 여덟이 더 쌉니다" 같은 사례가 실측됐다. tabpfn.cdf_at_price(분위수 곡선 위에서
+// verdict와 같은 방식으로 구한 누적 비율)가 있으면 그걸 우선 쓰고, 없으면(TabPFN 미예측) 종전
+// percentile로 폴백한다. 순수 함수(단위테스트 대상).
+export function resolveJudgementRatio(
+  cdfAtPrice: number | null | undefined,
+  percentile: number | null,
+): number | null {
+  if (cdfAtPrice !== null && cdfAtPrice !== undefined) return cdfAtPrice;
+  return percentile;
+}
+
+export function buildJudgementSentence(ratio: number): string {
+  const n = Math.round(Math.max(0, Math.min(1, ratio)) * 10);
+  if (n <= 0) return 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.';
+  if (n >= 10) return 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.';
   // "열에 아홉" 꼴(사용자 확정 문구 2026-09-05). "열 대 중 N대"는 실제 대수로 읽혀 금지 — E2E 실측(2026-09-14)에서 걸림.
-  return `AI 예상으로는 이런 조건의 차 열에 ${KOREAN_COUNT[n]}이 이 매물보다 쌉니다.`;
+  return `AI 예상으로는 비슷한 조건의 차 열에 ${KOREAN_COUNT[n]}이 이 매물보다 쌉니다.`;
 }
 
 // 타일 2개 아래 백분율 비교(④) — 기준은 항상 tabpfn.price(모델 예측 적정가) 하나뿐이다. 순수 함수.
@@ -198,6 +215,19 @@ export function buildTabpfnDiffLabel(listingPrice: number, tabpfnPrice: number |
   const diffPct = Math.round(((listingPrice - tabpfnPrice) / tabpfnPrice) * 100);
   if (diffPct === 0) return 'AI 적정가와 거의 같아요';
   return diffPct > 0 ? `AI 적정가보다 ${diffPct}% 높음` : `AI 적정가보다 ${Math.abs(diffPct)}% 낮음`;
+}
+
+// "자세히" 비교 매물 목록(⑤) 상한 — 점(그림)은 comps 전부 찍지만(MarketDiagnosisPriceChart),
+// 목록은 줄마다 텍스트라 MAX_COMPS(API, 최대 500건)를 그대로 나열하면 접힘 영역이 지나치게
+// 길어진다(2026-09-14 DW-884, 운영 실측). 60건까지만 보여주고 나머지는 "외 N대" 한 줄로 요약한다.
+const MAX_COMPS_LIST = 60;
+
+export function buildCompsListView(comps: MarketDiagnosisComp[]): {
+  shown: MarketDiagnosisComp[];
+  moreCount: number;
+} {
+  if (comps.length <= MAX_COMPS_LIST) return { shown: comps, moreCount: 0 };
+  return { shown: comps.slice(0, MAX_COMPS_LIST), moreCount: comps.length - MAX_COMPS_LIST };
 }
 
 function StatCell({
@@ -229,9 +259,11 @@ export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; a
   const verdictBadge = buildVerdictBadge(verdict, data.verdict_basis);
   const basisLabel = verdictBasisLabel(data.verdict_basis);
   const showJudgement = shouldShowPercentileChip(percentile, criteria.sample_count);
+  const judgementRatio = resolveJudgementRatio(tabpfn.cdf_at_price, percentile);
   const priceRange = buildPriceRange(data);
   const tabpfnDiffLabel = buildTabpfnDiffLabel(listing.price, tabpfn.price);
   const hasChart = stats !== null || !!tabpfn.quantiles;
+  const compsListView = buildCompsListView(comps);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -253,8 +285,8 @@ export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; a
 
       {/* ② 한 문장 판정 + 기존 판정 배지(작게) */}
       <div className="flex flex-wrap items-center gap-2">
-        {showJudgement && percentile !== null && (
-          <p className="text-sm font-medium text-ink-primary">{buildJudgementSentence(percentile)}</p>
+        {showJudgement && judgementRatio !== null && (
+          <p className="text-sm font-medium text-ink-primary">{buildJudgementSentence(judgementRatio)}</p>
         )}
         {verdictBadge && (
           <span
@@ -344,11 +376,12 @@ export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; a
 
           {comps.length > 0 && (
             <ul className="flex flex-col gap-1 text-caption text-ink-secondary">
-              {comps.map((c) => (
+              {compsListView.shown.map((c) => (
                 <li key={c.id}>
                   {c.model} {c.year}년식 · {formatManKm(c.mileage)} · {formatPrice(c.price)}
                 </li>
               ))}
+              {compsListView.moreCount > 0 && <li>외 {compsListView.moreCount}대</li>}
             </ul>
           )}
         </div>
