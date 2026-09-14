@@ -1275,6 +1275,115 @@ def test_duplicate_calls_not_merged_when_no_resolved_reference(monkeypatch):
     assert result["tools_used"].count("market_price_stats") == 2
 
 
+# ───────── (10c) 챗봇 답변 검증 2026-09-14(C54) — _apply_reference_resolution의 compare_listings
+# 다건 처리 ─────────
+#
+# 배경: "1번이랑 3번 비교해줘"에서 resolve_list_reference가 예전엔 순번 하나만 풀어(1번만)
+# always-override가 compare_listings 인자를 [1번]으로 깎았고, 같은 호출이 3회 반복됐다(C54).
+# 순번 다건 해석(위 (5b))이 된 지금도, 해석 결과가 우연히 1건뿐일 때 모델이 이미 채운 다건
+# 인자를 존중해야 정보 손실이 없다 — 아래는 _apply_reference_resolution 자체를 직접 검증한다.
+
+def test_apply_reference_resolution_compare_listings_overrides_when_two_or_more_resolved():
+    args, changed = agent_module._apply_reference_resolution(
+        "compare_listings", {"listing_ids": ["wrong"]}, ["id1", "id3"]
+    )
+    assert changed is True
+    assert args["listing_ids"] == ["id1", "id3"]
+
+
+def test_apply_reference_resolution_compare_listings_keeps_model_args_when_single_resolved():
+    # 해석 결과가 1건뿐이고 모델이 이미 다건 인자를 채웠으면 손대지 않는다.
+    args, changed = agent_module._apply_reference_resolution(
+        "compare_listings", {"listing_ids": ["id1", "id2"]}, ["id1"]
+    )
+    assert changed is False
+    assert args["listing_ids"] == ["id1", "id2"]
+
+
+def test_apply_reference_resolution_compare_listings_fills_empty_args_when_single_resolved():
+    # 해석 결과가 1건뿐이라도 모델이 인자를 아예 비웠으면 그 1건으로 채운다.
+    args, changed = agent_module._apply_reference_resolution("compare_listings", {}, ["id1"])
+    assert changed is True
+    assert args["listing_ids"] == ["id1"]
+
+
+def test_apply_reference_resolution_market_price_stats_still_always_overrides():
+    # market_price_stats는 종전대로 해석 id 1건으로 무조건 교체한다(회귀 0).
+    args, changed = agent_module._apply_reference_resolution(
+        "market_price_stats", {"listing_id": "wrong"}, ["id1", "id3"]
+    )
+    assert changed is True
+    assert args["listing_id"] == "id1"
+
+
+def test_c54_multiple_ordinal_compare_listings_deduped_to_single_correct_call(monkeypatch):
+    """C54 — "1번이랑 3번 비교해줘"에서 모델이 같은 스텝에 compare_listings를 (잘못된 단건
+    인자로) 3번 불러도, 해석된 [id1, id3]로 전부 교체된 뒤 인자가 완전히 같아진 호출끼리
+    합쳐져 실제로는 1번만 실행된다."""
+    compare_tool = _CapturingFakeTool("compare_listings", artifact=[])
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "compare_listings", "args": {"listing_ids": ["id1"]}, "id": "call-1"},
+            {"name": "compare_listings", "args": {"listing_ids": ["id1"]}, "id": "call-2"},
+            {"name": "compare_listings", "args": {"listing_ids": ["id1"]}, "id": "call-3"},
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(answer="1번과 3번을 비교했어요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"compare_listings": compare_tool})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    rows = [
+        ("id1", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("id2", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+        ("id3", "기아", "K5", 2019, 15000000, 80000, "인천", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "3건을 찾았어요.", "listing_ids": ["id1", "id2", "id3"]}]
+    result = agent_module.run_search_agent("1번이랑 3번 비교해줘", context=context)
+
+    assert compare_tool.received_args == [{"listing_ids": ["id1", "id3"]}]  # 딱 1번만 실행됐다.
+    assert result["tools_used"].count("compare_listings") == 1
+
+
+def test_dedup_keeps_both_calls_when_post_replacement_args_differ(monkeypatch):
+    """C54(항목 3c) — 도구 이름만 보고 합치면(예전 방식) 안 된다는 걸 잠근다. 해석된 지칭
+    id가 1건뿐이면 compare_listings 인자는 모델 것이 그대로 유지되므로(위 (10c)), 같은
+    스텝에서 모델이 서로 다른(둘 다 정당한) 조합으로 compare_listings를 두 번 부르면 교체
+    후에도 인자가 다르다 — 이때는 병합하지 않고 둘 다 실행돼야 한다."""
+    compare_tool = _CapturingFakeTool("compare_listings", artifact=[])
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "compare_listings", "args": {"listing_ids": ["id1", "id2"]}, "id": "call-1"},
+            {"name": "compare_listings", "args": {"listing_ids": ["id1", "id3"]}, "id": "call-2"},
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(answer="두 조합 다 비교했어요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"compare_listings": compare_tool})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    rows = [
+        ("id1", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("id2", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+        ("id3", "기아", "K5", 2019, 15000000, 80000, "인천", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    # "1번" 지칭 하나뿐이라 해석 결과가 1건(id1)이다 — compare_listings 인자는 모델 것을 그대로
+    # 둔다(위 (10c)), 즉 두 호출의 교체 후 인자가 서로 다르게 유지된다.
+    context = [{"role": "assistant", "content": "3건을 찾았어요.", "listing_ids": ["id1", "id2", "id3"]}]
+    result = agent_module.run_search_agent("1번 매물 두 조합으로 비교해줘", context=context)
+
+    assert compare_tool.received_args == [{"listing_ids": ["id1", "id2"]}, {"listing_ids": ["id1", "id3"]}]
+    assert result["tools_used"].count("compare_listings") == 2
+
+
 # ───────── (11) C36·C71 — search_listings 미호출 사후 강제(post-loop, has_listing_intent) ─────────
 #
 # 배경: aeba16a 100건 평가에서 남은 5건 중 2건. C36("여자친구랑 드라이브 다니기 좋은 차")는
@@ -1369,6 +1478,58 @@ def test_c48_exclusion_word_switches_condition_instead_of_blocking(monkeypatch):
         {"fuel": "하이브리드", "body_type": "세단", "price_max": 40_000_000}
     ]
     assert result["answer"] == "하이브리드만 골랐어요."
+
+
+def test_c48_exclusion_word_skips_narrow_template_even_when_cards_present(monkeypatch):
+    """챗봇 답변 검증 2026-09-14(C48 부작용) — 직전 목록에 실제 카드가 있어(narrow_by_attribute가
+    빈 리스트를 돌려줄 수 있는 상황) "그거 말고 하이브리드만"을 받아도, 제외어가 있으면
+    속성 좁힘 템플릿(narrow_by_attribute)이 발동하지 않고 _followup_switch의 재검색 경로로
+    간다 — 전에는 템플릿이 먼저 잡아 "직전 목록에 하이브리드 없음"으로 끝났다(C48)."""
+    captured_tool = _CapturingFakeTool("search_listings", artifact=[])
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "search_listings", "args": {"fuel": "하이브리드"}, "id": "call-1"}
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="하이브리드만 골랐어요.", selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": captured_tool})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    # 직전 목록에 가솔린 매물만 있다 — narrow_by_attribute를 그대로 태우면 하이브리드
+    # 매치가 0건이라 "없습니다" 템플릿으로 빠진다.
+    rows = [("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None)]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [
+        {"role": "user", "content": "4천만원 이하 세단 좀 보여줘"},
+        {"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]},
+    ]
+    result = agent_module.run_search_agent("그거 말고 하이브리드만", context=context)
+
+    assert "narrow_by_attribute" not in result["tools_used"]
+    assert result["tools_used"] == ["search_listings"]
+    assert result["answer"] == "하이브리드만 골랐어요."
+
+
+def test_narrow_template_fires_without_exclusion_word(monkeypatch):
+    """대조군 — 같은 카드 구성이라도 제외어 없이 "그 중에 하이브리드만"이면 기존대로 속성
+    좁힘 템플릿이 발동한다(LLM 미호출, 코드가 "없습니다" 답변을 직접 조립)."""
+    _patch_boom_base_llm(monkeypatch)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    rows = [("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None)]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]}]
+    result = agent_module.run_search_agent("그 중에 하이브리드만", context=context)
+
+    assert result["tools_used"] == ["narrow_by_attribute"]
+    assert result["listings"] == []
+    assert result["answer"] == "직전 목록에는 하이브리드인 매물이 없습니다. 조건을 넓혀 다시 찾아드릴까요?"
 
 
 # ───────── (13) C50·C59 — 직전 목록 속성 좁힘 ─────────
@@ -1529,136 +1690,6 @@ def test_narrow_by_attribute_mixed_intent_keeps_existing_llm_path(monkeypatch):
     assert result["tools_used"] == ["market_price_stats"]
     assert result["answer"] == "흰색 매물 시세를 알려드려요."
     assert result["market_diagnosis"] == diagnosis
-
-
-# ───────── (15) 챗봇 답변 검증 2026-09-14(C, C42·C71) — search_listings 결과 있는데
-# selected_listing_ids 빈 채로 끝나면 재시도 + 강제 채움 ─────────
-
-def test_c42_empty_selection_despite_search_results_triggers_retry_and_fills(monkeypatch):
-    """C42 — search_listings가 20건을 돌려줬는데 최종 selected_listing_ids가 비고 되묻기만
-    했다. found_count 지시로도 안 먹히면 더 강하게 1회 재시도하고, 그래도 비면 코드가 상위
-    5건 id를 채운다."""
-    card1 = ListingCard(id="aaa", manufacturer="기아", model="쏘렌토", year=2021, price=1, mileage=1, region="서울")
-    card2 = ListingCard(id="bbb", manufacturer="기아", model="쏘렌토", year=2020, price=2, mileage=2, region="부산")
-
-    tool_llm = _SequenceToolLLM([
-        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
-        _FakeAIMessage(tool_calls=[]),
-    ])
-
-    class _RetryAwareBaseLLM:
-        def __init__(self):
-            self.finalize_call_count = 0
-
-        def bind_tools(self, tools):
-            return tool_llm
-
-        def with_structured_output(self, schema):
-            outer = self
-
-            class _Structured:
-                def invoke(self, messages):
-                    outer.finalize_call_count += 1
-                    # 매번 예산·모델을 되묻기만 하고 selected_listing_ids를 비운다(재현 결함).
-                    return agent_module._AgentFinalOutput(
-                        answer="예산을 좀 더 알려주시겠어요?", selected_listing_ids=[], clarify=None,
-                    )
-
-            return _Structured()
-
-    base_llm = _RetryAwareBaseLLM()
-    monkeypatch.setattr(agent_module, "_llm", lambda: base_llm)
-    monkeypatch.setattr(
-        agent_module, "TOOLS_BY_NAME",
-        {"search_listings": _FakeTool("search_listings", artifact=[card1, card2])},
-    )
-    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
-
-    result = agent_module.run_search_agent("쏘렌토 추천해줘")
-
-    assert base_llm.finalize_call_count == 2  # found_count 1회 + 재시도 1회.
-    assert [c.id for c in result["listings"]] == ["aaa", "bbb"]  # 코드가 상위 결과로 강제 채움.
-
-
-def test_c71_empty_selection_retry_succeeds_without_forced_fill(monkeypatch):
-    """재시도 지시에 모델이 제대로 응답하면(id를 채우면) 코드가 강제로 덮지 않고 그 결과를
-    그대로 쓴다."""
-    card1 = ListingCard(id="aaa", manufacturer="현대", model="세단", year=2021, price=1, mileage=1, region="서울")
-
-    tool_llm = _SequenceToolLLM([
-        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
-        _FakeAIMessage(tool_calls=[]),
-    ])
-
-    class _RetryThenFillBaseLLM:
-        def __init__(self):
-            self.finalize_call_count = 0
-
-        def bind_tools(self, tools):
-            return tool_llm
-
-        def with_structured_output(self, schema):
-            outer = self
-
-            class _Structured:
-                def invoke(self, messages):
-                    outer.finalize_call_count += 1
-                    if outer.finalize_call_count == 1:
-                        return agent_module._AgentFinalOutput(
-                            answer="조건에 맞는 세단을 찾았어요.", selected_listing_ids=[], clarify=None,
-                        )
-                    return agent_module._AgentFinalOutput(
-                        answer="상위 결과로 안내드려요.", selected_listing_ids=["aaa"], clarify=None,
-                    )
-
-            return _Structured()
-
-    base_llm = _RetryThenFillBaseLLM()
-    monkeypatch.setattr(agent_module, "_llm", lambda: base_llm)
-    monkeypatch.setattr(
-        agent_module, "TOOLS_BY_NAME",
-        {"search_listings": _FakeTool("search_listings", artifact=[card1])},
-    )
-    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
-
-    result = agent_module.run_search_agent("적당한 주행거리의 세단 보여줘")
-
-    assert base_llm.finalize_call_count == 2
-    assert result["answer"] == "상위 결과로 안내드려요."
-    assert [c.id for c in result["listings"]] == ["aaa"]
-
-
-def test_no_retry_when_search_listings_never_returned_results(monkeypatch):
-    """대조군 — search_listings가 0건이면(재검색해도 없음) 매물 의도가 있어도 재시도하지
-    않는다(채울 재료 자체가 없다)."""
-    tool_llm = _SequenceToolLLM([
-        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
-        _FakeAIMessage(tool_calls=[]),
-    ])
-    finalize_calls = []
-
-    class _CountingBaseLLM:
-        def bind_tools(self, tools):
-            return tool_llm
-
-        def with_structured_output(self, schema):
-            class _Structured:
-                def invoke(self, messages):
-                    finalize_calls.append(1)
-                    return agent_module._AgentFinalOutput(
-                        answer="조건에 맞는 매물이 없습니다.", selected_listing_ids=[], clarify=None,
-                    )
-
-            return _Structured()
-
-    monkeypatch.setattr(agent_module, "_llm", lambda: _CountingBaseLLM())
-    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _FakeTool("search_listings", artifact=[])})
-    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
-
-    result = agent_module.run_search_agent("3천만원 이하 SUV 보여줘")
-
-    assert len(finalize_calls) == 1  # 재시도 없음.
-    assert result["listings"] == []
 
 
 # ───────── (16) 챗봇 답변 검증 2026-09-14(E, C68) — accident_free_only 자동 주입 배선 ─────────

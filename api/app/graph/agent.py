@@ -259,18 +259,12 @@ def _reject_result(query: str) -> dict:
     }
 
 
-def _finalize(
-    base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int = 0, extra_instruction: str | None = None,
-) -> _AgentFinalOutput:
+def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int = 0) -> _AgentFinalOutput:
     """도구 없이 structured output 1회 호출로 최종 응답을 만든다(router_node와 동일 관례).
 
     found_count: 루프 동안 도구가 실제로 찾은 매물 수. 0이 아니면 최종화 지시에 사실로
     주입한다 — 회귀 실측(S1·S14, 2026-08-31): 도구가 매물을 찾았는데도 최종화 LLM이
     selected_listing_ids를 비우고 "찾았다"는 서술+되묻기만 내는 자기모순 응답을 냈다.
-
-    extra_instruction(챗봇 답변 검증 2026-09-14, C42·C71): found_count 지시로도 안 먹혀
-    selected_listing_ids가 여전히 빈 채로 나왔을 때, run_search_agent가 한 번 더 강하게
-    지시해 재호출할 때 붙인다(아래 "[재시도]" 문구, 호출부 참조).
     """
     structured = base_llm.with_structured_output(_AgentFinalOutput)
     instruction = _FINALIZE_INSTRUCTION
@@ -281,8 +275,6 @@ def _finalize(
             "selected_listing_ids에 반드시 채워라 — 찾았다고 서술만 하고 목록을 비우는 응답은 "
             "금지다. 매물을 골랐다면 clarify는 채우지 마라."
         )
-    if extra_instruction:
-        instruction += f"\n{extra_instruction}"
     return structured.invoke(messages + [HumanMessage(instruction)])
 
 
@@ -439,13 +431,21 @@ def _cards_for_ids(ids: list[str]) -> list[ListingCard]:
 def _apply_reference_resolution(tool_name: str, args: dict, resolved_ids: list[str] | None) -> tuple[dict, bool]:
     """DW-855·챗봇 답변 검증 2026-09-14(C59·C60) — 풀린 지칭 id(순번·극값·비교,
     answer_guards.resolve_list_reference)로 market_price_stats/compare_listings 인자를
-    항상 교체한다.
+    교체한다.
 
-    2026-09-14 개정: 예전엔 인자가 비어 있거나 직전 목록 "밖" id일 때만 바꿨다 — 그런데
-    모델이 직전 목록 "안"의 다른(지칭이 가리키는 것과 다른) id를 넣으면 그대로 통과해버렸다
-    (C60 실측: "더 저렴한 쪽"이 최저가 매물을 가리키는데 모델이 market_price_stats를 목록
-    안의 다른 id로 2번 호출). 지칭이 풀렸다는 것 자체가 "이 질문은 정확히 이 id(들)을
-    가리킨다"는 뜻이므로, 모델이 뭘 채웠든 무조건 그 id로 확정한다.
+    2026-09-14 개정(C60): 예전엔 인자가 비어 있거나 직전 목록 "밖" id일 때만 바꿨다 —
+    그런데 모델이 직전 목록 "안"의 다른(지칭이 가리키는 것과 다른) id를 넣으면 그대로
+    통과해버렸다(C60 실측: "더 저렴한 쪽"이 최저가 매물을 가리키는데 모델이
+    market_price_stats를 목록 안의 다른 id로 2번 호출). 지칭이 풀렸다는 것 자체가 "이
+    질문은 정확히 이 id(들)을 가리킨다"는 뜻이므로, market_price_stats는 모델이 뭘 채웠든
+    무조건 그 id로 확정한다.
+
+    2026-09-14 재개정(C54): compare_listings는 해석 결과가 **2건 이상**일 때만 무조건
+    교체한다 — "1번이랑 3번 비교해줘"에서 resolve_list_reference가 순번 하나만 풀던 시절엔
+    always-override가 모델이 제대로 채운 다건 인자까지 1건으로 깎아버려, 같은 호출이 여러
+    번 반복되는 부작용이 났다(C54). 순번 다건 해석이 되는 지금도 해석 결과가 우연히 1건뿐일
+    땐(예: 순번 하나만 언급) 모델이 이미 채운 다건 인자를 존중해야 정보 손실이 없다 — 이때는
+    인자가 비어 있을 때만 그 1건으로 채운다.
     """
     if not resolved_ids:
         return args, False
@@ -454,9 +454,15 @@ def _apply_reference_resolution(tool_name: str, args: dict, resolved_ids: list[s
         new_args["listing_id"] = resolved_ids[0]
         return new_args, True
     elif tool_name == "compare_listings":
-        new_args = dict(args)
-        new_args["listing_ids"] = resolved_ids
-        return new_args, True
+        if len(resolved_ids) >= 2:
+            new_args = dict(args)
+            new_args["listing_ids"] = resolved_ids
+            return new_args, True
+        if not args.get("listing_ids"):
+            new_args = dict(args)
+            new_args["listing_ids"] = resolved_ids
+            return new_args, True
+        return args, False
     return args, False
 
 
@@ -576,8 +582,13 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 좁히는 질의면, 코드가 직접 카드 속성을 비교해 id를 걸러낸다(모델이 도구 원문을 다시
     # 해석하다 반대로 답하는 실측 결함 방지). None이면 좁힘 대상이 아니라는 뜻(다른 지칭과
     # 섞이지 않게 아래 세 지점 모두 조용히 그대로 진행).
+    # ⚠️ _followup_switch(C48, 제외어 "말고/다른/빼고/제외")면 발동하지 않는다 — "그거 말고
+    # 하이브리드만"은 직전 목록을 속성으로 "좁히는" 것이 아니라 조건을 바꿔 새로 찾으라는
+    # 뜻인데, 좁힘 판정이 먼저 잡아 "직전 목록에 하이브리드 없음" 템플릿 답변으로 끝나버렸다
+    # (챗봇 답변 검증 2026-09-14 C48 실측 — _followup_switch의 재검색 경로가 우선해야 한다).
     _narrowed_ids_by_attribute = (
-        answer_guards.narrow_by_attribute(query, _recent_cards_for_reference) if block_followup_research else None
+        answer_guards.narrow_by_attribute(query, _recent_cards_for_reference)
+        if block_followup_research and not _followup_switch else None
     )
 
     # 속성 좁힘 템플릿 응답(챗봇 답변 검증 2026-09-14, C50·C59) — 좁힘 조건 외의 요구(시세·
@@ -626,16 +637,6 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
 
-    # search_listings가 실제로 돌려준 id만 순서대로 모은다(C42·C71 — compare_listings 등
-    # 다른 도구도 seen_listings에 카드를 얹지만, "검색 결과 상위 5건"은 search_listings
-    # 결과여야 한다). 아래 세 지점(강제 호출 2곳 + 정상 디스패치 1곳) 모두에서 채운다.
-    search_listings_ids: list[str] = []
-
-    def _track_search_listings_ids(cards):
-        for card in cards or []:
-            if card.id not in search_listings_ids:
-                search_listings_ids.append(card.id)
-
     # 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats 호출마다 결과를 전부
     # 모아둔다(매물을 못 찾은 호출은 artifact가 None이라 담기지 않는다). 상한
     # _MAX_MARKET_DIAGNOSES는 프롬프트·응답 크기를 무한정 키우지 않기 위한 설계 확정값 —
@@ -679,7 +680,6 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                             if artifact:
                                 for card in artifact:
                                     seen_listings[card.id] = card
-                                _track_search_listings_ids(artifact)
                             continue
                 else:
                     # 조건 어휘가 없음 — 순수 지식형 질문으로 보고 search_guides를 강제로 한 번
@@ -737,18 +737,26 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
         if _resolved_reference_ids:
             # 같은 도구 중복 호출 합치기(C60 실측) — 지칭이 풀린 턴에서 모델이 같은 도구를
             # 같은 스텝에 여러 번 부르면(예: market_price_stats를 다른 id로 2번), 위
-            # _apply_reference_resolution이 어차피 둘 다 같은 해석 id로 덮어써 같은 호출이
-            # 중복 실행된다 — market_diagnoses_all에 같은 진단이 2건 쌓여 "다건 진단"으로
-            # 잘못 노출되는 부작용까지 생긴다. 지칭이 풀린 턴에서만(다른 상황은 손대지 않는다)
-            # market_price_stats·compare_listings 각각 첫 호출만 남긴다.
-            seen_names: set[str] = set()
+            # _apply_reference_resolution이 둘 다 같은 해석 id로 덮어써 같은 호출이 중복
+            # 실행될 수 있다 — market_diagnoses_all에 같은 진단이 2건 쌓여 "다건 진단"으로
+            # 잘못 노출되는 부작용까지 생긴다.
+            # 2026-09-14 개정(C54): 도구 이름만 보고 합치면 "1번이랑 3번 비교해줘"처럼 모델이
+            # compare_listings를 서로 다른(정당한) 인자로 여러 번 부른 경우까지 첫 호출만
+            # 남기고 지워버린다. 그래서 이름이 아니라 **교체 후(after
+            # _apply_reference_resolution) 인자가 완전히 같은 호출**끼리만 합친다 — 인자가
+            # 다르면 같은 도구라도 둘 다 남긴다.
+            seen_resolved_args: dict[str, list[dict]] = {}
             deduped_calls = []
             for tc in step_tool_calls:
                 name = tc.get("name")
                 if name in ("market_price_stats", "compare_listings"):
-                    if name in seen_names:
+                    candidate_args, _ = _apply_reference_resolution(
+                        name, tc.get("args") or {}, _resolved_reference_ids
+                    )
+                    prior = seen_resolved_args.setdefault(name, [])
+                    if candidate_args in prior:
                         continue
-                    seen_names.add(name)
+                    prior.append(candidate_args)
                 deduped_calls.append(tc)
             step_tool_calls = deduped_calls
 
@@ -825,8 +833,6 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
             if tool_name in ("search_listings", "compare_listings") and artifact:
                 for card in artifact:
                     seen_listings[card.id] = card
-                if tool_name == "search_listings":
-                    _track_search_listings_ids(artifact)
             elif tool_name == "market_price_stats":
                 # "마지막 호출 1건"을 그대로 반영한다 — 매물을 못 찾은 마지막 호출이면
                 # market_diagnosis도 None으로 덮인다(가장 최근 상태를 있는 그대로 노출).
@@ -865,24 +871,8 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                 if artifact:
                     for card in artifact:
                         seen_listings[card.id] = card
-                    _track_search_listings_ids(artifact)
 
     final = _finalize(base_llm, messages, found_count=len(seen_listings))
-
-    # C42·C71 실측 — search_listings가 20건을 돌려줬는데 최종 selected_listing_ids가 비고
-    # 본문은 예산·모델을 되묻기만 했다(found_count 지시(위 _finalize)로도 못 잡은 경우). 매물
-    # 의도가 있고 search_listings 결과가 1건 이상인데 여전히 비어 있으면, 더 강한 지시로 1회
-    # 재호출한다 — 그래도 비면 코드가 상위 5건 id를 직접 채운다(본문은 재호출 결과 그대로).
-    if not final.selected_listing_ids and search_listings_ids and answer_guards.has_listing_intent(query):
-        final = _finalize(
-            base_llm, messages, found_count=len(seen_listings),
-            extra_instruction=(
-                "[재시도] 도구 결과 상위 5건 id를 반드시 selected_listing_ids에 담고 본문에서 "
-                "그 매물들을 한 줄씩 제시한 뒤 필요하면 조건을 되물어라."
-            ),
-        )
-        if not final.selected_listing_ids:
-            final.selected_listing_ids = search_listings_ids[:5]
 
     listings = [seen_listings[lid] for lid in final.selected_listing_ids if lid in seen_listings]
 

@@ -229,6 +229,33 @@ def test_resolve_list_reference_ordinal_out_of_range_falls_through_to_none():
     assert answer_guards.resolve_list_reference("5번째 매물 보여줘", _THREE_CARDS) is None
 
 
+# ───────── (5b) resolve_list_reference — 순번 복수 지칭(챗봇 답변 검증 2026-09-14 C54) ─────────
+#
+# C54: "1번이랑 3번 비교해줘"에서 resolve_list_reference가 1번만 돌려줘 always-override가
+# compare_listings 인자를 [1번]으로 바꾸고, 같은 호출이 반복됐다. 순번은 여럿 나오면 문장
+# 순서대로 전부 모아 돌려줘야 한다.
+
+def test_resolve_list_reference_multiple_ordinals_word_form():
+    assert answer_guards.resolve_list_reference("첫 번째랑 세 번째 비교해줘", _THREE_CARDS) == ["id1", "id3"]
+
+
+def test_resolve_list_reference_multiple_ordinals_digit_beon_ilang():
+    assert answer_guards.resolve_list_reference("1번이랑 3번 비교해줘", _THREE_CARDS) == ["id1", "id3"]
+
+
+def test_resolve_list_reference_multiple_ordinals_digit_beon_gwa():
+    assert answer_guards.resolve_list_reference("1번과 3번 비교해줘", _THREE_CARDS) == ["id1", "id3"]
+
+
+def test_resolve_list_reference_multiple_ordinals_comma_list():
+    assert answer_guards.resolve_list_reference("1, 3번 비교해줘", _THREE_CARDS) == ["id1", "id3"]
+
+
+def test_resolve_list_reference_multiple_ordinals_out_of_range_member_dropped():
+    # 카드 3장인데 "1번이랑 5번" — 범위 밖(5번)은 버리고 유효한 것만 남긴다.
+    assert answer_guards.resolve_list_reference("1번이랑 5번 비교해줘", _THREE_CARDS) == ["id1"]
+
+
 # ───────── (6) resolve_list_reference ordinal_cards(C59, 챗봇 답변 검증 2026-09-14) ─────────
 #
 # C59 실측: 2턴 카드가 [3110f815, 80730d06]인데 3턴 "첫 번째"가 (여러 턴을 병합한 목록 기준)

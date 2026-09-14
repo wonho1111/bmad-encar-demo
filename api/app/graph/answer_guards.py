@@ -252,22 +252,35 @@ _ORDINAL_WORD_MAP = {
     "여섯": 6, "일곱": 7, "여덟": 8, "아홉": 9, "열": 10,
 }
 
+# 순번 복수 지칭("1번이랑 3번"·"1, 3번" 등, 챗봇 답변 검증 2026-09-14 C54) — 숫자가 쉼표로만
+# 나열되고 마지막 숫자에만 단위("번"/"번째")가 붙는 형태("1, 3번")는 개별 숫자+단위 패턴이
+# 앞쪽 숫자를 못 잡으므로 전용 패턴으로 한 번에 뽑는다.
+_ORDINAL_COMMA_LIST_RE = re.compile(r"(\d+(?:\s*,\s*\d+)+)\s*번(?:째)?")
 
-def _resolve_ordinal(query: str) -> int | None:
+
+def _resolve_ordinals(query: str) -> list[int]:
     """"첫 번째"·"두 번째"(한글 수사)·"2번째"(숫자+번째)·"1번"(숫자+번) 지칭에서 순번을
-    뽑는다. 여럿 섞여 있으면 한글 수사 → 숫자+번째 → 숫자+번 순으로 먼저 찾은 것을 쓴다
-    (문장에 먼저 등장하는 것을 따로 고르지 않는다 — "부정어·범위 밖 표현은 건드리지
-    않는다"는 스펙대로, "말고"류 정정 표현까지 해석하려 들지 않는다)."""
-    m = _ORDINAL_WORD_RE.search(query)
-    if m:
-        return _ORDINAL_WORD_MAP.get(m.group(1))
-    m = _ORDINAL_DIGIT_JJAE_RE.search(query)
-    if m:
-        return int(m.group(1))
-    m = _ORDINAL_DIGIT_BEON_RE.search(query)
-    if m:
-        return int(m.group(1))
-    return None
+    **문장에 등장한 순서 그대로** 전부 뽑는다("1번이랑 3번"·"1번과 3번"·"첫 번째랑 세 번째"
+    처럼 복수 지칭을 모두 담는다, 챗봇 답변 검증 2026-09-14 C54). 쉼표로 숫자만 나열하고
+    마지막에만 단위가 붙는 "1, 3번" 형태는 별도 패턴(_ORDINAL_COMMA_LIST_RE)으로 먼저 잡는다
+    — 그러지 않으면 단위 없는 앞쪽 숫자("1")가 개별 숫자+단위 패턴에 안 걸린다.
+
+    지칭이 하나도 없으면 빈 리스트."""
+    comma_match = _ORDINAL_COMMA_LIST_RE.search(query)
+    if comma_match:
+        return [int(n) for n in re.split(r"\s*,\s*", comma_match.group(1))]
+
+    matches: list[tuple[int, int]] = []  # (문장 내 시작 위치, 순번)
+    for m in _ORDINAL_WORD_RE.finditer(query):
+        value = _ORDINAL_WORD_MAP.get(m.group(1))
+        if value is not None:
+            matches.append((m.start(), value))
+    for m in _ORDINAL_DIGIT_JJAE_RE.finditer(query):
+        matches.append((m.start(), int(m.group(1))))
+    for m in _ORDINAL_DIGIT_BEON_RE.finditer(query):
+        matches.append((m.start(), int(m.group(1))))
+    matches.sort(key=lambda t: t[0])
+    return [ordinal for _, ordinal in matches]
 
 
 # 극값·비교 지칭 → (카드 속성, 오름차순 여부). 비교("더 저렴한 쪽"/"둘 중 싼 거")는 카드가
@@ -309,9 +322,12 @@ def resolve_list_reference(query: str, cards: list, ordinal_cards: list | None =
     if not cards and not ordinal_cards:
         return None
 
-    ordinal = _resolve_ordinal(query)
-    if ordinal is not None and ordinal_cards and 1 <= ordinal <= len(ordinal_cards):
-        return [ordinal_cards[ordinal - 1].id]
+    ordinals = _resolve_ordinals(query)
+    if ordinals and ordinal_cards:
+        # 범위를 벗어난 순번(예: 카드 2장인데 "5번째")은 버리고 유효한 것만 순서대로 남긴다.
+        ordinal_ids = [ordinal_cards[o - 1].id for o in ordinals if 1 <= o <= len(ordinal_cards)]
+        if ordinal_ids:
+            return ordinal_ids
 
     if not cards:
         return None
