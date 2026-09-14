@@ -229,6 +229,40 @@ def test_resolve_list_reference_ordinal_out_of_range_falls_through_to_none():
     assert answer_guards.resolve_list_reference("5번째 매물 보여줘", _THREE_CARDS) is None
 
 
+# ───────── (6) resolve_list_reference ordinal_cards(C59, 챗봇 답변 검증 2026-09-14) ─────────
+#
+# C59 실측: 2턴 카드가 [3110f815, 80730d06]인데 3턴 "첫 번째"가 (여러 턴을 병합한 목록 기준)
+# 1턴의 매물을 잘못 골랐다. 순번은 ordinal_cards(최신 턴 하나)만 봐야 한다 — cards(병합 목록,
+# 극값·비교용)에 다른 카드가 섞여 있어도 순번 결과는 ordinal_cards 순서를 따른다.
+
+_LATEST_TURN_CARDS = [_card("latest1", 20_000_000, 2021, 30_000)]  # 최신 턴은 1건뿐.
+
+
+def test_resolve_list_reference_ordinal_uses_ordinal_cards_not_merged_cards():
+    # "두 번째"는 최신 턴(1건)만 보면 범위 밖이라 None이어야 한다. 만약 함수가 실수로
+    # cards(병합 목록, 3건)를 순번 기준으로 썼다면 병합 목록의 2번째(id2)가 잘못 나온다 —
+    # 이 단언이 그 오작동을 잡는다(첫 번째 원소가 두 목록에서 같아 구분 안 되는 경우를 피함).
+    merged_cards = _LATEST_TURN_CARDS + _THREE_CARDS  # 병합 목록(더 오래된 턴 매물까지 포함)
+    result = answer_guards.resolve_list_reference(
+        "그중 두 번째 거 시세 봐줘", merged_cards, ordinal_cards=_LATEST_TURN_CARDS,
+    )
+    assert result is None
+
+
+def test_resolve_list_reference_ordinal_cards_defaults_to_cards_when_omitted():
+    # 생략하면 기존과 동일하게 cards를 그대로 순번 기준으로 쓴다(회귀 0).
+    assert answer_guards.resolve_list_reference("그중 두 번째 거 시세 봐줘", _THREE_CARDS) == ["id2"]
+
+
+def test_resolve_list_reference_extreme_still_uses_cards_when_ordinal_cards_differs():
+    # 극값·비교 지칭은 ordinal_cards가 아니라 cards(병합 목록) 기준 그대로다.
+    merged_cards = _LATEST_TURN_CARDS + _THREE_CARDS
+    result = answer_guards.resolve_list_reference(
+        "제일 싼 거 시세 봐줘", merged_cards, ordinal_cards=_LATEST_TURN_CARDS,
+    )
+    assert result == ["id1"]  # merged_cards 전체 중 최저가(9,260,000원)는 id1.
+
+
 # ───────── (7) _parse_budget_max·has_listing_intent (C36·C48·C71) ─────────
 
 def test_parse_budget_max_cheonman_pattern():
@@ -264,6 +298,24 @@ def test_has_listing_intent_true_for_recommend_words():
 
 def test_has_listing_intent_false_for_pure_knowledge_question():
     assert answer_guards.has_listing_intent("침수차량인지 아닌지 구별하는 팁 있을까요") is False
+
+
+# ───────── (C32, 챗봇 답변 검증 2026-09-14) has_listing_intent 추천 어휘 확장 ─────────
+
+def test_has_listing_intent_true_for_c32_query():
+    # C32 실측 — "아이 둘 키우는데 차 뭐가 좋을까요"가 False로 새 추천 의도를 놓쳤다.
+    assert answer_guards.has_listing_intent("아이 둘 키우는데 차 뭐가 좋을까요") is True
+
+
+def test_has_listing_intent_true_for_new_recommend_words():
+    for query in ("어떤 차가 좋아요", "패밀리카 찾아줘", "가성비 좋은 거 골라줘", "괜찮은 차 있나요"):
+        assert answer_guards.has_listing_intent(query) is True, query
+
+
+def test_has_listing_intent_false_for_knowledge_question_mentioning_accident_free():
+    # C68 부작용 확인 — "무사고"가 infer_missing_args(accident_free_only)를 채우게 됐지만,
+    # 사고 상태 "차이"를 묻는 지식 질문은 여전히 매물 추천 의도가 아니어야 한다.
+    assert answer_guards.has_listing_intent("무사고 매물이랑 단순교환 매물이랑 뭐가 달라요?") is False
 
 
 # ───────── (8) narrow_by_attribute (C50·C59) ─────────
@@ -308,6 +360,47 @@ def test_narrow_by_attribute_none_without_cards():
     assert answer_guards.narrow_by_attribute("그 중에 무사고인 것만", []) is None
 
 
+# ───────── (8b) has_mixed_intent_beyond_narrowing·format_narrow_by_attribute_answer
+# (챗봇 답변 검증 2026-09-14, C50·C59) ─────────
+#
+# 속성 좁힘 질의가 감지되면 LLM 루프를 타지 않고 코드가 답변 본문을 직접 만든다(agent.py).
+# 카드는 이미 narrow_by_attribute가 정확히 걸러내므로, 본문도 같은 판정(_narrow_conditions)
+# 으로 만들면 "카드는 맞는데 본문이 반대로 말한다"는 실측 결함이 구조적으로 불가능해진다.
+
+def test_has_mixed_intent_beyond_narrowing_true_for_price_and_compare_words():
+    for query in ("그중 흰색 시세 봐줘", "무사고인 것만 적정가 알려줘", "무사고 매물 가격대는?", "흰색끼리 비교해줘"):
+        assert answer_guards.has_mixed_intent_beyond_narrowing(query) is True, query
+
+
+def test_has_mixed_intent_beyond_narrowing_false_for_pure_narrow_query():
+    assert answer_guards.has_mixed_intent_beyond_narrowing("그 중에 무사고인 것만 골라줘") is False
+
+
+def test_format_narrow_by_attribute_answer_lists_matched_cards():
+    result = answer_guards.format_narrow_by_attribute_answer(
+        "그 중에 무사고인 것만 골라줘", _NARROW_CARDS, ["id1", "id3"],
+    )
+    assert result.startswith("직전 목록 중 무사고인 매물은 2건입니다.")
+    assert "현대 아반떼 2020년식 · 10,000,000원 · 50,000km · 무사고" in result
+    # 두 매물 모두 한 줄씩(id1·id3) 담겨야 한다 — id2(단순교환)는 제외.
+    assert result.count("현대 아반떼") == 2
+
+
+def test_format_narrow_by_attribute_answer_empty_asks_to_broaden():
+    result = answer_guards.format_narrow_by_attribute_answer(
+        "여기서 흰색만 있어?", [_attr_card("id9", accident_status="무사고", color="검정", fuel="가솔린")], [],
+    )
+    assert result == "직전 목록에는 흰색인 매물이 없습니다. 조건을 넓혀 다시 찾아드릴까요?"
+
+
+def test_format_narrow_by_attribute_answer_combines_multiple_conditions():
+    # 조건이 여럿 매치되면(사고 상태+색상 등) "·"로 이어 붙인다.
+    cards = [_attr_card("id1", accident_status="무사고", color="흰색", fuel="가솔린")]
+    result = answer_guards.format_narrow_by_attribute_answer("무사고 흰색만 보여줘", cards, ["id1"])
+    assert "직전 목록 중 무사고·흰색인 매물은 1건입니다." in result
+    assert "무사고·흰색" in result.splitlines()[1]  # 매물 한 줄에도 매치된 속성값이 함께 실린다.
+
+
 # ───────── (9) infer_missing_args manufacturer 정규화(C19) ─────────
 
 def test_infer_missing_args_normalizes_manufacturer_even_when_already_set():
@@ -322,4 +415,33 @@ def test_infer_missing_args_manufacturer_unaffected_when_no_alias():
     # 별칭 사전에 없는 값(이미 정확한 CHECK 표기)은 그대로 둔다.
     assert answer_guards.infer_missing_args("현대차 좋아요", {"manufacturer": "현대"}) == {
         "manufacturer": "현대",
+    }
+
+
+# ───────── (10) infer_missing_args accident_free_only(C68, 챗봇 답변 검증 2026-09-14) ─────────
+
+def test_infer_missing_args_fills_accident_free_only_for_no_accident_history_phrase():
+    assert answer_guards.infer_missing_args("사고 이력 없는 차 찾아줘", {}) == {
+        "accident_free_only": True,
+    }
+
+
+def test_infer_missing_args_fills_accident_free_only_for_musago_word():
+    assert answer_guards.infer_missing_args("무사고 매물 보여줘", {}) == {"accident_free_only": True}
+
+
+def test_infer_missing_args_fills_accident_free_only_for_no_accident_phrase():
+    assert answer_guards.infer_missing_args("사고 없는 차 좀요", {}) == {"accident_free_only": True}
+
+
+def test_infer_missing_args_accident_free_only_negation_guard():
+    # "무사고 아니어도 상관없어" — 매치 바로 뒤 6자 안에 부정어(아니고류)는 없어 이 문구
+    # 자체는 안 걸리지만, 부정어가 실제로 붙는 경우엔 다른 필드와 동일하게 걸러진다는 것만
+    # 확인한다(닫힌 어휘 재사용 — 새 목록 아님).
+    assert answer_guards.infer_missing_args("무사고 말고 그냥 아무거나", {}) == {}
+
+
+def test_infer_missing_args_accident_free_only_keeps_existing_value():
+    assert answer_guards.infer_missing_args("무사고 차", {"accident_free_only": False}) == {
+        "accident_free_only": False,
     }

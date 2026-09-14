@@ -82,7 +82,10 @@ _MAX_MARKET_DIAGNOSES = 5
 # search_listings 인자 자동 주입(answer_guards.infer_missing_args)이 채운 필드를 사람이
 # 읽는 문구로 바꿀 때 쓰는 라벨 — agent_tools.search_listings의 applied_desc 표기와 맞춘다
 # (DW-872 update 2026-09-09 18:08 (f)).
-_ARG_INJECT_LABELS = {"fuel": "연료", "body_type": "차종", "manufacturer": "제조사", "seats_min": "좌석수"}
+_ARG_INJECT_LABELS = {
+    "fuel": "연료", "body_type": "차종", "manufacturer": "제조사", "seats_min": "좌석수",
+    "accident_free_only": "무사고",
+}
 
 _SYSTEM_PROMPT = """너는 중고차 매물을 상담해 추천하는 에이전트다. 아래 도구를 이용해
 사용자의 조건에 맞는 매물을 찾고, 필요하면 근거를 곁들여 추천한다.
@@ -256,12 +259,18 @@ def _reject_result(query: str) -> dict:
     }
 
 
-def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int = 0) -> _AgentFinalOutput:
+def _finalize(
+    base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int = 0, extra_instruction: str | None = None,
+) -> _AgentFinalOutput:
     """도구 없이 structured output 1회 호출로 최종 응답을 만든다(router_node와 동일 관례).
 
     found_count: 루프 동안 도구가 실제로 찾은 매물 수. 0이 아니면 최종화 지시에 사실로
     주입한다 — 회귀 실측(S1·S14, 2026-08-31): 도구가 매물을 찾았는데도 최종화 LLM이
     selected_listing_ids를 비우고 "찾았다"는 서술+되묻기만 내는 자기모순 응답을 냈다.
+
+    extra_instruction(챗봇 답변 검증 2026-09-14, C42·C71): found_count 지시로도 안 먹혀
+    selected_listing_ids가 여전히 빈 채로 나왔을 때, run_search_agent가 한 번 더 강하게
+    지시해 재호출할 때 붙인다(아래 "[재시도]" 문구, 호출부 참조).
     """
     structured = base_llm.with_structured_output(_AgentFinalOutput)
     instruction = _FINALIZE_INSTRUCTION
@@ -272,6 +281,8 @@ def _finalize(base_llm: ChatGoogleGenerativeAI, messages: list, found_count: int
             "selected_listing_ids에 반드시 채워라 — 찾았다고 서술만 하고 목록을 비우는 응답은 "
             "금지다. 매물을 골랐다면 clarify는 채우지 마라."
         )
+    if extra_instruction:
+        instruction += f"\n{extra_instruction}"
     return structured.invoke(messages + [HumanMessage(instruction)])
 
 
@@ -314,6 +325,31 @@ def _recent_assistant_listing_ids(context: list | None) -> list[str]:
         if len(merged) >= _RECENT_LISTINGS_MERGE_CAP:
             break
     return merged[:_RECENT_LISTINGS_MERGE_CAP]
+
+
+def _latest_assistant_listing_ids(context: list | None) -> list[str]:
+    """가장 최근 listing_ids를 가진 어시스턴트 턴 **하나**의 id만 돌려준다(병합하지 않음).
+
+    챗봇 답변 검증 2026-09-14(C59) 실측 — 순번("첫 번째") 지칭은 "직전 대화가 언급한 모든
+    매물"이 아니라 "가장 최근에 실제로 보여준 한 턴의 카드 순서"만 가리켜야 한다.
+    _recent_assistant_listing_ids는 여러 턴을 병합해(멀티턴 매물 참조·극값/비교 지칭 등 다른
+    용도에 쓰기 위함) 순번 지칭 전용으로 쓰면 더 이전 턴의 매물이 순번에 끼어든다(C59: 2턴
+    카드가 [3110f815, 80730d06]인데 병합 목록 기준 "첫 번째"가 1턴의 매물을 골랐다). answer_
+    guards.resolve_list_reference의 ordinal_cards 인자로만 쓰인다 — 극값·비교는 여전히
+    병합 목록(_recent_assistant_listing_ids) 기준이다(스펙 범위: 순번 해석의 기준 목록만
+    교체)."""
+    if not context:
+        return []
+    for turn in reversed(context):
+        role = getattr(turn, "role", None) or (turn.get("role") if isinstance(turn, dict) else None)
+        if role != "assistant":
+            continue
+        ids = getattr(turn, "listing_ids", None)
+        if ids is None and isinstance(turn, dict):
+            ids = turn.get("listing_ids")
+        if ids:
+            return list(ids)
+    return []
 
 
 # 조건 전환 후속질의 판정어(C48, "그거 말고 하이브리드만") — 재검색 차단 대상 턴에서 이
@@ -400,29 +436,27 @@ def _cards_for_ids(ids: list[str]) -> list[ListingCard]:
     return [by_id[lid] for lid in ids if lid in by_id]
 
 
-def _apply_reference_resolution(
-    tool_name: str, args: dict, resolved_ids: list[str] | None, recent_ids: list[str]
-) -> tuple[dict, bool]:
-    """DW-855 — 풀린 지칭 id(순번·극값·비교, answer_guards.resolve_list_reference)로
-    market_price_stats/compare_listings 인자를 교체한다. 인자가 비어 있거나 직전 목록 밖
-    id를 가리킬 때만 바꾼다 — 모델이 이미 직전 목록 안의 맞는 id를 스스로 채웠으면 그대로
-    둔다(과잉 개입 방지).
+def _apply_reference_resolution(tool_name: str, args: dict, resolved_ids: list[str] | None) -> tuple[dict, bool]:
+    """DW-855·챗봇 답변 검증 2026-09-14(C59·C60) — 풀린 지칭 id(순번·극값·비교,
+    answer_guards.resolve_list_reference)로 market_price_stats/compare_listings 인자를
+    항상 교체한다.
+
+    2026-09-14 개정: 예전엔 인자가 비어 있거나 직전 목록 "밖" id일 때만 바꿨다 — 그런데
+    모델이 직전 목록 "안"의 다른(지칭이 가리키는 것과 다른) id를 넣으면 그대로 통과해버렸다
+    (C60 실측: "더 저렴한 쪽"이 최저가 매물을 가리키는데 모델이 market_price_stats를 목록
+    안의 다른 id로 2번 호출). 지칭이 풀렸다는 것 자체가 "이 질문은 정확히 이 id(들)을
+    가리킨다"는 뜻이므로, 모델이 뭘 채웠든 무조건 그 id로 확정한다.
     """
     if not resolved_ids:
         return args, False
-    recent_set = set(recent_ids)
     if tool_name == "market_price_stats":
-        current = args.get("listing_id")
-        if not current or current not in recent_set:
-            new_args = dict(args)
-            new_args["listing_id"] = resolved_ids[0]
-            return new_args, True
+        new_args = dict(args)
+        new_args["listing_id"] = resolved_ids[0]
+        return new_args, True
     elif tool_name == "compare_listings":
-        current = args.get("listing_ids") or []
-        if not current or any(lid not in recent_set for lid in current):
-            new_args = dict(args)
-            new_args["listing_ids"] = resolved_ids
-            return new_args, True
+        new_args = dict(args)
+        new_args["listing_ids"] = resolved_ids
+        return new_args, True
     return args, False
 
 
@@ -520,7 +554,12 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 쓴다. block_followup_research와 같은 이유로 원문 query로 판정한다. 카드가 없거나
     # 지칭이 없으면 None — 세 지점 모두 조용히 그대로 진행한다(회귀 0).
     _recent_cards_for_reference = _cards_for_ids(_recent_ids_for_guard)
-    _resolved_reference_ids = answer_guards.resolve_list_reference(query, _recent_cards_for_reference)
+    # 순번 지칭은 병합 목록이 아니라 최신 턴 하나만 기준으로 삼는다(C59 — _latest_assistant_
+    # listing_ids docstring 참조). 극값·비교는 그대로 병합 목록(_recent_cards_for_reference) 기준.
+    _latest_cards_for_ordinal = _cards_for_ids(_latest_assistant_listing_ids(context))
+    _resolved_reference_ids = answer_guards.resolve_list_reference(
+        query, _recent_cards_for_reference, ordinal_cards=_latest_cards_for_ordinal
+    )
 
     # 조건 전환 후속질의(C48, "그거 말고 하이브리드만") — 재검색 차단 대상이면서 제외어가
     # 있으면, 거절 대신 첫 턴 조건 + 이번 턴 조건을 합쳐 search_listings 인자를 채운다(아래
@@ -541,6 +580,35 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
         answer_guards.narrow_by_attribute(query, _recent_cards_for_reference) if block_followup_research else None
     )
 
+    # 속성 좁힘 템플릿 응답(챗봇 답변 검증 2026-09-14, C50·C59) — 좁힘 조건 외의 요구(시세·
+    # 비교 등)가 섞이지 않았으면, LLM 루프를 아예 타지 않고 코드가 답변 본문까지 통째로
+    # 만든다(answer_guards.format_narrow_by_attribute_answer 모듈 docstring "(6b)" 참조 —
+    # 카드는 이미 코드로 정확한데 본문이 모순된 말을 지어내는 결함을 원천 차단). 섞였으면
+    # (has_mixed_intent_beyond_narrowing) 이 분기를 건너뛰고 기존 경로(해석 id를 도구 인자로,
+    # 아래 루프 + 맨 아래 selected_listing_ids 좁히기)를 그대로 쓴다.
+    if _narrowed_ids_by_attribute is not None and not answer_guards.has_mixed_intent_beyond_narrowing(query):
+        recent_cards_by_id = {c.id: c for c in _recent_cards_for_reference}
+        narrow_listings = [
+            recent_cards_by_id[lid] for lid in _narrowed_ids_by_attribute if lid in recent_cards_by_id
+        ]
+        narrow_answer = answer_guards.format_narrow_by_attribute_answer(
+            query, _recent_cards_for_reference, _narrowed_ids_by_attribute
+        )
+        logger.info(
+            "run_search_agent 속성 좁힘 템플릿 응답(LLM 미호출) 질의=%r → 매물=%d건",
+            query, len(narrow_listings),
+        )
+        return {
+            "answer": narrow_answer,
+            "listings": narrow_listings,
+            "route": "AGENT",
+            "clarify": None,
+            "narrowed_by": None,
+            "market_diagnosis": None,
+            "market_diagnoses": None,
+            "tools_used": ["narrow_by_attribute"],
+        }
+
     system_prompt_text = _system_prompt(listing_id, context, original)
     if _resolved_reference_ids:
         system_prompt_text += (
@@ -557,6 +625,16 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     seen_listings: dict[str, ListingCard] = {}
     tools_used: list[str] = []
     market_diagnosis: dict | None = None
+
+    # search_listings가 실제로 돌려준 id만 순서대로 모은다(C42·C71 — compare_listings 등
+    # 다른 도구도 seen_listings에 카드를 얹지만, "검색 결과 상위 5건"은 search_listings
+    # 결과여야 한다). 아래 세 지점(강제 호출 2곳 + 정상 디스패치 1곳) 모두에서 채운다.
+    search_listings_ids: list[str] = []
+
+    def _track_search_listings_ids(cards):
+        for card in cards or []:
+            if card.id not in search_listings_ids:
+                search_listings_ids.append(card.id)
 
     # 다건 시세 진단(2026-08-31, 사용자 승인) — market_price_stats 호출마다 결과를 전부
     # 모아둔다(매물을 못 찾은 호출은 artifact가 None이라 담기지 않는다). 상한
@@ -601,6 +679,7 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                             if artifact:
                                 for card in artifact:
                                     seen_listings[card.id] = card
+                                _track_search_listings_ids(artifact)
                             continue
                 else:
                     # 조건 어휘가 없음 — 순수 지식형 질문으로 보고 search_guides를 강제로 한 번
@@ -654,7 +733,26 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                         # 도구 실행 자체가 실패 — 첫 답을 그대로 쓴다.
             break  # 자연 종료 — 모델이 더 이상 도구를 요청하지 않는다(또는 위 보강 불필요).
 
-        for tool_call in ai_msg.tool_calls:
+        step_tool_calls = ai_msg.tool_calls
+        if _resolved_reference_ids:
+            # 같은 도구 중복 호출 합치기(C60 실측) — 지칭이 풀린 턴에서 모델이 같은 도구를
+            # 같은 스텝에 여러 번 부르면(예: market_price_stats를 다른 id로 2번), 위
+            # _apply_reference_resolution이 어차피 둘 다 같은 해석 id로 덮어써 같은 호출이
+            # 중복 실행된다 — market_diagnoses_all에 같은 진단이 2건 쌓여 "다건 진단"으로
+            # 잘못 노출되는 부작용까지 생긴다. 지칭이 풀린 턴에서만(다른 상황은 손대지 않는다)
+            # market_price_stats·compare_listings 각각 첫 호출만 남긴다.
+            seen_names: set[str] = set()
+            deduped_calls = []
+            for tc in step_tool_calls:
+                name = tc.get("name")
+                if name in ("market_price_stats", "compare_listings"):
+                    if name in seen_names:
+                        continue
+                    seen_names.add(name)
+                deduped_calls.append(tc)
+            step_tool_calls = deduped_calls
+
+        for tool_call in step_tool_calls:
             tool_name = tool_call.get("name")
             tools_used.append(tool_name)
             if block_followup_research and tool_name == "search_listings" and not _followup_switch:
@@ -699,11 +797,10 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                     desc = ", ".join(f"{_ARG_INJECT_LABELS.get(k, k)}={v}" for k, v in injected.items())
                     injected_note = f"(질문에서 자동 적용: {desc})"
             elif tool_name in ("market_price_stats", "compare_listings"):
-                # 풀린 지칭 id로 인자 교체(DW-855) — 비어 있거나 직전 목록 밖 id일 때만 바꾼다.
+                # 풀린 지칭 id로 인자를 항상 교체한다(2026-09-14 개정, C59·C60 — 모듈 docstring
+                # "_apply_reference_resolution" 참조).
                 original_args = tool_call.get("args") or {}
-                new_args, changed = _apply_reference_resolution(
-                    tool_name, original_args, _resolved_reference_ids, _recent_ids_for_guard
-                )
+                new_args, changed = _apply_reference_resolution(tool_name, original_args, _resolved_reference_ids)
                 if changed:
                     tool_call["args"] = new_args
                     ref_desc = new_args.get("listing_id") or ", ".join(new_args.get("listing_ids", []))
@@ -728,6 +825,8 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
             if tool_name in ("search_listings", "compare_listings") and artifact:
                 for card in artifact:
                     seen_listings[card.id] = card
+                if tool_name == "search_listings":
+                    _track_search_listings_ids(artifact)
             elif tool_name == "market_price_stats":
                 # "마지막 호출 1건"을 그대로 반영한다 — 매물을 못 찾은 마지막 호출이면
                 # market_diagnosis도 None으로 덮인다(가장 최근 상태를 있는 그대로 노출).
@@ -766,8 +865,24 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
                 if artifact:
                     for card in artifact:
                         seen_listings[card.id] = card
+                    _track_search_listings_ids(artifact)
 
     final = _finalize(base_llm, messages, found_count=len(seen_listings))
+
+    # C42·C71 실측 — search_listings가 20건을 돌려줬는데 최종 selected_listing_ids가 비고
+    # 본문은 예산·모델을 되묻기만 했다(found_count 지시(위 _finalize)로도 못 잡은 경우). 매물
+    # 의도가 있고 search_listings 결과가 1건 이상인데 여전히 비어 있으면, 더 강한 지시로 1회
+    # 재호출한다 — 그래도 비면 코드가 상위 5건 id를 직접 채운다(본문은 재호출 결과 그대로).
+    if not final.selected_listing_ids and search_listings_ids and answer_guards.has_listing_intent(query):
+        final = _finalize(
+            base_llm, messages, found_count=len(seen_listings),
+            extra_instruction=(
+                "[재시도] 도구 결과 상위 5건 id를 반드시 selected_listing_ids에 담고 본문에서 "
+                "그 매물들을 한 줄씩 제시한 뒤 필요하면 조건을 되물어라."
+            ),
+        )
+        if not final.selected_listing_ids:
+            final.selected_listing_ids = search_listings_ids[:5]
 
     listings = [seen_listings[lid] for lid in final.selected_listing_ids if lid in seen_listings]
 

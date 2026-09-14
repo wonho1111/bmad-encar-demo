@@ -127,6 +127,11 @@ def ensure_sample_caveat(answer: str, market_diagnoses: list[dict] | None) -> st
 _NEGATION_WORDS = ("말고", "빼고", "제외", "아닌", "아니고", "빼면")
 _SEATS_MIN_RE = re.compile(r"(\d)인승\s*이상")
 
+# 사고 이력 없음 표현(C68 실측) — "사고 이력 없는 차"·"무사고"·"사고 없는"이 질의에 있으면
+# search_listings의 accident_free_only를 채운다. 부정어 보호 규칙(말고/빼고/제외)은 다른
+# 필드와 동일하게 _is_negated로 적용한다.
+_ACCIDENT_FREE_RE = re.compile(r"사고\s*이력\s*없는|무사고|사고\s*없는")
+
 
 def _is_negated(query: str, match_end: int) -> bool:
     """매치가 끝난 바로 뒤 6자 안에 부정어가 있으면 그 매치는 버린다(예: "SUV 말고 세단"
@@ -188,9 +193,14 @@ def _parse_budget_max(query: str) -> int | None:
     return None
 
 
-# 매물 검색 의도를 나타내는 추천/조회 문구(C36 실측) — infer_missing_args의 구조 조건
-# 어휘·예산 패턴 둘 다 없어도 이 문구가 있으면 "매물 추천 의도"로 본다.
-_LISTING_INTENT_WORDS = ("추천", "좋은 차", "뭐 있", "보여")
+# 매물 검색 의도를 나타내는 추천/조회 문구(C36·C32 실측) — infer_missing_args의 구조 조건
+# 어휘·예산 패턴 둘 다 없어도 이 문구가 있으면 "매물 추천 의도"로 본다. C32(챗봇 답변 검증
+# 2026-09-14): "아이 둘 키우는데 차 뭐가 좋을까요"가 False로 새 추천 의도를 놓쳤다 — 지식
+# 질문("무사고 매물이랑 단순교환 매물이랑 뭐가 달라요?"·"침수차량인지 구별하는 팁")은
+# 여전히 이 어휘들과 겹치지 않아 False로 남는다(테스트로 고정).
+_LISTING_INTENT_WORDS = (
+    "추천", "좋은 차", "뭐 있", "보여", "좋을까", "뭐가 좋", "어떤 차", "찾아줘", "골라줘", "괜찮은 차",
+)
 
 
 def has_listing_intent(query: str) -> bool:
@@ -198,9 +208,17 @@ def has_listing_intent(query: str) -> bool:
     게이트의 조기 "범위 밖" 거절이 매물 추천 의도까지 삼키는 결함 수정).
 
     세 가지 중 하나라도 있으면 True: (1) infer_missing_args가 채우는 구조 조건 어휘
-    (연료·차종·제조사·좌석수), (2) 예산 금액 패턴(_parse_budget_max), (3) 추천을 요청하는
-    문구(_LISTING_INTENT_WORDS)."""
-    if infer_missing_args(query, {}):
+    (연료·차종·제조사·좌석수 — accident_free_only 제외, 아래 참조), (2) 예산 금액 패턴
+    (_parse_budget_max), (3) 추천을 요청하는 문구(_LISTING_INTENT_WORDS).
+
+    accident_free_only(C68, 챗봇 답변 검증 2026-09-14)는 이 구조 조건 판정에서 뺀다 —
+    "무사고 매물이랑 단순교환 매물이랑 뭐가 달라요?" 같은 지식 질문에도 "무사고"라는 단어가
+    있어 infer_missing_args가 그 필드만 채우는데, 이런 질문은 매물 추천 의도가 아니라 여전히
+    False여야 한다(테스트로 고정). 다른 구조 조건 어휘(연료·차종 등)는 지식 질문 문맥에서
+    쓰이는 경우가 드물어 그대로 True 판정에 남긴다."""
+    inferred = infer_missing_args(query, {})
+    structural = {k: v for k, v in inferred.items() if k != "accident_free_only"}
+    if structural:
         return True
     if _parse_budget_max(query) is not None:
         return True
@@ -268,23 +286,35 @@ _EXTREME_RULES: list[tuple[re.Pattern, str, bool]] = [
 ]
 
 
-def resolve_list_reference(query: str, cards: list) -> list[str] | None:
+def resolve_list_reference(query: str, cards: list, ordinal_cards: list | None = None) -> list[str] | None:
     """직전 목록 카드에서 순번·극값·비교 지칭을 결정적으로 풀어 매물 id 목록을 돌려준다.
 
-    cards: 직전 대화가 실제로 보여준 순서 그대로의 카드 목록(agent._format_recent_listings_block
-    과 동일한 순서 — "N번째"가 이 순서를 그대로 가리킨다). id·price·year·mileage 속성만
-    읽는다(ListingCard 계약, app/schemas/ai.py — 셋 다 non-null).
+    cards: 극값·비교 지칭(예: "제일 싼 거")이 기준으로 삼는 카드 목록 — 여러 턴을 병합한
+    순서(agent._format_recent_listings_block과 동일)라도 된다.
+    ordinal_cards: 순번 지칭("첫 번째" 등)의 기준 목록. 생략하면 cards를 그대로 쓴다. DW-855
+    3차 재검증 후속(C59 실측): "가장 최근 listing_ids를 가진 어시스턴트 턴" 하나의 카드
+    순서여야 한다 — 여러 턴을 병합한 목록으로 순번을 풀면 오래된 턴의 매물이 끼어든다
+    (agent._recent_assistant_listing_ids는 멀티턴 참조 전반을 위해 병합하지만, 순번엔
+    agent._latest_assistant_listing_ids로 뽑은 최신 턴 하나만 써야 한다).
 
-    지칭이 없거나(순번·극값·비교 패턴 미검출) 카드가 비어 있으면 None. 순번이 카드 범위를
-    벗어나면(예: 카드 2장인데 "5번째") 그 순번은 버리고 극값·비교 패턴을 계속 찾는다 —
-    "5번째"가 극값 표현이 아니면 최종적으로 None(부정어·범위 밖 표현은 건드리지 않는다).
+    id·price·year·mileage 속성만 읽는다(ListingCard 계약, app/schemas/ai.py — 셋 다 non-null).
+
+    지칭이 없거나(순번·극값·비교 패턴 미검출) 두 카드 목록이 모두 비어 있으면 None. 순번이
+    ordinal_cards 범위를 벗어나면(예: 카드 2장인데 "5번째") 그 순번은 버리고 극값·비교
+    패턴을 계속 찾는다 — "5번째"가 극값 표현이 아니면 최종적으로 None(부정어·범위 밖 표현은
+    건드리지 않는다).
     """
-    if not cards:
+    if ordinal_cards is None:
+        ordinal_cards = cards
+    if not cards and not ordinal_cards:
         return None
 
     ordinal = _resolve_ordinal(query)
-    if ordinal is not None and 1 <= ordinal <= len(cards):
-        return [cards[ordinal - 1].id]
+    if ordinal is not None and ordinal_cards and 1 <= ordinal <= len(ordinal_cards):
+        return [ordinal_cards[ordinal - 1].id]
+
+    if not cards:
+        return None
 
     for pattern, field, ascending in _EXTREME_RULES:
         if not pattern.search(query):
@@ -322,6 +352,15 @@ def _color_vocab() -> dict[str, str]:
     return vocab
 
 
+def _narrow_conditions(query: str) -> tuple[str | None, str | None, str | None]:
+    """narrow_by_attribute·format_narrow_by_attribute_answer가 공유하는 조건 판정(사고 상태·
+    색상·연료) — 두 함수가 같은 매칭 결과를 써야 "카드는 A인데 본문은 B"류 불일치가 안 생긴다."""
+    accident = _match_accident_status(query)
+    color = _find_best_match(query, _color_vocab())
+    fuel = _find_best_match(query, _fuel_vocab())
+    return accident, color, fuel
+
+
 def narrow_by_attribute(query: str, cards: list) -> list[str] | None:
     """후속 지칭 질의가 사고 상태·색상·연료로 직전 목록을 좁히면, 그 조건에 맞는 카드 id만
     걸러 돌려준다(빈 리스트 포함 — 조건에 맞는 매물이 없다는 뜻). 셋 다 매치되지 않으면
@@ -331,9 +370,7 @@ def narrow_by_attribute(query: str, cards: list) -> list[str] | None:
     SELECT로 조회해 넘긴다 — 이 함수는 card.color가 이미 채워져 있다고 가정한다)."""
     if not cards:
         return None
-    accident = _match_accident_status(query)
-    color = _find_best_match(query, _color_vocab())
-    fuel = _find_best_match(query, _fuel_vocab())
+    accident, color, fuel = _narrow_conditions(query)
     if accident is None and color is None and fuel is None:
         return None
     matched = []
@@ -346,6 +383,55 @@ def narrow_by_attribute(query: str, cards: list) -> list[str] | None:
             continue
         matched.append(card.id)
     return matched
+
+
+# ── (6b) 직전 목록 속성 좁힘 — 답변 본문도 코드가 만든다(챗봇 답변 검증 2026-09-14, C50·C59) ──
+#
+# 실측: narrow_by_attribute가 카드(listings)는 정확히 걸러내는데도, LLM이 본문에서 그 결과와
+# 모순되는 말을 지어냈다(예: "스파크는 무사고 확인 안 돼 제외"(실제 무사고), "색상 정보
+# 없음"(실제 흰색 2건)). 카드만 코드로 고정하고 본문은 LLM에 맡기는 절반짜리 방어로는 안
+# 잡혀, 속성 좁힘 + 다른 요구가 안 섞인 질의는 LLM 루프 자체를 타지 않고 코드가 답을 통째로
+# 만든다(CLAUDE.md B9 — 실행되는 검사로 바꾼다). 시세·비교 등 다른 요구가 섞이면(예: "그중
+# 흰색 시세 봐줘") 템플릿이 그 요구까지 답할 수 없으므로 기존 경로(해석 id를 도구 인자로)를
+# 그대로 쓴다.
+_NARROW_MIXED_INTENT_WORDS = ("시세", "적정가", "가격대", "비교")
+
+
+def has_mixed_intent_beyond_narrowing(query: str) -> bool:
+    """속성 좁힘 질의에 시세·비교 등 다른 요구가 섞여 있는지 본다 — 섞여 있으면 템플릿 답변
+    대신 기존 LLM 경로를 써야 한다(템플릿은 좁힌 목록 제시만 할 뿐 시세·비교에는 답 못 함)."""
+    return any(w in query for w in _NARROW_MIXED_INTENT_WORDS)
+
+
+def format_narrow_by_attribute_answer(query: str, cards: list, matched_ids: list[str]) -> str:
+    """narrow_by_attribute가 걸러낸 id 목록으로 답변 본문 자체를 코드가 조립한다(LLM 호출
+    없음) — 카드와 본문이 항상 같은 판정 결과(_narrow_conditions)를 쓰므로 모순이 날 수
+    없다. 조건 설명은 매치된 항목을 "·"로 이어 붙인다(예: "무사고·흰색").
+
+    cards: matched_ids가 가리키는 카드를 찾을 원본 목록(narrow_by_attribute에 넘긴 것과
+    동일한 color 포함 카드)."""
+    accident, color, fuel = _narrow_conditions(query)
+    condition = "·".join(v for v in (accident, color, fuel) if v)
+    if not matched_ids:
+        return f"직전 목록에는 {condition}인 매물이 없습니다. 조건을 넓혀 다시 찾아드릴까요?"
+    by_id = {c.id: c for c in cards}
+    lines = [f"직전 목록 중 {condition}인 매물은 {len(matched_ids)}건입니다."]
+    for lid in matched_ids:
+        card = by_id.get(lid)
+        if card is None:
+            continue  # 강건성 — narrow_by_attribute는 cards 안의 id만 돌려주므로 정상 경로는 항상 찾는다.
+        attr_value = "·".join(
+            v for v in (
+                card.accident_status if accident is not None else None,
+                card.color if color is not None else None,
+                card.fuel if fuel is not None else None,
+            ) if v
+        )
+        lines.append(
+            f"{card.manufacturer} {card.model} {card.year}년식 · {card.price:,}원 · "
+            f"{card.mileage:,}km · {attr_value}"
+        )
+    return "\n".join(lines)
 
 
 def infer_missing_args(query: str, args: dict) -> dict:
@@ -392,4 +478,11 @@ def infer_missing_args(query: str, args: dict) -> dict:
         budget = _parse_budget_max(query)
         if budget is not None:
             result["price_max"] = budget
+    if result.get("accident_free_only") is None:
+        # bool 필드라 다른 필드처럼 "not result.get(...)"을 쓰면 모델이 이미 명시적으로
+        # False(무사고를 요구하지 않음)를 채운 값까지 True로 덮어쓴다 — 값이 아예 없을
+        # 때(None)만 채운다.
+        m = _ACCIDENT_FREE_RE.search(query)
+        if m and not _is_negated(query, m.end()):
+            result["accident_free_only"] = True
     return result

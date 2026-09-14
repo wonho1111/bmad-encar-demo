@@ -823,11 +823,17 @@ def test_no_followup_reference_allows_search_listings_normally(monkeypatch):
 
 
 def test_followup_guard_uses_raw_query_not_contextualized_rewrite(monkeypatch):
-    """2026-09-09 챗봇 검증(20260909) C50 실측 재현 — contextualize_query가 "그 중에" 같은
-    지칭 표현을 지우고 독립 질의("무사고 경차 2천만원 이하")로 재작성해 버리면, 재작성 후
-    문자열로 재검색 차단을 판정할 경우 지칭 표현이 이미 사라져 가드가 못 잡는다(실제로 이
-    재작성이 관찰됐고, 그 결과 재검색이 새 매물을 끌어와 직전 목록을 무시했다). 재작성 전
-    원문 query로 판정해야 한다."""
+    """2026-09-09 챗봇 검증(20260909) C50 실측 재현 — contextualize_query가 지칭 표현을 지우고
+    독립 질의로 재작성해 버리면, 재작성 후 문자열로 재검색 차단을 판정할 경우 지칭 표현이
+    이미 사라져 가드가 못 잡는다(실제로 이 재작성이 관찰됐고, 그 결과 재검색이 새 매물을
+    끌어와 직전 목록을 무시했다). 재작성 전 원문 query로 판정해야 한다.
+
+    ⚠️ 2026-09-14 개정: 원래 재현 질의("그 중에 무사고인 것만 골라줘")는 이제 answer_guards.
+    narrow_by_attribute 템플릿 경로(LLM 미호출)로 먼저 처리된다(그 경로도 원문 query 기준이라
+    이 테스트가 원래 확인하려던 "재작성 무시" 자체는 여전히 성립하지만, 그 경로를 검증하는
+    테스트는 별도(test_c50/test_c59/§B 신규 테스트)에 있다). 이 테스트는 속성 좁힘 어휘·조건
+    전환 제외어(말고/다른/빼고/제외, C48)가 없는 순수 지칭("그 중에 있는 매물 다시 보여줘")
+    으로 바꿔, 기존 재검색 차단 가드가 여전히 원문 기준으로 동작하는지만 확인한다."""
     captured_tool_message_contents: list[str] = []
 
     class _CaptureThenStopLLM:
@@ -838,23 +844,23 @@ def test_followup_guard_uses_raw_query_not_contextualized_rewrite(monkeypatch):
             self.invoke_count += 1
             if self.invoke_count == 1:
                 return _FakeAIMessage(tool_calls=[
-                    {"name": "search_listings", "args": {"accident_free_only": True}, "id": "call-1"}
+                    {"name": "search_listings", "args": {}, "id": "call-1"}
                 ])
             captured_tool_message_contents.append(messages[-1].content)
             return _FakeAIMessage(tool_calls=[])
 
     tool_llm = _CaptureThenStopLLM()
-    final_output = agent_module._AgentFinalOutput(answer="무사고만 골랐어요.", selected_listing_ids=[], clarify=None)
+    final_output = agent_module._AgentFinalOutput(answer="다른 매물도 안내드려요.", selected_listing_ids=[], clarify=None)
     _patch_base_llm(monkeypatch, tool_llm, final_output)
     monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _BoomTool()})
     # 재작성기가 지칭 표현 없는 완전히 새 문장으로 바꿔치기한 상황을 흉내낸다(실측 재현).
-    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: "무사고 경차 2천만원 이하")
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: "경차 2천만원 이하")
     monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(
         [("aaa", "기아", "모닝", 2019, 7900000, 62000, "서울", None, None, None, None, None)]
     ))
 
     context = [{"role": "assistant", "content": "6건을 찾았어요.", "listing_ids": ["aaa"]}]
-    agent_module.run_search_agent("그 중에 무사고인 것만 골라줘", context=context)
+    agent_module.run_search_agent("그 중에 있는 매물 다시 보여줘", context=context)
 
     assert captured_tool_message_contents == [answer_guards.FOLLOWUP_REFUSAL_TEXT]
 
@@ -1168,6 +1174,107 @@ def test_ordinal_reference_replaces_empty_market_price_stats_listing_id(monkeypa
     assert result["answer"] == "적정가로 보여요."
 
 
+# ───────── (10b) 챗봇 답변 검증 2026-09-14(C59·C60) — 해석 id 항상 교체 + 중복 호출 병합 ─────────
+
+def test_resolved_reference_always_overrides_model_chosen_id_within_recent_list(monkeypatch):
+    """C60 — 모델이 "더 저렴한 쪽"을 직전 목록 안의 다른(더 비싼) id로 잘못 채워도, 해석된
+    id(최저가)로 무조건 교체된다(예전엔 "직전 목록 안"이면 손대지 않아 이 결함이 그대로
+    통과했다)."""
+    captured_messages: list = []
+
+    class _CapturingToolLLM:
+        def __init__(self):
+            self.invoke_count = 0
+
+        def invoke(self, messages):
+            captured_messages.extend(messages)
+            self.invoke_count += 1
+            if self.invoke_count == 1:
+                # 모델이 직전 목록 "안"의 더 비싼 매물(bbb)을 잘못 골랐다.
+                return _FakeAIMessage(
+                    tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "bbb"}, "id": "call-1"}]
+                )
+            return _FakeAIMessage(tool_calls=[])
+
+    tool_llm = _CapturingToolLLM()
+    final_output = agent_module._AgentFinalOutput(answer="더 저렴한 쪽 시세예요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    market_tool = _CapturingFakeTool("market_price_stats", artifact={"listing": {"id": "aaa"}, "verdict": "저렴"})
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"market_price_stats": market_tool})
+
+    # aaa(9,260,000원)가 bbb(25,000,000원)보다 저렴하다 — "더 저렴한 쪽"의 정답은 aaa.
+    rows = [
+        ("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]}]
+    result = agent_module.run_search_agent("그중에 더 저렴한 쪽 시세 확인해줘", context=context)
+
+    assert market_tool.received_args == [{"listing_id": "aaa"}]  # bbb가 아니라 해석된 aaa로 교체됐다.
+    assert result["answer"] == "더 저렴한 쪽 시세예요."
+
+
+def test_duplicate_market_price_stats_calls_in_same_step_are_merged(monkeypatch):
+    """C60 — 모델이 같은 스텝에 market_price_stats를 서로 다른 id로 2번 부르면(둘 다 해석
+    id로 덮이므로 사실상 중복 호출), 실제로는 1번만 실행된다 — 중복 실행되면 market_diagnoses
+    에 같은 진단이 2건 쌓여 "다건 진단"으로 잘못 노출되는 부작용이 생긴다."""
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "market_price_stats", "args": {"listing_id": "bbb"}, "id": "call-1"},
+            {"name": "market_price_stats", "args": {"listing_id": "aaa"}, "id": "call-2"},
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(answer="더 저렴한 쪽 시세예요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    market_tool = _CapturingFakeTool("market_price_stats", artifact={"listing": {"id": "aaa"}, "verdict": "저렴"})
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"market_price_stats": market_tool})
+
+    rows = [
+        ("aaa", "현대", "아반떼 AD", 2017, 9260000, 106062, "서울", None, None, None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", None, None, None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]}]
+    result = agent_module.run_search_agent("그중에 더 저렴한 쪽 시세 확인해줘", context=context)
+
+    assert market_tool.received_args == [{"listing_id": "aaa"}]  # 2번이 아니라 1번만 실행됐다.
+    assert result["market_diagnoses"] is None  # 중복이 안 쌓였으니 "다건 진단"으로 잘못 노출되지 않는다.
+    assert result["tools_used"].count("market_price_stats") == 1
+
+
+def test_duplicate_calls_not_merged_when_no_resolved_reference(monkeypatch):
+    """대조군 — 해석된 지칭 id가 없는 턴(순번·극값·비교 지칭이 없음)에서는 같은 도구를
+    여러 번 불러도(예: 서로 다른 매물 2건을 각각 진단) 병합하지 않고 그대로 둘 다 실행된다."""
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "market_price_stats", "args": {"listing_id": "aaa"}, "id": "call-1"},
+            {"name": "market_price_stats", "args": {"listing_id": "bbb"}, "id": "call-2"},
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(answer="두 매물 시세예요.", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    market_tool = _CapturingFakeTool("market_price_stats", artifact={"listing": {"id": "aaa"}, "verdict": "저렴"})
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"market_price_stats": market_tool})
+
+    result = agent_module.run_search_agent("아반떼랑 쏘렌토 시세 각각 알려줘")
+
+    assert market_tool.received_args == [{"listing_id": "aaa"}, {"listing_id": "bbb"}]  # 둘 다 실행됨.
+    assert result["tools_used"].count("market_price_stats") == 2
+
+
 # ───────── (11) C36·C71 — search_listings 미호출 사후 강제(post-loop, has_listing_intent) ─────────
 #
 # 배경: aeba16a 100건 평가에서 남은 5건 중 2건. C36("여자친구랑 드라이브 다니기 좋은 차")는
@@ -1320,3 +1427,261 @@ def test_c59_color_narrow_with_no_match_forces_empty_listings(monkeypatch):
     result = agent_module.run_search_agent("여기서 흰색만 있어?", context=context)
 
     assert result["listings"] == []
+
+
+# ───────── (14) 챗봇 답변 검증 2026-09-14(B, C50·C59) — 속성 좁힘 템플릿(LLM 미호출) ─────────
+
+class _BoomToolLLM:
+    """LLM이 실제로 호출되면 테스트를 실패시키는 가짜 — 템플릿 경로는 LLM을 아예 안 부른다."""
+
+    def invoke(self, messages):
+        raise AssertionError("속성 좁힘 템플릿 경로인데 tool_llm이 호출됐다 — LLM 루프를 안 타야 한다")
+
+
+def _patch_boom_base_llm(monkeypatch):
+    class _BoomBaseLLM:
+        def bind_tools(self, tools):
+            return _BoomToolLLM()
+
+        def with_structured_output(self, schema):
+            raise AssertionError("속성 좁힘 템플릿 경로인데 with_structured_output이 호출됐다")
+
+    monkeypatch.setattr(agent_module, "_llm", lambda: _BoomBaseLLM())
+
+
+def test_narrow_by_attribute_template_skips_llm_entirely(monkeypatch):
+    """C50 — 좁힘 조건만 있는 순수 후속 질의는 LLM을 한 번도 안 부르고(tool_llm.invoke,
+    structured_output.invoke 둘 다) 코드가 답변 본문까지 조립한다."""
+    _patch_boom_base_llm(monkeypatch)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    rows = [
+        ("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None),
+        ("bbb", "기아", "쏘렌토", 2020, 25000000, 50000, "부산", "가솔린", "단순교환", None, None, None),
+    ]
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select_for(rows))
+
+    context = [{"role": "assistant", "content": "2건을 찾았어요.", "listing_ids": ["aaa", "bbb"]}]
+    result = agent_module.run_search_agent("그 중에 무사고인 것만 골라줘", context=context)
+
+    assert result["tools_used"] == ["narrow_by_attribute"]
+    assert [c.id for c in result["listings"]] == ["aaa"]
+    assert result["answer"].startswith("직전 목록 중 무사고인 매물은 1건입니다.")
+    assert result["clarify"] is None
+    assert result["market_diagnosis"] is None
+    assert result["market_diagnoses"] is None
+
+
+def test_narrow_by_attribute_template_empty_match_still_skips_llm(monkeypatch):
+    """C59 — 조건에 맞는 매물이 0건이어도 템플릿이 "없습니다" 문구로 답하고 LLM은 안 부른다."""
+    _patch_boom_base_llm(monkeypatch)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    base_row = ("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None)
+
+    def _fake_run_select(sql, params):
+        if "color" in sql:
+            return [(*base_row, "검정")]
+        return [base_row]
+
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select)
+
+    context = [{"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]}]
+    result = agent_module.run_search_agent("여기서 흰색만 있어?", context=context)
+
+    assert result["tools_used"] == ["narrow_by_attribute"]
+    assert result["listings"] == []
+    assert result["answer"] == "직전 목록에는 흰색인 매물이 없습니다. 조건을 넓혀 다시 찾아드릴까요?"
+
+
+def test_narrow_by_attribute_mixed_intent_keeps_existing_llm_path(monkeypatch):
+    """단, 좁힘 조건 외 요구(시세 등)가 섞이면("그중 흰색 시세 봐줘") 템플릿 대신 기존 경로
+    (LLM 루프 + 해석 id를 도구 인자로)를 그대로 쓴다 — 템플릿은 시세 질문에 답할 수 없다."""
+    card_a = ListingCard(id="aaa", manufacturer="현대", model="아반떼", year=2017, price=1, mileage=1, region="서울")
+    diagnosis = {"listing": {"id": "aaa"}, "verdict": "적정"}
+    responses = [
+        _FakeAIMessage(tool_calls=[{"name": "market_price_stats", "args": {"listing_id": "aaa"}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    final_output = agent_module._AgentFinalOutput(
+        answer="흰색 매물 시세를 알려드려요.", selected_listing_ids=["aaa"], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"market_price_stats": _FakeTool("market_price_stats", artifact=diagnosis)},
+    )
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+    base_row = ("aaa", "현대", "아반떼", 2017, 9260000, 106062, "서울", "가솔린", "무사고", None, None, None)
+
+    def _fake_run_select(sql, params):
+        if "color" in sql:
+            return [(*base_row, "흰색")]
+        return [base_row]
+
+    monkeypatch.setattr(agent_module, "run_select", _fake_run_select)
+
+    context = [{"role": "assistant", "content": "1건을 찾았어요.", "listing_ids": ["aaa"]}]
+    result = agent_module.run_search_agent("그중 흰색 시세 봐줘", context=context)
+
+    # 템플릿(narrow_by_attribute만)이 아니라 실제 LLM 루프를 탔다 — market_price_stats가 불렸다.
+    assert result["tools_used"] == ["market_price_stats"]
+    assert result["answer"] == "흰색 매물 시세를 알려드려요."
+    assert result["market_diagnosis"] == diagnosis
+
+
+# ───────── (15) 챗봇 답변 검증 2026-09-14(C, C42·C71) — search_listings 결과 있는데
+# selected_listing_ids 빈 채로 끝나면 재시도 + 강제 채움 ─────────
+
+def test_c42_empty_selection_despite_search_results_triggers_retry_and_fills(monkeypatch):
+    """C42 — search_listings가 20건을 돌려줬는데 최종 selected_listing_ids가 비고 되묻기만
+    했다. found_count 지시로도 안 먹히면 더 강하게 1회 재시도하고, 그래도 비면 코드가 상위
+    5건 id를 채운다."""
+    card1 = ListingCard(id="aaa", manufacturer="기아", model="쏘렌토", year=2021, price=1, mileage=1, region="서울")
+    card2 = ListingCard(id="bbb", manufacturer="기아", model="쏘렌토", year=2020, price=2, mileage=2, region="부산")
+
+    tool_llm = _SequenceToolLLM([
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ])
+
+    class _RetryAwareBaseLLM:
+        def __init__(self):
+            self.finalize_call_count = 0
+
+        def bind_tools(self, tools):
+            return tool_llm
+
+        def with_structured_output(self, schema):
+            outer = self
+
+            class _Structured:
+                def invoke(self, messages):
+                    outer.finalize_call_count += 1
+                    # 매번 예산·모델을 되묻기만 하고 selected_listing_ids를 비운다(재현 결함).
+                    return agent_module._AgentFinalOutput(
+                        answer="예산을 좀 더 알려주시겠어요?", selected_listing_ids=[], clarify=None,
+                    )
+
+            return _Structured()
+
+    base_llm = _RetryAwareBaseLLM()
+    monkeypatch.setattr(agent_module, "_llm", lambda: base_llm)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[card1, card2])},
+    )
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    result = agent_module.run_search_agent("쏘렌토 추천해줘")
+
+    assert base_llm.finalize_call_count == 2  # found_count 1회 + 재시도 1회.
+    assert [c.id for c in result["listings"]] == ["aaa", "bbb"]  # 코드가 상위 결과로 강제 채움.
+
+
+def test_c71_empty_selection_retry_succeeds_without_forced_fill(monkeypatch):
+    """재시도 지시에 모델이 제대로 응답하면(id를 채우면) 코드가 강제로 덮지 않고 그 결과를
+    그대로 쓴다."""
+    card1 = ListingCard(id="aaa", manufacturer="현대", model="세단", year=2021, price=1, mileage=1, region="서울")
+
+    tool_llm = _SequenceToolLLM([
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ])
+
+    class _RetryThenFillBaseLLM:
+        def __init__(self):
+            self.finalize_call_count = 0
+
+        def bind_tools(self, tools):
+            return tool_llm
+
+        def with_structured_output(self, schema):
+            outer = self
+
+            class _Structured:
+                def invoke(self, messages):
+                    outer.finalize_call_count += 1
+                    if outer.finalize_call_count == 1:
+                        return agent_module._AgentFinalOutput(
+                            answer="조건에 맞는 세단을 찾았어요.", selected_listing_ids=[], clarify=None,
+                        )
+                    return agent_module._AgentFinalOutput(
+                        answer="상위 결과로 안내드려요.", selected_listing_ids=["aaa"], clarify=None,
+                    )
+
+            return _Structured()
+
+    base_llm = _RetryThenFillBaseLLM()
+    monkeypatch.setattr(agent_module, "_llm", lambda: base_llm)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"search_listings": _FakeTool("search_listings", artifact=[card1])},
+    )
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    result = agent_module.run_search_agent("적당한 주행거리의 세단 보여줘")
+
+    assert base_llm.finalize_call_count == 2
+    assert result["answer"] == "상위 결과로 안내드려요."
+    assert [c.id for c in result["listings"]] == ["aaa"]
+
+
+def test_no_retry_when_search_listings_never_returned_results(monkeypatch):
+    """대조군 — search_listings가 0건이면(재검색해도 없음) 매물 의도가 있어도 재시도하지
+    않는다(채울 재료 자체가 없다)."""
+    tool_llm = _SequenceToolLLM([
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ])
+    finalize_calls = []
+
+    class _CountingBaseLLM:
+        def bind_tools(self, tools):
+            return tool_llm
+
+        def with_structured_output(self, schema):
+            class _Structured:
+                def invoke(self, messages):
+                    finalize_calls.append(1)
+                    return agent_module._AgentFinalOutput(
+                        answer="조건에 맞는 매물이 없습니다.", selected_listing_ids=[], clarify=None,
+                    )
+
+            return _Structured()
+
+    monkeypatch.setattr(agent_module, "_llm", lambda: _CountingBaseLLM())
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _FakeTool("search_listings", artifact=[])})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    result = agent_module.run_search_agent("3천만원 이하 SUV 보여줘")
+
+    assert len(finalize_calls) == 1  # 재시도 없음.
+    assert result["listings"] == []
+
+
+# ───────── (16) 챗봇 답변 검증 2026-09-14(E, C68) — accident_free_only 자동 주입 배선 ─────────
+
+def test_search_listings_args_auto_filled_with_accident_free_only(monkeypatch):
+    """C68 — "사고 이력 없는 차"가 질문에 있으면 search_listings 실행 인자에
+    accident_free_only=True가 자동으로 채워진다(모델이 비워 뒀을 때만)."""
+    received_tool_calls: list[dict] = []
+
+    class _CapturingSearchTool:
+        def invoke(self, tool_call):
+            received_tool_calls.append(tool_call)
+            return ToolMessage(content="ok", tool_call_id=tool_call["id"], artifact=[])
+
+    tool_llm = _SequenceToolLLM([
+        _FakeAIMessage(tool_calls=[{"name": "search_listings", "args": {}, "id": "call-1"}]),
+        _FakeAIMessage(tool_calls=[]),
+    ])
+    final_output = agent_module._AgentFinalOutput(answer="ok", selected_listing_ids=[], clarify=None)
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(agent_module, "TOOLS_BY_NAME", {"search_listings": _CapturingSearchTool()})
+    monkeypatch.setattr(agent_module, "contextualize_query", lambda q, c=None: q)
+
+    agent_module.run_search_agent("사고 이력 없는 차 찾아줘")
+
+    assert received_tool_calls[0]["args"]["accident_free_only"] is True
