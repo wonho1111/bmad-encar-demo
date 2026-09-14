@@ -301,7 +301,9 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     fillPath
       ..lineTo(points.last.dx, _yBase)
       ..close();
-    canvas.drawPath(fillPath, Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.1));
+    // 음영은 곡선 전체(꼬리 포함, fillPath) 아래를 덮는다. 2026-09-15 운영 실측: alpha 0.1이면
+    // 상자처럼 도드라져 더 옅게(0.08, 아래 stats 폴백 띠와 동일 값, web과 락스텝)로 낮췄다.
+    canvas.drawPath(fillPath, Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.08));
 
     final strokePath = Path()..moveTo(points.first.dx, points.first.dy);
     for (final pt in points.skip(1)) {

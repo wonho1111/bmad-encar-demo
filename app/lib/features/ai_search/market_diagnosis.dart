@@ -455,8 +455,10 @@ String buildJudgementSentence(double ratio) {
   if (n <= 0) return 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 없습니다';
   if (n >= 10) return 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다';
   // "열에 아홉" 꼴(사용자 확정 문구 2026-09-05) — 웹 buildJudgementSentence와 동일 문장.
+  // 조사 — "하나"는 받침이 없어 "하나가", 나머지 수사는 "이"(2026-09-15 실측, web 078345e 미러).
   const count = ['', '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉'];
-  return 'AI 예상으로는 비슷한 조건의 차 열에 ${count[n]}이 이 매물보다 쌉니다';
+  final particle = n == 1 ? '가' : '이';
+  return 'AI 예상으로는 비슷한 조건의 차 열에 ${count[n]}$particle 이 매물보다 쌉니다';
 }
 
 /// ④ 타일 비교 문구 — "AI 적정가보다 N% 높음/낮음" 하나만 낸다(기존 diffLabel처럼 부호 있는

@@ -151,15 +151,11 @@ export default function MarketDiagnosisPriceChart({
   return (
     <div className="w-full">
       <div className="flex items-stretch gap-1">
-        {/* 세로축 설명 — 밀도 단위는 숫자로 봐야 의미가 없어 눈금 대신 "많음/적음"만 표시한다. */}
+        {/* 세로축 설명 — 밀도 단위는 숫자로 봐야 의미가 없어 눈금 대신 "많음/적음"만 표시한다.
+            가운데 축 제목은 CSS writing-mode(글자를 한 자씩 세로로 쌓음, 2026-09-15 운영 실측 —
+            읽기 어려움)를 버리고 svg 안에서 rotate(-90)으로 눕혀 한 줄로 읽히게 한다(아래). */}
         <div className="flex w-4 shrink-0 flex-col items-center justify-between py-1 text-center" aria-hidden>
           <span className="text-[9px] leading-none text-ink-muted">많음</span>
-          <span
-            className="text-[9px] leading-none text-ink-muted"
-            style={{ writingMode: 'vertical-rl' as const, transform: 'rotate(180deg)' }}
-          >
-            비슷한 조건의 차가 얼마나 있을지
-          </span>
           <span className="text-[9px] leading-none text-ink-muted">적음</span>
         </div>
         <svg
@@ -167,6 +163,18 @@ export default function MarketDiagnosisPriceChart({
           preserveAspectRatio="xMidYMid meet"
           className="block h-auto min-w-0 flex-1"
         >
+          {/* 세로축 제목 — 왼쪽 여백(X0 안쪽)에서 -90도 회전한 한 줄 텍스트(위 주석 참조). */}
+          <text
+            x={16}
+            y={(Y_TOP + Y_BASE) / 2}
+            transform={`rotate(-90 16 ${(Y_TOP + Y_BASE) / 2})`}
+            textAnchor="middle"
+            fontSize={9}
+            fill="var(--ink-muted)"
+          >
+            비슷한 조건의 차가 얼마나 있을지
+          </text>
+
           {/* 축 */}
           <line x1={X0} y1={Y_BASE} x2={X1} y2={Y_BASE} stroke="var(--border-hairline)" strokeWidth={1} />
           {ticks.map((t) => (
@@ -180,8 +188,10 @@ export default function MarketDiagnosisPriceChart({
 
           {quantiles ? (
             <>
-              {/* 밀도 곡선(폴리라인) */}
-              <path d={fillPath} fill="var(--brand-petrol)" opacity={0.1} />
+              {/* 밀도 곡선(폴리라인) — 음영은 곡선 전체(꼬리 포함, fillPath) 아래를 덮는다.
+                  2026-09-15 운영 실측: 0.1이면 상자처럼 도드라져 더 옅게(0.08, stats 폴백
+                  음영과 동일 값)로 낮췄다. */}
+              <path d={fillPath} fill="var(--brand-petrol)" opacity={0.08} />
               <polyline points={polylinePoints} fill="none" stroke="var(--brand-petrol)" strokeWidth={2} />
             </>
           ) : (

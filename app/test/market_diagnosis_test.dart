@@ -327,6 +327,12 @@ void main() {
     test('ratio 1(경계) → "거의 전부"', () {
       expect(buildJudgementSentence(1), 'AI 예상으로는 비슷한 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다');
     });
+
+    // 조사 — "하나"는 받침이 없어 "하나가", 나머지 수사는 "이"(2026-09-15 실측, web 078345e 미러).
+    test('한 문장 판정의 조사가 수사에 맞는다(하나가 / 둘이)', () {
+      expect(buildJudgementSentence(0.1), contains('열에 하나가 이 매물보다'));
+      expect(buildJudgementSentence(0.2), contains('열에 둘이 이 매물보다'));
+    });
   });
 
   // DW-884 — "자세히"의 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
