@@ -63,6 +63,24 @@ describe('buildDensityCurve', () => {
     expect(peak.x).toBeGreaterThan(1_800);
     expect(peak.x).toBeLessThan(2_200);
   });
+
+  // 2026-09-15 재작업(운영 캡처): 격자를 꼬리 경계에서 그대로 자르면 그 자리 밀도가 0이 아니라
+  // 곡선이 상자처럼 뚝 끊긴다 — 대역폭의 2.5배만큼 격자를 더 넓혀 양끝이 0 근처로 내려가는지
+  // 직접 고정한다.
+  it('양끝 격자값이 정점의 5% 미만이다 — 상자처럼 끊기지 않는다', () => {
+    const q: Quantiles5 = { q10: 18_000_000, q25: 20_500_000, q50: 22_500_000, q75: 24_500_000, q90: 26_000_000 };
+    const curve = buildDensityCurve(q);
+    expect(curve[0].y).toBeLessThan(0.05);
+    expect(curve[curve.length - 1].y).toBeLessThan(0.05);
+  });
+
+  it('정점은 q25~q75 안에 있다 — 격자를 넓혀도 정점 위치는 그대로다', () => {
+    const q: Quantiles5 = { q10: 18_000_000, q25: 20_500_000, q50: 22_500_000, q75: 24_500_000, q90: 26_000_000 };
+    const curve = buildDensityCurve(q);
+    const peak = curve.reduce((max, p) => (p.y > max.y ? p : max));
+    expect(peak.x).toBeGreaterThanOrEqual(q.q25);
+    expect(peak.x).toBeLessThanOrEqual(q.q75);
+  });
 });
 
 // 렌더 계약(2026-09-15 운영 실측 후속, 카드 8건 재캡처) — 훅 없는 컴포넌트라 MarketDiagnosis.test.ts와

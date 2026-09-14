@@ -437,5 +437,23 @@ void main() {
       expect(peak.x, greaterThan(1800));
       expect(peak.x, lessThan(2200));
     });
+
+    // 2026-09-15 재작업(운영 캡처, web MarketDiagnosisPriceChart.test.ts 미러): 격자를 꼬리
+    // 경계에서 그대로 자르면 그 자리 밀도가 0이 아니라 곡선이 상자처럼 뚝 끊긴다 — 대역폭의
+    // 2.5배만큼 격자를 더 넓혀 양끝이 0 근처로 내려가는지 직접 고정한다.
+    test('양끝 격자값이 정점의 5% 미만이다 — 상자처럼 끊기지 않는다', () {
+      const q = MarketDiagnosisQuantiles(q10: 18000000, q25: 20500000, q50: 22500000, q75: 24500000, q90: 26000000);
+      final curve = buildDensityCurve(q);
+      expect(curve.first.y, lessThan(0.05));
+      expect(curve.last.y, lessThan(0.05));
+    });
+
+    test('정점은 q25~q75 안에 있다 — 격자를 넓혀도 정점 위치는 그대로다', () {
+      const q = MarketDiagnosisQuantiles(q10: 18000000, q25: 20500000, q50: 22500000, q75: 24500000, q90: 26000000);
+      final curve = buildDensityCurve(q);
+      final peak = curve.reduce((max, p) => p.y > max.y ? p : max);
+      expect(peak.x, greaterThanOrEqualTo(q.q25));
+      expect(peak.x, lessThanOrEqualTo(q.q75));
+    });
   });
 }

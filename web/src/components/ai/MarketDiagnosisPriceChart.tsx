@@ -70,8 +70,13 @@ export function buildDensityCurve(q: Quantiles5): { x: number; y: number }[] {
   const medianWidth = sortedWidths[Math.floor(sortedWidths.length / 2)] ?? 1;
   const bandwidth = Math.max(medianWidth * 0.6, 1); // 폭 0(분위수 값 중복) 방지
 
-  const gridMin = segments[0].lo;
-  const gridMax = segments[segments.length - 1].hi;
+  // 2026-09-15 재작업(운영 캡처): 격자를 분위수 꼬리 경계(segments 끝)에서 그대로 자르면 그
+  // 자리의 밀도가 0이 아니어서 곡선이 상자처럼 뚝 끊긴다. 질량(segments·mass)은 그대로 두고
+  // 평활용 격자만 양쪽으로 대역폭의 2.5배 넓혀 바깥(밀도 0인) 구간까지 커널이 스며들게 해
+  // 곡선이 양끝에서 자연히 0 근처로 내려가게 한다.
+  const tailExtension = bandwidth * 2.5;
+  const gridMin = segments[0].lo - tailExtension;
+  const gridMax = segments[segments.length - 1].hi + tailExtension;
   const step = (gridMax - gridMin) / (DENSITY_GRID_POINTS - 1);
   const grid = Array.from({ length: DENSITY_GRID_POINTS }, (_, i) => gridMin + step * i);
   const rawValues = grid.map((x) => densityAt(x, segments));
@@ -104,15 +109,11 @@ export default function MarketDiagnosisPriceChart({
   quantiles: Quantiles5 | null;
 }) {
   const compPrices = comps.map((c) => c.price);
-  // 밀도 곡선은 q10·q90 밖 꼬리(q10−w1 ~ q90+w2)까지 그린다 — 축 범위도 그만큼 넓혀야 곡선이
-  // 잘리지 않는다(quantiles.q10/q90만 넣던 종전보다 넓음, DW-885 재작업).
+  const densityCurve = quantiles ? buildDensityCurve(quantiles) : [];
+  // 밀도 곡선은 q10·q90 밖 꼬리를 지나 평활 대역폭의 2.5배까지 더 그린다(위 buildDensityCurve
+  // 재작업) — 축 범위도 그 넓힌 격자(densityCurve 양 끝)를 포함해야 곡선이 잘리지 않는다.
   const domainValues = quantiles
-    ? [
-        ...compPrices,
-        listingPrice,
-        quantiles.q10 - (quantiles.q25 - quantiles.q10),
-        quantiles.q90 + (quantiles.q90 - quantiles.q75),
-      ]
+    ? [...compPrices, listingPrice, densityCurve[0].x, densityCurve[densityCurve.length - 1].x]
     : [...compPrices, listingPrice, ...(stats ? [stats.min, stats.max] : [])];
 
   const pad = quantiles
@@ -135,7 +136,6 @@ export default function MarketDiagnosisPriceChart({
 
   // 곡선 높이(정점 대비 비율) — buildDensityCurve가 낸 0~1 정규화 밀도를 화면 y좌표로 옮긴다.
   const heightAt = (frac: number) => Y_BASE - (Y_BASE - Y_TOP) * frac;
-  const densityCurve = quantiles ? buildDensityCurve(quantiles) : [];
   const curveScreenPoints = densityCurve.map((p) => ({ x: xScale(p.x), y: heightAt(p.y) }));
   const polylinePoints = curveScreenPoints.map((p) => `${p.x},${p.y}`).join(' ');
   const fillPath =

@@ -80,8 +80,13 @@ List<({double x, double y})> buildDensityCurve(MarketDiagnosisQuantiles q) {
   final medianWidth = widths.isEmpty ? 1.0 : widths[widths.length ~/ 2];
   final bandwidth = math.max(medianWidth * 0.6, 1.0); // 폭 0(분위수 값 중복) 방지
 
-  final gridMin = segments.first.lo;
-  final gridMax = segments.last.hi;
+  // 2026-09-15 재작업(운영 캡처, web buildDensityCurve 미러): 격자를 분위수 꼬리 경계(segments
+  // 끝)에서 그대로 자르면 그 자리의 밀도가 0이 아니어서 곡선이 상자처럼 뚝 끊긴다. 질량
+  // (segments·mass)은 그대로 두고 평활용 격자만 양쪽으로 대역폭의 2.5배 넓혀 바깥(밀도 0인)
+  // 구간까지 커널이 스며들게 해 곡선이 양끝에서 자연히 0 근처로 내려가게 한다.
+  final tailExtension = bandwidth * 2.5;
+  final gridMin = segments.first.lo - tailExtension;
+  final gridMax = segments.last.hi + tailExtension;
   final step = (gridMax - gridMin) / (_densityGridPoints - 1);
   final grid = List<double>.generate(_densityGridPoints, (i) => gridMin + step * i);
   final rawValues = [for (final x in grid) _densityAt(x, segments)];
@@ -179,15 +184,14 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     final q = quantiles;
     final s = stats;
 
-    // 밀도 곡선은 q10·q90 밖 꼬리(q10−w1~q90+w2)까지 그린다 — 축 범위도 그만큼 넓혀야
-    // 곡선이 잘리지 않는다(quantiles.q10/q90만 넣던 종전보다 넓음, DW-885 재작업).
+    // 밀도 곡선은 q10·q90 밖 꼬리를 지나 평활 대역폭의 2.5배까지 더 그린다(위 buildDensityCurve
+    // 재작업) — 축 범위도 그 넓힌 격자(curve 양 끝)를 포함해야 곡선이 잘리지 않는다.
+    final curve = q != null ? buildDensityCurve(q) : const <({double x, double y})>[];
     final compPrices = [for (final c in comps) c.price.toDouble()];
     late final List<double> domainValues;
     late final double pad;
     if (q != null) {
-      final w1 = (q.q25 - q.q10).toDouble();
-      final w2 = (q.q90 - q.q75).toDouble();
-      domainValues = [...compPrices, listing.price.toDouble(), q.q10 - w1, q.q90 + w2];
+      domainValues = [...compPrices, listing.price.toDouble(), curve.first.x, curve.last.x];
       pad = math.max(math.max((q.q90 - q.q10) * 0.35, q.q50 * 0.05), 500000.0);
     } else {
       domainValues = [
@@ -250,7 +254,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     _drawText(canvas, '적음', const Offset(labelX, _yBase - 4), align: TextAlign.center, fontSize: 9, color: AppColors.inkMuted);
 
     if (q != null) {
-      _drawDensityCurve(canvas, q, xScale);
+      _drawDensityCurve(canvas, curve, xScale);
     } else if (s != null) {
       // 폴백 — 곡선 없이 q1~q3 구간만 옅은 띠로(web과 동일, 중앙값 점선·라벨은 없앴다).
       final bandPaint = Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.08);
@@ -288,8 +292,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
 
   /// buildDensityCurve가 낸 0~1 정규화 밀도 점들을 화면 좌표로 옮겨 채움(옅은 배경) +
   /// 폴리라인(직선 구간 연결, 스플라인 아님)으로 그린다.
-  void _drawDensityCurve(Canvas canvas, MarketDiagnosisQuantiles q, double Function(num) xScale) {
-    final curve = buildDensityCurve(q);
+  void _drawDensityCurve(Canvas canvas, List<({double x, double y})> curve, double Function(num) xScale) {
     if (curve.isEmpty) return;
     double heightAt(double frac) => _yBase - (_yBase - _yTop) * frac;
     final points = [for (final p in curve) Offset(xScale(p.x), heightAt(p.y))];
