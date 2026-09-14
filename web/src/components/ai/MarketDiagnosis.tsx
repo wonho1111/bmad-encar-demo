@@ -1,5 +1,7 @@
-// 시세 진단 렌더 블록 (5단계) — ChatAssistant 어시스턴트 말풍선 안에서 SearchResponse.market_diagnosis가
-// 있을 때만 그려지는 STEP2 구성(사용자 확정 목업 STEP2 블록을 이식). 상태 없는 표현용 컴포넌트.
+// 시세 진단 렌더 블록 — ChatAssistant 어시스턴트 말풍선 안에서 SearchResponse.market_diagnosis가
+// 있을 때만 그려지는 컴포넌트(상세 페이지 "AI 시세 진단" 버튼과 AI 검색 응답이 같은 컴포넌트를
+// 공유 — 버튼(MarketDiagnosisButton.tsx)은 /ai로 이동시켜 이 컴포넌트를 그리는 같은 검색 흐름을
+// 1회 자동 실행한다). 상태 없는 표현용 컴포넌트.
 //
 // 데이터 출처: api/app/market_price.py diagnose()의 반환 dict 그대로 — 숫자는 전부 SQL·TabPFN이
 // 낸 값이고(그 파일 모듈 docstring: "수치는 전부 SQL/모델이 낸다"), 이 컴포넌트는 그 값을 배치·
@@ -7,15 +9,16 @@
 // 해제됐는지"를 칩 취소선으로 보여주기 위한 **표시 전용** 복제본이다(실제 필터링에는 관여하지
 // 않는다 — 정본은 api/app/market_price.py의 LADDER, 그 표가 바뀌면 이 표도 함께 바꿔야 한다).
 //
-// ①·⑤가 둘 다 "LLM answer"로 지시됐지만 API가 주는 answer는 하나뿐이라(SearchResponse.answer),
-// 같은 문장을 두 번 보여주지 않고 헤드라인 위치(①) 한 곳에만 렌더한다(ChatAssistant가 answer를
-// 넘겨준다 — 이 컴포넌트가 렌더되면 ChatAssistant의 기존 평문 버블은 렌더하지 않는다).
-//
-// ⚠️ mock(사용자 확정 목업)은 자동차365 참고선·표기를 포함하지만, 상위 결정으로 이 프로젝트는
-//   그 데이터를 갖고 있지 않아(실데이터 없음) 구현하지 않는다 — 각주는 TabPFN·표본 수 두 줄뿐이다.
+// 2026-09-14 재구성(DW-862, 사용자 결정 2026-09-05): 카드가 "비교군 9건과 비교, 하위 22%, 중앙값,
+// 분위수" 같은 산출 과정을 예측 내용보다 앞세운다는 시연 피드백을 반영 — 헤드라인·판정 문장을
+// LLM이 지어내는 문장(answer) 대신 이 파일의 결정론적 텍스트로 바꾸고, 기계적 통계·산점도·비교
+// 매물 목록은 기본 닫힘 "자세히" 영역으로 옮겼다. answer prop은 ChatAssistant 호출 시그니처
+// 호환을 위해 타입에는 남기되(그쪽 코드는 손대지 않는다) 더는 화면에 그리지 않는다 — LLM 답변이
+// 바로 그 "기계적 정보 나열"을 그대로 옮겨 말하곤 했기 때문이다(agent_tools.py
+// _format_market_diagnosis가 도구 결과를 중앙값·백분위·범위 숫자로 먼저 요약해 LLM에 준다).
 import { formatPrice, formatStatPrice } from '@/lib/price';
-import AnswerText from './AnswerText';
 import MarketDiagnosisChart from './MarketDiagnosisChart';
+import MarketDiagnosisPriceChart from './MarketDiagnosisPriceChart';
 
 export type MarketDiagnosisListing = {
   id: string;
@@ -97,7 +100,7 @@ export function formatManKm(km: number): string {
 
 export type CriteriaChip = { label: string; active: boolean };
 
-/** 비교 기준 칩(②) 목록을 만든다 — target 속성 + 현재 사다리 단계(criteria.step)의 활성 조건.
+/** 비교 기준 칩(접힘 영역) 목록을 만든다 — target 속성 + 현재 사다리 단계(criteria.step)의 활성 조건.
  * 순수 함수(단위테스트 대상, MarketDiagnosis.test.ts).
  */
 export function buildCriteriaChips(data: MarketDiagnosisData): CriteriaChip[] {
@@ -132,8 +135,8 @@ export function buildVerdictBadge(
   return null;
 }
 
-// 백분위("하위 N% 가격대") 칩은 표본이 MIN_VERDICT_SAMPLE(3, 백엔드와 동일 기준) 미만이면
-// 숨긴다 — 비교군 1~2건의 백분위는 verdict와 마찬가지로 판정 근거가 못 된다(F4).
+// 판정 문장(백분위 기반)을 보여줄지 여부 — 표본이 MIN_VERDICT_SAMPLE(3, 백엔드와 동일 기준)
+// 미만이면 숨긴다(비교군 1~2건의 백분위는 verdict와 마찬가지로 판정 근거가 못 된다, F4).
 const MIN_PERCENTILE_SAMPLE = 3;
 
 export function shouldShowPercentileChip(percentile: number | null, sampleCount: number): boolean {
@@ -152,6 +155,46 @@ function verdictToneClass(verdict: MarketDiagnosisData['verdict']): string {
   if (verdict === '저렴' || verdict === '다소 저렴') return 'bg-trust-green-bg text-trust-green-ink';
   if (verdict === '높음' || verdict === '다소 높음') return 'bg-warn-amber-bg text-warn-amber-ink';
   return 'border border-border-hairline text-ink-secondary';
+}
+
+// 헤드라인(①) 범위 — tabpfn 분위수(q25~q75)가 있으면 그 값, 없으면 비교군 사분위(q1~q3)로
+// 대체한다(approximate=true, "비슷한 차 실제 호가 기준" 소문구를 붙이라는 신호). 순수 함수
+// (단위테스트 대상).
+export type PriceRange = { low: number; high: number; approximate: boolean };
+
+export function buildPriceRange(data: MarketDiagnosisData): PriceRange | null {
+  const q = data.tabpfn.quantiles;
+  if (q) return { low: q.q25, high: q.q75, approximate: false };
+  if (data.stats) return { low: data.stats.q1, high: data.stats.q3, approximate: true };
+  return null;
+}
+
+function toManString(won: number): string {
+  return Math.round(won / 10_000).toLocaleString('ko-KR');
+}
+
+export function formatHeadline(range: PriceRange): string {
+  return `이런 조건이면 보통 ${toManString(range.low)}~${toManString(range.high)}만원`;
+}
+
+// 한 문장 판정(②) — 백분위를 "열 대 중 N대가 이 매물보다 쌉니다" 형태로 푼다. 실제 비교군 건수
+// (예: "100대 중 90대")를 쓰지 않는다 — sample_count가 작을 때(예: 9건) 그 숫자를 그대로 말하면
+// 표본이 작다는 인상을 주고, 사용자가 실제 대수로 오해하기 쉽다(DW-862). "열"은 항상 10으로 고정한
+// 비유 단위다. 순수 함수(단위테스트 대상) — percentile은 호출부에서 shouldShowPercentileChip으로
+// 먼저 걸러진 값만 넘긴다.
+export function buildJudgementSentence(percentile: number): string {
+  const n = Math.round(percentile * 10);
+  if (n <= 0) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.';
+  if (n >= 10) return 'AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.';
+  return `AI 예상으로는 이런 조건의 차 열 대 중 ${n}대가 이 매물보다 쌉니다.`;
+}
+
+// 타일 2개 아래 백분율 비교(④) — 기준은 항상 tabpfn.price(모델 예측 적정가) 하나뿐이다. 순수 함수.
+export function buildTabpfnDiffLabel(listingPrice: number, tabpfnPrice: number | null): string | null {
+  if (tabpfnPrice === null || tabpfnPrice === 0) return null;
+  const diffPct = Math.round(((listingPrice - tabpfnPrice) / tabpfnPrice) * 100);
+  if (diffPct === 0) return 'AI 적정가와 거의 같아요';
+  return diffPct > 0 ? `AI 적정가보다 ${diffPct}% 높음` : `AI 적정가보다 ${Math.abs(diffPct)}% 낮음`;
 }
 
 function StatCell({
@@ -175,33 +218,41 @@ function StatCell({
   );
 }
 
-export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosisData; answer: string }) {
+// answer(LLM 자유 문장)는 더는 화면에 그리지 않지만(위 파일 상단 코멘트), ChatAssistant가 여전히
+// 이 필드를 싣고 호출하므로 타입에는 남겨 시그니처를 맞춘다(그쪽 코드는 이 작업 범위 밖).
+export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; answer: string }) {
   const { listing, criteria, stats, percentile, verdict, tabpfn, comps } = data;
   const chips = buildCriteriaChips(data);
-  const hasChart = stats !== null && comps.length > 0;
   const verdictBadge = buildVerdictBadge(verdict, data.verdict_basis);
   const basisLabel = verdictBasisLabel(data.verdict_basis);
-  const showPercentileChip = shouldShowPercentileChip(percentile, criteria.sample_count);
-
-  // 대상가와 유사매물 중앙값의 차이(④ 통계 3칸 세 번째 칸 보조 라벨) — stats가 있을 때만 계산.
-  // ⚠️ 판정 단어(저렴/높음)를 여기 붙이지 않는다 — 판정 배지는 사분위(q1/q3) 기준이라
-  //   부호 기반 단어와 어긋날 수 있고(실측: 배지 '적정'인데 라벨 '높음 +7%'), 사용자가
-  //   "무슨 %인지 모르겠다"고 지적함. 기준을 명시한 중립 표기로 통일(2026-08-31).
-  const diffLabel = (() => {
-    if (!stats || stats.median === 0) return null;
-    const diffPct = ((listing.price - stats.median) / stats.median) * 100;
-    const rounded = Math.round(diffPct * 10) / 10;
-    if (rounded === 0) return '중앙값과 동일';
-    return rounded < 0 ? `중앙값 대비 ${rounded}%` : `중앙값 대비 +${rounded}%`;
-  })();
+  const showJudgement = shouldShowPercentileChip(percentile, criteria.sample_count);
+  const priceRange = buildPriceRange(data);
+  const tabpfnDiffLabel = buildTabpfnDiffLabel(listing.price, tabpfn.price);
+  const hasChart = stats !== null || !!tabpfn.quantiles;
 
   return (
     <div className="flex w-full flex-col gap-4">
-      {/* ① 판정 헤드라인(LLM answer) + 백분위 미니칩 */}
+      {/* ① 헤드라인 — 적정가 범위(예측 분포 있으면 q25~q75, 없으면 비교군 사분위) */}
+      <div>
+        {priceRange ? (
+          <>
+            <p className="text-[17px] font-bold leading-snug text-ink-primary">{formatHeadline(priceRange)}</p>
+            {priceRange.approximate && (
+              <p className="mt-0.5 text-caption text-ink-muted">비슷한 차 실제 호가 기준</p>
+            )}
+          </>
+        ) : (
+          <p className="text-[17px] font-bold leading-snug text-ink-primary">
+            비슷한 조건의 매물이 부족해 가격대를 계산할 수 없어요.
+          </p>
+        )}
+      </div>
+
+      {/* ② 한 문장 판정 + 기존 판정 배지(작게) */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0">
-          <AnswerText text={answer} className="text-[17px] font-bold leading-snug text-ink-primary" />
-        </div>
+        {showJudgement && percentile !== null && (
+          <p className="text-sm font-medium text-ink-primary">{buildJudgementSentence(percentile)}</p>
+        )}
         {verdictBadge && (
           <span
             className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-0.5 text-caption font-semibold ${
@@ -216,65 +267,93 @@ export default function MarketDiagnosis({ data, answer }: { data: MarketDiagnosi
         {basisLabel && (
           <span className="shrink-0 whitespace-nowrap text-caption text-ink-muted">{basisLabel}</span>
         )}
-        {showPercentileChip && (
-          <span className="shrink-0 whitespace-nowrap rounded-full border border-border-hairline bg-surface-base px-2.5 py-0.5 text-caption text-ink-secondary">
-            하위 {Math.round((percentile as number) * 100)}% 가격대
-          </span>
-        )}
       </div>
 
-      {/* ② 비교 기준 칩(사다리 조건들) */}
-      <div>
-        <div className="flex flex-wrap gap-1.5">
-          {chips.map((chip) => (
-            <span
-              key={chip.label}
-              className={
-                chip.active
-                  ? 'rounded-full border border-brand-petrol px-2.5 py-1 text-caption text-brand-petrol'
-                  : 'rounded-full border border-border-hairline px-2.5 py-1 text-caption text-ink-muted line-through'
-              }
-            >
-              {chip.label}
-            </span>
-          ))}
-        </div>
-        <p className="mt-1.5 text-caption text-ink-muted">
-          등록 매물 {criteria.sample_count}건과 비교 · {criteria.step > 0 ? criteria.desc : '기준 완화 없음'}
-        </p>
-      </div>
-
-      {/* STEP3: 완화 사다리 발동 고지 — desc(가변 문자열) 뒤에 "로"/"으로" 조사를 직접 붙이면
-          받침 유무에 따라 문법이 깨진다("해제(으)로"처럼 두 후보를 그대로 노출하는 사고를
-          코드리뷰에서 실측). "기준으로"는 desc가 아니라 고정 명사 "기준"에 붙으므로 desc가
-          무엇이든 항상 자연스럽다. */}
-      {criteria.step > 0 && (
-        <div className="rounded-lg bg-warn-amber-bg px-3 py-2 text-sm font-medium text-warn-amber-ink">
-          {criteria.desc} 기준으로 넓혀 {criteria.sample_count}건과 비교했어요.
-        </div>
-      )}
-
-      {/* ③ SVG 산점도 */}
+      {/* ③ 가격 축 그림 — AI 가격 곡선(있으면) + 비슷한 차 실제 가격 점 + 이 매물 세로선 */}
       {hasChart ? (
-        <MarketDiagnosisChart listing={listing} stats={stats} comps={comps} tabpfnPrice={tabpfn.price} />
+        <MarketDiagnosisPriceChart
+          listingPrice={listing.price}
+          stats={stats}
+          comps={comps}
+          quantiles={tabpfn.quantiles ?? null}
+        />
       ) : (
         <p className="text-caption text-ink-muted">비교할 매물이 부족해 그래프를 표시할 수 없어요.</p>
       )}
 
-      {/* ④ 통계 3칸 */}
-      <div className="grid grid-cols-3 gap-2.5">
-        <StatCell label="유사 매물 중앙값" value={stats ? formatStatPrice(stats.median) : '—'} />
+      {/* ④ 타일 2개 + 적정가 대비 백분율(하나만) */}
+      <div className="grid grid-cols-2 gap-2.5">
         <StatCell
-          label="모델 예측 적정가"
+          label={`지금 올라온 비슷한 차 ${criteria.sample_count}대의 중간 가격`}
+          value={stats ? formatStatPrice(stats.median) : '—'}
+        />
+        <StatCell
+          label="AI가 본 적정가"
           value={tabpfn.price !== null ? formatPrice(tabpfn.price) : '표본 부족'}
           note={tabpfn.price === null ? tabpfn.note : undefined}
         />
-        <StatCell label="이 매물" value={formatPrice(listing.price)} note={diffLabel ?? undefined} emphasis />
       </div>
+      {tabpfnDiffLabel && <p className="text-caption text-ink-secondary">{tabpfnDiffLabel}</p>}
 
-      {/* ⑥ 각주 — 자동차365 참고선은 상위 결정으로 구현하지 않는다(실데이터 없음). */}
+      {/* ⑤ 접힘 영역(기본 닫힘) — 기존 비교군 통계·사다리 단계·산점도·비교 매물 목록 */}
+      <details className="rounded-lg border border-border-hairline">
+        <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-ink-secondary">
+          자세히
+        </summary>
+        <div className="flex flex-col gap-3 border-t border-border-hairline px-3 py-3">
+          {criteria.step > 0 && (
+            <div className="rounded-lg bg-warn-amber-bg px-3 py-2 text-sm font-medium text-warn-amber-ink">
+              {criteria.desc} 기준으로 넓혀 {criteria.sample_count}건과 비교했어요.
+            </div>
+          )}
+
+          <div>
+            <p className="text-caption text-ink-muted">이런 차와 비교했어요:</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {chips.map((chip) => (
+                <span
+                  key={chip.label}
+                  className={
+                    chip.active
+                      ? 'rounded-full border border-brand-petrol px-2.5 py-1 text-caption text-brand-petrol'
+                      : 'rounded-full border border-border-hairline px-2.5 py-1 text-caption text-ink-muted line-through'
+                  }
+                >
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {stats && (
+            <div className="grid grid-cols-5 gap-1.5">
+              <StatCell label="최저" value={formatStatPrice(stats.min)} />
+              <StatCell label="하위 25%" value={formatStatPrice(stats.q1)} />
+              <StatCell label="중앙값" value={formatStatPrice(stats.median)} />
+              <StatCell label="상위 25%" value={formatStatPrice(stats.q3)} />
+              <StatCell label="최고" value={formatStatPrice(stats.max)} />
+            </div>
+          )}
+
+          {stats && comps.length > 0 && (
+            <MarketDiagnosisChart listing={listing} stats={stats} comps={comps} tabpfnPrice={tabpfn.price} />
+          )}
+
+          {comps.length > 0 && (
+            <ul className="flex flex-col gap-1 text-caption text-ink-secondary">
+              {comps.map((c) => (
+                <li key={c.id}>
+                  {c.model} {c.year}년식 · {formatManKm(c.mileage)} · {formatPrice(c.price)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
+
+      {/* ⑥ 각주 */}
       <p className="text-caption text-ink-muted">
-        적정가 예측: Built with PriorLabs-TabPFN · 분포: 등록 매물 {criteria.sample_count}건
+        적정가 예측: TabPFN 모델 · 비교 매물은 호가(등록가) 기준
       </p>
     </div>
   );

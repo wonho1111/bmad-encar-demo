@@ -5,16 +5,23 @@
 // 복제한 표다(주석 참조) — 두 표가 어긋나면 칩 취소선이 실제 필터 조건과 다른 거짓 정보를
 // 보여준다. 이 테스트는 "지금 이 표가 낸 결과가 기대한 모양인가"를 고정해 그 표를 실수로
 // 건드렸을 때 바로 드러나게 한다.
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildCriteriaChips,
+  buildJudgementSentence,
+  buildPriceRange,
+  buildTabpfnDiffLabel,
   buildVerdictBadge,
+  formatHeadline,
   verdictBasisLabel,
   formatManKm,
   shouldShowPercentileChip,
   type MarketDiagnosisData,
 } from './MarketDiagnosis';
+import MarketDiagnosis from './MarketDiagnosis';
 
 const BASE_LISTING: MarketDiagnosisData['listing'] = {
   id: 'l-1',
@@ -152,5 +159,104 @@ describe('verdictBasisLabel', () => {
     expect(verdictBasisLabel('사분위')).toBeNull();
     expect(verdictBasisLabel('표본 부족')).toBeNull();
     expect(verdictBasisLabel(null)).toBeNull();
+  });
+});
+
+// DW-862 재구성 — 헤드라인(①) 범위: tabpfn 분위수가 있으면 그 값, 없으면 비교군 사분위로 대체하고
+// approximate=true를 켠다(화면에서 "비슷한 차 실제 호가 기준" 소문구를 붙이라는 신호).
+describe('buildPriceRange', () => {
+  it('tabpfn 분위수가 있으면 q25~q75를 쓰고 approximate는 false다', () => {
+    const data = diagnosisWithStep(0);
+    data.tabpfn.quantiles = { q10: 18_000_000, q25: 20_500_000, q50: 22_500_000, q75: 24_500_000, q90: 26_000_000 };
+    expect(buildPriceRange(data)).toEqual({ low: 20_500_000, high: 24_500_000, approximate: false });
+  });
+
+  it('tabpfn 분위수가 없으면(undefined) 비교군 사분위(q1~q3)로 대체하고 approximate는 true다', () => {
+    const data = diagnosisWithStep(0);
+    expect(buildPriceRange(data)).toEqual({ low: 21_000_000, high: 25_000_000, approximate: true });
+  });
+
+  it('비교군 통계도 없으면(stats null) null을 낸다', () => {
+    const data = diagnosisWithStep(0);
+    data.stats = null;
+    expect(buildPriceRange(data)).toBeNull();
+  });
+});
+
+describe('formatHeadline', () => {
+  it('만원 단위로 반올림해 "이런 조건이면 보통 A~B만원" 문장을 만든다', () => {
+    expect(formatHeadline({ low: 20_500_000, high: 24_500_000, approximate: false })).toBe(
+      '이런 조건이면 보통 2,050~2,450만원',
+    );
+  });
+});
+
+// DW-862 재구성 — 한 문장 판정(②): 백분위를 "열 대 중 N대" 비유로 푼다. 실제 비교군 건수(예: "100대
+// 중 90대")는 절대 쓰지 않는다 — 이 검사가 그 금지를 직접 고정한다.
+describe('buildJudgementSentence', () => {
+  it('percentile=0.3이면 열 대 중 3대가 이 매물보다 쌉니다', () => {
+    expect(buildJudgementSentence(0.3)).toBe('AI 예상으로는 이런 조건의 차 열 대 중 3대가 이 매물보다 쌉니다.');
+  });
+
+  it('percentile=0에 가까우면(반올림 0) "거의 없습니다" 문구로 바뀐다', () => {
+    expect(buildJudgementSentence(0.04)).toBe('AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 없습니다.');
+  });
+
+  it('percentile=1에 가까우면(반올림 10) "거의 전부입니다" 문구로 바뀐다', () => {
+    expect(buildJudgementSentence(0.96)).toBe('AI 예상으로는 이런 조건의 차 중 이 매물보다 싼 차가 거의 전부입니다.');
+  });
+
+  it('어떤 percentile을 넣어도 실제 대수 표현("100대 중"류)이 나오지 않는다', () => {
+    for (const p of [0, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 1]) {
+      const sentence = buildJudgementSentence(p);
+      expect(sentence).not.toMatch(/\d+대\s*중/);
+      expect(sentence).not.toContain('100대');
+    }
+  });
+});
+
+describe('buildTabpfnDiffLabel', () => {
+  it('이 매물이 적정가보다 비싸면 "N% 높음"', () => {
+    expect(buildTabpfnDiffLabel(23_000_000, 20_000_000)).toBe('AI 적정가보다 15% 높음');
+  });
+
+  it('이 매물이 적정가보다 싸면 "N% 낮음"', () => {
+    expect(buildTabpfnDiffLabel(18_000_000, 20_000_000)).toBe('AI 적정가보다 10% 낮음');
+  });
+
+  it('적정가가 없으면(표본 부족) null', () => {
+    expect(buildTabpfnDiffLabel(20_000_000, null)).toBeNull();
+  });
+});
+
+// DW-862 렌더 계약 — 훅 없는 컴포넌트라 renderToStaticMarkup으로 초기 마크업만 고정한다
+// (SiteNav.test.ts와 동일 관례, vitest.config.ts 주석의 예외 조항).
+describe('MarketDiagnosis — 렌더 계약(DW-862 재구성)', () => {
+  it('헤드라인·판정 문장을 그리고, 실제 대수 표현("100대 중")은 어디에도 없다', () => {
+    const data = diagnosisWithStep(0);
+    data.tabpfn.quantiles = { q10: 18_000_000, q25: 20_500_000, q50: 22_500_000, q75: 24_500_000, q90: 26_000_000 };
+    const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: 'LLM이 지어낸 문장' }));
+
+    expect(html).toContain('이런 조건이면 보통 2,050~2,450만원');
+    expect(html).toContain('열 대 중 3대가 이 매물보다 쌉니다');
+    expect(html).not.toContain('100대 중');
+    // answer(LLM 자유 문장)는 더는 화면에 그리지 않는다 — 기계적 정보를 그대로 옮겨 말하곤 했기 때문.
+    expect(html).not.toContain('LLM이 지어낸 문장');
+  });
+
+  it('접힘 영역(자세히)은 기본 닫힘이다(open 속성 없음)', () => {
+    const data = diagnosisWithStep(0);
+    const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: '' }));
+
+    expect(html).toContain('<details');
+    expect(html).not.toContain('<details open');
+    expect(html).toContain('자세히');
+  });
+
+  it('tabpfn 분위수가 없으면 헤드라인에 "비슷한 차 실제 호가 기준" 소문구가 붙는다', () => {
+    const data = diagnosisWithStep(0);
+    const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: '' }));
+
+    expect(html).toContain('비슷한 차 실제 호가 기준');
   });
 });
