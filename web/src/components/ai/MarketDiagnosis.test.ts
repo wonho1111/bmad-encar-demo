@@ -328,6 +328,16 @@ describe('MarketDiagnosis — 렌더 계약(DW-862 재구성)', () => {
 
     expect(html).toContain('비슷한 차 실제 호가 기준');
   });
+
+  // 5색 판정 구간 스타일 채택(2026-09-15) — "이 매물 N만 → {판정}" 라벨이 실제로 그려지려면
+  // MarketDiagnosis가 서버 verdict 값을 MarketDiagnosisPriceChart에 넘겨야 한다(그 컴포넌트
+  // 자체 계약은 MarketDiagnosisPriceChart.test.ts가 지킨다 — 여기는 배선만 확인).
+  it('data.verdict를 차트에 넘겨 "이 매물 N만 → 판정" 라벨을 그린다', () => {
+    const data = diagnosisWithStep(0); // verdict: '저렴', listing.price: 22_000_000
+    const html = renderToStaticMarkup(createElement(MarketDiagnosis, { data, answer: '' }));
+
+    expect(html).toContain('이 매물 2,200만 → 저렴');
+  });
 });
 
 // 조사 — "하나"는 받침이 없어 "하나가", 나머지 수사는 "이"(2026-09-15 실측 C07 "열에 하나이").

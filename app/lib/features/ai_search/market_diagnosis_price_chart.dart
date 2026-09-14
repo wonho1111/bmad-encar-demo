@@ -32,6 +32,12 @@ const double _yTop = 24; // 곡선 정점
 const double _yBase = 150; // 가격 축(기준선) — 점·곡선 바닥이 여기 놓인다
 const double _yTick = 172;
 
+// 5색 판정 구간 갱신(web MarketDiagnosisPriceChart.tsx five-zone.patch 미러) — "이 매물"·
+// "AI 적정가" 라벨이 겹칠 때 어긋나게 띄울 자리가 기존 상단 여백(_yTop=24px)만으론 부족해
+// 위쪽에 여백을 추가로 둔다(web의 viewBox `0 -18 ...` 확장과 동일 목적, Flutter는 viewBox가
+// 없어 canvas.translate로 흉내낸다 — 아래 paint() 참조).
+const double _topMargin = 18;
+
 /// market_diagnosis_chart.dart의 동명 헬퍼와 같은 반올림 규칙(축 눈금을 보기 좋은 자리에
 /// 맞춘다) — private 함수라 그 파일에서 재사용할 수 없어 그대로 복제한다(둘 다 한 줄짜리
 /// 순수 함수라 공용 모듈로 뺄 만큼은 아니다).
@@ -108,6 +114,37 @@ List<({double x, double y})> buildDensityCurve(MarketDiagnosisQuantiles q) {
   return [for (var i = 0; i < grid.length; i++) (x: grid[i], y: smoothed[i] / peak)];
 }
 
+// 5색 판정 구간(매우 저렴→저렴→적정→다소 높음→높음) — web five-zone.patch의 rect 색 배열 미러.
+const List<Color> priceZoneColors = [
+  Color(0xFF1E8A5A),
+  Color(0xFF6DB38F),
+  Color(0xFFA7B1BC),
+  Color(0xFFE09A4F),
+  Color(0xFFCF533E),
+];
+
+class PriceZoneBound {
+  const PriceZoneBound({required this.from, required this.to, required this.color});
+  final double from;
+  final double to;
+  final Color color;
+}
+
+/// 판정 구간 5색의 가격(원 단위) 경계 — web five-zone.patch의 rect 배열과 같은 구간 순서다.
+/// curveMin·curveMax는 buildDensityCurve가 낸 꼬리 포함 격자의 양 끝 가격(첫·마지막 점의 x)을
+/// 그대로 받는다 — 맨 앞·맨 뒤 구간(매우 저렴/높음)이 q10·q90 밖 꼬리까지 덮도록. 순수 함수
+/// (단위테스트 대상) — CustomPainter·Canvas 없이 구간 경계·색만 고정한다(painter는 이 값을
+/// xScale로 화면 좌표로 옮겨 그리기만 한다).
+List<PriceZoneBound> priceZoneBounds(MarketDiagnosisQuantiles q, double curveMin, double curveMax) {
+  return [
+    PriceZoneBound(from: curveMin, to: q.q10.toDouble(), color: priceZoneColors[0]),
+    PriceZoneBound(from: q.q10.toDouble(), to: q.q25.toDouble(), color: priceZoneColors[1]),
+    PriceZoneBound(from: q.q25.toDouble(), to: q.q75.toDouble(), color: priceZoneColors[2]),
+    PriceZoneBound(from: q.q75.toDouble(), to: q.q90.toDouble(), color: priceZoneColors[3]),
+    PriceZoneBound(from: q.q90.toDouble(), to: curveMax, color: priceZoneColors[4]),
+  ];
+}
+
 /// "N만" 축약 표기(가격 축 눈금·이 매물 라벨 공용) — web manLabel 미러.
 String _manLabel(num price) => '${thousands((price / 10000).round())}만';
 
@@ -121,12 +158,16 @@ class MarketDiagnosisPriceChart extends StatelessWidget {
     required this.stats,
     required this.comps,
     required this.quantiles,
+    this.verdict,
   });
 
   final MarketDiagnosisListing listing;
   final MarketDiagnosisStats? stats;
   final List<MarketDiagnosisComp> comps;
   final MarketDiagnosisQuantiles? quantiles;
+  // "이 매물 N만 → {판정}" 라벨에 쓴다(web verdict prop 미러) — 안 넘기면 null이라 기존
+  // 라벨("이 매물 N만") 그대로 나온다.
+  final String? verdict;
 
   @override
   Widget build(BuildContext context) {
@@ -137,14 +178,16 @@ class MarketDiagnosisPriceChart extends StatelessWidget {
       );
     }
     final legend = quantiles != null
-        ? '곡선 높이 = 비슷한 차가 몰린 정도 · 점 = 비슷한 차 실제 등록가 · 굵은 선 = 이 매물'
+        ? '색 = 판정 구간(매우 저렴~높음) · 점 = 비슷한 차 실제 등록가 · 굵은 선 = 이 매물 · 점선 = AI 적정가'
         : '점 = 비슷한 차 실제 등록가 · 음영 = 가격 중간 50% 구간 · 굵은 선 = 이 매물';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         AspectRatio(
-          aspectRatio: _viewW / _viewH,
+          // 상단 여백(_topMargin)만큼 세로가 늘어난 비율(web viewBox 확장 미러) — painter가
+          // 그 여백만큼 translate해 좌표계는 기존 상수(_yTop 등) 그대로 쓴다.
+          aspectRatio: _viewW / (_viewH + _topMargin),
           child: CustomPaint(
             size: Size.infinite,
             painter: _MarketDiagnosisPriceChartPainter(
@@ -152,6 +195,7 @@ class MarketDiagnosisPriceChart extends StatelessWidget {
               stats: stats,
               comps: comps,
               quantiles: quantiles,
+              verdict: verdict,
             ),
           ),
         ),
@@ -168,18 +212,20 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     required this.stats,
     required this.comps,
     required this.quantiles,
+    required this.verdict,
   });
 
   final MarketDiagnosisListing listing;
   final MarketDiagnosisStats? stats;
   final List<MarketDiagnosisComp> comps;
   final MarketDiagnosisQuantiles? quantiles;
+  final String? verdict;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
     final sx = size.width / _viewW;
-    final sy = size.height / _viewH;
+    final sy = size.height / (_viewH + _topMargin);
 
     final q = quantiles;
     final s = stats;
@@ -212,6 +258,9 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
 
     canvas.save();
     canvas.scale(sx, sy);
+    // 상단 여백만큼 아래로 밀어 기존 상수(_yTop 등)는 그대로 두고 그 위(음수 y)까지 그릴
+    // 자리를 확보한다(web viewBox `0 -18 ...` 확장과 동일 목적).
+    canvas.translate(0, _topMargin);
 
     // 가격 축 + 눈금(5개) + 축 제목.
     final axisPaint = Paint()
@@ -254,7 +303,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     _drawText(canvas, '적음', const Offset(labelX, _yBase - 4), align: TextAlign.center, fontSize: 9, color: AppColors.inkMuted);
 
     if (q != null) {
-      _drawDensityCurve(canvas, curve, xScale);
+      _drawDensityCurve(canvas, curve, xScale, q);
     } else if (s != null) {
       // 폴백 — 곡선 없이 q1~q3 구간만 옅은 띠로(web과 동일, 중앙값 점선·라벨은 없앴다).
       final bandPaint = Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.08);
@@ -268,6 +317,48 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
       canvas.drawCircle(Offset(xScale(c.price), _yBase), 4.5, compPaint);
     }
 
+    if (q != null) {
+      // q25~q75 괄호선 + "보통 A~B만" 라벨(web five-zone.patch 미러).
+      final bracketPaint = Paint()
+        ..color = AppColors.inkSecondary
+        ..strokeWidth = 1;
+      final q25X = xScale(q.q25);
+      final q75X = xScale(q.q75);
+      canvas.drawLine(Offset(q25X, _yBase - 14), Offset(q75X, _yBase - 14), bracketPaint);
+      canvas.drawLine(Offset(q25X, _yBase - 18), Offset(q25X, _yBase - 10), bracketPaint);
+      canvas.drawLine(Offset(q75X, _yBase - 18), Offset(q75X, _yBase - 10), bracketPaint);
+      _drawText(
+        canvas,
+        '보통 ${_manLabel(q.q25)}~${_manLabel(q.q75)}',
+        Offset((q25X + q75X) / 2, _yBase - 21),
+        align: TextAlign.center,
+        fontSize: 10,
+        color: AppColors.inkSecondary,
+      );
+
+      // q50 — 점선 세로선 + "AI 적정가 N만" 라벨. '이 매물' 라벨과 x가 가까우면(70px 미만)
+      // 겹치므로 이 라벨을 더 위로 어긋나게 띄운다(web과 동일 기준).
+      final q50X = xScale(q.q50);
+      _drawDashedLine(
+        canvas,
+        Offset(q50X, _yTop - 2),
+        Offset(q50X, _yBase),
+        Paint()
+          ..color = AppColors.inkSecondary
+          ..strokeWidth = 1.5,
+      );
+      final overlapsListingLabel = (xScale(listing.price) - q50X).abs() < 70;
+      _drawText(
+        canvas,
+        'AI 적정가 ${_manLabel(q.q50)}',
+        Offset(q50X, overlapsListingLabel ? _yTop - 30 : _yTop - 10),
+        align: TextAlign.center,
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        color: AppColors.inkSecondary,
+      );
+    }
+
     // 이 매물 가격 — 세로선 + 라벨(web과 동일, 별도 마커 점은 없다).
     final targetX = xScale(listing.price);
     canvas.drawLine(
@@ -279,7 +370,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     );
     _drawText(
       canvas,
-      '이 매물 ${_manLabel(listing.price)}',
+      verdict != null ? '이 매물 ${_manLabel(listing.price)} → $verdict' : '이 매물 ${_manLabel(listing.price)}',
       Offset(targetX, _yTop - 10),
       align: TextAlign.center,
       fontSize: 11,
@@ -290,9 +381,15 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// buildDensityCurve가 낸 0~1 정규화 밀도 점들을 화면 좌표로 옮겨 채움(옅은 배경) +
+  /// buildDensityCurve가 낸 0~1 정규화 밀도 점들을 화면 좌표로 옮겨 판정 구간 5색(clipPath로
+  /// 곡선 모양 안쪽만, 2026-09-15 web five-zone.patch 미러 — 옛 단일 회색 음영 대체) +
   /// 폴리라인(직선 구간 연결, 스플라인 아님)으로 그린다.
-  void _drawDensityCurve(Canvas canvas, List<({double x, double y})> curve, double Function(num) xScale) {
+  void _drawDensityCurve(
+    Canvas canvas,
+    List<({double x, double y})> curve,
+    double Function(num) xScale,
+    MarketDiagnosisQuantiles q,
+  ) {
     if (curve.isEmpty) return;
     double heightAt(double frac) => _yBase - (_yBase - _yTop) * frac;
     final points = [for (final p in curve) Offset(xScale(p.x), heightAt(p.y))];
@@ -304,9 +401,18 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     fillPath
       ..lineTo(points.last.dx, _yBase)
       ..close();
-    // 음영은 곡선 전체(꼬리 포함, fillPath) 아래를 덮는다. 2026-09-15 운영 실측: alpha 0.1이면
-    // 상자처럼 도드라져 더 옅게(0.08, 아래 stats 폴백 띠와 동일 값, web과 락스텝)로 낮췄다.
-    canvas.drawPath(fillPath, Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.08));
+
+    // 음영은 판정 구간 5색으로 칠한다 — clipPath(fillPath, 꼬리 포함 곡선 모양) 안쪽만
+    // priceZoneBounds(순수 함수)가 낸 구간별 rect로 칠해 상자처럼 도드라지지 않는다.
+    canvas.save();
+    canvas.clipPath(fillPath);
+    for (final zone in priceZoneBounds(q, curve.first.x, curve.last.x)) {
+      canvas.drawRect(
+        Rect.fromLTRB(xScale(zone.from), _yTop, xScale(zone.to), _yBase),
+        Paint()..color = zone.color.withValues(alpha: 0.55),
+      );
+    }
+    canvas.restore();
 
     final strokePath = Path()..moveTo(points.first.dx, points.first.dy);
     for (final pt in points.skip(1)) {
@@ -326,7 +432,22 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     return oldDelegate.listing != listing ||
         oldDelegate.stats != stats ||
         oldDelegate.comps != comps ||
-        oldDelegate.quantiles != quantiles;
+        oldDelegate.quantiles != quantiles ||
+        oldDelegate.verdict != verdict;
+  }
+}
+
+/// Canvas에 점선 그리기 — Flutter Canvas는 SVG strokeDasharray 같은 내장 점선이 없어 짧은
+/// 선분을 이어 흉내낸다(web `stroke-dasharray="4 3"`과 같은 4·3 간격).
+void _drawDashedLine(Canvas canvas, Offset start, Offset end, Paint paint, {double dashLength = 4, double gapLength = 3}) {
+  final totalLength = (end - start).distance;
+  if (totalLength == 0) return;
+  final direction = (end - start) / totalLength;
+  var drawn = 0.0;
+  while (drawn < totalLength) {
+    final segmentEnd = math.min(drawn + dashLength, totalLength);
+    canvas.drawLine(start + direction * drawn, start + direction * segmentEnd, paint);
+    drawn += dashLength + gapLength;
   }
 }
 

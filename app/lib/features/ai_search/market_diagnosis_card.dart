@@ -86,6 +86,7 @@ class MarketDiagnosisCard extends StatelessWidget {
           stats: stats,
           comps: data.comps,
           quantiles: data.tabpfn.quantiles,
+          verdict: data.verdict,
         ),
         const SizedBox(height: 12),
 

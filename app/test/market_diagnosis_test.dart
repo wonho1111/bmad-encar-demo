@@ -3,7 +3,8 @@
 // 검증한다(app 기존 관례 — market_diagnosis.dart는 상태 없는 표현 로직만 둔다).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:app/features/ai_search/market_diagnosis.dart';
-import 'package:app/features/ai_search/market_diagnosis_price_chart.dart' show buildDensityCurve;
+import 'package:app/features/ai_search/market_diagnosis_price_chart.dart'
+    show buildDensityCurve, priceZoneBounds, priceZoneColors;
 
 Map<String, Object?> _wireListing({
   String id = 'l-1',
@@ -454,6 +455,38 @@ void main() {
       final peak = curve.reduce((max, p) => p.y > max.y ? p : max);
       expect(peak.x, greaterThanOrEqualTo(q.q25));
       expect(peak.x, lessThanOrEqualTo(q.q75));
+    });
+  });
+
+  // priceZoneBounds(market_diagnosis_price_chart.dart, 2026-09-15 5색 판정 구간 갱신, web
+  // five-zone.patch 미러) — "색 5종이 그려진다"를 CustomPainter·Canvas 없이 확인하려고 구간
+  // 경계 계산을 painter에서 이 순수 함수로 분리했다. 여기서는 그 함수 자체만 고정한다
+  // (painter가 clipPath·Canvas.drawRect로 실제로 칠하는지는 이 테스트가 못 본다 — 위젯 트리
+  // 수준에서는 크래시 없음만 ai_chat_screen_test.dart가 확인한다).
+  group('priceZoneBounds', () {
+    const q = MarketDiagnosisQuantiles(q10: 18000000, q25: 20500000, q50: 22500000, q75: 24500000, q90: 26000000);
+
+    test('5구간이 저가→고가 순서로, 정해진 색 5종이다', () {
+      final zones = priceZoneBounds(q, 15000000, 29000000);
+      expect(zones.map((z) => z.color).toList(), priceZoneColors);
+    });
+
+    test('맨 앞 구간은 곡선 꼬리 시작(curveMin)에서 q10까지, 맨 뒤 구간은 q90에서 꼬리 끝(curveMax)까지다', () {
+      final zones = priceZoneBounds(q, 15000000, 29000000);
+      expect(zones.first.from, 15000000);
+      expect(zones.first.to, q.q10);
+      expect(zones.last.from, q.q90);
+      expect(zones.last.to, 29000000);
+    });
+
+    test('가운데 세 구간 경계는 q10·q25·q75·q90 그대로다(적정 구간은 q25~q75 통째로 하나)', () {
+      final zones = priceZoneBounds(q, 15000000, 29000000);
+      expect(zones[1].from, q.q10.toDouble());
+      expect(zones[1].to, q.q25.toDouble());
+      expect(zones[2].from, q.q25.toDouble());
+      expect(zones[2].to, q.q75.toDouble());
+      expect(zones[3].from, q.q75.toDouble());
+      expect(zones[3].to, q.q90.toDouble());
     });
   });
 }

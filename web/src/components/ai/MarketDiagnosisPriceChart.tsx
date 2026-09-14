@@ -6,6 +6,8 @@
 //
 // tabpfn.quantiles(q10~q90)가 있으면 밀도 곡선을 그린다(아래 buildDensityCurve). quantiles가
 // 없으면 곡선 없이 점 + q1·q3 음영 구간만 그린다(설계 4항).
+import { useId } from 'react';
+
 import type { MarketDiagnosisComp, MarketDiagnosisStats } from './MarketDiagnosis';
 
 const VIEW_W = 640;
@@ -102,12 +104,17 @@ export default function MarketDiagnosisPriceChart({
   stats,
   comps,
   quantiles,
+  verdict = null,
 }: {
   listingPrice: number;
   stats: MarketDiagnosisStats | null;
   comps: MarketDiagnosisComp[];
   quantiles: Quantiles5 | null;
+  // 덱 5쪽 미리보기 전용(임시) — "이 매물 N만 → {배지 판정}" 라벨에 쓴다. 호출부가 안 넘기면
+  // undefined→null로 떨어져 기존 라벨 그대로 나온다.
+  verdict?: string | null;
 }) {
+  const densityClipId = useId();
   const compPrices = comps.map((c) => c.price);
   const densityCurve = quantiles ? buildDensityCurve(quantiles) : [];
   // 밀도 곡선은 q10·q90 밖 꼬리를 지나 평활 대역폭의 2.5배까지 더 그린다(위 buildDensityCurve
@@ -159,7 +166,10 @@ export default function MarketDiagnosisPriceChart({
           <span className="text-[9px] leading-none text-ink-muted">적음</span>
         </div>
         <svg
-          viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+          // 덱5 미리보기(임시) — 위 여백 18px 확장(0 -18 ...). '이 매물'·'AI 적정가' 라벨이 겹칠 때
+          // 어긋나게 띄울 자리가 기존 상단 여백(Y_TOP=24px)만으론 부족해 넓혔다(기존 요소 위치는
+          // 그대로, 빈 공간만 늘어남).
+          viewBox={`0 -18 ${VIEW_W} ${VIEW_H + 18}`}
           preserveAspectRatio="xMidYMid meet"
           className="block h-auto min-w-0 flex-1"
         >
@@ -188,10 +198,36 @@ export default function MarketDiagnosisPriceChart({
 
           {quantiles ? (
             <>
-              {/* 밀도 곡선(폴리라인) — 음영은 곡선 전체(꼬리 포함, fillPath) 아래를 덮는다.
-                  2026-09-15 운영 실측: 0.1이면 상자처럼 도드라져 더 옅게(0.08, stats 폴백
-                  음영과 동일 값)로 낮췄다. */}
-              <path d={fillPath} fill="var(--brand-petrol)" opacity={0.08} />
+              {/* 덱5 미리보기(임시, five-zone.patch) — 곡선 아래 음영을 분위수 경계 5구간으로
+                  색칠. fillPath(곡선 모양) 을 clipPath로 삼아 그 모양 안쪽만 구간별 rect로 칠한다. */}
+              <defs>
+                <clipPath id={densityClipId}>
+                  <path d={fillPath} />
+                </clipPath>
+              </defs>
+              <g clipPath={`url(#${densityClipId})`}>
+                {[
+                  { from: curveScreenPoints[0]?.x ?? X0, to: xScale(quantiles.q10), color: '#1E8A5A' }, // 매우 저렴
+                  { from: xScale(quantiles.q10), to: xScale(quantiles.q25), color: '#6DB38F' }, // 저렴
+                  { from: xScale(quantiles.q25), to: xScale(quantiles.q75), color: '#A7B1BC' }, // 적정
+                  { from: xScale(quantiles.q75), to: xScale(quantiles.q90), color: '#E09A4F' }, // 다소 높음
+                  {
+                    from: xScale(quantiles.q90),
+                    to: curveScreenPoints[curveScreenPoints.length - 1]?.x ?? X1,
+                    color: '#CF533E', // 높음
+                  },
+                ].map((zone, i) => (
+                  <rect
+                    key={`zone-${i}`}
+                    x={zone.from}
+                    y={Y_TOP}
+                    width={Math.max(zone.to - zone.from, 0)}
+                    height={Y_BASE - Y_TOP}
+                    fill={zone.color}
+                    opacity={0.55}
+                  />
+                ))}
+              </g>
               <polyline points={polylinePoints} fill="none" stroke="var(--brand-petrol)" strokeWidth={2} />
             </>
           ) : (
@@ -213,6 +249,67 @@ export default function MarketDiagnosisPriceChart({
             <circle key={c.id} cx={xScale(c.price)} cy={Y_BASE} r={4.5} fill="var(--brand-petrol)" opacity={0.55} />
           ))}
 
+          {quantiles && (
+            <>
+              {/* 덱5 미리보기(임시) — 기준선 위 q25~q75 괄호선 + "보통 A~B만" 라벨 */}
+              <line
+                x1={xScale(quantiles.q25)}
+                y1={Y_BASE - 14}
+                x2={xScale(quantiles.q75)}
+                y2={Y_BASE - 14}
+                stroke="var(--ink-secondary)"
+                strokeWidth={1}
+              />
+              <line
+                x1={xScale(quantiles.q25)}
+                y1={Y_BASE - 18}
+                x2={xScale(quantiles.q25)}
+                y2={Y_BASE - 10}
+                stroke="var(--ink-secondary)"
+                strokeWidth={1}
+              />
+              <line
+                x1={xScale(quantiles.q75)}
+                y1={Y_BASE - 18}
+                x2={xScale(quantiles.q75)}
+                y2={Y_BASE - 10}
+                stroke="var(--ink-secondary)"
+                strokeWidth={1}
+              />
+              <text
+                x={(xScale(quantiles.q25) + xScale(quantiles.q75)) / 2}
+                y={Y_BASE - 21}
+                textAnchor="middle"
+                fontSize={10}
+                fill="var(--ink-secondary)"
+              >
+                보통 {Math.round(quantiles.q25 / 10_000).toLocaleString('ko-KR')}~{manLabel(quantiles.q75)}
+              </text>
+
+              {/* q50 — 점선 세로선 + "AI 적정가 N만" 라벨. '이 매물' 라벨과 x가 가까우면(70px 미만)
+                  겹치므로 이 라벨을 더 위로 어긋나게 띄운다. */}
+              <line
+                x1={xScale(quantiles.q50)}
+                y1={Y_TOP - 2}
+                x2={xScale(quantiles.q50)}
+                y2={Y_BASE}
+                stroke="var(--ink-secondary)"
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+              <text
+                x={xScale(quantiles.q50)}
+                y={Math.abs(xScale(listingPrice) - xScale(quantiles.q50)) < 70 ? Y_TOP - 30 : Y_TOP - 10}
+                textAnchor="middle"
+                fontSize={10}
+                fontWeight={600}
+                fill="var(--ink-secondary)"
+              >
+                AI 적정가 {manLabel(quantiles.q50)}
+              </text>
+            </>
+          )}
+
           {/* 이 매물 — 세로선 */}
           <line
             x1={xScale(listingPrice)}
@@ -230,13 +327,13 @@ export default function MarketDiagnosisPriceChart({
             fontWeight={700}
             fill="var(--price-emphasis)"
           >
-            이 매물 {manLabel(listingPrice)}
+            {verdict ? `이 매물 ${manLabel(listingPrice)} → ${verdict}` : `이 매물 ${manLabel(listingPrice)}`}
           </text>
         </svg>
       </div>
       <p className="mt-1 text-caption text-ink-muted">
         {quantiles
-          ? '곡선 높이 = 비슷한 차가 몰린 정도 · 점 = 비슷한 차 실제 등록가 · 굵은 선 = 이 매물'
+          ? '색 = 판정 구간(매우 저렴~높음) · 점 = 비슷한 차 실제 등록가 · 굵은 선 = 이 매물 · 점선 = AI 적정가'
           : '점 = 비슷한 차 실제 등록가 · 음영 = 가격 중간 50% 구간 · 굵은 선 = 이 매물'}
       </p>
     </div>

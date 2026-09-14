@@ -311,6 +311,7 @@ export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; a
           stats={stats}
           comps={comps}
           quantiles={tabpfn.quantiles ?? null}
+          verdict={verdict}
         />
       ) : (
         <p className="text-caption text-ink-muted">비교할 매물이 부족해 그래프를 표시할 수 없어요.</p>

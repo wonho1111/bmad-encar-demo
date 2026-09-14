@@ -96,7 +96,7 @@ describe('MarketDiagnosisPriceChart — 렌더 계약(2026-09-15 운영 실측 �
     expect(html).not.toContain('vertical-rl');
   });
 
-  it('곡선 아래 음영(fillPath)이 q10~q90 상자가 아니라 꼬리 포함 곡선 전체를 덮는다 — 2026-09-15 실측(상자처럼 잘려 보임)', () => {
+  it('음영이 판정 구간 5색(clipPath로 곡선 모양 안쪽만)으로 칠해지고, q25~q75 괄호 라벨·AI 적정가 점선도 함께 그려진다 — 2026-09-15 5구간 색 갱신(단일 회색 음영 대체)', () => {
     // listingPrice=q10, comp 1건=q90으로 놓아 "이 매물" 세로선·비교군 점을 각각 xScale(q10)·
     // xScale(q90)의 독립 기준점으로 쓴다(음영 자체가 낸 좌표로 음영을 검증하는 자기일관 단언이
     // 되지 않도록, 서로 다른 두 렌더 요소에서 기준을 뽑는다).
@@ -109,19 +109,45 @@ describe('MarketDiagnosisPriceChart — 렌더 계약(2026-09-15 운영 실측 �
       }),
     );
 
+    // 옛 계약(단일 회색 음영, opacity 0.08)은 더는 없다.
+    expect(html).not.toMatch(/fill="var\(--brand-petrol\)" opacity="0\.08"/);
+
+    // clipPath가 곡선 모양(fillPath, 꼬리 포함)을 그대로 담고, <g clip-path>가 그 id를 참조한다.
+    const clipMatch = html.match(/<clipPath id="([^"]+)"><path d="([^"]+)"><\/path><\/clipPath>/);
+    expect(clipMatch).not.toBeNull();
+    const [, clipId, clipD] = clipMatch!;
+    expect(html).toContain(`<g clip-path="url(#${clipId})">`);
+
     const listingLine = html.match(/<line x1="([\d.eE+-]+)"[^>]*stroke="var\(--price-emphasis\)"/);
     const compCircle = html.match(/<circle cx="([\d.eE+-]+)"[^>]*fill="var\(--brand-petrol\)" opacity="0\.55"/);
-    const fillPath = html.match(/<path d="([^"]+)" fill="var\(--brand-petrol\)" opacity="0\.08"/);
     expect(listingLine).not.toBeNull();
     expect(compCircle).not.toBeNull();
-    expect(fillPath).not.toBeNull();
-
     const q10X = Number(listingLine![1]);
     const q90X = Number(compCircle![1]);
-    const fillXs = [...fillPath![1].matchAll(/[ML] (-?[\d.eE+-]+) -?[\d.eE+-]+/g)].map((m) => Number(m[1]));
 
-    // 꼬리 포함이면 음영의 x 범위가 q10~q90보다 넓어야 한다(상자였다면 q10X·q90X와 같았을 값).
-    expect(Math.min(...fillXs)).toBeLessThan(q10X);
-    expect(Math.max(...fillXs)).toBeGreaterThan(q90X);
+    // 꼬리 포함이면 clipPath 모양의 x 범위가 q10~q90보다 넓어야 한다(상자였다면 q10X·q90X와 같았을 값).
+    const clipXs = [...clipD.matchAll(/[ML] (-?[\d.eE+-]+) -?[\d.eE+-]+/g)].map((m) => Number(m[1]));
+    expect(Math.min(...clipXs)).toBeLessThan(q10X);
+    expect(Math.max(...clipXs)).toBeGreaterThan(q90X);
+
+    // clipPath 그룹 안에 판정 구간 5색 rect가 저가→고가 순서로 있다.
+    const groupMatch = html.match(new RegExp(`<g clip-path="url\\(#${clipId}\\)">(.*?)</g>`));
+    expect(groupMatch).not.toBeNull();
+    const rectColors = [...groupMatch![1].matchAll(/<rect[^>]*fill="(#[0-9A-Fa-f]{6})" opacity="0\.55">/g)].map(
+      (m) => m[1],
+    );
+    expect(rectColors).toEqual(['#1E8A5A', '#6DB38F', '#A7B1BC', '#E09A4F', '#CF533E']);
+
+    // q10 경계(listingPrice=q10, 이 매물 세로선과 같은 x)에서 "매우 저렴"→"저렴" 색이 바뀌고,
+    // q90 경계(comp price=q90, 비교군 점과 같은 x)에서 "다소 높음"→"높음" 색이 바뀐다.
+    const rectXs = [...groupMatch![1].matchAll(/<rect x="([\d.eE+-]+)"/g)].map((m) => Number(m[1]));
+    expect(rectXs[1]).toBeCloseTo(q10X, 1);
+    expect(rectXs[4]).toBeCloseTo(q90X, 1);
+
+    // q25~q75 괄호선 + "보통 A~B만" 라벨.
+    expect(html).toContain('보통 2,050~2,450만');
+    // q50 점선(stroke-dasharray) + "AI 적정가 N만" 라벨.
+    expect(html).toMatch(/stroke-dasharray="4 3"/);
+    expect(html).toContain('AI 적정가 2,250만');
   });
 });
