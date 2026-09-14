@@ -42,7 +42,11 @@ Map<String, Object?> _wireDiagnosis({int step = 0, List<Object?>? comps}) {
     'percentile': 0.3,
     'verdict': '저렴',
     'verdict_basis': '적정가',
-    'tabpfn': {'price': 23500000, 'note': 'TabPFN 예측'},
+    'tabpfn': {
+      'price': 23500000,
+      'note': 'TabPFN 예측',
+      'quantiles': {'q10': 20000000, 'q25': 21500000, 'q50': 23500000, 'q75': 25500000, 'q90': 27000000},
+    },
     'comps': comps ?? const [],
   };
 }
@@ -142,6 +146,8 @@ void main() {
       expect(data.verdict, '저렴');
       expect(data.verdictBasis, '적정가');
       expect(data.tabpfn.price, 23500000);
+      expect(data.tabpfn.quantiles?.q10, 20000000);
+      expect(data.tabpfn.quantiles?.q90, 27000000);
     });
 
     test('Map이 아니면 null', () {
@@ -201,12 +207,22 @@ void main() {
       expect(data!.stats, isNull);
     });
 
-    test('tabpfn이 없거나 깨지면 {price:null, note:""}로 안전 폴백한다', () {
+    test('tabpfn이 없거나 깨지면 {price:null, note:"", quantiles:null}로 안전 폴백한다', () {
       final wire = _wireDiagnosis()..['tabpfn'] = 'oops';
       final data = MarketDiagnosisData.fromMap(wire);
       expect(data, isNotNull);
       expect(data!.tabpfn.price, isNull);
       expect(data.tabpfn.note, '');
+      expect(data.tabpfn.quantiles, isNull);
+    });
+
+    test('quantiles 필드 일부가 깨지면 quantiles만 null로 폴백한다(price·note는 살린다)', () {
+      final wire = _wireDiagnosis()
+        ..['tabpfn'] = {'price': 23500000, 'note': 'TabPFN 예측', 'quantiles': {'q10': 1, 'q25': 2}};
+      final data = MarketDiagnosisData.fromMap(wire);
+      expect(data, isNotNull);
+      expect(data!.tabpfn.price, 23500000);
+      expect(data.tabpfn.quantiles, isNull);
     });
   });
 
@@ -231,6 +247,68 @@ void main() {
     test('List가 아니면 null', () {
       expect(parseMarketDiagnoses('oops'), isNull);
       expect(parseMarketDiagnoses(null), isNull);
+    });
+  });
+
+  // 카드 재구성(2026-09-14, DW-862) — 헤드라인·한 문장 판정·타일 비교 문구를 만드는 순수
+  // 함수들. 전부 재계산 없이 wire 값을 그대로 문장에 끼워 넣는지만 본다.
+  group('headlineText', () {
+    test('tabpfn.quantiles가 있으면 q25~q75를 만원 반올림해 우선 쓴다', () {
+      final data = _diagnosisWithStep(0);
+      expect(headlineText(data), '이런 조건이면 보통 2,150~2,550만원');
+    });
+
+    test('quantiles가 없으면 stats(q1~q3)로 폴백하고 근거 문구를 덧붙인다', () {
+      final wire = _wireDiagnosis()..['tabpfn'] = {'price': 23500000, 'note': ''};
+      final data = MarketDiagnosisData.fromMap(wire)!;
+      expect(headlineText(data), '이런 조건이면 보통 2,100~2,500만원 · 비슷한 차 실제 호가 기준');
+    });
+
+    test('quantiles도 stats도 없으면 null(카드가 대체 문구를 보여준다)', () {
+      final wire = _wireDiagnosis()
+        ..['tabpfn'] = {'price': null, 'note': ''}
+        ..['stats'] = null
+        ..['percentile'] = null
+        ..['verdict'] = null
+        ..['verdict_basis'] = null;
+      final data = MarketDiagnosisData.fromMap(wire)!;
+      expect(headlineText(data), isNull);
+    });
+  });
+
+  group('verdictSentence', () {
+    test('percentile 0.3 → round(3)=3, 그대로 숫자로 낸다', () {
+      expect(verdictSentence(0.3), 'AI 예상으로는 이런 조건의 차 열에 3이 이 매물보다 쌉니다');
+    });
+
+    test('percentile 0(경계) → "거의 없음"("0대" 같은 실제 대수처럼 안 읽히게)', () {
+      expect(verdictSentence(0), 'AI 예상으로는 이런 조건의 차 열에 거의 없음이 이 매물보다 쌉니다');
+    });
+
+    test('percentile 1(경계) → "거의 전부"', () {
+      expect(verdictSentence(1), 'AI 예상으로는 이런 조건의 차 열에 거의 전부이 이 매물보다 쌉니다');
+    });
+
+    test('percentile이 null이면 null(판정 근거 자체가 없다)', () {
+      expect(verdictSentence(null), isNull);
+    });
+  });
+
+  group('tabpfnDiffLabel', () {
+    test('이 매물이 AI 적정가보다 비싸면 "높음"', () {
+      expect(tabpfnDiffLabel(23000000, 22000000), 'AI 적정가보다 4.5% 높음');
+    });
+
+    test('이 매물이 AI 적정가보다 싸면 "낮음"', () {
+      expect(tabpfnDiffLabel(21000000, 22000000), 'AI 적정가보다 4.5% 낮음');
+    });
+
+    test('완전히 같으면 "AI 적정가와 동일"', () {
+      expect(tabpfnDiffLabel(22000000, 22000000), 'AI 적정가와 동일');
+    });
+
+    test('tabpfn.price가 없으면(표본 부족) null', () {
+      expect(tabpfnDiffLabel(22000000, null), isNull);
     });
   });
 }

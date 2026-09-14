@@ -1,6 +1,7 @@
 // 시세 진단 데이터 모델 + 순수 표시 헬퍼(5단계, web MarketDiagnosis.tsx 미러) — 상태 없는
-// 타입·함수만 둔다. 렌더 위젯은 market_diagnosis_card.dart(카드)·market_diagnosis_chart.dart
-// (산점도)·market_diagnosis_table.dart(다건 요약표)에 분리돼 있다.
+// 타입·함수만 둔다. 렌더 위젯은 market_diagnosis_card.dart(카드)·market_diagnosis_price_chart.dart
+// (가격 곡선, 카드 기본 노출)·market_diagnosis_chart.dart(산점도, 카드 접힘 영역으로 이동,
+// 2026-09-14)·market_diagnosis_table.dart(다건 요약표)에 분리돼 있다.
 //
 // 데이터 출처: api/app/market_price.py diagnose()의 반환 dict 그대로 — 숫자는 전부 SQL·TabPFN이
 // 낸 값이고, 이 파일은 그 값을 파싱·배치 판단만 한다(재계산 금지). 유일한 예외는 아래
@@ -12,6 +13,7 @@
 // null-safe하게 그린다(undefined가 그냥 화면에 새는 식). Dart는 강타입이라 그럴 수 없다 — 이
 // 파일의 fromMap들은 필수 필드가 타입에 안 맞으면 **그 객체 전체를 버린다**(웹보다 엄격한
 // 의도된 차이, 작업 보고서 참조).
+import '../../core/format/number_format.dart' show thousands;
 import '../listings/listing.dart' show asInt;
 
 /// 진단 대상 매물 요약(listing) — web MarketDiagnosisListing 미러.
@@ -165,19 +167,57 @@ class MarketDiagnosisCriteria {
   }
 }
 
-/// TabPFN(적정가 예측 모델) 결과 — web `{price, note}` 미러. 형태가 깨지면(웹과 달리) 전체를
-/// 버리지 않고 "예측 없음"(price:null, note:'')으로 안전 폴백한다 — tabpfn은 진단의 핵심 축이
-/// 아니라 통계 3칸 중 한 칸일 뿐이라, 이 조각만으로 카드 전체를 버릴 이유가 없다.
+/// TabPFN 예측 분포의 분위수 5단(quantiles) — web과 동일하게 원 단위 정수, 2026-09-03
+/// additive 필드(api/app/market_price.py _tabpfn_predict). 헤드라인(카드 재구성 2026-09-14)의
+/// "이런 조건이면 보통 A~B만원"이 q25~q75를 그대로 쓴다 — 재계산 금지 원칙(파일 상단 주석)은
+/// 이 필드에도 동일 적용.
+class MarketDiagnosisQuantiles {
+  const MarketDiagnosisQuantiles({
+    required this.q10,
+    required this.q25,
+    required this.q50,
+    required this.q75,
+    required this.q90,
+  });
+
+  final int q10;
+  final int q25;
+  final int q50;
+  final int q75;
+  final int q90;
+
+  static MarketDiagnosisQuantiles? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final q10 = asInt(raw['q10']);
+    final q25 = asInt(raw['q25']);
+    final q50 = asInt(raw['q50']);
+    final q75 = asInt(raw['q75']);
+    final q90 = asInt(raw['q90']);
+    if (q10 == null || q25 == null || q50 == null || q75 == null || q90 == null) return null;
+    return MarketDiagnosisQuantiles(q10: q10, q25: q25, q50: q50, q75: q75, q90: q90);
+  }
+}
+
+/// TabPFN(적정가 예측 모델) 결과 — web `{price, note, quantiles}` 미러. 형태가 깨지면(웹과
+/// 달리) 전체를 버리지 않고 "예측 없음"(price:null, note:'', quantiles:null)으로 안전
+/// 폴백한다 — tabpfn은 진단의 핵심 축이 아니라 통계 타일 중 한 칸일 뿐이라, 이 조각만으로
+/// 카드 전체를 버릴 이유가 없다. quantiles가 깨지면(price는 멀쩡해도) quantiles만 null로
+/// 폴백한다(헤드라인이 stats로 넘어갈 수 있게).
 class MarketDiagnosisTabpfn {
-  const MarketDiagnosisTabpfn({required this.price, required this.note});
+  const MarketDiagnosisTabpfn({required this.price, required this.note, required this.quantiles});
 
   final int? price;
   final String note;
+  final MarketDiagnosisQuantiles? quantiles;
 
   static MarketDiagnosisTabpfn fromMap(Object? raw) {
-    if (raw is! Map) return const MarketDiagnosisTabpfn(price: null, note: '');
+    if (raw is! Map) return const MarketDiagnosisTabpfn(price: null, note: '', quantiles: null);
     final note = raw['note'];
-    return MarketDiagnosisTabpfn(price: asInt(raw['price']), note: note is String ? note : '');
+    return MarketDiagnosisTabpfn(
+      price: asInt(raw['price']),
+      note: note is String ? note : '',
+      quantiles: MarketDiagnosisQuantiles.fromMap(raw['quantiles']),
+    );
   }
 }
 
@@ -346,4 +386,58 @@ const int minPercentileSample = 3;
 
 bool shouldShowPercentileChip(double? percentile, int sampleCount) {
   return percentile != null && sampleCount >= minPercentileSample;
+}
+
+// --- 카드 재구성(2026-09-14, DW-862) — 헤드라인·한 문장 판정·타일 비교 문구를 만드는 순수
+// 함수들. 전부 diagnose()가 낸 값을 그대로 문장에 끼워 넣기만 한다(재계산 금지, 파일 상단
+// 주석 원칙 동일 적용) — 유일한 산술은 만원 반올림(_manRange)과 %/10분위 반올림뿐이고, 둘 다
+// 기존 formatStatPrice·diffLabel이 이미 쓰던 반올림 방식과 같다.
+
+/// 두 가격을 만원 단위로 반올림해 "A~B만원" 한 쌍으로 합친다(headlineText 전용) —
+/// formatStatPrice처럼 반올림하되 "만원" 접미사를 값마다 따로 붙이지 않고 한 번만 붙인다.
+String _manRange(int lo, int hi) {
+  const man = 10000;
+  final loMan = (lo / man).round();
+  final hiMan = (hi / man).round();
+  return '${thousands(loMan)}~${thousands(hiMan)}만원';
+}
+
+/// ① 헤드라인 — "이런 조건이면 보통 A~B만원". tabpfn.quantiles(q25~q75, 예측 분포)가 있으면
+/// 그걸 우선 쓰고, 없으면 stats(q1~q3, 비교군 실제 호가)로 폴백하며 근거를 문구 뒤에 밝힌다
+/// (예측이 아니라 실측 호가라는 걸 감춰선 안 된다). 표본 자체가 없어 둘 다 null이면 헤드라인도
+/// null — 카드가 대체 문구를 보여준다.
+String? headlineText(MarketDiagnosisData data) {
+  final quantiles = data.tabpfn.quantiles;
+  if (quantiles != null) {
+    return '이런 조건이면 보통 ${_manRange(quantiles.q25, quantiles.q75)}';
+  }
+  final stats = data.stats;
+  if (stats != null) {
+    return '이런 조건이면 보통 ${_manRange(stats.q1, stats.q3)} · 비슷한 차 실제 호가 기준';
+  }
+  return null;
+}
+
+/// ② 한 문장 판정 — "AI 예상으로는 이런 조건의 차 열에 N이 이 매물보다 쌉니다"(N=이 매물보다
+/// 싼 비율을 10분위로 반올림). "100대 중 90대" 식 실제 대수 표현은 표본 크기를 안다고
+/// 오해하게 만들어 금지했다(작업 지시) — 열(10)에 대한 상대 비율만 말한다. 0·10 경계는
+/// 숫자 "0"이 그대로 나오면 "0대"처럼 읽혀 실제 대수 표현과 헷갈리므로 "거의 없음"/
+/// "거의 전부"로 바꾼다.
+String? verdictSentence(double? percentile) {
+  if (percentile == null) return null;
+  final n = (percentile * 10).round().clamp(0, 10);
+  final nText = n == 0 ? '거의 없음' : (n == 10 ? '거의 전부' : '$n');
+  return 'AI 예상으로는 이런 조건의 차 열에 $nText이 이 매물보다 쌉니다';
+}
+
+/// ④ 타일 비교 문구 — "AI 적정가보다 N% 높음/낮음" 하나만 낸다(기존 diffLabel처럼 부호 있는
+/// %만 중립적으로 보여주는 대신, 방향을 단어로 명시해 초보 사용자가 부호를 오독하지 않게
+/// 한다). tabpfn.price가 없으면(표본 부족) 비교 자체가 성립하지 않으니 null.
+String? tabpfnDiffLabel(int listingPrice, int? tabpfnPrice) {
+  if (tabpfnPrice == null || tabpfnPrice == 0) return null;
+  final diffPct = ((listingPrice - tabpfnPrice) / tabpfnPrice) * 100;
+  final rounded = (diffPct * 10).round() / 10;
+  if (rounded == 0) return 'AI 적정가와 동일';
+  final absPct = rounded.abs();
+  return rounded > 0 ? 'AI 적정가보다 $absPct% 높음' : 'AI 적정가보다 $absPct% 낮음';
 }
