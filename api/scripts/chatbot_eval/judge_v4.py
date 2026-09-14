@@ -260,7 +260,10 @@ def _load_jsonl(path: Path) -> list[dict]:
 
 def main() -> None:
     api_key = require("GEMINI_API_KEY", settings.gemini_api_key)
-    judge_model_name = _pick_judge_model(api_key)
+    # JUDGE_MODEL 환경변수로 채점 모델을 고정할 수 있다(2026-09-14, DW-877 회차: 3.1-pro-preview
+    # 일일 한도에 걸려 채점이 4분에 1건으로 떨어지고 실패분이 BAD로 기록되는 문제 → 같은 회차의
+    # 전후 응답을 동일 모델(예: gemini-3.8-flash)로 채점해 비교 일관성을 지킨다). 미설정 시 종전 자동 선택.
+    judge_model_name = os.environ.get("JUDGE_MODEL") or _pick_judge_model(api_key)
     assert judge_model_name != settings.gemini_generation_model, (
         f"채점 모델이 에이전트 모델({settings.gemini_generation_model})과 같습니다 — 더 강한 모델이어야 합니다."
     )
