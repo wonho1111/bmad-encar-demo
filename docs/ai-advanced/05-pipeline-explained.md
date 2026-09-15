@@ -524,4 +524,4 @@ MT3는 로컬 시드에 쏘렌토 하이브리드가 없어(운영 13대) 연료
 문서 안에 개별 엔카 매물·행 데이터는 신규로 싣지 않았다(요약·집계만, `04-demo-cases.md`에
 이미 있는 시연용 시드 매물 2건만 3절에서 재인용). 관련 문서: [01-model-skill-selection.md](01-model-skill-selection.md)
 (모델 선정 근거) · [02-seed-price-calibration.md](02-seed-price-calibration.md)(시드 보정) ·
-[04-demo-cases.md](04-demo-cases.md)(시연 케이스·5단 판정 설명).
+04-demo-cases.md(시연 케이스·5단 판정 설명 — 2026-09-15 레포 밖 `chajang-demo/archive/`로 이동, 본문의 `04-demo-cases.md:줄번호` 참조는 그 사본 기준).
