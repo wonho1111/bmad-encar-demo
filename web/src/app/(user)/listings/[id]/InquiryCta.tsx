@@ -47,7 +47,11 @@ export default function InquiryCta({
   const { busy, error, start } = useInquiryAction(listingId);
 
   // 3분기 중 실제로 "동작"(상태를 갖는 쪽)은 inquiry뿐 — anon/owner는 그냥 링크다(AC7).
-  function renderAction() {
+  // compact=true(모바일 하단 고정 바, W3) — "AI 시세 진단" 버튼과 한 줄에 나란히 놓이므로 폭을
+  // w-full 대신 내용대로 두고 높이(44px)만 고정해 두 버튼 키를 맞춘다. 분기 로직 자체(anon/owner/
+  // inquiry 판단)는 그대로다.
+  function renderAction(compact = false) {
+    const widthClass = compact ? 'h-11 whitespace-nowrap' : 'w-full';
     if (mode === 'anon') {
       // 비로그인 — 버튼을 숨기지 않는다. 어포던스는 보이고 게이트는 클릭에만 걸린다(FR58, conventions §8).
       return (
@@ -55,7 +59,7 @@ export default function InquiryCta({
         // 훅으로 CTA를 찾는다(코드리뷰 patch, listing-photo와 동일 취지) — 요약 컬럼·모바일
         // 하단 바 두 인스턴스가 DOM에 항상 함께 있으므로(Tailwind가 display로만 전환) 실제로
         // 보이는 쪽만 `:visible`로 골라 쓴다.
-        <Link href={loginHref} data-testid="inquiry-cta" className={buttonClasses({ className: 'w-full' })}>
+        <Link href={loginHref} data-testid="inquiry-cta" className={buttonClasses({ className: widthClass })}>
           로그인하고 문의하기
         </Link>
       );
@@ -64,7 +68,7 @@ export default function InquiryCta({
       // 본인 매물 — 자기 자신에게는 문의할 수 없다(DB의 CHECK(buyer_id<>seller_id)와 정합).
       //   버튼을 숨기지 않고 판매자 관리 화면으로 보낸다(9.5에서 바뀐 지점 — 막다른 길 방지).
       return (
-        <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: 'w-full' })}>
+        <Link href="/sell" className={buttonClasses({ variant: 'secondary', className: widthClass })}>
           내 매물 관리
         </Link>
       );
@@ -78,7 +82,7 @@ export default function InquiryCta({
           onClick={() => void start()}
           loading={busy}
           loadingText="문의 채팅방 여는 중…"
-          className="w-full"
+          className={widthClass}
         >
           문의하기
         </Button>
@@ -105,10 +109,23 @@ export default function InquiryCta({
 
       {/* 모바일·태블릿(<1024px) 하단 고정 바 — 가격 + CTA 상시(AC7).
           shadow-float = 떠 있는 요소용 겹 그림자(DESIGN.md:115). 가로 한 줄을 유지하고, 공간이
-          부족하면 가격을 …로 자른다(D5 — 세로로 접거나 2줄로 밀지 않는다). */}
-      <div className="fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-3 border-t border-border-hairline bg-surface-raised px-4 py-3 shadow-float lg:hidden">
-        <p className="truncate whitespace-nowrap text-price font-extrabold text-price-emphasis">{priceText}</p>
-        <div className="shrink-0">{renderAction()}</div>
+          부족하면 가격을 …로 자른다(D5 — 세로로 접거나 2줄로 밀지 않는다).
+          W3(실기기 지적) — 이 바에 "AI 시세 진단"이 없어 모바일에서 판단(시세)→행동(문의) 순서를
+          못 밟았다. 데스크톱과 같은 순서로 문의 버튼 왼쪽에 추가한다 — 두 버튼 모두 h-11(44px)·
+          text-sm(14px)·px-4(좌우 패딩)로 높이를 맞추고, 폭은 내용대로 둔다(renderAction(true)). */}
+      <div className="fixed inset-x-0 bottom-0 z-10 flex items-center justify-between gap-2 border-t border-border-hairline bg-surface-raised px-4 py-3 shadow-float lg:hidden">
+        <p className="min-w-0 flex-1 truncate whitespace-nowrap text-price font-extrabold text-price-emphasis">
+          {priceText}
+        </p>
+        <div className="flex shrink-0 items-center gap-2">
+          <MarketDiagnosisButton
+            mode={mode}
+            listing={marketDiagnosisListing}
+            loginHref={loginHref}
+            className="h-11 whitespace-nowrap"
+          />
+          {renderAction(true)}
+        </div>
       </div>
     </>
   );

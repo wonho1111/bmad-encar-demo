@@ -7376,3 +7376,12 @@ reason: 세대 열을 더해 TabPFN 특징은 안정됐지만, 비교군·학습
 trigger: 시드 v4·등록 폼 개편(DW-860·881) 때 — (a) 참조 테이블 `car_models(manufacturer, family, generation, display_name)`(더하기만) + listings.family/generation FK는 nullable, (b) 등록 폼은 선택식(제조사→모델군→세대), 자유 입력은 폴백, (c) 조회·학습표는 family/generation 열 우선, 문자열 규칙은 폴백. 엔카 15세대 + 시드 모델군으로 초기 표 작성. 범위가 커 포트폴리오 뒤.
 status: open
 
+
+### DW-887: 모바일 실기기 UI 지적 7건(2026-09-16) — 앱 필터 2열 고정·시세 그래프 축소·모바일 웹 상세 시세 버튼 부재·앱 하단 버튼 크기 불일치·AI 카드 가로 넘침·통계 5칸 글자 줄바꿈·비교 매물 목록 과잉
+
+origin: 사용자 실기기 테스트(갤럭시, 웹·앱 혼합 스크린샷 5장, 2026-09-16)
+location: app/search_screen.dart `_FilterPanel`(2열 Row 고정) · web/app MarketDiagnosisPriceChart(viewBox 640×228 고정) · web InquiryCta.tsx(`lg:flex` 블록에만 시세 버튼) · app listing_detail_screen.dart 하단 바(Outlined/Filled 패딩·폰트 상이) · web ChatAssistant.tsx 카드 grid · web/app 시세 카드 자세히(5칸 통계 `grid-cols-5`, 앱은 한 줄 텍스트) · `buildCompsListView`(웹·앱)
+severity: medium
+reason: 시연·포트폴리오가 폰 화면으로 이뤄지는데 웹은 640px 미만 1열 규칙이 필터·카드에만 있고 시세 카드와 상세 CTA엔 없으며, 앱은 그 규칙 자체가 없어 웹·앱 표현이 갈린다.
+trigger: 이 항목 자체 — 규격: (1) 앱 필터 600dp 미만 1열, (2) 그래프 480px 미만 컴팩트(360×260, 많음/적음 라벨), (3) 모바일 웹 하단 바에 시세 버튼(44px·14px 동일), (4) 앱 하단 두 버튼 44/14/패딩 14 통일, (5) AI 카드 가로 넘침 원인 요소만 수정, (6) 5칸 통계 640px(앱 600dp) 미만 세로 목록 5줄·근거 타일 동일 높이, (7) 비교 매물 목록 제거(칩·통계·산점도 유지). 검증 = 웹 390px Playwright + 앱 실기기 adb 스크린샷.
+status: open

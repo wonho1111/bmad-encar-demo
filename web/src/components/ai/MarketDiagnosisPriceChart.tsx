@@ -6,17 +6,32 @@
 //
 // tabpfn.quantiles(q10~q90)가 있으면 밀도 곡선을 그린다(아래 buildDensityCurve). quantiles가
 // 없으면 곡선 없이 점 + q1·q3 음영 구간만 그린다(설계 4항).
-import { useId } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import type { MarketDiagnosisComp, MarketDiagnosisStats } from './MarketDiagnosis';
 
-const VIEW_W = 640;
-const VIEW_H = 210;
-const X0 = 46;
-const X1 = 610;
-const Y_TOP = 24; // 곡선 정점
-const Y_BASE = 150; // 가격 축(기준선) — 점·곡선 바닥이 여기 놓인다
-const Y_TICK = 172;
+// 레이아웃 치수 — 컨테이너 폭 480px 미만(모바일 실기기 실측, W2)이면 컴팩트 레이아웃을 쓴다.
+// 두 레이아웃 모두 비율을 맞춰 뒀다(X0·X1은 VIEW_W 대비, Y_TOP·Y_BASE·Y_TICK은 VIEW_H 대비) —
+// 컴팩트는 축 라벨 폰트(11px)는 그대로 두고 논리 좌표계만 줄여 글자가 상대적으로 커지게 한다.
+export type ChartLayout = {
+  VIEW_W: number;
+  VIEW_H: number;
+  X0: number;
+  X1: number;
+  Y_TOP: number; // 곡선 정점
+  Y_BASE: number; // 가격 축(기준선) — 점·곡선 바닥이 여기 놓인다
+  Y_TICK: number;
+};
+
+const NORMAL_LAYOUT: ChartLayout = { VIEW_W: 640, VIEW_H: 210, X0: 46, X1: 610, Y_TOP: 24, Y_BASE: 150, Y_TICK: 172 };
+const COMPACT_LAYOUT: ChartLayout = { VIEW_W: 360, VIEW_H: 260, X0: 26, X1: 343, Y_TOP: 30, Y_BASE: 186, Y_TICK: 213 };
+
+/** 컴팩트 여부에 따라 레이아웃 치수를 낸다. 순수 함수(단위테스트 대상). */
+export function getChartLayout(compact: boolean): ChartLayout {
+  return compact ? COMPACT_LAYOUT : NORMAL_LAYOUT;
+}
+
+const COMPACT_BREAKPOINT = 480;
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step;
@@ -115,6 +130,35 @@ export default function MarketDiagnosisPriceChart({
   verdict?: string | null;
 }) {
   const densityClipId = useId();
+  // 컴팩트 판단 — 컨테이너 폭을 ResizeObserver로 재고, 지원 안 하는 환경은 matchMedia로 대체한다.
+  // SSR(useEffect 미실행)에서는 기본값 false(넓은 모드)로 렌더 계약을 유지한다(W2, 렌더 계약 테스트
+  // MarketDiagnosisPriceChart.test.ts가 이 값을 전제로 한다).
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // 초기값은 지연 초기화(lazy useState)로 matchMedia를 한 번만 읽는다 — effect 본문에서 곧바로
+  // setState하면 react-hooks/set-state-in-effect에 걸린다(캐스케이딩 렌더 방지 규칙, ChatAssistant.tsx
+  // slowTimer 주석과 같은 이유). SSR에서는 window가 없어 false(넓은 모드)로 렌더 계약을 유지한다.
+  const [isCompact, setIsCompact] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia(`(max-width: ${COMPACT_BREAKPOINT}px)`).matches;
+  });
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver((entries) => {
+        setIsCompact(entries[0].contentRect.width < COMPACT_BREAKPOINT);
+      });
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      const mq = window.matchMedia(`(max-width: ${COMPACT_BREAKPOINT}px)`);
+      const onChange = (e: MediaQueryListEvent) => setIsCompact(e.matches);
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    return undefined;
+  }, []);
+  const { VIEW_W, VIEW_H, X0, X1, Y_TOP, Y_BASE, Y_TICK } = getChartLayout(isCompact);
   const compPrices = comps.map((c) => c.price);
   const densityCurve = quantiles ? buildDensityCurve(quantiles) : [];
   // 밀도 곡선은 q10·q90 밖 꼬리를 지나 평활 대역폭의 2.5배까지 더 그린다(위 buildDensityCurve
@@ -156,7 +200,7 @@ export default function MarketDiagnosisPriceChart({
       : '';
 
   return (
-    <div className="w-full">
+    <div className="w-full" ref={containerRef}>
       <div className="flex items-stretch gap-1">
         {/* 세로축 설명 — 밀도 단위는 숫자로 봐야 의미가 없어 눈금 대신 "많음/적음"만 표시한다.
             가운데 축 제목은 CSS writing-mode(글자를 한 자씩 세로로 쌓음, 2026-09-15 운영 실측 —
@@ -173,17 +217,21 @@ export default function MarketDiagnosisPriceChart({
           preserveAspectRatio="xMidYMid meet"
           className="block h-auto min-w-0 flex-1"
         >
-          {/* 세로축 제목 — 왼쪽 여백(X0 안쪽)에서 -90도 회전한 한 줄 텍스트(위 주석 참조). */}
-          <text
-            x={16}
-            y={(Y_TOP + Y_BASE) / 2}
-            transform={`rotate(-90 16 ${(Y_TOP + Y_BASE) / 2})`}
-            textAnchor="middle"
-            fontSize={9}
-            fill="var(--ink-muted)"
-          >
-            비슷한 조건의 차가 얼마나 있을지
-          </text>
+          {/* 세로축 제목 — 왼쪽 여백(X0 안쪽)에서 -90도 회전한 한 줄 텍스트(위 주석 참조). 컴팩트
+              모드(W2, 컨테이너 폭 480px 미만)에서는 왼쪽 "많음/적음" 사이드바가 같은 정보를 이미
+              주므로 좁은 폭에서 곡선 자리를 뺏는 이 중복 제목은 뺀다. */}
+          {!isCompact && (
+            <text
+              x={16}
+              y={(Y_TOP + Y_BASE) / 2}
+              transform={`rotate(-90 16 ${(Y_TOP + Y_BASE) / 2})`}
+              textAnchor="middle"
+              fontSize={9}
+              fill="var(--ink-muted)"
+            >
+              비슷한 조건의 차가 얼마나 있을지
+            </text>
+          )}
 
           {/* 축 */}
           <line x1={X0} y1={Y_BASE} x2={X1} y2={Y_BASE} stroke="var(--border-hairline)" strokeWidth={1} />

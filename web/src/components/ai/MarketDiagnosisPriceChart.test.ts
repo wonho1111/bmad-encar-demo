@@ -9,7 +9,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import MarketDiagnosisPriceChart, { buildDensityCurve, type Quantiles5 } from './MarketDiagnosisPriceChart';
+import MarketDiagnosisPriceChart, {
+  buildDensityCurve,
+  getChartLayout,
+  type Quantiles5,
+} from './MarketDiagnosisPriceChart';
 
 /** 곡선 점들에서 정점 인덱스를 찾고, 정점 왼쪽이 단조 증가·오른쪽이 단조 감소인지 확인한다. */
 function isUnimodalNoDip(points: { x: number; y: number }[]): boolean {
@@ -80,6 +84,25 @@ describe('buildDensityCurve', () => {
     const peak = curve.reduce((max, p) => (p.y > max.y ? p : max));
     expect(peak.x).toBeGreaterThanOrEqual(q.q25);
     expect(peak.x).toBeLessThanOrEqual(q.q75);
+  });
+});
+
+// 컴팩트 레이아웃 치수(W2, 실기기 지적 — 390px에서 그래프 높이가 ~125px로 줄고 글자가 작아짐) —
+// getChartLayout(true)가 실제로 더 크고 좁은 논리 좌표계를 내는지 직접 고정한다.
+describe('getChartLayout', () => {
+  it('컴팩트 모드는 일반 모드보다 논리 폭이 좁고 높이가 크다(렌더 높이 확보)', () => {
+    const normal = getChartLayout(false);
+    const compact = getChartLayout(true);
+    expect(compact.VIEW_W).toBeLessThan(normal.VIEW_W);
+    expect(compact.VIEW_H).toBeGreaterThan(normal.VIEW_H);
+    expect(compact.VIEW_H).toBeGreaterThanOrEqual(260);
+  });
+
+  it('컴팩트 모드에서도 X0 < X1, Y_TOP < Y_BASE < Y_TICK 순서가 유지된다(축 반전 방지)', () => {
+    const compact = getChartLayout(true);
+    expect(compact.X0).toBeLessThan(compact.X1);
+    expect(compact.Y_TOP).toBeLessThan(compact.Y_BASE);
+    expect(compact.Y_BASE).toBeLessThan(compact.Y_TICK);
   });
 });
 

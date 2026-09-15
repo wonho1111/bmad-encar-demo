@@ -346,23 +346,26 @@ class _FilterPanel extends StatelessWidget {
     return ExpansionTile(
       title: const Text('필터'),
       initiallyExpanded: true,
-      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      // 첫 줄 라벨("제조사")이 ExpansionTile 상단에 잘리던 문제(실기기 지적 A1) — 위 여백을
+      // 0→8로 둬 탭 대상 위쪽으로 라벨이 밀려 잘리는 걸 막는다.
+      childrenPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: [
         // 스크롤 영역(위 클래스 주석) — 이 안의 순서가 web SearchFilters.tsx의 필드 순서다.
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 380),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+        // 폭 600dp 미만이면 1열(web SearchFilters의 640px 미만 1열 규칙과 같다, 실기기 지적
+        // A1) — LayoutBuilder로 이 패널의 가용 폭만 보고 판단한다.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 600;
+            return ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 380),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: _dropdown('제조사', manufacturer, ListingOptions.manufacturer, onManufacturer),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
+                    _two(
+                      narrow,
+                      _dropdown('제조사', manufacturer, ListingOptions.manufacturer, onManufacturer),
+                      TextField(
                         controller: keyword,
                         decoration: const InputDecoration(
                           // ✎ 2026-08-13 — "부분일치"는 검색 구현 방식(SQL ilike)을 그대로 노출한
@@ -373,90 +376,79 @@ class _FilterPanel extends StatelessWidget {
                         onSubmitted: (_) => onSearch(),
                       ),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _dropdown('차종', bodyType, ListingOptions.bodyType, onBodyType)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _rangeField('연식(년)', yearMin, yearMax)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _rangeField('가격(원)', priceMin, priceMax)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _rangeField('주행거리(km)', mileageMin, mileageMax)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _dropdown('색상', color, ListingOptions.color, onColor)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _dropdown('연료', fuel, ListingOptions.fuel, onFuel)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _dropdown('변속기', transmission, ListingOptions.transmission, onTransmission),
+                    const SizedBox(height: 8),
+                    _two(
+                      narrow,
+                      _dropdown('차종', bodyType, ListingOptions.bodyType, onBodyType),
+                      _rangeField('연식(년)', yearMin, yearMax),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(child: _rangeField('배기량(cc)', displacementMin, displacementMax)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(child: _rangeField('인승(명)', seatsMin, seatsMax)),
-                    const SizedBox(width: 8),
-                    Expanded(child: _dropdown('지역', region, ListingOptions.region, onRegion)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // 신뢰 정보 — 등록 폼(sell_screen)과 같은 3축(사고이력·1인소유·비흡연), web
-                // SearchFilters.tsx의 신뢰 정보 fieldset과 같은 구성.
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('신뢰 정보', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                      const SizedBox(height: 4),
-                      _dropdown('사고이력', accidentStatus, ListingOptions.accidentStatus, onAccidentStatus),
-                      Row(
+                    const SizedBox(height: 8),
+                    _two(
+                      narrow,
+                      _rangeField('가격(원)', priceMin, priceMax),
+                      _rangeField('주행거리(km)', mileageMin, mileageMax),
+                    ),
+                    const SizedBox(height: 8),
+                    _two(
+                      narrow,
+                      _dropdown('색상', color, ListingOptions.color, onColor),
+                      _dropdown('연료', fuel, ListingOptions.fuel, onFuel),
+                    ),
+                    const SizedBox(height: 8),
+                    _two(
+                      narrow,
+                      _dropdown('변속기', transmission, ListingOptions.transmission, onTransmission),
+                      _rangeField('배기량(cc)', displacementMin, displacementMax),
+                    ),
+                    const SizedBox(height: 8),
+                    _two(
+                      narrow,
+                      _rangeField('인승(명)', seatsMin, seatsMax),
+                      _dropdown('지역', region, ListingOptions.region, onRegion),
+                    ),
+                    const SizedBox(height: 12),
+                    // 신뢰 정보 — 등록 폼(sell_screen)과 같은 3축(사고이력·1인소유·비흡연), web
+                    // SearchFilters.tsx의 신뢰 정보 fieldset과 같은 구성.
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Theme.of(context).dividerColor),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _CompactCheck(
-                            key: const Key('filter_single_owner'),
-                            label: '1인소유',
-                            value: singleOwnerOnly,
-                            onChanged: onSingleOwnerOnly,
-                          ),
-                          _CompactCheck(
-                            key: const Key('filter_non_smoker'),
-                            label: '비흡연',
-                            value: nonSmokerOnly,
-                            onChanged: onNonSmokerOnly,
+                          const Text('신뢰 정보', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          const SizedBox(height: 4),
+                          _dropdown(
+                              '사고이력', accidentStatus, ListingOptions.accidentStatus, onAccidentStatus),
+                          Row(
+                            children: [
+                              _CompactCheck(
+                                key: const Key('filter_single_owner'),
+                                label: '1인소유',
+                                value: singleOwnerOnly,
+                                onChanged: onSingleOwnerOnly,
+                              ),
+                              _CompactCheck(
+                                key: const Key('filter_non_smoker'),
+                                label: '비흡연',
+                                value: nonSmokerOnly,
+                                onChanged: onNonSmokerOnly,
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 12),
+                    // 옵션(개선 2) — 다중 선택(전부 보유, AND). 위 클래스 주석 참조.
+                    _OptionMultiSelect(selected: selectedOptions, onChanged: onOptionsChanged),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                // 옵션(개선 2) — 다중 선택(전부 보유, AND). 위 클래스 주석 참조.
-                _OptionMultiSelect(selected: selectedOptions, onChanged: onOptionsChanged),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 12),
         FilledButton(
@@ -464,6 +456,25 @@ class _FilterPanel extends StatelessWidget {
           onPressed: onSearch,
           child: const Text('검색'),
         ),
+      ],
+    );
+  }
+
+  /// 필드 한 쌍을 폭에 따라 2열(Row)/1열(Column)로 배치한다(실기기 지적 A1) — narrow(패널
+  /// 폭 600dp 미만)면 세로로 쌓아 라벨·값이 겹치거나 잘리지 않게 하고, 그 외엔 기존 2열
+  /// Row+Expanded 그대로 유지한다.
+  Widget _two(bool narrow, Widget a, Widget b) {
+    if (narrow) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [a, const SizedBox(height: 8), b],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: a),
+        const SizedBox(width: 8),
+        Expanded(child: b),
       ],
     );
   }

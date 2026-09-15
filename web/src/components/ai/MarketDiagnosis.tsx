@@ -217,19 +217,6 @@ export function buildTabpfnDiffLabel(listingPrice: number, tabpfnPrice: number |
   return diffPct > 0 ? `AI 적정가보다 ${diffPct}% 높음` : `AI 적정가보다 ${Math.abs(diffPct)}% 낮음`;
 }
 
-// "자세히" 비교 매물 목록(⑤) 상한 — 점(그림)은 comps 전부 찍지만(MarketDiagnosisPriceChart),
-// 목록은 줄마다 텍스트라 MAX_COMPS(API, 최대 500건)를 그대로 나열하면 접힘 영역이 지나치게
-// 길어진다(2026-09-14 DW-884, 운영 실측). 60건까지만 보여주고 나머지는 "외 N대" 한 줄로 요약한다.
-const MAX_COMPS_LIST = 60;
-
-export function buildCompsListView(comps: MarketDiagnosisComp[]): {
-  shown: MarketDiagnosisComp[];
-  moreCount: number;
-} {
-  if (comps.length <= MAX_COMPS_LIST) return { shown: comps, moreCount: 0 };
-  return { shown: comps.slice(0, MAX_COMPS_LIST), moreCount: comps.length - MAX_COMPS_LIST };
-}
-
 function StatCell({
   label,
   value,
@@ -243,7 +230,11 @@ function StatCell({
 }) {
   return (
     <div className="rounded-[10px] border border-border-hairline bg-surface-base p-2.5 text-center">
-      <div className={`text-[15px] font-bold ${emphasis ? 'text-price-emphasis' : 'text-ink-primary'}`}>
+      {/* W6(b) — 근거 타일 2개가 grid stretch로 이미 같은 높이지만, 값이 길면 한쪽만 두 줄로
+          꺾여 높이가 달라 보였다(실기기 실측). whitespace-nowrap으로 항상 한 줄을 유지한다. */}
+      <div
+        className={`whitespace-nowrap text-[15px] font-bold ${emphasis ? 'text-price-emphasis' : 'text-ink-primary'}`}
+      >
         {value}
       </div>
       <div className="mt-0.5 text-caption text-ink-muted">{note ? `${label} · ${note}` : label}</div>
@@ -263,7 +254,6 @@ export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; a
   const priceRange = buildPriceRange(data);
   const tabpfnDiffLabel = buildTabpfnDiffLabel(listing.price, tabpfn.price);
   const hasChart = stats !== null || !!tabpfn.quantiles;
-  const compsListView = buildCompsListView(comps);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -362,28 +352,37 @@ export default function MarketDiagnosis({ data }: { data: MarketDiagnosisData; a
           </div>
 
           {stats && (
-            <div className="grid grid-cols-5 gap-1.5">
-              <StatCell label="최저" value={formatStatPrice(stats.min)} />
-              <StatCell label="하위 25%" value={formatStatPrice(stats.q1)} />
-              <StatCell label="중앙값" value={formatStatPrice(stats.median)} />
-              <StatCell label="상위 25%" value={formatStatPrice(stats.q3)} />
-              <StatCell label="최고" value={formatStatPrice(stats.max)} />
-            </div>
+            <>
+              {/* W6(a) — 640px 미만에서 5칸이 한 자씩 줄바꿈되던 실기기 지적. 640px은 Tailwind
+                  기본 sm 브레이크포인트와 같아 그대로 쓴다(앱도 같은 규격이라 문구·순서는 그대로).
+                  두 마크업이 항상 DOM에 함께 있고 display만 sm:으로 전환한다(InquiryCta 모바일
+                  고정 바와 같은 관례). */}
+              <div className="flex flex-col gap-1 rounded-[10px] border border-border-hairline bg-surface-base p-2.5 text-sm sm:hidden">
+                {[
+                  { label: '최저', value: formatStatPrice(stats.min) },
+                  { label: '하위 25%', value: formatStatPrice(stats.q1) },
+                  { label: '중앙값', value: formatStatPrice(stats.median) },
+                  { label: '상위 25%', value: formatStatPrice(stats.q3) },
+                  { label: '최고', value: formatStatPrice(stats.max) },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center justify-between gap-2">
+                    <span className="text-ink-muted">{row.label}</span>
+                    <span className="whitespace-nowrap font-bold tabular-nums text-ink-primary">{row.value}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden grid-cols-5 gap-1.5 sm:grid">
+                <StatCell label="최저" value={formatStatPrice(stats.min)} />
+                <StatCell label="하위 25%" value={formatStatPrice(stats.q1)} />
+                <StatCell label="중앙값" value={formatStatPrice(stats.median)} />
+                <StatCell label="상위 25%" value={formatStatPrice(stats.q3)} />
+                <StatCell label="최고" value={formatStatPrice(stats.max)} />
+              </div>
+            </>
           )}
 
           {stats && comps.length > 0 && (
             <MarketDiagnosisChart listing={listing} stats={stats} comps={comps} tabpfnPrice={tabpfn.price} />
-          )}
-
-          {comps.length > 0 && (
-            <ul className="flex flex-col gap-1 text-caption text-ink-secondary">
-              {compsListView.shown.map((c) => (
-                <li key={c.id}>
-                  {c.model} {c.year}년식 · {formatManKm(c.mileage)} · {formatPrice(c.price)}
-                </li>
-              ))}
-              {compsListView.moreCount > 0 && <li>외 {compsListView.moreCount}대</li>}
-            </ul>
           )}
         </div>
       </details>

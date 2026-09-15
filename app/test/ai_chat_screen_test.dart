@@ -1122,13 +1122,13 @@ void main() {
           reason: '기존 산점도는 접힘 영역으로 옮겨져 펼치기 전엔 안 보여야 한다');
       expect(find.text('이런 차와 비교했어요:'), findsNothing);
 
-      // 펼치면 그 안의 통계·산점도·비교 매물 목록이 드러난다.
+      // 펼치면 그 안의 통계·산점도가 드러난다(비교 매물 목록은 실기기 지적 A7로 없앴다 —
+      // 점 그림이 comps 전부를 이미 점으로 찍어 같은 정보를 보여준다).
       await tester.tap(find.text('자세히'));
       await tester.pumpAndSettle();
       expect(find.byType(MarketDiagnosisChart), findsOneWidget,
           reason: '비교군(comps)이 있으므로 펼치면 산점도가 붙어야 한다');
       expect(find.text('이런 차와 비교했어요:'), findsOneWidget);
-      expect(find.text('비교 매물 목록'), findsOneWidget);
 
       // ⑥ 각주 — "호가 기준" 소문구 + TabPFN 표기를 함께 유지한다.
       expect(find.textContaining('호가 기준'), findsOneWidget);

@@ -26,6 +26,11 @@ import 'market_diagnosis.dart';
 
 const double _viewW = 640;
 const double _viewH = 210;
+// 컴팩트(폭 480dp 미만) 뷰박스 — 실기기 지적 A2: 고정 비율(640×210)이라 폭 380dp에서 높이가
+// ~135까지 눌려 곡선·라벨이 뭉갰다. 논리 폭을 줄이고 높이를 키워 세로로 더 여유를 준다(축
+// 라벨 폰트는 그대로 11이라 상대적으로 더 커진다).
+const double _viewWCompact = 360;
+const double _viewHCompact = 260;
 const double _x0 = 46;
 const double _x1 = 610;
 const double _yTop = 24; // 곡선 정점
@@ -184,20 +189,31 @@ class MarketDiagnosisPriceChart extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        AspectRatio(
-          // 상단 여백(_topMargin)만큼 세로가 늘어난 비율(web viewBox 확장 미러) — painter가
-          // 그 여백만큼 translate해 좌표계는 기존 상수(_yTop 등) 그대로 쓴다.
-          aspectRatio: _viewW / (_viewH + _topMargin),
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: _MarketDiagnosisPriceChartPainter(
-              listing: listing,
-              stats: stats,
-              comps: comps,
-              quantiles: quantiles,
-              verdict: verdict,
-            ),
-          ),
+        // 폭 480dp 미만이면 컴팩트 뷰박스(실기기 지적 A2) — 폭 380dp에서 기존 640×210 고정
+        // 비율은 높이가 ~135까지 눌려 곡선·라벨이 뭉갰다. LayoutBuilder로 이 그래프가 실제
+        // 받는 폭만 보고 판단한다.
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 480;
+            final viewW = compact ? _viewWCompact : _viewW;
+            final viewH = compact ? _viewHCompact : _viewH;
+            return AspectRatio(
+              // 상단 여백(_topMargin)만큼 세로가 늘어난 비율(web viewBox 확장 미러) — painter가
+              // 그 여백만큼 translate해 좌표계는 기존 상수(_yTop 등) 그대로 쓴다.
+              aspectRatio: viewW / (viewH + _topMargin),
+              child: CustomPaint(
+                size: Size.infinite,
+                painter: _MarketDiagnosisPriceChartPainter(
+                  listing: listing,
+                  stats: stats,
+                  comps: comps,
+                  quantiles: quantiles,
+                  verdict: verdict,
+                  compact: compact,
+                ),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 4),
         Text(legend, style: const TextStyle(fontSize: 11, color: AppColors.inkMuted)),
@@ -213,19 +229,35 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     required this.comps,
     required this.quantiles,
     required this.verdict,
-  });
+    required bool compact,
+  })  : viewW = compact ? _viewWCompact : _viewW,
+        viewH = compact ? _viewHCompact : _viewH,
+        // 컴팩트 모드에선 레이아웃 계산은 그대로 두고 뷰박스 크기만 바꾸므로, 나머지 좌표
+        // 상수(_x0 등, 기본 640×210 기준)를 그 비율만큼 그대로 스케일한다(실기기 지적 A2).
+        x0 = compact ? _x0 * (_viewWCompact / _viewW) : _x0,
+        x1 = compact ? _x1 * (_viewWCompact / _viewW) : _x1,
+        yTop = compact ? _yTop * (_viewHCompact / _viewH) : _yTop,
+        yBase = compact ? _yBase * (_viewHCompact / _viewH) : _yBase,
+        yTick = compact ? _yTick * (_viewHCompact / _viewH) : _yTick;
 
   final MarketDiagnosisListing listing;
   final MarketDiagnosisStats? stats;
   final List<MarketDiagnosisComp> comps;
   final MarketDiagnosisQuantiles? quantiles;
   final String? verdict;
+  final double viewW;
+  final double viewH;
+  final double x0;
+  final double x1;
+  final double yTop;
+  final double yBase;
+  final double yTick;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
-    final sx = size.width / _viewW;
-    final sy = size.height / (_viewH + _topMargin);
+    final sx = size.width / viewW;
+    final sy = size.height / (viewH + _topMargin);
 
     final q = quantiles;
     final s = stats;
@@ -254,11 +286,11 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     final priceMaxRounded = _roundUpTo(rawMax * (q != null ? 1 : 1.05), 1000000);
     final priceMax = priceMaxRounded > priceMin ? priceMaxRounded : priceMin + 1000000;
 
-    double xScale(num price) => _x0 + ((price - priceMin) / (priceMax - priceMin)) * (_x1 - _x0);
+    double xScale(num price) => x0 + ((price - priceMin) / (priceMax - priceMin)) * (x1 - x0);
 
     canvas.save();
     canvas.scale(sx, sy);
-    // 상단 여백만큼 아래로 밀어 기존 상수(_yTop 등)는 그대로 두고 그 위(음수 y)까지 그릴
+    // 상단 여백만큼 아래로 밀어 기존 상수(yTop 등)는 그대로 두고 그 위(음수 y)까지 그릴
     // 자리를 확보한다(web viewBox `0 -18 ...` 확장과 동일 목적).
     canvas.translate(0, _topMargin);
 
@@ -266,13 +298,13 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     final axisPaint = Paint()
       ..color = AppColors.borderHairline
       ..strokeWidth = 1;
-    canvas.drawLine(const Offset(_x0, _yBase), const Offset(_x1, _yBase), axisPaint);
+    canvas.drawLine(Offset(x0, yBase), Offset(x1, yBase), axisPaint);
     for (var i = 0; i <= 4; i++) {
       final p = priceMin + (priceMax - priceMin) / 4 * i;
       _drawText(
         canvas,
         _manLabel(p),
-        Offset(xScale(p), _yTick),
+        Offset(xScale(p), yTick),
         align: TextAlign.center,
         fontSize: 11,
         color: AppColors.inkMuted,
@@ -281,7 +313,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     _drawText(
       canvas,
       '가격 (만원)',
-      const Offset((_x0 + _x1) / 2, _viewH - 4),
+      Offset((x0 + x1) / 2, viewH - 4),
       align: TextAlign.center,
       fontSize: 11,
       color: AppColors.inkMuted,
@@ -290,31 +322,31 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     // 세로축 설명 — 밀도 단위는 숫자로 봐야 의미가 없어 눈금 대신 "많음/적음"과 짧은 축
     // 제목만 왼쪽 여백(X0 안쪽)에 둔다(회전 텍스트 대신 짧은 라벨, web과 다른 표현 방식이나
     // 같은 정보를 전달한다).
-    const labelX = _x0 / 2;
-    _drawText(canvas, '많음', const Offset(labelX, _yTop + 8), align: TextAlign.center, fontSize: 9, color: AppColors.inkMuted);
+    final labelX = x0 / 2;
+    _drawText(canvas, '많음', Offset(labelX, yTop + 8), align: TextAlign.center, fontSize: 9, color: AppColors.inkMuted);
     _drawText(
       canvas,
       '차 밀도',
-      const Offset(labelX, (_yTop + _yBase) / 2),
+      Offset(labelX, (yTop + yBase) / 2),
       align: TextAlign.center,
       fontSize: 8,
       color: AppColors.inkMuted,
     );
-    _drawText(canvas, '적음', const Offset(labelX, _yBase - 4), align: TextAlign.center, fontSize: 9, color: AppColors.inkMuted);
+    _drawText(canvas, '적음', Offset(labelX, yBase - 4), align: TextAlign.center, fontSize: 9, color: AppColors.inkMuted);
 
     if (q != null) {
       _drawDensityCurve(canvas, curve, xScale, q);
     } else if (s != null) {
       // 폴백 — 곡선 없이 q1~q3 구간만 옅은 띠로(web과 동일, 중앙값 점선·라벨은 없앴다).
       final bandPaint = Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.08);
-      canvas.drawRect(Rect.fromLTRB(xScale(s.q1), _yTop, xScale(s.q3), _yBase), bandPaint);
+      canvas.drawRect(Rect.fromLTRB(xScale(s.q1), yTop, xScale(s.q3), yBase), bandPaint);
     }
 
     // 비교군 실제 가격 점 — 전부 기준선 위에 그대로 찍는다(web과 동일, 겹침 자체가 밀도를
     // 보여준다 — 예전처럼 인덱스로 띄우지 않는다).
     final compPaint = Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.55);
     for (final c in comps) {
-      canvas.drawCircle(Offset(xScale(c.price), _yBase), 4.5, compPaint);
+      canvas.drawCircle(Offset(xScale(c.price), yBase), 4.5, compPaint);
     }
 
     if (q != null) {
@@ -324,13 +356,13 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
         ..strokeWidth = 1;
       final q25X = xScale(q.q25);
       final q75X = xScale(q.q75);
-      canvas.drawLine(Offset(q25X, _yBase - 14), Offset(q75X, _yBase - 14), bracketPaint);
-      canvas.drawLine(Offset(q25X, _yBase - 18), Offset(q25X, _yBase - 10), bracketPaint);
-      canvas.drawLine(Offset(q75X, _yBase - 18), Offset(q75X, _yBase - 10), bracketPaint);
+      canvas.drawLine(Offset(q25X, yBase - 14), Offset(q75X, yBase - 14), bracketPaint);
+      canvas.drawLine(Offset(q25X, yBase - 18), Offset(q25X, yBase - 10), bracketPaint);
+      canvas.drawLine(Offset(q75X, yBase - 18), Offset(q75X, yBase - 10), bracketPaint);
       _drawText(
         canvas,
         '보통 ${_manLabel(q.q25)}~${_manLabel(q.q75)}',
-        Offset((q25X + q75X) / 2, _yBase - 21),
+        Offset((q25X + q75X) / 2, yBase - 21),
         align: TextAlign.center,
         fontSize: 10,
         color: AppColors.inkSecondary,
@@ -341,8 +373,8 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
       final q50X = xScale(q.q50);
       _drawDashedLine(
         canvas,
-        Offset(q50X, _yTop - 2),
-        Offset(q50X, _yBase),
+        Offset(q50X, yTop - 2),
+        Offset(q50X, yBase),
         Paint()
           ..color = AppColors.inkSecondary
           ..strokeWidth = 1.5,
@@ -351,7 +383,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
       _drawText(
         canvas,
         'AI 적정가 ${_manLabel(q.q50)}',
-        Offset(q50X, overlapsListingLabel ? _yTop - 30 : _yTop - 10),
+        Offset(q50X, overlapsListingLabel ? yTop - 30 : yTop - 10),
         align: TextAlign.center,
         fontSize: 10,
         fontWeight: FontWeight.w600,
@@ -362,8 +394,8 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     // 이 매물 가격 — 세로선 + 라벨(web과 동일, 별도 마커 점은 없다).
     final targetX = xScale(listing.price);
     canvas.drawLine(
-      Offset(targetX, _yTop - 6),
-      Offset(targetX, _yBase),
+      Offset(targetX, yTop - 6),
+      Offset(targetX, yBase),
       Paint()
         ..color = AppColors.priceEmphasis
         ..strokeWidth = 2,
@@ -371,7 +403,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     _drawText(
       canvas,
       verdict != null ? '이 매물 ${_manLabel(listing.price)} → $verdict' : '이 매물 ${_manLabel(listing.price)}',
-      Offset(targetX, _yTop - 10),
+      Offset(targetX, yTop - 10),
       align: TextAlign.center,
       fontSize: 11,
       fontWeight: FontWeight.bold,
@@ -391,15 +423,15 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     MarketDiagnosisQuantiles q,
   ) {
     if (curve.isEmpty) return;
-    double heightAt(double frac) => _yBase - (_yBase - _yTop) * frac;
+    double heightAt(double frac) => yBase - (yBase - yTop) * frac;
     final points = [for (final p in curve) Offset(xScale(p.x), heightAt(p.y))];
 
-    final fillPath = Path()..moveTo(points.first.dx, _yBase);
+    final fillPath = Path()..moveTo(points.first.dx, yBase);
     for (final pt in points) {
       fillPath.lineTo(pt.dx, pt.dy);
     }
     fillPath
-      ..lineTo(points.last.dx, _yBase)
+      ..lineTo(points.last.dx, yBase)
       ..close();
 
     // 음영은 판정 구간 5색으로 칠한다 — clipPath(fillPath, 꼬리 포함 곡선 모양) 안쪽만
@@ -408,7 +440,7 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     canvas.clipPath(fillPath);
     for (final zone in priceZoneBounds(q, curve.first.x, curve.last.x)) {
       canvas.drawRect(
-        Rect.fromLTRB(xScale(zone.from), _yTop, xScale(zone.to), _yBase),
+        Rect.fromLTRB(xScale(zone.from), yTop, xScale(zone.to), yBase),
         Paint()..color = zone.color.withValues(alpha: 0.55),
       );
     }
@@ -433,7 +465,8 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
         oldDelegate.stats != stats ||
         oldDelegate.comps != comps ||
         oldDelegate.quantiles != quantiles ||
-        oldDelegate.verdict != verdict;
+        oldDelegate.verdict != verdict ||
+        oldDelegate.viewW != viewW;
   }
 }
 
