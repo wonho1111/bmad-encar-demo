@@ -31,10 +31,21 @@
   "full") 한 번에 같이 나와(실측 1.46s→1.49s) 지연 추가는 없다. 응답엔 `tabpfn.quantiles`를
   더했고(더하기만), verdict_basis 값은 "적정가"→"분위수", verdict 값에 "다소 저렴"/"다소 높음"이
   추가됐다(웹·앱은 verdict 문자열을 그대로 배지로 쓴다).
+
+**2026-09-14 개정(사용자 결정, 운영 실측 8건 캡처, 결함 3건 수정)**: (1) DW-884 — comps가
+  `ORDER BY price LIMIT MAX_COMPS`라 가장 싼 매물만 골라 산점도가 저가 쪽으로 쏠렸다. MAX_COMPS를
+  60→500으로 올리고, 매칭 매물이 500건을 넘으면 가격순 전체에서 균등 간격(every-k)으로 500건을
+  뽑는다(`_sample_comps_evenly`) — 최저가·최고가가 항상 포함돼 분포 양끝이 살아있다. (2) DW-885 —
+  웹의 판정 배지(verdict, 분위수 5단)와 한 문장 판정(종전엔 비교군 percentile로 따로 계산)이
+  서로 다른 산출식을 써서 어긋났다. 응답에 `tabpfn.cdf_at_price`를 더해(더하기만) 분위수 곡선
+  위에서 직접 구한 누적 비율을 웹이 쓰게 한다(`_cdf_at_price`). (3) DW-853 재개방 — "아반떼MD"처럼
+  한글 뒤에 공백 없이 붙은 세대코드가 `_base_model`의 split()에 걸려 기본 모델명을 못 뽑던 결함을
+  0038 마이그레이션의 백필 규칙과 같은 정규식으로 고쳤다.
 """
 
 import logging
 import re
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -125,19 +136,55 @@ _GENERATION_PREFIXES = ("더 뉴 ", "올 뉴 ")
 # 트림(배기량) 표기로 보고 제거한다(_family_model). "더 뉴 그랜저 IG 3.3" → "더 뉴 그랜저 IG".
 _DISPLACEMENT_SUFFIX_RE = re.compile(r"^\d\.\d$")
 
+# 한글 바로 뒤에 공백 없이 붙은 영문/숫자 세대코드 경계(_base_model, DW-853 재개방) — 0038
+# 마이그레이션의 generation 백필 정규식과 같은 원리("아반떼MD" → "아반떼 MD").
+_KOREAN_ALNUM_BOUNDARY_RE = re.compile(r"([가-힣])([A-Za-z0-9])")
+
 # TabPFN 특징 벡터의 연료 원핫 순서(listings.fuel CHECK 목록, 0002_listings.sql과 동일 순서).
 _FUEL_ORDER = ["가솔린", "디젤", "하이브리드", "전기", "LPG"]
 
 # 대상가와 비교군을 만들 때 재사용할 comps 필드 — TabPFN 특징 계산에도 그대로 쓴다.
-_COMP_COLUMNS = "id, model, year, mileage, price, displacement, fuel, options, accident_free"
+_COMP_COLUMNS = (
+    "id, model, generation, year, mileage, price, displacement, fuel, options, accident_free, "
+    "accident_status, usage_history"
+)
 
-# comps는 산점도용으로 최대 이만큼만 가져온다(설계 확정값). TabPFN 학습도 이 표본을
-# 그대로 재사용한다 — 사다리 표본 규모(수~십수 건, v3 표 기준)에서는 60건 상한이
-# 거의 걸리지 않아 별도 쿼리를 두 번 쏘지 않는 단순화다(판단 사항, 보고에 명시).
-MAX_COMPS = 60
+# TabPFN 10번째 특징 — 사고 이력 3단계 서열(DW-863, 2026-09-13). 300건 실매물 검증에서 오차가
+# 큰 건 '사고'뿐이고(MdAPE 10.4%) 단순교환은 무사고와 같은 수준(5.3% vs 5.2%)인데, 종전 이진
+# 특징 int(accident_free)는 단순교환을 사고와 한 값(0)으로 묶었다. 서열은 감가 방향과 같다
+# (무사고 > 단순교환 > 사고). accident_status가 NULL(미입력)인 행은 종전 이진값으로 폴백한다.
+_ACCIDENT_LEVEL = {"무사고": 2, "단순교환": 1, "사고": 0}
+
+
+def _accident_level(row: dict) -> int:
+    status = row.get("accident_status")
+    if status in _ACCIDENT_LEVEL:
+        return _ACCIDENT_LEVEL[status]
+    return 2 if row.get("accident_free") else 0
+
+
+# TabPFN 12번째 특징 — 렌트·영업용 이력 플래그(DW-880, 2026-09-13). 엔카 7,081건 회귀에서 렌트 이력
+# 차는 같은 조건에서 중앙값 −6.9% 싸게 팔리는데 특징에 없어 엔진이 +3.3% 높게 봤다(955건 실측).
+# NULL(미입력)과 '없음'은 같은 0으로 둔다 — 시드·사용자 매물은 값이 없어 종전과 동일하게 동작한다.
+_USAGE_FLAGGED = {"렌트", "영업용"}
+
+
+def _usage_flag(row: dict) -> int:
+    return 1 if row.get("usage_history") in _USAGE_FLAGGED else 0
+
+# comps는 산점도용으로 이 상한까지 가져온다(설계 확정값). 2026-09-14 개정(DW-884, 운영 실측):
+# 종전 60건 + `ORDER BY price LIMIT MAX_COMPS`는 가장 싼 60대만 보여줘 비교군 점이 항상 저가
+# 쪽으로 쏠렸다(매칭 매물이 60건을 넘을 때마다 발생). 상한을 500으로 올리고, 매칭 매물이
+# 500건을 넘으면 가격순 전체에서 균등 간격으로 500건을 뽑아(_sample_comps_evenly) 분포 전체가
+# 대표되게 한다 — comps 필드 자체는 그대로다(더하기만).
+MAX_COMPS = 500
 
 # TabPFN 적정가를 내려면 비교군이 이 이상이어야 한다(설계 확정값).
 _TABPFN_MIN_COMPS = 10
+
+# TabPFN 학습표 상한(설계 확정값, 기존과 동일) — _train_rows_query가 "대상과 가까운 순"으로
+# 이 개수만큼 뽑는다(DW-859, 2026-09-05 개정: 표본을 고르는 기준만 바뀌었고 상한은 그대로다).
+_TABPFN_TRAIN_LIMIT = 120
 
 # TabPFN 예측 분포에서 읽는 분위수(하위 몇 %에 해당하는 가격)와 응답 키 — 5단 판정의 경계
 # (2026-09-03 개정, 모듈 docstring 참조). 두 튜플은 자리끼리 대응한다.
@@ -148,14 +195,28 @@ _TABPFN_QUANTILE_KEYS = ("q10", "q25", "q50", "q75", "q90")
 # fit()은 매 호출마다 비교군으로 다시 하므로(sklearn 스타일), 캐시하는 건 객체 생성 비용뿐이다.
 _TABPFN_MODEL = None
 
+# DW-856: 전역 _TABPFN_MODEL은 요청마다 새 데이터로 fit()한 뒤 그 상태로 predict()하는
+# 공유 객체다 — 동시 요청이 겹치면 fit/predict가 뒤섞인다(운영에서 NotFittedError·
+# FileNotFoundError 실측). fit()부터 predict()까지를 이 락으로 직렬화해 한 번에 한 요청만
+# 그 구간을 돌게 한다.
+_TABPFN_LOCK = threading.Lock()
+
 
 def _base_model(model: str) -> str:
-    """"더 뉴 "/"올 뉴 " 접두를 제거한 뒤 첫 토큰(기본 모델명)을 반환한다."""
+    """"더 뉴 "/"올 뉴 " 접두를 제거한 뒤 첫 토큰(기본 모델명)을 반환한다.
+
+    2026-09-14 재개방(DW-853, 운영 실측): "아반떼MD"처럼 한글 모델명 바로 뒤에 공백 없이
+    세대코드가 붙은 표기는 split()이 통째로 한 토큰("아반떼MD")으로 묶어버려 ILIKE 비교군을
+    하나도 못 찾았다. 0038 마이그레이션의 generation 백필 규칙과 같은 원리로, 한글 바로 뒤에
+    오는 영문/숫자 앞에 공백을 넣은 뒤 토큰을 나눈다. 영문으로 시작하는 모델("K5 DL3", "i30")은
+    이 경계가 없어 그대로 둔다(요구사항 확정).
+    """
     stripped = model
     for prefix in _GENERATION_PREFIXES:
         if stripped.startswith(prefix):
             stripped = stripped[len(prefix):]
             break
+    stripped = _KOREAN_ALNUM_BOUNDARY_RE.sub(r"\1 \2", stripped)
     tokens = stripped.split()
     return tokens[0] if tokens else stripped
 
@@ -238,10 +299,23 @@ def _stats_sql(where_sql: str) -> str:
 
 
 def _comps_sql(where_sql: str) -> str:
-    return (
-        f"SELECT {_COMP_COLUMNS} FROM public.listings "
-        f"WHERE {where_sql} ORDER BY price LIMIT {MAX_COMPS}"
-    )
+    # LIMIT을 SQL에 걸지 않는다 — 균등 간격 표본(_sample_comps_evenly)을 뽑으려면 가격순 전체가
+    # 있어야 한다(DW-884). MAX_COMPS 상한은 결과를 파이썬에서 자른 뒤에만 적용된다.
+    return f"SELECT {_COMP_COLUMNS} FROM public.listings WHERE {where_sql} ORDER BY price"
+
+
+def _sample_comps_evenly(rows: list[dict]) -> list[dict]:
+    """가격순(_comps_sql) rows가 MAX_COMPS를 넘으면 균등 간격(every-k)으로 MAX_COMPS건을 뽑는다.
+
+    2026-09-14(DW-884, 운영 실측 8건 캡처): 종전 `ORDER BY price LIMIT MAX_COMPS`는 가장 싼
+    매물만 골라 비교군 산점도가 저가 쪽으로 쏠렸다. rows가 가격순 오름차순이라는 전제 하에,
+    등간격 인덱스로 뽑으면 0번(최저가)·마지막(최고가) 행이 항상 포함돼 분포 양끝이 살아있다.
+    """
+    n = len(rows)
+    if n <= MAX_COMPS:
+        return rows
+    step = (n - 1) / (MAX_COMPS - 1)
+    return [rows[round(i * step)] for i in range(MAX_COMPS)]
 
 
 def _verdict(price: int, q1: float, q3: float) -> str:
@@ -274,6 +348,36 @@ def _verdict_by_quantiles(price: int, q: dict) -> str:
     if price <= q["q90"]:
         return "다소 높음"
     return "높음"
+
+
+def _cdf_at_price(price: int, quantiles: dict | None) -> float | None:
+    """TabPFN 분위수 5단(q10~q90)을 잇는 구간별 선형 보간으로 이 매물 price의 누적 비율(0~1)을 구한다.
+
+    2026-09-14 개정(DW-885, 운영 실측): 웹의 헤드라인 배지(verdict, 분위수 5단 판정)와 한 문장
+    판정(종전엔 비교군 사분위에서 따로 계산한 percentile)이 서로 다른 산출식을 써서 문구·배지가
+    어긋났다(예: 배지는 "적정"인데 문장은 "열에 여덟이 더 쌉니다"). 분위수 곡선 위에서 직접
+    누적 비율을 구해 verdict와 같은 숫자를 웹이 쓸 수 있게 한다. q10 미만이면 0.0, q90 초과면
+    1.0으로 캡한다(분포 꼬리 밖을 외삽하지 않는다는 판단). quantiles가 없으면(TabPFN 미예측) None.
+    """
+    if quantiles is None:
+        return None
+    points = [
+        (quantiles["q10"], 0.10),
+        (quantiles["q25"], 0.25),
+        (quantiles["q50"], 0.50),
+        (quantiles["q75"], 0.75),
+        (quantiles["q90"], 0.90),
+    ]
+    if price < points[0][0]:
+        return 0.0
+    if price > points[-1][0]:
+        return 1.0
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if x0 <= price <= x1:
+            if x1 == x0:
+                return y0
+            return y0 + (y1 - y0) * (price - x0) / (x1 - x0)
+    return points[-1][1]  # 방어적 폴백 — 위 경계 처리로 여기 도달하지 않는다
 
 
 def _verdict_and_basis(
@@ -310,8 +414,19 @@ def _tabpfn_features(row: dict) -> list:
         row["displacement"],
         *_fuel_onehot(row["fuel"]),
         len(options),
-        int(bool(row["accident_free"])),
+        _accident_level(row),
+        _usage_flag(row),
     ]
+
+
+def _tabpfn_features_with_model(row: dict, codes: dict) -> list:
+    """_tabpfn_features의 11칸에 세대 범주 코드를 12번째 칸으로 더한다(DW-880으로 10→11칸, 2026-09-13)(DW-854, 2026-09-05;
+    DW-874, 2026-09-12: 코드 키를 generation 우선으로 교체).
+
+    codes는 호출 1회(학습표+대상)에서만 유효한 세대키→정수 매핑이다(_tabpfn_predict가 만든다) —
+    TabPFNRegressor(categorical_features_indices=[11])가 이 칸을 범주형으로 다루게 한다.
+    """
+    return _tabpfn_features(row) + [codes[row.get("generation") or row["model"]]]
 
 
 def _tabpfn_predict(
@@ -326,6 +441,16 @@ def _tabpfn_predict(
     그 분포에서 mean·median·분위수를 한 번의 추론으로 같이 돌려준다(실측: 기본 predict와
     시간 동일, mean 값도 원 단위까지 동일) — 두 번 부르지 않는 이유. price는 종전대로
     mean을 만원 단위로 반올림한 값(웹·앱·I7 불변식 계약 유지), quantiles는 원 단위 정수.
+
+    2026-09-05 개정(DW-854): 특징 벡터가 10칸에서 11칸(세대 범주 포함)으로 늘었다 — 기존
+    11칸(연식·주행거리·배기량·연료 원핫 5칸·옵션 개수·사고 이력 3단계·렌트/영업 이력)은 `_tabpfn_features`가
+    그대로 내고(다른 코드·테스트가 그 10칸을 그대로 쓴다), 11번째 칸에 세대(generation, 없으면
+    model로 폴백 — DW-874, 2026-09-12) 문자열을 정수로 인코딩해 더한다(`_tabpfn_features_with_model`).
+    그랜저 GN7과 더 뉴 그랜저 IG처럼 연식·
+    배기량대가 겹쳐도 가격대가 크게 다른 세대를(모듈 docstring "동일 세대 원칙" 참조) 모델이
+    직접 구분하게 하려는 목적이다. 코드(codes)는 이번 호출의 학습표+대상 안에서만 유효한
+    임의 정수이고, `.fit()`을 매 호출마다 다시 하므로(위 설명대로 sklearn 스타일) 호출 간에
+    코드가 섞이지 않는다.
     """
     if len(train_rows) < _TABPFN_MIN_COMPS:
         return None, None, f"학습 표본 {len(train_rows)}건 — {_TABPFN_MIN_COMPS}건 미만"
@@ -335,16 +460,29 @@ def _tabpfn_predict(
     except Exception:
         return None, None, "tabpfn 미설치"
 
-    global _TABPFN_MODEL
-    if _TABPFN_MODEL is None:
-        _TABPFN_MODEL = TabPFNRegressor(device="cpu")
+    codes = {
+        m: i
+        for i, m in enumerate(
+            sorted(
+                {r.get("generation") or r["model"] for r in train_rows}
+                | {target.get("generation") or target["model"]}
+            )
+        )
+    }
 
-    x = [_tabpfn_features(c) for c in train_rows]
+    x = [_tabpfn_features_with_model(c, codes) for c in train_rows]
     y = [c["price"] for c in train_rows]
-    _TABPFN_MODEL.fit(x, y)
-    out = _TABPFN_MODEL.predict(
-        [_tabpfn_features(target)], output_type="full", quantiles=list(_TABPFN_QUANTILES)
-    )
+
+    global _TABPFN_MODEL
+    with _TABPFN_LOCK:
+        if _TABPFN_MODEL is None:
+            _TABPFN_MODEL = TabPFNRegressor(device="cpu", categorical_features_indices=[11])
+        _TABPFN_MODEL.fit(x, y)
+        out = _TABPFN_MODEL.predict(
+            [_tabpfn_features_with_model(target, codes)],
+            output_type="full",
+            quantiles=list(_TABPFN_QUANTILES),
+        )
     price = int(round(float(out["mean"][0]) / 10_000)) * 10_000
     quantiles = {
         key: int(round(float(values[0])))
@@ -380,6 +518,39 @@ def _comp_summary(row: dict) -> dict:
     }
 
 
+def _train_rows_query(target: dict, base: str) -> tuple[str, list]:
+    """TabPFN 학습표 SELECT문·파라미터를 만든다(diagnose()가 호출 — 화면 비교군과 별개로 두는
+    이유는 diagnose() 안의 호출부 주석 참조).
+
+    2026-09-05 개정(DW-859, 실매물 실측): 기본 모델명 하나(예: "그랜저")에 실제로는 수천 건이
+    걸린다 — 정렬 없이 최신순(연식 DESC)으로 LIMIT만 걸면 대상이 2019년식이어도 학습표는 전부
+    2025년식으로 채워져(대상과 무관한 표본) TabPFN이 엉뚱한 이웃으로 적정가를 낸다. 그래서
+    "대상과 가까운 순"으로 정렬한다 — 1순위 동일 세대(model 문자열 완전 일치, v3 확정 "동일
+    세대 원칙"과 같은 축), 2순위 연료 일치, 3순위 연식 차이, 4순위 주행거리 차이. `id ASC`는
+    앞의 네 기준이 전부 같은 행이 LIMIT 경계에 몰릴 때 쓰는 타이브레이커로, 이게 없으면 동순위
+    안에서 정렬이 비결정적이라 같은 매물을 다시 진단해도 학습표 120건 구성이 실행마다 달라질
+    수 있다. `_TABPFN_MIN_COMPS`(10, 학습에 필요한 최소 표본 수)는 이 개정으로 바뀌지 않는다 —
+    바뀐 것은 표본을 "고르는 순서"뿐, "몇 건이어야 예측하는지"는 그대로다.
+    """
+    sql = (
+        f"SELECT {_COMP_COLUMNS} FROM listings "
+        "WHERE status = 'on_sale' AND id <> %s AND transmission = %s AND model ILIKE %s "
+        "ORDER BY (model = %s) DESC, (fuel = %s) DESC, abs(year - %s) ASC, "
+        "abs(mileage - %s) ASC, id ASC "
+        f"LIMIT {_TABPFN_TRAIN_LIMIT}"
+    )
+    params = [
+        target["id"],
+        target["transmission"],
+        f"%{base}%",
+        target["model"],
+        target["fuel"],
+        target["year"],
+        target["mileage"],
+    ]
+    return sql, params
+
+
 def diagnose(listing_id: str, conn) -> dict | None:
     """대상 매물 1건의 시세를 진단한다. 매물이 없으면 None(라우터가 404로 변환).
 
@@ -405,20 +576,22 @@ def diagnose(listing_id: str, conn) -> dict | None:
                 break
 
         cur.execute(_comps_sql(where_sql), where_params)
-        comp_rows = cur.fetchall()
+        comp_rows = _sample_comps_evenly(cur.fetchall())
 
         # TabPFN 학습 표본은 화면 비교군과 분리해 더 넓게 잡는다 — 사다리(동종 비교)는
         # 5건이면 멈추는데 TabPFN 최소 표본은 10건이라, 동종 비교가 잘 될수록 예측이
         # 항상 "표본 부족"으로 빠지는 구멍이 있었다(운영 DB 실측: 더 뉴 그랜저 IG 표본 7).
         # 연식·배기량·연료가 특징값에 들어가므로 세대 차이는 모델이 흡수한다 — 통계
         # (사분위·백분위)는 여전히 동종 비교군만 쓴다("같은 종끼리 비교" 원칙 유지).
+        #
+        # 2026-09-05 개정(DW-859): 기본 모델명 하나에 실제로는 수천 건이 걸려(실매물 기준),
+        # 정렬 없이 연식 DESC로 120건만 자르면 대상이 2019년식이어도 학습표가 전부 2025년식이
+        # 되는 문제가 있었다. _train_rows_query가 "대상과 가까운 순"(동일 세대→연료→연식차→
+        # 주행거리차, id ASC는 절단 지점을 고정하는 타이브레이커)으로 정렬한다 — 자세한 이유는
+        # 그 함수 docstring 참조. _TABPFN_MIN_COMPS(10, 학습 최소 표본)는 이번에도 그대로다.
         base = _base_model(target["model"])
-        cur.execute(
-            f"SELECT {_COMP_COLUMNS} FROM listings "
-            "WHERE status = 'on_sale' AND id <> %s AND transmission = %s "
-            "AND model ILIKE %s ORDER BY year DESC, mileage ASC LIMIT 120",
-            [target["id"], target["transmission"], f"%{base}%"],
-        )
+        train_sql, train_params = _train_rows_query(target, base)
+        cur.execute(train_sql, train_params)
         train_rows = cur.fetchall()
 
     sample_count = stats_row["cnt"]
@@ -457,6 +630,11 @@ def diagnose(listing_id: str, conn) -> dict | None:
         "percentile": percentile,
         "verdict": verdict,
         "verdict_basis": verdict_basis,
-        "tabpfn": {"price": tabpfn_price, "note": tabpfn_note, "quantiles": tabpfn_quantiles},
+        "tabpfn": {
+            "price": tabpfn_price,
+            "note": tabpfn_note,
+            "quantiles": tabpfn_quantiles,
+            "cdf_at_price": _cdf_at_price(target["price"], tabpfn_quantiles),
+        },
         "comps": [_comp_summary(r) for r in comp_rows],
     }

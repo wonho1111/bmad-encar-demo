@@ -7,6 +7,9 @@ DB 없이 검증한다(다른 test_*.py들의 "DB 불필요 단위 테스트" �
 """
 
 import builtins
+import threading
+import time
+import types
 
 import pytest
 
@@ -39,6 +42,11 @@ def test_ladder_has_six_steps_with_trim_release_before_generation_release():
         ("더 뉴 그랜저 IG", "그랜저"),
         ("올 뉴 쏘렌토", "쏘렌토"),
         ("아반떼 CN7 하이브리드", "아반떼"),
+        # DW-853 재개방: 한글 바로 뒤에 공백 없이 붙은 세대코드 — split()이 통째로 한 토큰으로
+        # 묶어 ILIKE 비교군을 하나도 못 찾던 결함(운영 실측).
+        ("아반떼MD", "아반떼"),
+        ("K5 DL3", "K5"),  # 영문으로 시작하면 경계가 없어 그대로(첫 토큰)
+        ("i30", "i30"),  # 한글이 아예 없으면 그대로
     ],
 )
 def test_base_model_extraction(model, expected):
@@ -80,6 +88,26 @@ def test_verdict_by_quantiles_boundaries():
     assert market_price._verdict_by_quantiles(4_001, q) == "높음"        # q90 초과
 
 
+@pytest.mark.parametrize(
+    "price, expected",
+    [
+        (500, 0.0),  # 양끝: q10 미만 → 0.0
+        (1_000, 0.10),  # 경계: 정확히 q10
+        (2_250, 0.375),  # 중간: q25(2_000,.25)~q50(2_500,.50) 구간 선형 보간
+        (4_500, 1.0),  # 양끝: q90 초과 → 1.0
+    ],
+)
+def test_cdf_at_price_boundaries_and_interpolation(price, expected):
+    # DW-885: 배지(verdict)와 한 문장 판정이 서로 다른 산출식을 써서 어긋난 결함 — 분위수 곡선
+    # 위에서 직접 누적 비율을 구해 웹이 같은 숫자를 쓰게 한다.
+    q = {"q10": 1_000, "q25": 2_000, "q50": 2_500, "q75": 3_000, "q90": 4_000}
+    assert market_price._cdf_at_price(price, q) == pytest.approx(expected)
+
+
+def test_cdf_at_price_none_when_quantiles_missing():
+    assert market_price._cdf_at_price(1_500, None) is None
+
+
 def test_verdict_and_basis_sample_size_boundary():
     # 2026-08-31 실측 결함(F4, 소표본 과신 판정) 수정 — 비교군 <3건이면 verdict를 보류한다.
     # 경계값을 리터럴로 고정: 0건/2건(보류) vs 3건(판정)을 직접 확인한다.
@@ -102,6 +130,23 @@ def test_verdict_and_basis_prefers_tabpfn_when_available_and_sample_sufficient()
     assert market_price._verdict_and_basis(3, 1_000_000, stats, q) == ("적정", "분위수")
     # 표본 부족 보류(F4)는 분위수가 있어도 먼저 적용된다.
     assert market_price._verdict_and_basis(2, 1_100_001, stats, q) == (None, "표본 부족")
+
+
+def test_sample_comps_evenly_includes_min_and_max_price():
+    # DW-884: 종전 `ORDER BY price LIMIT MAX_COMPS`는 가장 싼 매물만 골라 비교군 산점도가 저가
+    # 쪽으로 쏠렸다 — 균등 간격(every-k) 표본은 가격순 전체에서 뽑아 최저가·최고가를 포함한
+    # 분포 양끝을 살려야 한다(운영 실측 8건 캡처).
+    rows = [{"price": i} for i in range(600)]  # _comps_sql과 동일하게 가격순 오름차순 전제
+    sampled = market_price._sample_comps_evenly(rows)
+    assert len(sampled) == market_price.MAX_COMPS
+    prices = {r["price"] for r in sampled}
+    assert 0 in prices
+    assert 599 in prices
+
+
+def test_sample_comps_evenly_passthrough_when_within_limit():
+    rows = [{"price": i} for i in range(10)]
+    assert market_price._sample_comps_evenly(rows) == rows
 
 
 def test_where_clause_differs_by_step_model_vs_ilike():
@@ -135,6 +180,38 @@ def test_where_clause_differs_by_step_model_vs_ilike():
     assert "model ilike %s" in step4_sql
     assert "model = %s" not in step4_sql
     assert "%그랜저%" in step4_params
+
+
+def test_train_rows_query_orders_by_similarity_with_expected_param_order():
+    # DW-859: 학습표 SELECT는 최신순(연식 DESC)이 아니라 "대상과 가까운 순"(동일 세대→연료→
+    # 연식차→주행거리차, id ASC 타이브레이커)으로 정렬해야 한다 — 실매물 기준 기본 모델명 하나에
+    # 수천 건이 걸려, 정렬 없이 최신순으로 자르면 대상과 무관한 연식대만 남는 문제(실측)를 고친
+    # 변경이다. SQL 문자열·파라미터 순서를 리터럴로 고정한다(DB 없는 순수 함수 — 실제 정렬
+    # 동작은 tests/integration/test_market_price_train_rows_real_db.py가 실DB로 확인한다).
+    target = {
+        "id": "target-id",
+        "model": "그랜저 GN7",
+        "transmission": "자동",
+        "year": 2024,
+        "mileage": 20_000,
+        "fuel": "가솔린",
+    }
+    sql, params = market_price._train_rows_query(target, "그랜저")
+
+    assert (
+        "ORDER BY (model = %s) DESC, (fuel = %s) DESC, abs(year - %s) ASC, "
+        "abs(mileage - %s) ASC, id ASC"
+    ) in sql
+    assert "LIMIT 120" in sql
+    assert params == [
+        "target-id",
+        "자동",
+        "%그랜저%",
+        "그랜저 GN7",
+        "가솔린",
+        2024,
+        20_000,
+    ]
 
 
 def test_tabpfn_import_failure_falls_back_to_none_with_note(monkeypatch):
@@ -176,3 +253,327 @@ def test_tabpfn_import_failure_falls_back_to_none_with_note(monkeypatch):
     assert price is None
     assert quantiles is None
     assert note == "tabpfn 미설치"
+
+
+def test_tabpfn_predict_adds_generation_categorical_feature(monkeypatch):
+    # DW-854: 세대(model)를 11번째 칸에 범주로 인코딩해 TabPFNRegressor에 넘기는지 — 진짜
+    # tabpfn 없이 가짜 TabPFNRegressor로 fit()/predict() 호출 인자를 그대로 기록해 검증한다
+    # (위 test_tabpfn_import_failure_falls_back_to_none_with_note와 같은 __import__ 몽키패치
+    # 패턴, 이번엔 ImportError 대신 가짜 모듈을 돌려준다).
+    real_import = builtins.__import__
+
+    class _FakeTabPFNRegressor:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+
+        def fit(self, x, y):
+            self.fit_x = x
+            self.fit_y = y
+
+        def predict(self, x, **kwargs):
+            self.predict_x = x
+            self.predict_kwargs = kwargs
+            return {
+                "mean": [20_000_000],
+                "quantiles": [
+                    [v] for v in (18_000_000, 19_000_000, 20_000_000, 21_000_000, 22_000_000)
+                ],
+            }
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = _FakeTabPFNRegressor
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, i):
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": 15_000_000,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    train_rows = [_row("그랜저 GN7", i) for i in range(6)] + [
+        _row("더 뉴 그랜저 IG", i) for i in range(6)
+    ]
+    target = {
+        "model": "그랜저 GN7",
+        "year": 2024,
+        "mileage": 20_000,
+        "displacement": 1_600,
+        "fuel": "가솔린",
+        "options": [],
+        "accident_free": True,
+    }
+
+    price, quantiles, note = market_price._tabpfn_predict(target, train_rows)
+
+    model_obj = market_price._TABPFN_MODEL
+    assert model_obj.init_kwargs["categorical_features_indices"] == [11]
+
+    fit_x = model_obj.fit_x
+    assert all(len(row) == 12 for row in fit_x)
+    predict_x = model_obj.predict_x
+    assert len(predict_x) == 1
+    assert len(predict_x[0]) == 12
+
+    # 같은 모델은 같은 코드를 공유하고, 다른 모델은 다른 코드를 받는다.
+    gn7_codes = {row[11] for row in fit_x[:6]}
+    ig_codes = {row[11] for row in fit_x[6:]}
+    assert len(gn7_codes) == 1
+    assert len(ig_codes) == 1
+    assert gn7_codes != ig_codes
+
+    # 대상(그랜저 GN7)의 코드는 학습표의 같은 모델(그랜저 GN7) 코드와 같아야 한다.
+    assert predict_x[0][11] == next(iter(gn7_codes))
+
+    assert price is not None
+    assert quantiles is not None
+
+
+def test_tabpfn_predict_uses_generation_over_model_for_categorical_code(monkeypatch):
+    # DW-874: model 문자열 표기가 달라도(공백 유무 등) generation이 같으면 같은 범주 코드를
+    # 받아야 한다 — model 그대로 썼다면 "아반떼MD"/"아반떼 MD"가 서로 다른 코드를 받는다.
+    real_import = builtins.__import__
+
+    class _FakeTabPFNRegressor:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+
+        def fit(self, x, y):
+            self.fit_x = x
+            self.fit_y = y
+
+        def predict(self, x, **kwargs):
+            self.predict_x = x
+            return {
+                "mean": [20_000_000],
+                "quantiles": [
+                    [v] for v in (18_000_000, 19_000_000, 20_000_000, 21_000_000, 22_000_000)
+                ],
+            }
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = _FakeTabPFNRegressor
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, generation, i):
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "generation": generation,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": 15_000_000,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    # model 표기는 다르지만("아반떼MD" vs "아반떼 MD") generation은 둘 다 "아반떼 MD".
+    train_rows = [_row("아반떼MD", "아반떼 MD", i) for i in range(5)] + [
+        _row("아반떼 MD", "아반떼 MD", i) for i in range(5)
+    ]
+    target = {
+        "model": "아반떼 MD",
+        "generation": "아반떼 MD",
+        "year": 2024,
+        "mileage": 20_000,
+        "displacement": 1_600,
+        "fuel": "가솔린",
+        "options": [],
+        "accident_free": True,
+    }
+
+    market_price._tabpfn_predict(target, train_rows)
+
+    fit_x = market_price._TABPFN_MODEL.fit_x
+    codes = {row[11] for row in fit_x}
+    assert len(codes) == 1  # 표기가 갈려도 generation이 같으면 같은 코드 하나뿐이어야 한다.
+
+
+def test_tabpfn_predict_falls_back_to_model_when_generation_missing(monkeypatch):
+    # DW-874: generation이 없는 행(구형 시드·수동 등록 등)은 model 문자열로 폴백해야 한다 —
+    # KeyError 없이 동작하고, generation 없는 행끼리는 model 기준으로 코드가 갈린다.
+    real_import = builtins.__import__
+
+    class _FakeTabPFNRegressor:
+        def __init__(self, **kwargs):
+            self.init_kwargs = kwargs
+
+        def fit(self, x, y):
+            self.fit_x = x
+            self.fit_y = y
+
+        def predict(self, x, **kwargs):
+            self.predict_x = x
+            return {
+                "mean": [20_000_000],
+                "quantiles": [
+                    [v] for v in (18_000_000, 19_000_000, 20_000_000, 21_000_000, 22_000_000)
+                ],
+            }
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = _FakeTabPFNRegressor
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, i):
+        # generation 키가 아예 없는 행 — .get("generation")이 None을 돌려줘 model로 폴백해야 한다.
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": 15_000_000,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    train_rows = [_row("그랜저", i) for i in range(5)] + [_row("K5", i) for i in range(5)]
+    target = {
+        "model": "그랜저",
+        "year": 2024,
+        "mileage": 20_000,
+        "displacement": 1_600,
+        "fuel": "가솔린",
+        "options": [],
+        "accident_free": True,
+    }
+
+    price, quantiles, _note = market_price._tabpfn_predict(target, train_rows)
+
+    fit_x = market_price._TABPFN_MODEL.fit_x
+    grandeur_codes = {row[11] for row in fit_x[:5]}
+    k5_codes = {row[11] for row in fit_x[5:]}
+    assert len(grandeur_codes) == 1
+    assert len(k5_codes) == 1
+    assert grandeur_codes != k5_codes
+    assert price is not None
+    assert quantiles is not None
+
+
+def test_tabpfn_predict_serializes_concurrent_requests_via_lock(monkeypatch):
+    # DW-856: 전역 _TABPFN_MODEL은 요청마다 fit()한 뒤 그 상태로 predict()하는 공유 객체라,
+    # 두 요청이 겹치면 A가 fit()한 학습표를 B의 fit()이 덮어쓴 뒤 A가 predict()할 수 있다
+    # (운영에서 NotFittedError·가중치 FileNotFoundError로 실측). 진짜 tabpfn 없이, fit()이
+    # 학습표(y)를 공유 객체에 저장하고 predict()가 "느린 추론"을 흉내 내려 잠깐 sleep한 뒤
+    # 그 시점에 저장돼 있는 y로 값을 만드는 가짜 모델을 넣어, 두 스레드가 서로 다른 학습표로
+    # 거의 동시에 _tabpfn_predict를 호출했을 때 각자 자기 학습표 기준 값을 받는지 확인한다.
+    real_import = builtins.__import__
+
+    class _FakeTabPFNModel:
+        def __init__(self):
+            self.trained_on = None
+
+        def fit(self, x, y):
+            self.trained_on = list(y)
+
+        def predict(self, x, **kwargs):
+            time.sleep(0.2)  # 그 사이 다른 스레드의 fit()이 끼어들 수 있는 창
+            value = sum(self.trained_on) / len(self.trained_on)
+            return {"mean": [value], "quantiles": [[value]] * 5}
+
+    fake_module = types.ModuleType("tabpfn")
+    fake_module.TabPFNRegressor = lambda **kwargs: _FakeTabPFNModel()
+
+    def _fake_import(name, *args, **kwargs):
+        if name == "tabpfn":
+            return fake_module
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _fake_import)
+    monkeypatch.setattr(market_price, "_TABPFN_MODEL", None)
+
+    def _row(model, i, price):
+        return {
+            "id": f"{model}-{i}",
+            "model": model,
+            "year": 2020 + i,
+            "mileage": 50_000 - i * 1_000,
+            "price": price,
+            "displacement": 1_600,
+            "fuel": "가솔린",
+            "options": [],
+            "accident_free": True,
+        }
+
+    train_rows_a = [_row("아반떼", i, 10_000_000) for i in range(10)]
+    target_a = _row("아반떼", 0, 10_000_000)
+
+    train_rows_b = [_row("쏘나타", i, 50_000_000) for i in range(10)]
+    target_b = _row("쏘나타", 0, 50_000_000)
+
+    results = {}
+
+    def _call(key, target, train_rows, delay):
+        time.sleep(delay)
+        price, _quantiles, _note = market_price._tabpfn_predict(target, train_rows)
+        results[key] = price
+
+    thread_a = threading.Thread(target=_call, args=("a", target_a, train_rows_a, 0.0))
+    thread_b = threading.Thread(target=_call, args=("b", target_b, train_rows_b, 0.05))
+
+    thread_a.start()
+    thread_b.start()
+    thread_a.join(timeout=5)
+    thread_b.join(timeout=5)
+
+    # 락이 있으면 A는 자기 학습표(1천만) 기준, B는 자기 학습표(5천만) 기준 값을 각각 받는다.
+    # 락이 없으면 B의 fit()이 A의 predict() sleep 중에 전역 상태를 덮어써 A도 5천만을 받는다.
+    assert results["a"] == 10_000_000
+    assert results["b"] == 50_000_000
+
+
+# ── DW-863: TabPFN 사고 특징 3단계(무사고 2·단순교환 1·사고 0) ─────────────────────────
+def test_accident_level_orders_three_states_and_falls_back_to_binary():
+    base = {"year": 2020, "mileage": 1, "displacement": 1, "fuel": "가솔린", "options": []}
+    lv = lambda **kw: market_price._tabpfn_features({**base, **kw})[9]
+    assert lv(accident_status="무사고", accident_free=True) == 2
+    assert lv(accident_status="단순교환", accident_free=False) == 1
+    assert lv(accident_status="사고", accident_free=False) == 0
+    # 단순교환은 사고와 구분돼야 한다(종전 이진 특징은 둘 다 0이었다).
+    assert lv(accident_status="단순교환", accident_free=False) != lv(accident_status="사고", accident_free=False)
+    # accident_status 미입력(NULL) 행은 종전 이진값으로 폴백.
+    assert lv(accident_status=None, accident_free=True) == 2
+    assert lv(accident_status=None, accident_free=False) == 0
+
+
+# ── DW-880: TabPFN 렌트·영업용 이력 플래그(11번째 칸, 0-index 10) ──────────────────────
+def test_usage_flag_marks_rent_and_commercial_only():
+    base = {"year": 2020, "mileage": 1, "displacement": 1, "fuel": "가솔린", "options": [], "accident_free": True}
+    f = lambda **kw: market_price._tabpfn_features({**base, **kw})
+    assert len(f()) == 11
+    assert f(usage_history="렌트")[10] == 1
+    assert f(usage_history="영업용")[10] == 1
+    assert f(usage_history="없음")[10] == 0
+    assert f(usage_history=None)[10] == 0  # 시드·사용자 매물(미입력)은 종전과 동일
+    assert f()[10] == 0  # 키 자체가 없어도(옛 행 dict) 죽지 않는다

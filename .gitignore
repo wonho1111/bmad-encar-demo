@@ -57,3 +57,6 @@ Thumbs.db
 .bmad-loop/cache/
 .bmad-loop/archive/
 api/env:Zone.Identifier
+
+# 로컬 런타임 로그·평가용 수집 데이터(엔카 원본 등) — 리포가 public이라 절대 커밋하지 않는다
+.logs/

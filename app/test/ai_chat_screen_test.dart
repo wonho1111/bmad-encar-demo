@@ -13,6 +13,7 @@ import 'package:app/core/theme/app_theme.dart';
 import 'package:app/features/ai_search/ai_chat_screen.dart';
 import 'package:app/features/ai_search/ai_search_api.dart';
 import 'package:app/features/ai_search/market_diagnosis_chart.dart';
+import 'package:app/features/ai_search/market_diagnosis_price_chart.dart';
 import 'package:app/features/auth/auth_controller.dart';
 import 'package:app/features/listings/listing.dart';
 import 'package:app/features/listings/listing_card.dart';
@@ -1050,14 +1051,25 @@ void main() {
           'percentile': 0.4,
           'verdict': '적정',
           'verdict_basis': '적정가',
-          'tabpfn': {'price': 22500000, 'note': ''},
+          'tabpfn': {
+            'price': 22500000,
+            'note': '',
+            'quantiles': {
+              'q10': 19500000,
+              'q25': 21200000,
+              'q50': 22500000,
+              'q75': 23800000,
+              'q90': 25500000,
+            },
+          },
           'comps': [
             {'id': 'c1', 'model': '셀토스', 'year': 2020, 'mileage': 40000, 'price': 21000000},
             {'id': 'c2', 'model': '셀토스', 'year': 2022, 'mileage': 20000, 'price': 24000000},
           ],
         };
 
-    testWidgets('단건 시세 진단 카드가 산점도를 포함해 크래시 없이 그려진다', (tester) async {
+    testWidgets('단건 시세 진단 카드가 재구성된 헤드라인·판정·타일·곡선을 크래시 없이 그리고, '
+        '자세히는 기본 닫힘 상태다', (tester) async {
       final wire = <String, Object?>{
         'answer': '이 매물은 적정 가격대예요.',
         'listings': const <Object?>[],
@@ -1083,12 +1095,43 @@ void main() {
       await tester.tap(find.byKey(const Key('ai_send')));
       await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull, reason: '진단 카드·산점도 렌더 중 예외가 없어야 한다');
+      expect(tester.takeException(), isNull, reason: '진단 카드·그래프 렌더 중 예외가 없어야 한다');
       expect(find.byKey(const Key('market_diagnosis_card')), findsOneWidget);
+
+      // ① 헤드라인 — tabpfn.quantiles(q25~q75)를 만원 반올림해 "A~B만원"으로 낸다.
+      expect(find.text('비슷한 조건이면 보통 2,120~2,380만원'), findsOneWidget);
+
+      // ② 한 문장 판정 — cdf_at_price가 없는 픽스처라 percentile 0.4로 폴백(round(0.4*10)=4).
+      // "100대 중" 식 실제 대수 표현은 어디에도 없어야 한다(작업 지시 6 — 헤드라인·판정 문구가
+      // 실제 대수처럼 안 읽히는지).
+      expect(find.text('AI 예상으로는 비슷한 조건의 차 열에 넷이 이 매물보다 쌉니다'), findsOneWidget);
+      expect(find.textContaining('대 중'), findsNothing);
+      expect(find.text('적정'), findsOneWidget); // 기존 판정 배지는 옆에 작게 유지.
+
+      // ③ 가격 곡선 — 접힘과 무관하게 항상 보인다(기본 노출 그림).
+      expect(find.byType(MarketDiagnosisPriceChart), findsOneWidget);
+
+      // ④ 타일 2개 + 비교 문구 하나.
+      expect(find.text('지금 올라온 비슷한 차 12대의 중간 가격'), findsOneWidget);
+      expect(find.text('AI가 본 적정가'), findsOneWidget);
+      expect(find.text('AI 적정가보다 2.2% 낮음'), findsOneWidget);
+
+      // ⑤ 자세히는 기본 닫힘 — ExpansionTile.maintainState 기본값(false)이라 접힌 동안
+      // 자식(기존 산점도·비교군 칩 라벨)이 트리에 아예 안 잡힌다.
+      expect(find.byType(MarketDiagnosisChart), findsNothing,
+          reason: '기존 산점도는 접힘 영역으로 옮겨져 펼치기 전엔 안 보여야 한다');
+      expect(find.text('이런 차와 비교했어요:'), findsNothing);
+
+      // 펼치면 그 안의 통계·산점도·비교 매물 목록이 드러난다.
+      await tester.tap(find.text('자세히'));
+      await tester.pumpAndSettle();
       expect(find.byType(MarketDiagnosisChart), findsOneWidget,
-          reason: '비교군(comps)이 있으므로 산점도가 실제로 붙어야 한다');
-      // 통계 3칸·판정 배지·각주까지 실제 값으로 그려지는지(표시 항목 전부 미러 확인).
-      expect(find.text('적정'), findsOneWidget);
+          reason: '비교군(comps)이 있으므로 펼치면 산점도가 붙어야 한다');
+      expect(find.text('이런 차와 비교했어요:'), findsOneWidget);
+      expect(find.text('비교 매물 목록'), findsOneWidget);
+
+      // ⑥ 각주 — "호가 기준" 소문구 + TabPFN 표기를 함께 유지한다.
+      expect(find.textContaining('호가 기준'), findsOneWidget);
       expect(find.textContaining('Built with PriorLabs-TabPFN'), findsOneWidget);
     });
 

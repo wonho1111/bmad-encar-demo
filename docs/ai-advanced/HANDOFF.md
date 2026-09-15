@@ -31,6 +31,7 @@
 - **진입점 확정**: 상세 페이지 요약카드에 [AI 시세 진단] 아웃라인 버튼(문의하기 위) + AI 채팅 자연어("두 번째 셀토스 시세 봐줘"). **목록 카드는 변경 없음**(케밥·칩 안 넣기로 결정)
 - **목업(사용자 확정)**: https://claude.ai/code/artifact/bf7e2af2-028e-4aa1-bc62-c12766040de9
 - 엔카 크롤링 배제(robots.txt Disallow·약관·판례 검토 후 사용자 결정), 비전 허위매물 탐지 배제. 외부 데이터는 `source` 컬럼 구조만 열어둠 + 자동차365 공공 평균가 참고선(선택)
+  - 예외(2026-09-05 사용자 결정): **평가 전용 오프라인 수집**은 허용 — `api/scripts/collect_encar_eval.py`(1 req/s·고정 UA·화이트리스트 저장·개인정보 미저장), 데이터는 `.logs/encar_eval/`에만 두고 커밋·서비스 DB 적재 금지. 보고서·조건은 그 폴더의 report.md.
 - BMAD 절차 안 씀. 산출물 문서는 `docs/ai-advanced/`
 
 **1단계 완료 — 부품 실측** (상세: [01-model-skill-selection.md](01-model-skill-selection.md))
@@ -38,6 +39,8 @@
 - 리랭커: **BAAI/bge-reranker-v2-m3 품질 확정**(코퍼스 실측 6/8 > 한국어 파인튠 5/8). 노트북 CPU 55초/10건 → **데스크톱 GPU 측정이 실행 방식 게이트**
 - TabPFN: **v2 확정**(tabpfn==2.2.1, Apache + "Built with PriorLabs-TabPFN" 표기 의무). R² 0.92·MAE 111만원·피크 462MB
 - 벤치 스크립트·노트북 결과: `api/scripts/bench/`
+
+**파이프라인 설명 문서 완료** (상세: [05-pipeline-explained.md](05-pipeline-explained.md))
 
 ## 2. 다음 단계 (순서대로, **단계 사이에 멈추고 사용자 승인**)
 
