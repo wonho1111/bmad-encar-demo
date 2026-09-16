@@ -15,12 +15,16 @@
 // 산출식(비교군 percentile)을 써서 어긋나던 결함을 수정 — tabpfn.cdfAtPrice(분위수 곡선
 // 기준 누적 비율, verdict와 같은 산출식)가 있으면 그걸 우선 쓰고 없으면 percentile로
 // 폴백한다(resolveJudgementRatio). 헤드라인 문구도 "이런 조건이면"→"비슷한 조건이면"으로
-// 바뀌었고, "자세히" 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
-// (DW-884, buildCompsListView).
+// 바뀌었다.
 //
 // 기존 통계·산점도·비교군 칩은 지우지 않고 ExpansionTile("자세히", 기본 닫힘) 안으로
 // 옮겼다 — 초보 사용자가 한눈에 볼 정보(헤드라인·판정·타일 2개)와 더 볼 사람만 펼치는
 // 근거를 분리한다.
+//
+// 2026-09-16 실기기 지적 A7: "자세히" 안의 비교 매물 목록(DW-884, buildCompsListView가
+// 60건까지 나열하던 것)을 없앴다 — 점 그림(market_diagnosis_price_chart.dart)이 comps
+// 전부를 이미 점으로 찍어 같은 정보를 보여주므로, 텍스트 목록은 접힘 영역만 길게 늘렸다.
+// 칩·통계·산점도는 그대로 남는다.
 import 'package:flutter/material.dart';
 
 import '../../core/format/number_format.dart';
@@ -47,7 +51,6 @@ class MarketDiagnosisCard extends StatelessWidget {
     final judgementRatio = resolveJudgementRatio(data.tabpfn.cdfAtPrice, data.percentile);
     final sentence = showPercentileChip && judgementRatio != null ? buildJudgementSentence(judgementRatio) : null;
     final compareLabel = tabpfnDiffLabel(listing.price, data.tabpfn.price);
-    final compsListView = buildCompsListView(data.comps);
 
     return Column(
       key: const Key('market_diagnosis_card'),
@@ -93,27 +96,34 @@ class MarketDiagnosisCard extends StatelessWidget {
         // ④ 타일 2개 — 지금 올라온 비슷한 차의 중간 가격 / AI가 본 적정가. 비교 문구는
         // 하나만(타일 사이 아래 한 줄) 낸다 — 어느 타일이 기준인지 숫자를 두 번 안 보여줘도
         // "AI 적정가보다 N% 높음/낮음" 한 문장으로 충분하다.
-        // ⚠️ crossAxisAlignment.stretch를 쓰지 않는다 — 이 카드는 채팅 말풍선(ListView 안,
-        // 높이 미확정 컨테이너)에서 렌더되므로 stretch가 Row 높이로 무한대(Infinity)를
-        // 자식에 강제해 레이아웃이 깨진다(실측: RenderConstrainedBox `h=Infinity` 단언 실패).
-        Row(
-          children: [
-            Expanded(
-              child: _StatCell(
-                label: '지금 올라온 비슷한 차 ${data.criteria.sampleCount}대의 중간 가격',
-                value: stats != null ? formatStatPrice(stats.median) : '—',
+        // ⚠️ Row 바로 위에 crossAxisAlignment.stretch를 못 쓰는 이유(무한 높이 컨테이너 —
+        // 이 카드는 채팅 말풍선(ListView 안, 높이 미확정 컨테이너)에서 렌더된다)는 그대로다.
+        // 대신 IntrinsicHeight로 Row를 감싸면 Row가 "자식 중 가장 큰 고유 높이"를 먼저 재서
+        // Expanded 자식에 유한한 높이를 강제하므로, stretch를 써도 무한대(Infinity)가 전파되지
+        // 않는다(실기기 지적 A6 — note가 한쪽에만 있으면 두 타일 높이가 달랐다).
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _StatCell(
+                  key: const Key('market_diagnosis_tile_sample'),
+                  label: '지금 올라온 비슷한 차 ${data.criteria.sampleCount}대의 중간 가격',
+                  value: stats != null ? formatStatPrice(stats.median) : '—',
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _StatCell(
-                label: 'AI가 본 적정가',
-                value: data.tabpfn.price != null ? wonText(data.tabpfn.price!) : '표본 부족',
-                note: data.tabpfn.price == null ? data.tabpfn.note : null,
-                emphasis: true,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StatCell(
+                  key: const Key('market_diagnosis_tile_tabpfn'),
+                  label: 'AI가 본 적정가',
+                  value: data.tabpfn.price != null ? wonText(data.tabpfn.price!) : '표본 부족',
+                  note: data.tabpfn.price == null ? data.tabpfn.note : null,
+                  emphasis: true,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         if (compareLabel != null) ...[
           const SizedBox(height: 6),
@@ -134,12 +144,7 @@ class MarketDiagnosisCard extends StatelessWidget {
               if (stats != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '비교군 통계 · 최저 ${formatStatPrice(stats.min)} · 1분위 ${formatStatPrice(stats.q1)} · '
-                    '중앙값 ${formatStatPrice(stats.median)} · 3분위 ${formatStatPrice(stats.q3)} · '
-                    '최고 ${formatStatPrice(stats.max)}',
-                    style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
-                  ),
+                  child: _StatsSummary(stats: stats),
                 ),
 
               // 완화 사다리 발동 고지 — desc(가변 문자열) 뒤에 "기준으로"라는 고정 명사를 붙여
@@ -179,30 +184,6 @@ class MarketDiagnosisCard extends StatelessWidget {
               else
                 const Text('비교할 매물이 부족해 그래프를 표시할 수 없어요.',
                     style: TextStyle(fontSize: 12, color: AppColors.inkMuted)),
-
-              if (data.comps.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text('비교 매물 목록',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.inkSecondary)),
-                const SizedBox(height: 6),
-                for (final c in compsListView.shown)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '${c.model} · ${c.year}년식 · ${formatManKm(c.mileage)} · ${wonText(c.price)}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.inkMuted),
-                    ),
-                  ),
-                // 목록은 60건 상한(DW-884) — 점 그림(market_diagnosis_price_chart.dart)은
-                // comps 전부를 찍지만, 줄마다 텍스트인 이 목록은 500건을 그대로 나열하면
-                // 접힘 영역이 지나치게 길어진다.
-                if (compsListView.moreCount > 0)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text('외 ${compsListView.moreCount}대',
-                        style: const TextStyle(fontSize: 12, color: AppColors.inkMuted)),
-                  ),
-              ],
             ],
           ),
         ),
@@ -299,8 +280,100 @@ class _CriteriaChipView extends StatelessWidget {
   }
 }
 
+/// 비교군 통계(최저·하위 25%·중앙값·상위 25%·최고) — 예전엔 한 줄 텍스트("비교군 통계 ·
+/// 최저 … · 최고 …")라 폭이 좁으면 줄바꿈되며 겹쳤다(실기기 지적 A6). web MarketDiagnosis.tsx의
+/// StatCell 5칸 그리드(grid-cols-5)와 같은 값·라벨 쌍을 쓰되, 폭 600dp 미만에서는 앱 전용으로
+/// 세로 목록(라벨 왼쪽·값 오른쪽, 한 줄 고정)으로 접는다 — 그 폭에서 5칸을 욱여넣으면 숫자가
+/// 다시 줄바꿈된다.
+class _StatsSummary extends StatelessWidget {
+  const _StatsSummary({required this.stats});
+  final MarketDiagnosisStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = [
+      ('최저', stats.min),
+      ('하위 25%', stats.q1),
+      ('중앙값', stats.median),
+      ('상위 25%', stats.q3),
+      ('최고', stats.max),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 600) {
+          return Row(
+            children: [
+              for (var i = 0; i < entries.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(
+                  child: _StatGridCell(label: entries[i].$1, value: formatStatPrice(entries[i].$2)),
+                ),
+              ],
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < entries.length; i++) ...[
+              if (i > 0) const SizedBox(height: 4),
+              _StatListRow(label: entries[i].$1, value: formatStatPrice(entries[i].$2)),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _StatGridCell extends StatelessWidget {
+  const _StatGridCell({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          value,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.inkPrimary),
+        ),
+        Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: AppColors.inkMuted)),
+      ],
+    );
+  }
+}
+
+class _StatListRow extends StatelessWidget {
+  const _StatListRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: AppColors.inkMuted)),
+        const Spacer(),
+        Text(
+          value,
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.inkPrimary),
+        ),
+      ],
+    );
+  }
+}
+
 class _StatCell extends StatelessWidget {
-  const _StatCell({required this.label, required this.value, this.note, this.emphasis = false});
+  const _StatCell({super.key, required this.label, required this.value, this.note, this.emphasis = false});
 
   final String label;
   final String value;

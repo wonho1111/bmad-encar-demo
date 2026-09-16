@@ -472,21 +472,3 @@ String? tabpfnDiffLabel(int listingPrice, int? tabpfnPrice) {
   final absPct = rounded.abs();
   return rounded > 0 ? 'AI 적정가보다 $absPct% 높음' : 'AI 적정가보다 $absPct% 낮음';
 }
-
-// ⑤ "자세히" 비교 매물 목록 상한 — 점(그림)은 comps 전부 찍지만(market_diagnosis_price_chart.dart)
-// 목록은 줄마다 텍스트라 API 최대치(500건)를 그대로 나열하면 접힘 영역이 지나치게 길어진다
-// (2026-09-14 DW-884, 운영 실측). 60건까지만 보여주고 나머지는 "외 N대" 한 줄로 요약한다
-// (web buildCompsListView 미러).
-const int maxCompsList = 60;
-
-/// buildCompsListView 반환값 — web `{shown, moreCount}` 미러.
-class CompsListView {
-  const CompsListView({required this.shown, required this.moreCount});
-  final List<MarketDiagnosisComp> shown;
-  final int moreCount;
-}
-
-CompsListView buildCompsListView(List<MarketDiagnosisComp> comps) {
-  if (comps.length <= maxCompsList) return CompsListView(shown: comps, moreCount: 0);
-  return CompsListView(shown: comps.sublist(0, maxCompsList), moreCount: comps.length - maxCompsList);
-}

@@ -511,4 +511,57 @@ void main() {
           '"widget disposed" 예외가 날 수 있다 — mounted 가드가 이를 막아야 한다',
     );
   });
+
+  // 실기기 지적 A1(2026-09-16) — 필터 패널이 2열 고정이라 폰 폭(≈390dp)에서 라벨이 겹치거나
+  // 잘렸다. 패널 폭이 600dp 미만이면 1열로 쌓이는지를 "제조사" 드롭다운과 "키워드(모델명)"
+  // 필드의 세로 위치(dy)로 확인한다 — 1열이면 위아래로 떨어지고(dy 다름), 2열이면 같은 Row라
+  // dy가 같다.
+  group('실기기 지적 A1 — 필터 패널 반응형(600dp 분기)', () {
+    Future<void> pumpAt(WidgetTester tester, Size size) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            listingsRepositoryProvider.overrideWithValue(_FakeListingsRepository(const [])),
+            wishedListingIdsProvider.overrideWith((ref) async => <String>{}),
+          ],
+          child: const MaterialApp(home: SearchScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('폭 390dp(패널 폭 600dp 미만) — 제조사·키워드가 1열로 쌓인다', (tester) async {
+      await pumpAt(tester, const Size(390, 844));
+
+      final manufacturerY = tester.getTopLeft(find.text('제조사')).dy;
+      final keywordY = tester.getTopLeft(find.text('키워드(모델명)')).dy;
+      // 단순 대소 비교(<)만 쓰면 2열이어도 DropdownButtonFormField·TextField의 내재 높이
+      // 차이(수 px)로 우연히 통과할 수 있다(실측 — 옛 2열 고정 코드로도 이 조건만은 만족했다).
+      // 1열일 때만 나오는 "필드 한 칸 통째로 아래로 밀림" 간격(수십 px)인지까지 확인한다.
+      expect(
+        keywordY - manufacturerY,
+        greaterThan(40),
+        reason: '1열이면 키워드 필드가 제조사 드롭다운 한 칸만큼(수십 px) 아래로 떨어져야 한다',
+      );
+    });
+
+    testWidgets('폭 800dp(패널 폭 600dp 이상) — 제조사·키워드가 같은 줄(2열)이다', (tester) async {
+      await pumpAt(tester, const Size(800, 600));
+
+      final manufacturerY = tester.getTopLeft(find.text('제조사')).dy;
+      final keywordY = tester.getTopLeft(find.text('키워드(모델명)')).dy;
+      // 완전히 같지는 않다 — Row 기본 crossAxisAlignment.center라 DropdownButtonFormField와
+      // TextField의 내재 높이 차이(드롭다운 화살표 여백)만큼 라벨이 몇 픽셀 어긋난다. 1열일 때
+      // 벌어지는 간격(필드 높이+줄 간격, 수십px)과는 자릿수가 다르다는 것만 확인한다.
+      expect(
+        (manufacturerY - keywordY).abs(),
+        lessThan(20),
+        reason: '2열이면 같은 Row 안이라 두 라벨의 세로 위치가 거의 같아야 한다(1열의 큰 간격과 구분)',
+      );
+    });
+  });
 }

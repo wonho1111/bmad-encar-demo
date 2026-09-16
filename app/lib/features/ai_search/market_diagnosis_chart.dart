@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../../core/format/number_format.dart';
 import '../../core/theme/app_theme.dart';
 import 'market_diagnosis.dart';
+import 'market_diagnosis_price_chart.dart' show computePriceDomain;
 
 const double _viewW = 640;
 const double _viewH = 320;
@@ -19,10 +20,10 @@ const double _x1 = 610;
 const double _yTop = 20;
 const double _yBottom = 260;
 
-/// 값을 step 단위로 올림/내림한다(축 눈금을 보기 좋은 자리에 맞추기 위함). web roundUpTo/
-/// roundDownTo 미러.
+/// 값을 step 단위로 올림/내림한다(축 눈금을 보기 좋은 자리에 맞추기 위함). web roundUpTo
+/// 미러 — priceMin/Max는 이제 computePriceDomain(밀도 곡선 그래프와 공용, DW-888 이상치
+/// 방어 확장)이 계산하므로 반내림(_roundDownTo)은 kmMax 계산에 더 이상 쓰지 않는다.
 int _roundUpTo(num value, int step) => (value / step).ceil() * step;
-int _roundDownTo(num value, int step) => (value / step).floor() * step;
 
 /// 시세 진단 산점도 위젯 — AspectRatio 2:1(640:320)로 화면 폭에 반응한다.
 class MarketDiagnosisChart extends StatelessWidget {
@@ -76,17 +77,29 @@ class _MarketDiagnosisChartPainter extends CustomPainter {
     final sy = size.height / _viewH;
 
     final mileages = [...comps.map((c) => c.mileage), listing.mileage];
-    final prices = [...comps.map((c) => c.price), listing.price, stats.min, stats.max];
-    if (tabpfnPrice != null) prices.add(tabpfnPrice!);
+    final compPrices = [for (final c in comps) c.price.toDouble()];
 
     final kmMax = math.max(_roundUpTo(mileages.reduce(math.max) * 1.1, 10000), 10000);
-    final priceMin = math.max(0, _roundDownTo(prices.reduce(math.min) * 0.95, 1000000));
-    final priceMaxRaw = _roundUpTo(prices.reduce(math.max) * 1.05, 1000000);
-    final priceMax = priceMaxRaw > priceMin ? priceMaxRaw : priceMin + 1000000;
+    // 가격축(세로축) 범위 — 밀도 곡선 그래프(market_diagnosis_price_chart.dart)에서 쓰는 규칙
+    // (비교군 2~98 백분위 + 대상가, 20건 미만이면 전부)을 그대로 재사용한다(2026-09-16, 이상치
+    // 방어 DW-888 산점도 확장). stats.min/max는 이상치를 그대로 담고 있어 넘기지 않는다 —
+    // compPrices(비교군 원값)로 같은 정보를 주되, computePriceDomain이 그 안에서 백분위로 자른다.
+    final domain = computePriceDomain(
+      compPrices: compPrices,
+      listingPrice: listing.price.toDouble(),
+      quantiles: null,
+      stats: null,
+      curveEndpoints: null,
+    );
+    final priceMin = domain.priceMin;
+    final priceMax = domain.priceMax;
 
     double xScale(num km) => _x0 + (km / kmMax) * (_x1 - _x0);
     double yScale(num price) =>
         _yTop + ((priceMax - price) / (priceMax - priceMin)) * (_yBottom - _yTop);
+    // 축 범위 밖 비교군 점은 버리지 않고 축 끝(위/아래)에 겹쳐 찍는다 — 개수는 "▲·▼ 외 N대"
+    // 라벨로 보여준다(밀도 곡선 그래프의 clampPrice와 동일 규칙).
+    double clampPrice(double price) => price.clamp(priceMin.toDouble(), priceMax.toDouble());
 
     canvas.save();
     canvas.scale(sx, sy);
@@ -163,10 +176,32 @@ class _MarketDiagnosisChartPainter extends CustomPainter {
       color: AppColors.brandPetrol,
     );
 
-    // 비교군 점들(반투명).
+    // 비교군 점들(반투명) — 가격축 범위 밖(이상치)은 clampPrice로 축 끝에 겹쳐 찍는다.
     final compPaint = Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.55);
     for (final c in comps) {
-      canvas.drawCircle(Offset(xScale(c.mileage), yScale(c.price)), 4.5, compPaint);
+      canvas.drawCircle(Offset(xScale(c.mileage), yScale(clampPrice(c.price.toDouble()))), 4.5, compPaint);
+    }
+
+    // 가격축 범위 밖 비교군 개수 라벨 — 2~98 백분위 밖으로 잘려 축 끝에 겹친 점이 몇 대인지.
+    if (domain.outliersAbove > 0) {
+      _drawText(
+        canvas,
+        '▲ 외 ${domain.outliersAbove}대',
+        Offset(_x0 + 4, _yTop + 10),
+        align: TextAlign.left,
+        fontSize: 9,
+        color: AppColors.inkMuted,
+      );
+    }
+    if (domain.outliersBelow > 0) {
+      _drawText(
+        canvas,
+        '▼ 외 ${domain.outliersBelow}대',
+        const Offset(_x0 + 4, _yBottom - 6),
+        align: TextAlign.left,
+        fontSize: 9,
+        color: AppColors.inkMuted,
+      );
     }
 
     // 대상 매물 ↔ TabPFN 예측 연결 점선.

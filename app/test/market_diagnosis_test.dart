@@ -336,32 +336,8 @@ void main() {
     });
   });
 
-  // DW-884 — "자세히"의 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
-  // (comps 자체는 API에서 최대 500건까지 올 수 있다, web buildCompsListView 미러).
-  group('buildCompsListView', () {
-    List<MarketDiagnosisComp> makeComps(int n) => [
-          for (var i = 0; i < n; i++)
-            MarketDiagnosisComp(id: 'c-$i', model: '셀토스', year: 2021, mileage: 10000, price: 1),
-        ];
-
-    test('60건 이하면 전부 보여주고 moreCount는 0이다', () {
-      final view = buildCompsListView(makeComps(60));
-      expect(view.shown.length, 60);
-      expect(view.moreCount, 0);
-    });
-
-    test('60건을 넘으면(경계: 61건) 60건만 보여주고 나머지는 moreCount로 센다', () {
-      final view = buildCompsListView(makeComps(61));
-      expect(view.shown.length, 60);
-      expect(view.moreCount, 1);
-    });
-
-    test('500건이면 60건 + "외 440대"에 해당하는 개수다', () {
-      final view = buildCompsListView(makeComps(500));
-      expect(view.shown.length, 60);
-      expect(view.moreCount, 440);
-    });
-  });
+  // buildCompsListView(및 "자세히"의 비교 매물 목록)는 실기기 지적 A7(2026-09-16)로 카드에서
+  // 통째로 없어졌다 — 이 그룹도 함께 지운다(고아 함수·고아 테스트를 남기지 않는다).
 
   group('tabpfnDiffLabel', () {
     test('이 매물이 AI 적정가보다 비싸면 "높음"', () {

@@ -9,7 +9,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import MarketDiagnosisPriceChart, { buildDensityCurve, type Quantiles5 } from './MarketDiagnosisPriceChart';
+import MarketDiagnosisPriceChart, {
+  buildDensityCurve,
+  computePriceDomain,
+  getChartLayout,
+  type Quantiles5,
+} from './MarketDiagnosisPriceChart';
 
 /** 곡선 점들에서 정점 인덱스를 찾고, 정점 왼쪽이 단조 증가·오른쪽이 단조 감소인지 확인한다. */
 function isUnimodalNoDip(points: { x: number; y: number }[]): boolean {
@@ -80,6 +85,62 @@ describe('buildDensityCurve', () => {
     const peak = curve.reduce((max, p) => (p.y > max.y ? p : max));
     expect(peak.x).toBeGreaterThanOrEqual(q.q25);
     expect(peak.x).toBeLessThanOrEqual(q.q75);
+  });
+});
+
+// 축 이상치 결함 회귀(2026-09-16 실측): 비교군에 엔카 "가격문의" 표시값(9,999만원) 1건이 섞이면
+// 옛 로직(compPrices 전체를 domain에 넣음)은 가로축이 1억까지 늘어나 정상 분포(2,500만원대) 곡선이
+// 바늘처럼 눌렸다. computePriceDomain은 2~98 백분위 밖 값을 domain에서 빼고 개수만 outliersAbove/
+// Below로 돌려준다 — 이 값으로 red(옛 로직: priceMax가 1억 근처)→green을 확인한다.
+describe('computePriceDomain — 이상치 결함 회귀(2026-09-16)', () => {
+  it('비교군 50건(2,500만 근처) + 이상치 1건(9,999만)이어도 축 최대가 4,000만 이하이고 이상치는 1건으로 집계된다', () => {
+    const compPrices = Array.from({ length: 50 }, (_, i) => 24_000_000 + i * 20_000); // 24.00M~24.98M
+    compPrices.push(99_990_000);
+
+    const result = computePriceDomain({
+      compPrices,
+      listingPrice: 25_000_000,
+      quantiles: null,
+      stats: null,
+      curveEndpoints: null,
+    });
+
+    expect(result.priceMax).toBeLessThanOrEqual(40_000_000);
+    expect(result.outliersAbove).toBe(1);
+    expect(result.outliersBelow).toBe(0);
+  });
+
+  it('표본이 20건 미만이면 백분위로 자르지 않는다(자를 여유가 없음) — 이상치도 그대로 domain에 들어간다', () => {
+    const compPrices = [24_000_000, 24_500_000, 99_990_000]; // 3건뿐
+    const result = computePriceDomain({
+      compPrices,
+      listingPrice: 25_000_000,
+      quantiles: null,
+      stats: null,
+      curveEndpoints: null,
+    });
+    // 20건 미만은 그대로 쓰므로 축이 이상치까지 늘어난다(잘라낼 표본이 부족하다는 규칙 확인).
+    expect(result.priceMax).toBeGreaterThan(90_000_000);
+    expect(result.outliersAbove).toBe(0);
+  });
+});
+
+// 컴팩트 레이아웃 치수(W2, 실기기 지적 — 390px에서 그래프 높이가 ~125px로 줄고 글자가 작아짐) —
+// getChartLayout(true)가 실제로 더 크고 좁은 논리 좌표계를 내는지 직접 고정한다.
+describe('getChartLayout', () => {
+  it('컴팩트 모드는 일반 모드보다 논리 폭이 좁고 높이가 크다(렌더 높이 확보)', () => {
+    const normal = getChartLayout(false);
+    const compact = getChartLayout(true);
+    expect(compact.VIEW_W).toBeLessThan(normal.VIEW_W);
+    expect(compact.VIEW_H).toBeGreaterThan(normal.VIEW_H);
+    expect(compact.VIEW_H).toBeGreaterThanOrEqual(260);
+  });
+
+  it('컴팩트 모드에서도 X0 < X1, Y_TOP < Y_BASE < Y_TICK 순서가 유지된다(축 반전 방지)', () => {
+    const compact = getChartLayout(true);
+    expect(compact.X0).toBeLessThan(compact.X1);
+    expect(compact.Y_TOP).toBeLessThan(compact.Y_BASE);
+    expect(compact.Y_BASE).toBeLessThan(compact.Y_TICK);
   });
 });
 

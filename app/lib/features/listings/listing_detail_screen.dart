@@ -430,9 +430,14 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                       key: const Key('go_market_diagnosis'),
                       onPressed: _openMarketDiagnosis,
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                        minimumSize: const Size(0, 44),
+                        // Material 기본 tapTargetSize(padded)는 minimumSize를 줘도 보이지 않는
+                        // 여백으로 최소 48까지 부풀린다 — shrinkWrap이어야 실제로 44가 된다.
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        textStyle: const TextStyle(fontSize: 14),
                       ),
-                      child: const Text('AI 시세 진단', style: TextStyle(fontSize: 13)),
+                      child: const Text('AI 시세 진단'),
                     ),
                     const SizedBox(width: 8),
                     // 색·라벨은 새로 정하지 않는다(Never) — 위치만 옮긴다. 분기 3개(본인 매물=
@@ -441,6 +446,12 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                     FilledButton.icon(
                       key: const Key('go_chat_inquiry'),
                       onPressed: _opening ? null : _openChat,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        textStyle: const TextStyle(fontSize: 14),
+                      ),
                       icon: _opening
                           ? const SizedBox(
                               width: 16,

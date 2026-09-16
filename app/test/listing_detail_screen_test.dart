@@ -346,6 +346,40 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // 실기기 지적 A4(2026-09-16) — sticky 바의 "AI 시세 진단"(OutlinedButton)과 "문의하기"
+  // (FilledButton.icon)가 서로 다른 padding/폰트로 높이가 달랐다. 둘 다 minimumSize height
+  // 44로 통일했는지를 렌더된 RenderBox 높이로 직접 비교한다.
+  testWidgets('sticky 바의 "AI 시세 진단"·"문의하기" 버튼은 높이가 같다(둘 다 44)', (tester) async {
+    final listingsRepo = _FakeListingsRepository();
+    final chatRepo = _FakeChatRepository();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          listingDetailProvider('listing-1')
+              .overrideWith((ref) async => _fakeDetail(imageUrls: const [])),
+          listingsRepositoryProvider.overrideWithValue(listingsRepo),
+          chatRepositoryProvider.overrideWithValue(chatRepo),
+          currentUserProvider.overrideWithValue(null), // 비로그인 — 본인 매물이 아니면 바는 그대로 보인다.
+        ],
+        // 실제 앱 테마(main.dart의 buildAppTheme())를 씌운다 — 버튼 padding·폰트 차이는
+        // FilledButtonThemeData·OutlinedButtonThemeData가 정하므로, 기본 MaterialApp 테마로는
+        // 최소 탭 영역(48)에 가려 이 지적이 재현되지 않는다.
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: const ListingDetailScreen(listingId: 'listing-1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('detail_sticky_bar')), findsOneWidget);
+    final diagnosisHeight = tester.getSize(find.byKey(const Key('go_market_diagnosis'))).height;
+    final inquiryHeight = tester.getSize(find.byKey(const Key('go_chat_inquiry'))).height;
+    expect(diagnosisHeight, inquiryHeight, reason: '두 버튼은 같은 minimumSize(0,44)를 써야 한다');
+    expect(diagnosisHeight, 44, reason: 'shrinkWrap tapTargetSize 없이는 Material 기본 48로 부풀어 오른다');
+  });
+
   testWidgets(
       '로그인·타인 매물이면 sticky 바가 스크롤 없이 바로 보이고, 탭하면 문의 요청(openOrCreateRoom)'
       '이 나간다(spec-16-9, DW-735 해소)', (tester) async {

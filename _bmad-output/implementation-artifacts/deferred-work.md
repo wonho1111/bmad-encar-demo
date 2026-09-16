@@ -7376,3 +7376,39 @@ reason: 세대 열을 더해 TabPFN 특징은 안정됐지만, 비교군·학습
 trigger: 시드 v4·등록 폼 개편(DW-860·881) 때 — (a) 참조 테이블 `car_models(manufacturer, family, generation, display_name)`(더하기만) + listings.family/generation FK는 nullable, (b) 등록 폼은 선택식(제조사→모델군→세대), 자유 입력은 폴백, (c) 조회·학습표는 family/generation 열 우선, 문자열 규칙은 폴백. 엔카 15세대 + 시드 모델군으로 초기 표 작성. 범위가 커 포트폴리오 뒤.
 status: open
 
+
+### DW-887: 모바일 실기기 UI 지적 7건(2026-09-16) — 앱 필터 2열 고정·시세 그래프 축소·모바일 웹 상세 시세 버튼 부재·앱 하단 버튼 크기 불일치·AI 카드 가로 넘침·통계 5칸 글자 줄바꿈·비교 매물 목록 과잉
+
+origin: 사용자 실기기 테스트(갤럭시, 웹·앱 혼합 스크린샷 5장, 2026-09-16)
+location: app/search_screen.dart `_FilterPanel`(2열 Row 고정) · web/app MarketDiagnosisPriceChart(viewBox 640×228 고정) · web InquiryCta.tsx(`lg:flex` 블록에만 시세 버튼) · app listing_detail_screen.dart 하단 바(Outlined/Filled 패딩·폰트 상이) · web ChatAssistant.tsx 카드 grid · web/app 시세 카드 자세히(5칸 통계 `grid-cols-5`, 앱은 한 줄 텍스트) · `buildCompsListView`(웹·앱)
+severity: medium
+reason: 시연·포트폴리오가 폰 화면으로 이뤄지는데 웹은 640px 미만 1열 규칙이 필터·카드에만 있고 시세 카드와 상세 CTA엔 없으며, 앱은 그 규칙 자체가 없어 웹·앱 표현이 갈린다.
+trigger: 이 항목 자체 — 규격: (1) 앱 필터 600dp 미만 1열, (2) 그래프 480px 미만 컴팩트(360×260, 많음/적음 라벨), (3) 모바일 웹 하단 바에 시세 버튼(44px·14px 동일), (4) 앱 하단 두 버튼 44/14/패딩 14 통일, (5) AI 카드 가로 넘침 원인 요소만 수정, (6) 5칸 통계 640px(앱 600dp) 미만 세로 목록 5줄·근거 타일 동일 높이, (7) 비교 매물 목록 제거(칩·통계·산점도 유지). 검증 = 웹 390px Playwright + 앱 실기기 adb 스크린샷.
+status: open
+
+### DW-888: 엔카 '가격 문의' 표시값(9,999만원) 매물이 운영 비교군·학습표·그래프 축에 섞인다
+
+origin: 2026-09-16 앱 실기기 검증(DW-887) 중 시세 그래프 축이 1억까지 늘어난 화면에서 발견 — 운영 listings에 price 99,990,000 6건·99,900,000 1건(더 뉴 쏘렌토 MQ4 하이브리드 2024 등)
+location: api/app/market_price.py 비교군·학습표 조회, web/app MarketDiagnosisPriceChart 축 계산(domainValues)
+severity: medium
+reason: 축은 최대 비교군가를 그대로 따르고, 엔진은 가격 상한 검사를 하지 않아 표시값 한 건이 화면과 통계를 함께 흔든다.
+trigger: 이 항목에서 처리 — (a) 엔진: price ≥ 99,000,000 제외(상수·근거 주석), (b) 축: 비교군 2~98 백분위 + 곡선 범위 + 대상가로 잡고 밖의 점은 축 끝에 "외 N대"로 모음(웹·앱). 데이터 자체(7건)의 상태 변경은 하지 않음(sold 전환은 되돌릴 수 없음, #91).
+status: done (2026-09-16 — 엔진 price<99,000,000 제외·축 2~98 백분위+"외 N대" 라벨, 웹·앱·API 테스트 red→green, 재현 매물 725d19b6 축 3,100~5,700만 확인)
+
+### DW-889: 앱 매물 탐색에서 필터로 검색해도 상단 "N건의 매물" 문구가 200건에 고정된 것처럼 보인다(목록은 걸러짐)
+
+origin: 2026-09-16 앱 실기기 검증 중 관찰(검증 범위 밖이라 원인 미확인)
+location: app/lib/features/listings/search_screen.dart 건수 텍스트(조회 limit 200 = 표시값일 가능성)
+severity: low
+reason: 건수가 실제 결과 수가 아니라 페이지 상한이면 "200건"이 필터 무관하게 반복돼 사용자가 필터가 안 먹었다고 오해한다.
+trigger: 다음 앱 UI 손질 때 실측 후 결정 — 실제 count 쿼리 또는 "200건 이상" 표기.
+status: open
+
+### DW-890: 엔카 수집 매물 중 표시값(9,999만) 아래의 비현실 고가(더 뉴 쏘렌토 MQ4 하이브리드 2024년식 9,412만·9,800만 등)가 비교군에 남아 "외 N대"로 표시된다
+
+origin: 2026-09-16 DW-888 검증(웹 케이스 1, 매물 725d19b6) — 엔진의 ≥9,900만 제외 뒤에도 비교군에 9,000만대 2~3건 잔존
+location: 운영 listings(source=encar), api/scripts/collect_encar_eval.py 가격 파싱, api/app/market_price.py 비교군 조회
+severity: low
+reason: 축은 2~98 백분위로 방어돼 화면은 정상이지만, 그 행들이 학습표·통계(최고가)에 들어간다. 신차가 5,500만 안팎인 모델의 9,000만대 호가는 리스 승계·표기 오류 가능성이 높으나 원인 미확인.
+trigger: 다음 엔카 재수집 때 — 원본 페이지에서 해당 매물의 가격 표기(리스/렌트 승계, 월 납입 등)를 확인해 파싱 규칙 또는 제외 규칙 결정. 대상 매물 자체가 표시값(9,999만)이면 축이 그 값까지 넓어져 곡선이 눌리는 한계도 같은 자리에서 다룬다(표시값 매물 7건 한정).
+status: open

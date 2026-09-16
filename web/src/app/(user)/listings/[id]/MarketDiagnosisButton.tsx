@@ -37,17 +37,21 @@ export default function MarketDiagnosisButton({
   mode,
   listing,
   loginHref,
+  className = 'w-full',
 }: {
   mode: InquiryCtaMode;
   listing: MarketDiagnosisButtonListing;
   loginHref: string;
+  // 폭 클래스 — 기본 w-full(데스크톱 요약 카드, 기존 동작). 모바일 하단 고정 바(W3)는 버튼 폭이
+  // 내용대로여야 해서 호출부가 다른 값을 넘긴다.
+  className?: string;
 }) {
   const router = useRouter();
 
   if (mode === 'anon') {
     // 비로그인 — 기존 "로그인하고 문의하기"와 동일한 처리(어포던스는 보이고 게이트는 클릭에만).
     return (
-      <Link href={loginHref} className={buttonClasses({ variant: 'secondary', className: 'w-full' })}>
+      <Link href={loginHref} className={buttonClasses({ variant: 'secondary', className })}>
         로그인하고 시세 진단
       </Link>
     );
@@ -79,7 +83,7 @@ export default function MarketDiagnosisButton({
     <button
       type="button"
       onClick={() => void handleClick()}
-      className={buttonClasses({ variant: 'secondary', className: 'w-full' })}
+      className={buttonClasses({ variant: 'secondary', className })}
     >
       AI 시세 진단
     </button>

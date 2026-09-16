@@ -267,9 +267,11 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                       폐기)가 아니라 목록/AI결과와 **같은 ListingCard**로 그린다. 그리드 컬럼폭에
                       맞춰 우측 칸(sm:col-start-2)에 얹어 "그리드 1칸 폭"을 재현한다(아래 assistant
                       매물카드 그리드 sm:grid-cols-2와 동일 폭 규칙). 찜·클릭 이동은 ListingCard
-                      내장 동작 그대로 — wishedIds는 이 대화에서 조회된 것만 반영(house 방침 동일). */}
+                      내장 동작 그대로 — wishedIds는 이 대화에서 조회된 것만 반영(house 방침 동일).
+                      grid-cols-1: 아래 assistant 매물카드 그리드와 같은 이유(W5)로 640px 미만
+                      오버플로를 막는다. */}
                   {m.listingSummary && (
-                    <div className="grid w-full gap-3 sm:grid-cols-2">
+                    <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                       <div className="sm:col-start-2">
                         <ListingCard
                           listing={m.listingSummary}
@@ -351,7 +353,13 @@ export default function ChatAssistant({ authed }: { authed: boolean }) {
                     //   ⚠️ 공용 ResponsiveGrid를 쓰지 않는다: 그건 **뷰포트** 폭(640/1100)으로 열수를
                     //   가르는데, 여기 컨테이너는 뷰포트가 아니라 768px 고정 대화 칼럼이라 1100px
                     //   구간에서 4열이 되어 카드가 180px로 뭉개진다(그리드 규칙이 실제 폭과 어긋난다).
-                    <ul className="grid gap-3 sm:grid-cols-2">
+                    //   ⚠️ W5(실기기 지적, 390px 실측) — `grid-cols-1`이 빠져 있으면(옛 클래스
+                    //   `grid sm:grid-cols-2`) 640px 미만에서 grid-template-columns이 아예 선언
+                    //   안 돼, 암묵적 트랙이 min-width:auto로 카드의 min-content(약 357px, 옵션
+                    //   칩 nowrap 폭)에 맞춰 늘어나 컨테이너(327px)를 뚫고 나갔다(scrollWidth
+                    //   381 > clientWidth 375, 카드 right=381). `grid-cols-1`은 Tailwind가
+                    //   `minmax(0, 1fr)` 트랙을 낸다 — 이 0 하한이 오버플로를 막는다.
+                    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {m.listings.map((l) => (
                         <li key={l.id}>
                           {/* 매물카드 재사용 — 클릭하면 /listings/[id] 상세로 이동(ListingCard 내장 Link).

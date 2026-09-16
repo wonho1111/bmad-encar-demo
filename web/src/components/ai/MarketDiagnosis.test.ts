@@ -10,7 +10,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import {
-  buildCompsListView,
   buildCriteriaChips,
   buildJudgementSentence,
   buildPriceRange,
@@ -21,7 +20,6 @@ import {
   verdictBasisLabel,
   formatManKm,
   shouldShowPercentileChip,
-  type MarketDiagnosisComp,
   type MarketDiagnosisData,
 } from './MarketDiagnosis';
 import MarketDiagnosis from './MarketDiagnosis';
@@ -243,31 +241,6 @@ describe('resolveJudgementRatio', () => {
 
   it('둘 다 없으면 null', () => {
     expect(resolveJudgementRatio(null, null)).toBeNull();
-  });
-});
-
-// DW-884 — "자세히"의 비교 매물 목록은 60건까지만 나열하고 나머지는 "외 N대"로 요약한다
-// (comps 자체는 API에서 최대 500건까지 올 수 있다, MAX_COMPS 500).
-describe('buildCompsListView', () => {
-  const makeComps = (n: number): MarketDiagnosisComp[] =>
-    Array.from({ length: n }, (_, i) => ({ id: `c-${i}`, model: '셀토스', year: 2021, mileage: 10_000, price: 1 }));
-
-  it('60건 이하면 전부 보여주고 moreCount는 0이다', () => {
-    const view = buildCompsListView(makeComps(60));
-    expect(view.shown).toHaveLength(60);
-    expect(view.moreCount).toBe(0);
-  });
-
-  it('60건을 넘으면(경계: 61건) 60건만 보여주고 나머지는 moreCount로 센다', () => {
-    const view = buildCompsListView(makeComps(61));
-    expect(view.shown).toHaveLength(60);
-    expect(view.moreCount).toBe(1);
-  });
-
-  it('500건이면 60건 + "외 440대"에 해당하는 개수다', () => {
-    const view = buildCompsListView(makeComps(500));
-    expect(view.shown).toHaveLength(60);
-    expect(view.moreCount).toBe(440);
   });
 });
 

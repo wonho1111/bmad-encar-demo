@@ -5,6 +5,7 @@
 //
 // 색은 전부 기존 사이트 CSS 변수(globals.css @theme)를 그대로 참조한다 — 목업과 변수 이름이
 // 우연히 같아(brand-petrol·price-emphasis·border-hairline 등) 팔레트를 새로 만들 필요가 없었다.
+import { computePriceDomain } from './MarketDiagnosisPriceChart';
 import type { MarketDiagnosisComp, MarketDiagnosisListing, MarketDiagnosisStats } from './MarketDiagnosis';
 
 const VIEW_W = 640;
@@ -17,9 +18,6 @@ const Y_BOTTOM = 260;
 /** 값을 step 단위로 올림/내림한다(축 눈금을 보기 좋은 자리에 맞추기 위함). */
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step;
-}
-function roundDownTo(value: number, step: number): number {
-  return Math.floor(value / step) * step;
 }
 
 export default function MarketDiagnosisChart({
@@ -34,17 +32,26 @@ export default function MarketDiagnosisChart({
   tabpfnPrice: number | null;
 }) {
   const mileages = [...comps.map((c) => c.mileage), listing.mileage];
-  const prices = [...comps.map((c) => c.price), listing.price, stats.min, stats.max];
-  if (tabpfnPrice !== null) prices.push(tabpfnPrice);
+  const compPrices = comps.map((c) => c.price);
 
   const kmMax = Math.max(roundUpTo(Math.max(...mileages) * 1.1, 10_000), 10_000);
-  const priceMin = Math.max(0, roundDownTo(Math.min(...prices) * 0.95, 1_000_000));
-  const priceMaxRaw = roundUpTo(Math.max(...prices) * 1.05, 1_000_000);
-  // priceMin과 같아지면(표본 가격이 전부 동일 등) 0 나눗셈이 나므로 최소 1구간을 보장한다.
-  const priceMax = priceMaxRaw > priceMin ? priceMaxRaw : priceMin + 1_000_000;
+  // 가격축(세로축) 범위 — 밀도 곡선 그래프(MarketDiagnosisPriceChart)에서 쓰는 규칙(비교군
+  // 2~98 백분위 + 대상가, 20건 미만이면 전부)을 그대로 재사용한다(2026-09-16, 이상치 방어
+  // DW-888 산점도 확장). stats.min/max는 이상치를 그대로 담고 있어 넘기지 않는다 — 이미
+  // compPrices(비교군 원값)로 같은 정보를 주되, computePriceDomain이 그 안에서 백분위로 자른다.
+  const { priceMin, priceMax, outliersBelow, outliersAbove } = computePriceDomain({
+    compPrices,
+    listingPrice: listing.price,
+    quantiles: null,
+    stats: null,
+    curveEndpoints: null,
+  });
 
   const xScale = (km: number) => X0 + (km / kmMax) * (X1 - X0);
   const yScale = (price: number) => Y_TOP + ((priceMax - price) / (priceMax - priceMin)) * (Y_BOTTOM - Y_TOP);
+  // 축 범위 밖 비교군 점은 버리지 않고 축 끝(위/아래)에 겹쳐 찍는다 — 개수는 "▲·▼ 외 N대"
+  // 라벨로 보여준다(밀도 곡선 그래프의 clampPrice와 동일 규칙).
+  const clampPrice = (price: number) => Math.min(Math.max(price, priceMin), priceMax);
 
   const xTickCount = 5;
   const xTicks = Array.from({ length: xTickCount }, (_, i) => Math.round((kmMax / (xTickCount - 1)) * i));
@@ -123,10 +130,29 @@ export default function MarketDiagnosisChart({
           중앙값 {manLabel(stats.median)}
         </text>
 
-        {/* 비교군 점들 */}
+        {/* 비교군 점들 — 가격축 범위 밖(이상치)은 clampPrice로 축 끝에 겹쳐 찍는다. */}
         {comps.map((c) => (
-          <circle key={c.id} cx={xScale(c.mileage)} cy={yScale(c.price)} r={4.5} fill="var(--brand-petrol)" opacity={0.55} />
+          <circle
+            key={c.id}
+            cx={xScale(c.mileage)}
+            cy={yScale(clampPrice(c.price))}
+            r={4.5}
+            fill="var(--brand-petrol)"
+            opacity={0.55}
+          />
         ))}
+
+        {/* 가격축 범위 밖 비교군 개수 라벨 — 2~98 백분위 밖으로 잘려 축 끝에 겹친 점이 몇 대인지. */}
+        {outliersAbove > 0 && (
+          <text x={X0 + 4} y={Y_TOP + 10} textAnchor="start" fontSize={9} fill="var(--ink-muted)">
+            ▲ 외 {outliersAbove}대
+          </text>
+        )}
+        {outliersBelow > 0 && (
+          <text x={X0 + 4} y={Y_BOTTOM - 6} textAnchor="start" fontSize={9} fill="var(--ink-muted)">
+            ▼ 외 {outliersBelow}대
+          </text>
+        )}
 
         {/* 대상 매물 ↔ TabPFN 예측 연결 점선 */}
         {tabpfnPrice !== null && (
