@@ -149,6 +149,17 @@ _COMP_COLUMNS = (
     "accident_status, usage_history"
 )
 
+# 엔카 "가격 문의/상담" 매물의 표시값 — 비교군·학습표에서 제외한다(2026-09-16, 운영 실측·그래프
+# 이상치 결함 수정). 근거: collect_encar_eval.py의 `_process_list_row`(목록 행 필터)는
+# `price_raw <= 0`만 배제하고 9999(만원) 자체는 걸러내지 않는다(주석·별도 분기 없음) — 목록 API의
+# Price 필드가 그대로 `adv_price * 10_000`(1299~1300행)으로 원 단위 변환돼 DB에 들어간다. 운영 DB
+# 조회 결과 price=99,990,000(6건)·99,900,000(1건)이 실제로 남아 있었다(더 뉴 쏘렌토 MQ4 하이브리드
+# 2024 등) — 엔카 사이트가 "가격문의" 매물에 9,999(만원)를 표시값으로 쓰는 것과 일치한다. 이 값이
+# 비교군에 섞이면 그래프 축·통계(사분위·백분위)·TabPFN 학습표가 오염된다. 대상 매물 자체가 이
+# 값이어도 diagnose()는 그대로 진단한다(대상은 `id <> %s`로 이미 자기 자신을 제외해 이 필터와
+# 무관 — 범위 밖).
+ENCAR_PRICE_PLACEHOLDER = 99_000_000
+
 # TabPFN 10번째 특징 — 사고 이력 3단계 서열(DW-863, 2026-09-13). 300건 실매물 검증에서 오차가
 # 큰 건 '사고'뿐이고(MdAPE 10.4%) 단순교환은 무사고와 같은 수준(5.3% vs 5.2%)인데, 종전 이진
 # 특징 int(accident_free)는 단순교환을 사고와 한 값(0)으로 묶었다. 서열은 감가 방향과 같다
@@ -246,8 +257,8 @@ def _build_where(rung: dict, target: dict) -> tuple[str, list]:
     공통 고정 조건(status='on_sale'·대상 제외·변속기 일치)은 매 단 공통이고,
     model/fuel/accident/연식·주행 밴드만 rung에 따라 달라진다.
     """
-    clauses = ["status = 'on_sale'", "id <> %s", "transmission = %s"]
-    params: list = [target["id"], target["transmission"]]
+    clauses = ["status = 'on_sale'", "id <> %s", "transmission = %s", "price < %s"]
+    params: list = [target["id"], target["transmission"], ENCAR_PRICE_PLACEHOLDER]
 
     if rung["model"] == "exact":
         clauses.append("model = %s")
@@ -535,6 +546,7 @@ def _train_rows_query(target: dict, base: str) -> tuple[str, list]:
     sql = (
         f"SELECT {_COMP_COLUMNS} FROM listings "
         "WHERE status = 'on_sale' AND id <> %s AND transmission = %s AND model ILIKE %s "
+        "AND price < %s "
         "ORDER BY (model = %s) DESC, (fuel = %s) DESC, abs(year - %s) ASC, "
         "abs(mileage - %s) ASC, id ASC "
         f"LIMIT {_TABPFN_TRAIN_LIMIT}"
@@ -543,6 +555,7 @@ def _train_rows_query(target: dict, base: str) -> tuple[str, list]:
         target["id"],
         target["transmission"],
         f"%{base}%",
+        ENCAR_PRICE_PLACEHOLDER,
         target["model"],
         target["fuel"],
         target["year"],

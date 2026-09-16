@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import MarketDiagnosisPriceChart, {
   buildDensityCurve,
+  computePriceDomain,
   getChartLayout,
   type Quantiles5,
 } from './MarketDiagnosisPriceChart';
@@ -84,6 +85,43 @@ describe('buildDensityCurve', () => {
     const peak = curve.reduce((max, p) => (p.y > max.y ? p : max));
     expect(peak.x).toBeGreaterThanOrEqual(q.q25);
     expect(peak.x).toBeLessThanOrEqual(q.q75);
+  });
+});
+
+// 축 이상치 결함 회귀(2026-09-16 실측): 비교군에 엔카 "가격문의" 표시값(9,999만원) 1건이 섞이면
+// 옛 로직(compPrices 전체를 domain에 넣음)은 가로축이 1억까지 늘어나 정상 분포(2,500만원대) 곡선이
+// 바늘처럼 눌렸다. computePriceDomain은 2~98 백분위 밖 값을 domain에서 빼고 개수만 outliersAbove/
+// Below로 돌려준다 — 이 값으로 red(옛 로직: priceMax가 1억 근처)→green을 확인한다.
+describe('computePriceDomain — 이상치 결함 회귀(2026-09-16)', () => {
+  it('비교군 50건(2,500만 근처) + 이상치 1건(9,999만)이어도 축 최대가 4,000만 이하이고 이상치는 1건으로 집계된다', () => {
+    const compPrices = Array.from({ length: 50 }, (_, i) => 24_000_000 + i * 20_000); // 24.00M~24.98M
+    compPrices.push(99_990_000);
+
+    const result = computePriceDomain({
+      compPrices,
+      listingPrice: 25_000_000,
+      quantiles: null,
+      stats: null,
+      curveEndpoints: null,
+    });
+
+    expect(result.priceMax).toBeLessThanOrEqual(40_000_000);
+    expect(result.outliersAbove).toBe(1);
+    expect(result.outliersBelow).toBe(0);
+  });
+
+  it('표본이 20건 미만이면 백분위로 자르지 않는다(자를 여유가 없음) — 이상치도 그대로 domain에 들어간다', () => {
+    const compPrices = [24_000_000, 24_500_000, 99_990_000]; // 3건뿐
+    const result = computePriceDomain({
+      compPrices,
+      listingPrice: 25_000_000,
+      quantiles: null,
+      stats: null,
+      curveEndpoints: null,
+    });
+    // 20건 미만은 그대로 쓰므로 축이 이상치까지 늘어난다(잘라낼 표본이 부족하다는 규칙 확인).
+    expect(result.priceMax).toBeGreaterThan(90_000_000);
+    expect(result.outliersAbove).toBe(0);
   });
 });
 

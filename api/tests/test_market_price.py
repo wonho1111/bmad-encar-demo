@@ -181,6 +181,12 @@ def test_where_clause_differs_by_step_model_vs_ilike():
     assert "model = %s" not in step4_sql
     assert "%그랜저%" in step4_params
 
+    # 그래프 이상치 결함(2026-09-16): 모든 단(예: exact)의 WHERE에 가격 표시값 제외 조건이
+    # 있어야 한다 — 없으면 "가격문의" 9,999만원 매물이 비교군 산점도·통계·TabPFN에 섞인다.
+    for sql, params in ((step0_sql, step0_params), (step3_sql, step3_params), (step4_sql, step4_params)):
+        assert "price < %s" in sql
+        assert market_price.ENCAR_PRICE_PLACEHOLDER in params
+
 
 def test_train_rows_query_orders_by_similarity_with_expected_param_order():
     # DW-859: 학습표 SELECT는 최신순(연식 DESC)이 아니라 "대상과 가까운 순"(동일 세대→연료→
@@ -207,11 +213,30 @@ def test_train_rows_query_orders_by_similarity_with_expected_param_order():
         "target-id",
         "자동",
         "%그랜저%",
+        market_price.ENCAR_PRICE_PLACEHOLDER,
         "그랜저 GN7",
         "가솔린",
         2024,
         20_000,
     ]
+
+
+def test_train_rows_query_excludes_price_placeholder():
+    """DW-그래프 이상치 결함(2026-09-16): 엔카 "가격문의" 표시값(9,999만원)이 학습표에 섞이면
+    TabPFN이 이상치를 정상 매물로 학습한다 — WHERE에 `price < ENCAR_PRICE_PLACEHOLDER`가 있는지
+    SQL 문자열로 고정한다(DB 없는 순수 함수 단위 테스트)."""
+    target = {
+        "id": "target-id",
+        "model": "그랜저 GN7",
+        "transmission": "자동",
+        "year": 2024,
+        "mileage": 20_000,
+        "fuel": "가솔린",
+    }
+    sql, params = market_price._train_rows_query(target, "그랜저")
+
+    assert "price < %s" in sql
+    assert market_price.ENCAR_PRICE_PLACEHOLDER in params
 
 
 def test_tabpfn_import_failure_falls_back_to_none_with_note(monkeypatch):

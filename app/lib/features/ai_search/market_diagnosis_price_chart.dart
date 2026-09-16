@@ -128,6 +128,74 @@ const List<Color> priceZoneColors = [
   Color(0xFFCF533E),
 ];
 
+// 축 이상치 결함(2026-09-16 실측, web MarketDiagnosisPriceChart.tsx computePriceDomain 미러):
+// 엔카 "가격문의" 표시값(9,999만원) 같은 이상치 1건이 비교군에 섞이면 가로축이 그 값까지
+// 늘어나 정상 분포 구간이 눌린다. 비교군 표본이 20건 이상이면 2~98 백분위 밖 값은 domain
+// 계산에서 뺀다(20건 미만이면 잘라낼 여유가 없어 전부 쓴다) — 곡선·대상가는 항상 domain에
+// 들어가 잘리지 않는다.
+List<double> _clipToPercentileBand(List<double> prices) {
+  if (prices.length < 20) return prices;
+  final sorted = [...prices]..sort();
+  final n = sorted.length;
+  final loIdx = (n * 0.02).floor();
+  final hiIdx = math.min(n - 1, (n * 0.98).ceil() - 1);
+  return sorted.sublist(loIdx, hiIdx + 1);
+}
+
+/// computePriceDomain의 반환값 — 축 범위와 축 범위 밖(이상치) 비교군 개수.
+class PriceDomain {
+  const PriceDomain({
+    required this.priceMin,
+    required this.priceMax,
+    required this.outliersBelow,
+    required this.outliersAbove,
+  });
+  final int priceMin;
+  final int priceMax;
+  final int outliersBelow; // priceMin 밖(더 싼) 비교군 개수 — "◀ 외 N대"
+  final int outliersAbove; // priceMax 밖(더 비싼) 비교군 개수 — "▶ 외 N대"
+}
+
+/// 가로축 범위(priceMin~priceMax)를 정한다. 옛 로직은 compPrices 전체를 domain에 넣어 이상치
+/// 1건에도 축이 끌려갔다(9,999만원 표시값 사례) — 2~98 백분위로 자른 값만 domain에 쓴다. 범위
+/// 밖 비교군은 버리지 않고(개수만 outliersBelow/Above로 반환, painter가 축 끝에 겹쳐 그린다)
+/// pad·반올림 규칙은 기존과 동일하다(순수 함수, market_diagnosis_price_chart_test.dart 대상).
+PriceDomain computePriceDomain({
+  required List<double> compPrices,
+  required double listingPrice,
+  required MarketDiagnosisQuantiles? quantiles,
+  required MarketDiagnosisStats? stats,
+  required List<double>? curveEndpoints,
+}) {
+  final clippedPrices = _clipToPercentileBand(compPrices);
+  final List<double> domainValues;
+  final double pad;
+  if (quantiles != null && curveEndpoints != null) {
+    domainValues = [...clippedPrices, listingPrice, curveEndpoints[0], curveEndpoints[1]];
+    pad = math.max(math.max((quantiles.q90 - quantiles.q10) * 0.35, quantiles.q50 * 0.05), 500000.0);
+  } else {
+    domainValues = [
+      ...clippedPrices,
+      listingPrice,
+      if (stats != null) stats.min.toDouble(),
+      if (stats != null) stats.max.toDouble(),
+    ];
+    pad = 0;
+  }
+  final rawMin = domainValues.reduce(math.min) - pad;
+  final rawMax = domainValues.reduce(math.max) + pad;
+  final priceMin = math.max(0, _roundDownTo(rawMin * (quantiles != null ? 1 : 0.95), 1000000));
+  final priceMaxRounded = _roundUpTo(rawMax * (quantiles != null ? 1 : 1.05), 1000000);
+  final priceMax = priceMaxRounded > priceMin ? priceMaxRounded : priceMin + 1000000;
+
+  return PriceDomain(
+    priceMin: priceMin,
+    priceMax: priceMax,
+    outliersBelow: compPrices.where((p) => p < priceMin).length,
+    outliersAbove: compPrices.where((p) => p > priceMax).length,
+  );
+}
+
 class PriceZoneBound {
   const PriceZoneBound({required this.from, required this.to, required this.color});
   final double from;
@@ -266,27 +334,20 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     // 재작업) — 축 범위도 그 넓힌 격자(curve 양 끝)를 포함해야 곡선이 잘리지 않는다.
     final curve = q != null ? buildDensityCurve(q) : const <({double x, double y})>[];
     final compPrices = [for (final c in comps) c.price.toDouble()];
-    late final List<double> domainValues;
-    late final double pad;
-    if (q != null) {
-      domainValues = [...compPrices, listing.price.toDouble(), curve.first.x, curve.last.x];
-      pad = math.max(math.max((q.q90 - q.q10) * 0.35, q.q50 * 0.05), 500000.0);
-    } else {
-      domainValues = [
-        ...compPrices,
-        listing.price.toDouble(),
-        if (s != null) s.min.toDouble(),
-        if (s != null) s.max.toDouble(),
-      ];
-      pad = 0;
-    }
-    final rawMin = domainValues.reduce(math.min) - pad;
-    final rawMax = domainValues.reduce(math.max) + pad;
-    final priceMin = math.max(0, _roundDownTo(rawMin * (q != null ? 1 : 0.95), 1000000));
-    final priceMaxRounded = _roundUpTo(rawMax * (q != null ? 1 : 1.05), 1000000);
-    final priceMax = priceMaxRounded > priceMin ? priceMaxRounded : priceMin + 1000000;
+    final domain = computePriceDomain(
+      compPrices: compPrices,
+      listingPrice: listing.price.toDouble(),
+      quantiles: q,
+      stats: s,
+      curveEndpoints: q != null && curve.isNotEmpty ? [curve.first.x, curve.last.x] : null,
+    );
+    final priceMin = domain.priceMin;
+    final priceMax = domain.priceMax;
 
     double xScale(num price) => x0 + ((price - priceMin) / (priceMax - priceMin)) * (x1 - x0);
+    // 축 범위 밖 비교군 점은 버리지 않고 축 끝에 겹쳐 찍는다(2번 규칙) — 점 개수·라벨은
+    // domain.outliersBelow/Above가 별도로 보여준다.
+    double clampPrice(double price) => price.clamp(priceMin.toDouble(), priceMax.toDouble());
 
     canvas.save();
     canvas.scale(sx, sy);
@@ -343,10 +404,33 @@ class _MarketDiagnosisPriceChartPainter extends CustomPainter {
     }
 
     // 비교군 실제 가격 점 — 전부 기준선 위에 그대로 찍는다(web과 동일, 겹침 자체가 밀도를
-    // 보여준다 — 예전처럼 인덱스로 띄우지 않는다).
+    // 보여준다 — 예전처럼 인덱스로 띄우지 않는다). 축 범위 밖(이상치)은 버리지 않고 축 끝에
+    // 겹쳐 찍는다(clampPrice) — 몇 대가 겹쳐 있는지는 아래 "◀·▶ 외 N대" 라벨이 보여준다.
     final compPaint = Paint()..color = AppColors.brandPetrol.withValues(alpha: 0.55);
     for (final c in comps) {
-      canvas.drawCircle(Offset(xScale(c.price), yBase), 4.5, compPaint);
+      canvas.drawCircle(Offset(xScale(clampPrice(c.price.toDouble())), yBase), 4.5, compPaint);
+    }
+
+    // 축 범위 밖 비교군 개수 라벨 — 2~98 백분위 밖으로 잘려 축 끝에 겹친 점이 몇 대인지.
+    if (domain.outliersBelow > 0) {
+      _drawText(
+        canvas,
+        '◀ 외 ${domain.outliersBelow}대',
+        Offset(x0 + 2, yBase - 9),
+        align: TextAlign.left,
+        fontSize: 9,
+        color: AppColors.inkMuted,
+      );
+    }
+    if (domain.outliersAbove > 0) {
+      _drawText(
+        canvas,
+        '▶ 외 ${domain.outliersAbove}대',
+        Offset(x1 - 2, yBase - 9),
+        align: TextAlign.right,
+        fontSize: 9,
+        color: AppColors.inkMuted,
+      );
     }
 
     if (q != null) {

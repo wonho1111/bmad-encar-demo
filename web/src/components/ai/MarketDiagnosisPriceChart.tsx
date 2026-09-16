@@ -42,6 +42,70 @@ function roundDownTo(value: number, step: number): number {
 
 export type Quantiles5 = { q10: number; q25: number; q50: number; q75: number; q90: number };
 
+// 축 이상치 결함(2026-09-16 실측): 엔카 "가격문의" 표시값(9,999만원) 같은 이상치 1건이 비교군에
+// 섞이면 가로축이 그 값까지 늘어나 정상 분포 구간이 눌린다. 축 범위는 비교군 전체가 아니라
+// 2~98 백분위 안의 값만 본다(표본 20건 미만이면 잘라낼 여유가 없어 전부 쓴다) — 곡선·대상가는
+// 항상 domain에 들어가 잘리지 않는다.
+function clipToPercentileBand(prices: number[]): number[] {
+  if (prices.length < 20) return prices;
+  const sorted = [...prices].sort((a, b) => a - b);
+  const n = sorted.length;
+  const loIdx = Math.floor(n * 0.02);
+  const hiIdx = Math.min(n - 1, Math.ceil(n * 0.98) - 1);
+  return sorted.slice(loIdx, hiIdx + 1);
+}
+
+export type PriceDomainInput = {
+  compPrices: number[];
+  listingPrice: number;
+  quantiles: Quantiles5 | null;
+  stats: { min: number; max: number } | null;
+  curveEndpoints: [number, number] | null; // quantiles가 있을 때 densityCurve 양 끝 x
+};
+
+export type PriceDomainResult = {
+  priceMin: number;
+  priceMax: number;
+  outliersBelow: number; // priceMin 밖(더 싼) 비교군 개수 — "◀ 외 N대"
+  outliersAbove: number; // priceMax 밖(더 비싼) 비교군 개수 — "▶ 외 N대"
+};
+
+/**
+ * 가로축 범위(priceMin~priceMax)를 정한다. 옛 로직은 compPrices 전체를 domain에 넣어 이상치
+ * 1건에도 축이 끌려갔다(9,999만원 표시값 사례) — 2~98 백분위로 자른 값만 domain에 쓴다. 범위
+ * 밖 비교군은 버리지 않고(개수만 outliersBelow/Above로 반환, 컴포넌트가 축 끝에 겹쳐 그린다)
+ * pad·반올림 규칙은 기존과 동일하다(순수 함수, MarketDiagnosisPriceChart.test.ts 대상).
+ */
+export function computePriceDomain({
+  compPrices,
+  listingPrice,
+  quantiles,
+  stats,
+  curveEndpoints,
+}: PriceDomainInput): PriceDomainResult {
+  const clippedPrices = clipToPercentileBand(compPrices);
+  const domainValues =
+    quantiles && curveEndpoints
+      ? [...clippedPrices, listingPrice, curveEndpoints[0], curveEndpoints[1]]
+      : [...clippedPrices, listingPrice, ...(stats ? [stats.min, stats.max] : [])];
+
+  const pad = quantiles
+    ? Math.max((quantiles.q90 - quantiles.q10) * 0.35, quantiles.q50 * 0.05, 500_000)
+    : 0;
+  const rawMin = Math.min(...domainValues) - pad;
+  const rawMax = Math.max(...domainValues) + pad;
+  const priceMin = Math.max(0, roundDownTo(rawMin * (quantiles ? 1 : 0.95), 1_000_000));
+  const priceMaxRounded = roundUpTo(rawMax * (quantiles ? 1 : 1.05), 1_000_000);
+  const priceMax = priceMaxRounded > priceMin ? priceMaxRounded : priceMin + 1_000_000;
+
+  return {
+    priceMin,
+    priceMax,
+    outliersBelow: compPrices.filter((p) => p < priceMin).length,
+    outliersAbove: compPrices.filter((p) => p > priceMax).length,
+  };
+}
+
 // 2026-09-14 재작업(DW-885, 운영 실측): 종전엔 분위수마다 고정 높이(0.22/0.65/1/0.65/0.22)를
 // 박고 Catmull-Rom 스플라인으로 이었다 — q25·q50처럼 이웃 분위수가 서로 가까우면 스플라인이
 // 오버슈트해 정점 근처가 움푹 파였다(운영 캡처 8건 중 다수에서 확인). 대신 "분위수 구간에
@@ -163,20 +227,22 @@ export default function MarketDiagnosisPriceChart({
   const densityCurve = quantiles ? buildDensityCurve(quantiles) : [];
   // 밀도 곡선은 q10·q90 밖 꼬리를 지나 평활 대역폭의 2.5배까지 더 그린다(위 buildDensityCurve
   // 재작업) — 축 범위도 그 넓힌 격자(densityCurve 양 끝)를 포함해야 곡선이 잘리지 않는다.
-  const domainValues = quantiles
-    ? [...compPrices, listingPrice, densityCurve[0].x, densityCurve[densityCurve.length - 1].x]
-    : [...compPrices, listingPrice, ...(stats ? [stats.min, stats.max] : [])];
-
-  const pad = quantiles
-    ? Math.max((quantiles.q90 - quantiles.q10) * 0.35, quantiles.q50 * 0.05, 500_000)
-    : 0;
-  const rawMin = Math.min(...domainValues) - pad;
-  const rawMax = Math.max(...domainValues) + pad;
-  const priceMin = Math.max(0, roundDownTo(rawMin * (quantiles ? 1 : 0.95), 1_000_000));
-  const priceMaxRounded = roundUpTo(rawMax * (quantiles ? 1 : 1.05), 1_000_000);
-  const priceMax = priceMaxRounded > priceMin ? priceMaxRounded : priceMin + 1_000_000;
+  const curveEndpoints: [number, number] | null =
+    quantiles && densityCurve.length > 0
+      ? [densityCurve[0].x, densityCurve[densityCurve.length - 1].x]
+      : null;
+  const { priceMin, priceMax, outliersBelow, outliersAbove } = computePriceDomain({
+    compPrices,
+    listingPrice,
+    quantiles,
+    stats,
+    curveEndpoints,
+  });
 
   const xScale = (price: number) => X0 + ((price - priceMin) / (priceMax - priceMin)) * (X1 - X0);
+  // 축 범위 밖 비교군 점은 버리지 않고 축 끝에 겹쳐 찍는다(2번 규칙) — clampPrice로 x좌표만
+  // 축 안쪽으로 당긴다(점 개수·라벨은 outliersBelow/Above가 별도로 보여준다).
+  const clampPrice = (price: number) => Math.min(Math.max(price, priceMin), priceMax);
 
   const tickCount = 5;
   const ticks = Array.from(
@@ -292,10 +358,30 @@ export default function MarketDiagnosisPriceChart({
             )
           )}
 
-          {/* 비슷한 차 실제 가격 점(가격 축 위 점) */}
+          {/* 비슷한 차 실제 가격 점(가격 축 위 점) — 축 범위 밖(이상치)은 버리지 않고 축 끝에
+              겹쳐 찍는다(clampPrice). 몇 대가 겹쳐 있는지는 아래 "◀·▶ 외 N대" 라벨이 보여준다. */}
           {comps.map((c) => (
-            <circle key={c.id} cx={xScale(c.price)} cy={Y_BASE} r={4.5} fill="var(--brand-petrol)" opacity={0.55} />
+            <circle
+              key={c.id}
+              cx={xScale(clampPrice(c.price))}
+              cy={Y_BASE}
+              r={4.5}
+              fill="var(--brand-petrol)"
+              opacity={0.55}
+            />
           ))}
+
+          {/* 축 범위 밖 비교군 개수 라벨 — 2~98 백분위 밖으로 잘려 축 끝에 겹친 점이 몇 대인지. */}
+          {outliersBelow > 0 && (
+            <text x={X0 + 2} y={Y_BASE - 9} textAnchor="start" fontSize={9} fill="var(--ink-muted)">
+              ◀ 외 {outliersBelow}대
+            </text>
+          )}
+          {outliersAbove > 0 && (
+            <text x={X1 - 2} y={Y_BASE - 9} textAnchor="end" fontSize={9} fill="var(--ink-muted)">
+              ▶ 외 {outliersAbove}대
+            </text>
+          )}
 
           {quantiles && (
             <>
