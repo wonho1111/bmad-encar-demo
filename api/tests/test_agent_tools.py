@@ -794,6 +794,47 @@ def test_compare_listings_empty_ids_skips_query(monkeypatch):
     assert "없습니다" in text
 
 
+def _compare_card(id_, *, options=None):
+    return ListingCard(
+        id=id_, manufacturer="현대", model="싼타페", year=2020,
+        price=26_700_000, mileage=62_000, region="강원", fuel="가솔린",
+        accident_status="무사고", options=options,
+    )
+
+
+# ── _format_compare_table — DW-891(옵션 앞 3개 절단으로 "동일한 기본 옵션" 얕은 답변) ──
+
+def test_format_compare_table_two_listings_shows_common_line_and_per_listing_extras():
+    a = _compare_card("a1", options=["선루프", "열선시트", "후방카메라"])
+    b = _compare_card("b1", options=["선루프", "열선시트", "스마트키"])
+    text = agent_tools._format_compare_table([a, b])
+    assert "공통 옵션=선루프, 열선시트" in text
+    assert "id=a1" in text and "공통 외 옵션=후방카메라" in text
+    assert "id=b1" in text and "공통 외 옵션=스마트키" in text
+
+
+def test_format_compare_table_shows_fourth_option_difference():
+    """옛 코드([:3] 절단)면 4번째 옵션이 통째로 안 보여 이 단언이 실패한다(red 확인 완료)."""
+    a = _compare_card("a1", options=["선루프", "열선시트", "후방카메라", "전동트렁크"])
+    b = _compare_card("b1", options=["선루프", "열선시트", "후방카메라", "하이패스"])
+    text = agent_tools._format_compare_table([a, b])
+    assert "전동트렁크" in text
+    assert "하이패스" in text
+
+
+def test_format_compare_table_single_listing_shows_all_options_without_common_line():
+    c = _compare_card("a1", options=["선루프", "열선시트", "후방카메라", "스마트키"])
+    text = agent_tools._format_compare_table([c])
+    assert "옵션=선루프, 열선시트, 후방카메라, 스마트키" in text
+    assert "공통 옵션" not in text
+
+
+def test_format_compare_table_listing_without_options_omits_option_field():
+    c = _compare_card("a1", options=None)
+    text = agent_tools._format_compare_table([c])
+    assert "옵션=" not in text
+
+
 def test_invalid_body_type_raises_with_allowed_values():
     """LLM이 지어낸 축값은 조용한 0건 대신 허용 목록을 담은 에러로 되돌려 모델이 재시도하게
     한다. DW-872 이전엔 이 값이 '세단'이었다(회귀 실측 H26) — DW-872로 '세단'은 별칭으로

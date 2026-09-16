@@ -701,17 +701,35 @@ def market_price_stats(listing_id: str) -> tuple[str, dict | None]:
 
 
 def _format_compare_table(listings: list[ListingCard]) -> str:
+    # 실측 결함(DW-891): 옵션을 앞 3개만 보여줘 4번째 이후(예: 어댑티브크루즈)의 차이가
+    # 모델에게 안 보여, "동일한 기본 옵션"이라고 얕게 답했다. 2건 이상이면 공통 옵션을 한
+    # 줄로 먼저 밝히고 각 매물 줄엔 그 매물만의 옵션(공통 외)만 적어 차이를 바로 드러낸다.
     if not listings:
         return "비교할 매물을 찾지 못했습니다."
-    lines = []
-    for c in listings:
-        opts = ", ".join((c.options or [])[:3])
-        line = (
+
+    def base_line(c: ListingCard) -> str:
+        return (
             f"- id={c.id} {c.manufacturer} {c.model} {c.year}년식 {c.mileage:,}km "
             f"{c.price:,}원 연료={c.fuel or '미상'} 사고={c.accident_status or '미상'}"
         )
+
+    if len(listings) == 1:
+        c = listings[0]
+        line = base_line(c)
+        opts = ", ".join(c.options or [])
         if opts:
             line += f" 옵션={opts}"
+        return line
+
+    common = [
+        opt for opt in (listings[0].options or [])
+        if all(opt in (c.options or []) for c in listings[1:])
+    ]
+    common_set = set(common)
+    lines = [f"공통 옵션={', '.join(common) if common else '없음'}"]
+    for c in listings:
+        own_extra = [opt for opt in (c.options or []) if opt not in common_set]
+        line = base_line(c) + f" 공통 외 옵션={', '.join(own_extra) if own_extra else '없음'}"
         lines.append(line)
     return "\n".join(lines)
 

@@ -917,6 +917,10 @@ def run_search_agent(query: str, context: list | None = None, listing_id: str | 
     # 1건뿐이라 market_diagnoses가 None이어도(위 >=2 게이트) 표본 부족 주의는 빠지지 않는다.
     final_answer = answer_guards.strip_listing_ids(final.answer)
     final_answer = answer_guards.ensure_sample_caveat(final_answer, market_diagnoses_all)
+    # 문단 정리(DW-891) — 서버에서 한 번 더 정돈해야 웹·앱이 동시에 해결된다(프롬프트만으론
+    # 실측으로 계속 샘). strip→caveat 다음에 둔다 — 방금 덧붙인 주의 문장(ensure_sample_caveat)도
+    # 문단 나누기 대상에 포함되도록 순서를 맞춘다.
+    final_answer = answer_guards.paragraphize(final_answer)
 
     logger.info(
         "run_search_agent 질의=%r → 도구=%r 매물=%d건 clarify=%s",
