@@ -7439,3 +7439,12 @@ severity: low
 reason: "무사고"가 매물 의도 어휘라 용어 질문이 매물 검색으로 흘러 되묻기로 끝난다. 시연에서 용어 질문을 받으면 그대로 재현될 수 있다.
 trigger: 다음 챗봇 검증 회차에 이 표현을 가이드 카테고리 질의로 추가해 실측 후 게이트 조건 결정(원인 미확인, 추측 금지)
 status: open
+
+### DW-894: listings.generation·source에 authenticated UPDATE 컬럼 GRANT가 없어 통합검사 1건 red — 0038 유래
+
+origin: 2026-09-29 스토리 18.1 T4 중 api/tests/integration 전체 실행(206건 중 205 통과). 실패 = test_view_count_rpc_real_db.py::test_grant_completeness_four_combinations[authenticated-UPDATE]
+location: supabase/migrations/0038_listings_generation_source.sql — `grant insert (generation, source)`만 있고 0020 방식의 `grant update (...)` 목록에 두 컬럼이 없음(파일 확인)
+severity: low
+reason: 판매자가 매물 수정 화면에서 세대·출처를 고치면 권한 오류가 날 수 있다. 의도적으로 수정 불가로 둔 것인지(엔카 수집값 보호) 누락인지 미확인 — 검사가 "INSERT 가능 컬럼 = UPDATE 가능 컬럼"을 요구하는 것이라 의도였다면 검사 쪽 예외 등재가 맞다. 18.1과 무관해 손대지 않음.
+trigger: Epic 18 스토리 18.7(기술부채 선별)에서 의도 확인 → 누락이면 새 마이그레이션으로 grant update 추가, 의도면 검사에 예외와 사유 기록
+status: open
