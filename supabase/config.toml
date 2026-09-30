@@ -200,7 +200,7 @@ password_requirements = ""
 
 [auth.rate_limit]
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
-email_sent = 2
+email_sent = 30 # 18.2: 실발송 테스트용으로 2→30(시간당). 운영 값은 대시보드에서 따로 정한다
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
 sms_sent = 30
 # Number of anonymous sign-ins that can be made per hour per IP address. Requires enable_anonymous_sign_ins = true.
@@ -236,6 +236,18 @@ max_frequency = "1s"
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
+
+# Story 18.2 — Auth 메일(가입 인증·비밀번호 재설정)을 Resend SMTP로 보낸다. 켜 두면 로컬 메일함
+# (local_smtp, 55324)이 아니라 **실제 주소로 발송**된다. 비밀값은 supabase/.env의 RESEND_API_KEY
+# (저장소에 커밋하지 않는다). 발신 도메인 chajang.devmerc.dev는 Resend에서 DKIM·SPF 인증 완료.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "no-reply@chajang.devmerc.dev"
+sender_name = "차장님"
 
 # Use a production-ready SMTP server
 # [auth.email.smtp]
