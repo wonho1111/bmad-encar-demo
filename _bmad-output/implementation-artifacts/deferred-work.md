@@ -7446,6 +7446,7 @@ origin: 2026-09-29 스토리 18.1 T4 중 api/tests/integration 전체 실행(206
 location: supabase/migrations/0038_listings_generation_source.sql — `grant insert (generation, source)`만 있고 0020 방식의 `grant update (...)` 목록에 두 컬럼이 없음(파일 확인)
 severity: low
 reason: 판매자가 매물 수정 화면에서 세대·출처를 고치면 권한 오류가 날 수 있다. 의도적으로 수정 불가로 둔 것인지(엔카 수집값 보호) 누락인지 미확인 — 검사가 "INSERT 가능 컬럼 = UPDATE 가능 컬럼"을 요구하는 것이라 의도였다면 검사 쪽 예외 등재가 맞다. 18.1과 무관해 손대지 않음.
+note(2026-09-30 실측): 웹 코드(web/src, 테스트 제외)에 generation·source 참조 0건 — 매물 등록·수정 화면이 이 두 칸을 쓰지 않으므로 **사용자에게 보이는 영향 없음**. 0038 주석상 두 칸은 시세 분석용 내부 값(세대코드·수집 배치 표식).
 trigger: Epic 18 스토리 18.7(기술부채 선별)에서 의도 확인 → 누락이면 새 마이그레이션으로 grant update 추가, 의도면 검사에 예외와 사유 기록
 status: open
 
