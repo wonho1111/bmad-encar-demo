@@ -1,6 +1,6 @@
 # Story 18.2: 메일 발송 기반 (Resend + 도메인 인증)
 
-Status: in-progress
+Status: review
 
 ## Story
 As a 운영자, I want Auth 메일(가입 인증·비밀번호 재설정)이 내 도메인 이름으로 인증되어 나가게 하고 싶다, so that 기본 메일의 발송 제한 없이 받은편지함에 도착한다.
@@ -26,7 +26,11 @@ As a 운영자, I want Auth 메일(가입 인증·비밀번호 재설정)이 내
   - 미확정: 스팸 원인이 영어 기본 양식인지, 링크 안의 localhost인지, 둘 다인지 — 세 번의 발송에서 두 요소가 함께 바뀌어 분리되지 않았다. 18.3·18.4에서 한국어 양식 + Site URL 수정 후 다시 잰다.
 - **발견한 운영 설정 오류**: 운영 Supabase의 Site URL이 `http://localhost:3000`이다(메일 링크의 redirect_to로 확인, 링크를 누르면 localhost가 열림). 카카오 로그인은 코드가 redirectTo를 직접 넘겨서 영향이 없었다. → Site URL을 `https://bmad-encar-demo.vercel.app`로 수정 필요(사용자, 대시보드).
 
+- **Site URL 수정 후 재발송(사용자 확인)**: 링크가 `bmad-encar-demo.vercel.app`으로 열림. 네이버 받은메일함, 지메일 **여전히 스팸함** → localhost는 원인에서 제외. 남은 후보 = 영어 기본 양식(앞선 스팸 분류 이력의 영향은 배제 못 함).
+
 ## 남은 것
-- [ ] 운영 Site URL 수정 후 메일 링크가 운영 사이트로 가는지 확인
-- [ ] 테스트로 만든 운영 사용자(`onehoo314@gmail.com` 초대) 정리 여부 결정
-- [ ] 실측 행 + `기능가이드/이메일_발송.md` Resend 절(freelance)
+- [x] 운영 Site URL 수정 후 메일 링크가 운영 사이트로 가는지 확인
+- [x] 실측 행 + `기능가이드/이메일_발송.md` Resend 절(freelance c256bce)
+- [ ] **지메일 받은편지함 도착은 미달성** → 18.3·18.4의 완료 조건으로 옮김(한국어 양식 적용 후 운영 발송으로 재측정)
+- [ ] 운영 테스트 사용자 `onehoo314@gmail.com`은 지메일 수신 확인용으로 유지(사용자 계정)
+- [ ] 새 세션 코드리뷰(B4) — 변경은 config.toml뿐

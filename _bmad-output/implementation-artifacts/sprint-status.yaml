@@ -369,7 +369,7 @@ development_status:
   # Epic 18 — 운영 서비스 고도화(웹만). 정본 = planning-artifacts/epics-upgrade-2026-09-29.md
   epic-18: in-progress # 2026-09-29 착수. 순서=소셜로그인→회원+이메일→PG, 알림 제외, 기술부채 맨 뒤(사용자 지정)
   18-1-카카오-로그인: review # 2026-09-30 구현·로컬/미리보기/운영 확인·main 반영(de2f830). 코드리뷰는 새 세션에서(B4) 후 done
-  18-2-메일-발송-기반-resend-도메인-인증: in-progress
+  18-2-메일-발송-기반-resend-도메인-인증: review # 2026-09-30 인증 3종 PASS·운영 발송 확인. 지메일 스팸은 18.3·18.4 완료 조건으로 이월
   18-3-가입-이메일-인증: backlog
   18-4-비밀번호-재설정: backlog
   18-5-토스-결제-매물-상단-노출: backlog
