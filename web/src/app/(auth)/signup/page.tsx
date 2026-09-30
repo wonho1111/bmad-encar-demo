@@ -38,6 +38,16 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  async function handleKakaoLogin() {
+    // 로그인 화면과 동일한 흐름(Story 18.1) — 실패해도 항상 `/login?error=oauth`로 돌아가므로
+    // 이 화면엔 오류 문구를 따로 두지 않는다(로그인 화면이 표시).
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({
+      provider: 'kakao',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (loading) return; // 진행 중 중복 제출 차단(빠른 연타/엔터 2회 방지)
@@ -154,6 +164,16 @@ export default function SignupPage() {
           가입하기
         </Button>
       </form>
+
+      {/* 카카오 디자인 가이드 색상(#FEE500 배경 / rgba(0,0,0,0.85) 글자) — 앱 테마 토큰과 무관한
+          브랜드 고정 색이라 theme 토큰이 아닌 임의값(arbitrary value)을 그대로 쓴다. */}
+      <button
+        type="button"
+        onClick={handleKakaoLogin}
+        className="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium cursor-pointer bg-[#FEE500] text-[rgba(0,0,0,0.85)]"
+      >
+        카카오로 시작하기
+      </button>
     </main>
   );
 }

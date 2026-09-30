@@ -12,6 +12,8 @@ import Button from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 // 오픈 리다이렉트 방어는 @/lib/auth/redirect의 순수 함수가 담당한다(단위테스트로 고정 — 규칙12).
 import { resolveSafeRedirect } from '@/lib/auth/redirect';
+// `/auth/callback`이 실어 보내는 `?error=oauth` 신호 → 한국어 문구(Story 18.1 AC3).
+import { toKoreanOAuthError } from '@/lib/auth/oauthError';
 
 // Supabase 로그인 에러를 사용자용 한국어 메시지로 변환한다(원본 메시지/코드는 화면에 직접 노출하지 않음).
 // 잘못된 자격은 보안상 "이메일/비밀번호 중 무엇이 틀렸는지" 구분하지 않고 동일 문구로 안내한다.
@@ -32,6 +34,18 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // `/auth/callback`이 실패 시 되돌려보내는 `?error=oauth`(AC3) — 폼 제출 오류와 같은 자리에 보여준다.
+  const oauthError = toKoreanOAuthError(searchParams.get('error'));
+
+  async function handleKakaoLogin() {
+    // signInWithOAuth가 카카오 동의 화면으로 전체 페이지 이동시킨다 — 성공/실패 모두
+    // `/auth/callback`을 거쳐 돌아오므로 여기서 결과를 기다릴 필요가 없다.
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({
+      provider: 'kakao',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -114,9 +128,9 @@ function LoginForm() {
           />
         </label>
 
-        {error && (
+        {(error ?? oauthError) && (
           <p role="alert" className="text-sm text-danger">
-            {error}
+            {error ?? oauthError}
           </p>
         )}
 
@@ -124,6 +138,16 @@ function LoginForm() {
           로그인
         </Button>
       </form>
+
+      {/* 카카오 디자인 가이드 색상(#FEE500 배경 / rgba(0,0,0,0.85) 글자) — 앱 테마 토큰과 무관한
+          브랜드 고정 색이라 theme 토큰이 아닌 임의값(arbitrary value)을 그대로 쓴다. */}
+      <button
+        type="button"
+        onClick={handleKakaoLogin}
+        className="inline-flex items-center justify-center rounded px-4 py-2 text-sm font-medium cursor-pointer bg-[#FEE500] text-[rgba(0,0,0,0.85)]"
+      >
+        카카오로 시작하기
+      </button>
 
       <p className="text-sm text-ink-muted">
         아직 계정이 없으신가요?{' '}

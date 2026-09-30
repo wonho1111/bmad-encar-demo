@@ -7384,7 +7384,7 @@ location: app/search_screen.dart `_FilterPanel`(2열 Row 고정) · web/app Mark
 severity: medium
 reason: 시연·포트폴리오가 폰 화면으로 이뤄지는데 웹은 640px 미만 1열 규칙이 필터·카드에만 있고 시세 카드와 상세 CTA엔 없으며, 앱은 그 규칙 자체가 없어 웹·앱 표현이 갈린다.
 trigger: 이 항목 자체 — 규격: (1) 앱 필터 600dp 미만 1열, (2) 그래프 480px 미만 컴팩트(360×260, 많음/적음 라벨), (3) 모바일 웹 하단 바에 시세 버튼(44px·14px 동일), (4) 앱 하단 두 버튼 44/14/패딩 14 통일, (5) AI 카드 가로 넘침 원인 요소만 수정, (6) 5칸 통계 640px(앱 600dp) 미만 세로 목록 5줄·근거 타일 동일 높이, (7) 비교 매물 목록 제거(칩·통계·산점도 유지). 검증 = 웹 390px Playwright + 앱 실기기 adb 스크린샷.
-status: open
+status: done (2026-09-16 — 7건 구현 14589de, 웹 PC/390/800·실기기 Chrome·앱 실기기 스크린샷 검증, main 03b3c45·APK v1.2.1 릴리즈)
 
 ### DW-888: 엔카 '가격 문의' 표시값(9,999만원) 매물이 운영 비교군·학습표·그래프 축에 섞인다
 
@@ -7411,4 +7411,49 @@ location: 운영 listings(source=encar), api/scripts/collect_encar_eval.py 가�
 severity: low
 reason: 축은 2~98 백분위로 방어돼 화면은 정상이지만, 그 행들이 학습표·통계(최고가)에 들어간다. 신차가 5,500만 안팎인 모델의 9,000만대 호가는 리스 승계·표기 오류 가능성이 높으나 원인 미확인.
 trigger: 다음 엔카 재수집 때 — 원본 페이지에서 해당 매물의 가격 표기(리스/렌트 승계, 월 납입 등)를 확인해 파싱 규칙 또는 제외 규칙 결정. 대상 매물 자체가 표시값(9,999만)이면 축이 그 값까지 넓어져 곡선이 눌리는 한계도 같은 자리에서 다룬다(표시값 매물 7건 한정).
+status: open
+
+### DW-891: 챗봇 답변이 개행 없이 벽처럼 나온다(웹·앱 공통) + 비교 도구가 옵션 앞 3개만 넘겨 "동일한 기본 옵션"이라 얕게 답한다
+
+origin: 사용자 지적(2026-09-17, 이전에도 반복 지적) — 실측 run4(20260914_h, 45건): 200자 이상 답변 43건 중 개행 0이 26건, 그중 번호 목록이 한 줄에 붙은 것 12건. 비교 스크린샷에서 카드 칩은 서로 다른데 본문은 "동일한 기본 옵션"
+location: api/app/graph/answer_guards.py (7) paragraphize · agent.py LLM 경로 최종 후처리(strip→caveat→paragraphize) · agent_tools.py _format_compare_table
+severity: medium
+reason: 프롬프트("2~3문장 단위 문단")는 모델이 무시하고, 웹 AnswerText.tsx 보정은 번호 뒤에 글자가 올 때만 잡고("1. 2,900만 원" 놓침), 앱은 보정이 없다. 화면마다 고치면 세 곳이라 서버 후처리 한 곳으로 웹·앱을 동시에 해결.
+trigger: 이 항목에서 처리
+status: done (2026-09-17 — paragraphize: 인라인 번호 항목을 줄로 분리·4문장 이상은 3문장 이하로 고르게 문단·마지막 항목은 앞 항목과 같은 문장 수까지; 실제 답변 61건 검증(벽 22건만 변경·이미 정돈된 답변 0건 변경·멱등·글자 불변). 비교 도구는 공통 옵션 한 줄 + 매물별 공통 외 옵션 전부. API 780 통과(+14, 항목별 red→green), 실제 Gemini E2E 2턴(경차 추천 → 1·2번 비교) 확인. 웹 AnswerText.tsx의 반쪽 정규식은 그대로 둠(서버 결과에는 무변경이라 무해). 운영 반영은 main 병합 시)
+
+### DW-892: 매물 비교 결과를 표로 보여주는 화면이 없다 — 답변은 글 + 매물 카드 재사용
+
+origin: 2026-09-17 포트폴리오 작성 중 사용자 질문("실제로 표 같은 걸로 보여주나?") — 비교 흐름은 코드가 "1번·2번" 지칭 해석 → 도구가 ≤4건 조회 → LLM 산문 → 웹·앱은 산문 + ListingCard
+location: api/app/routers/ai.py SearchResponse(어떤 도구를 썼는지 표시 없음) · web/src/components/ai/ChatAssistant.tsx · app/lib/features/ai_search/ai_chat_screen.dart
+severity: low
+reason: 사용자 결정(2026-09-17): 비용 대비 보류. 포트폴리오 문구는 실제 동작대로 고침(3쪽 "최대 4대의 조건과 옵션 차이를 글로 정리하고 카드를 붙입니다").
+trigger: 사용자가 비교표를 원할 때 — API 응답에 비어 있어도 되는 `comparison` 필드(만드는 쪽 먼저) → 웹 표 컴포넌트 → 앱 위젯, 웹·앱 동일 규칙. 포트폴리오에는 그때 비교표 스크린샷을 추가.
+status: open
+
+### DW-893: 용어 질문("무사고랑 단순교환 차이가 뭐야?")에 설명 대신 "찾으시는 차종·예산을 말씀해 주세요"로 되묻는다 — 운영·로컬 동일
+
+origin: 2026-09-17 DW-891 전/후 스크린샷 캡처 중 관찰(웹 /ai, 새 대화 1턴). 같은 주제의 채점 케이스(run4 C62)는 설명으로 답했으므로 질문 표현("무사고랑 … 뭐야?")에 따라 갈리는 것으로 보임
+location: api/app/graph/agent.py DW-876 가이드 게이트(가이드 0건 + has_listing_intent 참이면 search_listings 강제) · answer_guards.has_listing_intent("무사고" 어휘)
+severity: low
+reason: "무사고"가 매물 의도 어휘라 용어 질문이 매물 검색으로 흘러 되묻기로 끝난다. 시연에서 용어 질문을 받으면 그대로 재현될 수 있다.
+trigger: 다음 챗봇 검증 회차에 이 표현을 가이드 카테고리 질의로 추가해 실측 후 게이트 조건 결정(원인 미확인, 추측 금지)
+status: open
+
+### DW-894: listings.generation·source에 authenticated UPDATE 컬럼 GRANT가 없어 통합검사 1건 red — 0038 유래
+
+origin: 2026-09-29 스토리 18.1 T4 중 api/tests/integration 전체 실행(206건 중 205 통과). 실패 = test_view_count_rpc_real_db.py::test_grant_completeness_four_combinations[authenticated-UPDATE]
+location: supabase/migrations/0038_listings_generation_source.sql — `grant insert (generation, source)`만 있고 0020 방식의 `grant update (...)` 목록에 두 컬럼이 없음(파일 확인)
+severity: low
+reason: 판매자가 매물 수정 화면에서 세대·출처를 고치면 권한 오류가 날 수 있다. 의도적으로 수정 불가로 둔 것인지(엔카 수집값 보호) 누락인지 미확인 — 검사가 "INSERT 가능 컬럼 = UPDATE 가능 컬럼"을 요구하는 것이라 의도였다면 검사 쪽 예외 등재가 맞다. 18.1과 무관해 손대지 않음.
+trigger: Epic 18 스토리 18.7(기술부채 선별)에서 의도 확인 → 누락이면 새 마이그레이션으로 grant update 추가, 의도면 검사에 예외와 사유 기록
+status: open
+
+### DW-895: 원격 마이그레이션 원장에 0040이 없다 — 함수는 적용됐고 원장만 0039에서 멈춤
+
+origin: 2026-09-30 스토리 18.1 운영 반영. 오케스트레이터의 `apply_migration`이 자동 권한 검사(Production Deploy)에 막혀 사용자가 SQL Editor로 직접 실행
+location: 원격 `supabase_migrations.schema_migrations` · 기록 = deploy-record-2026-09-30-migration-0040.md
+severity: low
+reason: 동작 영향 없음. 다만 다음에 "원장 마지막 번호 = 적용된 마지막 마이그"로 읽으면 0040을 또 적용하려 든다(create or replace라 재적용해도 무해). 0041 이후도 같은 방식으로 적용하면 어긋남이 누적된다.
+trigger: 다음 원격 마이그레이션 적용 때(18.5 결제 테이블 예정) — 적용 방식(MCP 권한 허용 vs SQL Editor + 원장 행 수동 추가)을 먼저 정하고 0040 행을 같이 맞춘다
 status: open

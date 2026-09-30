@@ -966,6 +966,36 @@ def test_final_answer_strips_listing_ids_and_adds_sample_caveat(monkeypatch):
     assert "표본이 적어 참고만 하세요" in result["answer"]
 
 
+def test_final_answer_paragraphizes_five_sentence_wall(monkeypatch):
+    """최종화 LLM이 개행 없는 5문장 벽 답변을 내면(가짜 최종 출력으로 이 상황을 직접
+    만든다), 반환 전에 코드가 문단으로 나눈다(DW-891, answer_guards.paragraphize 배선)."""
+    listing_uuid = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
+    diagnosis = {
+        "listing": {"id": listing_uuid}, "verdict": "적정",
+        "criteria": {"sample_count": 5},  # >=3 — 표본 부족 문구가 안 붙어야 문단 나누기만 본다.
+    }
+    responses = [
+        _FakeAIMessage(tool_calls=[
+            {"name": "market_price_stats", "args": {"listing_id": listing_uuid}, "id": "call-1"}
+        ]),
+        _FakeAIMessage(tool_calls=[]),
+    ]
+    tool_llm = _SequenceToolLLM(responses)
+    wall = "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다. 다섯째 문장입니다."
+    final_output = agent_module._AgentFinalOutput(
+        answer=wall, selected_listing_ids=[], clarify=None,
+    )
+    _patch_base_llm(monkeypatch, tool_llm, final_output)
+    monkeypatch.setattr(
+        agent_module, "TOOLS_BY_NAME",
+        {"market_price_stats": _FakeTool("market_price_stats", artifact=diagnosis)},
+    )
+
+    result = agent_module.run_search_agent("이 매물 시세 알려줘")
+
+    assert "\n\n" in result["answer"]
+
+
 # ───────── (9) DW-873 — 첫 응답이 도구 호출 없을 때 search_guides 강제 호출 ─────────
 #
 # 배경: 가이드(구매 지식) 질문 15건 중 13건에서 에이전트가 도구를 한 번도 안 부르고 모델

@@ -502,3 +502,114 @@ def infer_missing_args(query: str, args: dict) -> dict:
         if m and not _is_negated(query, m.end()):
             result["accident_free_only"] = True
     return result
+
+
+# ── (7) 답변 문단 정리(DW-891) ────────────────────────────────────────────
+#
+# 실측(챗봇 답변 검증 최근 채점 45건): 프롬프트(agent.py _SYSTEM_PROMPT)가 문단을 나누라고
+# 안내해도 모델이 무시해, 긴 답변 절반 이상이 개행 0으로 벽처럼 나오고 번호 목록도 한 줄에
+# 붙는다. 웹(AnswerText.tsx)의 보정은 인라인 번호를 일부만 잡는 반쪽짜리고 앱은 보정이 아예
+# 없다 — 프롬프트 규칙 대신 서버가 답을 내보내기 직전 결정론으로 한 번 더 정돈하면 웹·앱
+# 둘 다 동시에 해결된다(CLAUDE.md B9 "지켜야 하는 규칙이면 실행되는 검사로 바꾼다"). 시제품
+# 단계에서 실제 답변 61건으로 검증됨(벽 22건만 바뀌고 이미 정돈된 답변 0건 변경, 멱등, 공백
+# 제외 글자 불변) — 그 알고리즘을 그대로 옮긴다.
+_INLINE_NUMBERED_RE = re.compile(r"(\S)[ \t](\d{1,2})\.[ \t]+(?=\S)")
+_NUMBERED_LINE_RE = re.compile(r"^\d{1,2}\.\s")
+_SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+_MAX_SENTENCES = 3
+
+
+def _split_sentences(text: str) -> list[str]:
+    return [s for s in _SENTENCE_END_RE.split(text.strip()) if s]
+
+
+def _group_sentences(sentences: list[str]) -> list[str]:
+    """문장 목록을 최대 3문장씩, 되도록 고르게 묶는다 → 문단 문자열 목록."""
+    n = len(sentences)
+    if n == 0:
+        return []
+    if n <= _MAX_SENTENCES:
+        return [" ".join(sentences)]
+    k = -(-n // _MAX_SENTENCES)
+    base, extra = divmod(n, k)
+    sizes = [base + 1] * extra + [base] * (k - extra)
+    out, i = [], 0
+    for sz in sizes:
+        out.append(" ".join(sentences[i:i + sz]))
+        i += sz
+    return out
+
+
+def _line_segments(raw_line: str) -> list[tuple[str, bool]]:
+    """한 줄 → (문자열, 문단인가) 목록. 문단(True)은 이웃과 빈 줄로, 아니면 개행 하나로 잇는다."""
+    line = raw_line.strip()
+    if not line:
+        return []
+    expanded = _INLINE_NUMBERED_RE.sub(r"\1\n\2. ", line).split("\n")
+    if len(expanded) == 1:
+        # 이미 한 줄로 정돈된 줄(번호 항목·3문장 이하)은 들여쓰기까지 그대로 둔다.
+        if _NUMBERED_LINE_RE.match(line):
+            return [(raw_line.rstrip(), False)]
+        sentences = _split_sentences(line)
+        if len(sentences) <= _MAX_SENTENCES:
+            return [(raw_line.rstrip(), False)]
+        return [(p, True) for p in _group_sentences(sentences)]
+    # 문장 중간에 번호 목록이 붙어 있던 줄 — 앞 설명 / 목록 / 마지막 항목 뒤 맺음말로 나눈다.
+    segments, items = [], []
+    for j, piece in enumerate(expanded):
+        piece = piece.strip()
+        if not piece:
+            continue
+        marker = _NUMBERED_LINE_RE.match(piece)
+        if not marker:
+            segments.extend((p, True) for p in _group_sentences(_split_sentences(piece)))
+            continue
+        if j == len(expanded) - 1:
+            # 마지막 조각은 "N. 항목문장. 맺음말..." 형태일 수 있다 — 항목에는 바로 앞 항목과
+            # 같은 문장 수만 남기고(앞 항목이 두 문장씩이면 두 문장, 없으면 한 문장) 나머지는
+            # 별도 문단(맺음말)으로 뗀다. E2E 실측: 앞 항목들이 두 문장인데 마지막 항목의
+            # 둘째 문장("파란색 외관이 특징입니다")이 맺음말로 떨어져 나갔다.
+            keep = 1
+            if items:
+                prev = items[-1]
+                keep = max(1, len(_split_sentences(prev[_NUMBERED_LINE_RE.match(prev).end():])))
+            parts = _SENTENCE_END_RE.split(piece[marker.end():], maxsplit=keep)
+            items.append(piece[:marker.end()] + " ".join(parts[:keep]))
+            segments.append(("\n".join(items), True))
+            items = []
+            if len(parts) > keep:
+                segments.extend((p, True) for p in _group_sentences(_split_sentences(parts[keep])))
+            continue
+        items.append(piece)
+    if items:
+        segments.append(("\n".join(items), True))
+    return segments
+
+
+def paragraphize(answer: str) -> str:
+    """최종 답변을 문단으로 정돈한다(DW-891) — LLM이 프롬프트의 문단 나누기 지시를 무시해도
+    서버가 답을 내보내기 직전 한 번 더 결정론으로 보정한다.
+
+    규칙:
+    - 문장 중간에 붙은 번호 항목(" 2. ")을 줄 앞으로 뺀다. 웹(AnswerText.tsx)의 정규식과
+      달리 번호 뒤에 또 숫자가 와도 잡는다(예: "1. 2023년식…").
+    - 번호 항목이 아닌 줄이 4문장 이상이면 3문장 이하로 고르게 나눠 빈 줄로 구분한다.
+      3문장 이하·번호 항목 줄·들여쓰기된 하위 줄은 그대로 둔다 — 멱등이고 이미 정돈된
+      답변은 바뀌지 않는다.
+    - 한 줄에 붙어 있던 목록(설명 + "1. … 2. … 3. …")은 앞 설명 / 항목들 / 마지막 항목
+      뒤 맺음말을 빈 줄로 나눈다(마지막 항목은 첫 문장까지만 항목으로 본다).
+    - 소수점("3.3")·금액 구분자("1,957")는 점 뒤에 공백이 없어 문장 경계나 번호 항목으로
+      오인하지 않는다.
+    """
+    if not answer:
+        return answer
+    blocks = []
+    for block in re.split(r"\n{2,}", answer.strip()):
+        segments = [seg for raw in block.split("\n") for seg in _line_segments(raw)]
+        if not segments:
+            continue
+        text = segments[0][0]
+        for (prev, prev_para), (cur, cur_para) in zip(segments, segments[1:]):
+            text += ("\n" if not prev_para and not cur_para else "\n\n") + cur
+        blocks.append(text)
+    return "\n\n".join(blocks)

@@ -5,6 +5,8 @@ agent.py의 도구 디스패치 루프·최종화 배선은 tests/test_agent_loo
 격리해 본다.
 """
 
+import re
+
 from app.graph import answer_guards
 
 
@@ -472,3 +474,107 @@ def test_infer_missing_args_accident_free_only_keeps_existing_value():
     assert answer_guards.infer_missing_args("무사고 차", {"accident_free_only": False}) == {
         "accident_free_only": False,
     }
+
+
+# ───────── (5) paragraphize ─────────
+#
+# 실측(챗봇 답변 검증 최근 채점 45건, DW-891): 프롬프트가 문단을 나누라고 해도 모델이 무시해
+# 긴 답변 절반 이상이 개행 0으로 벽처럼 나온다. 시제품(실제 답변 61건 검증: 벽 22건만 바뀌고
+# 이미 정돈된 답변 0건 변경, 멱등, 공백 제외 글자 불변)을 옮긴 알고리즘 자체를 여기서 잠근다.
+
+def test_paragraphize_five_sentence_wall_splits_into_two_paragraphs():
+    answer = "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다. 다섯째 문장입니다."
+    result = answer_guards.paragraphize(answer)
+    assert result.count("\n\n") == 1
+    assert result == "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다.\n\n넷째 문장입니다. 다섯째 문장입니다."
+    # 공백만 지우고 비교하면 원문과 글자가 하나도 안 바뀐다.
+    assert re.sub(r"\s+", "", answer) == re.sub(r"\s+", "", result)
+
+
+def test_paragraphize_three_sentences_or_fewer_unchanged():
+    answer = "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다."
+    assert answer_guards.paragraphize(answer) == answer
+
+
+def test_paragraphize_inline_numbered_list_splits_intro_items_closing():
+    answer = (
+        "추천해 드립니다. 1. 기아 레이 (2021년식): 1,180만원, 무사고, 통풍시트 포함. "
+        "2. 현대 캐스퍼 (2022년식): 1,350만원, 무사고. 3. 기아 모닝 (2019년식): 790만원, 무사고. "
+        "이 중 시세가 궁금한 차량이 있다면 말씀해 주세요."
+    )
+    expected = (
+        "추천해 드립니다.\n\n"
+        "1. 기아 레이 (2021년식): 1,180만원, 무사고, 통풍시트 포함.\n"
+        "2. 현대 캐스퍼 (2022년식): 1,350만원, 무사고.\n"
+        "3. 기아 모닝 (2019년식): 790만원, 무사고.\n\n"
+        "이 중 시세가 궁금한 차량이 있다면 말씀해 주세요."
+    )
+    assert answer_guards.paragraphize(answer) == expected
+
+
+def test_paragraphize_last_inline_item_keeps_as_many_sentences_as_previous_item():
+    """E2E 실측(2026-09-17, "2천만원 이하 경차 추천해줘"): 항목마다 두 문장인 목록에서 마지막
+    항목의 둘째 문장("파란색 외관이 특징입니다")이 맺음말 문단으로 떨어져 나갔다. 마지막 항목은
+    바로 앞 항목과 같은 문장 수까지 항목으로 보고, 그 뒤부터 맺음말로 뗀다."""
+    answer = (
+        "경차 매물 2건입니다. 1. 현대 캐스퍼 (2022년식): 1,350만원, 무사고. 크루즈 컨트롤이 있습니다. "
+        "2. 쉐보레 스파크 (2018년식): 580만원, 단순교환. 파란색 외관이 특징입니다. "
+        "관심 있는 차량이 있으면 말씀해 주세요."
+    )
+    expected = (
+        "경차 매물 2건입니다.\n\n"
+        "1. 현대 캐스퍼 (2022년식): 1,350만원, 무사고. 크루즈 컨트롤이 있습니다.\n"
+        "2. 쉐보레 스파크 (2018년식): 580만원, 단순교환. 파란색 외관이 특징입니다.\n\n"
+        "관심 있는 차량이 있으면 말씀해 주세요."
+    )
+    assert answer_guards.paragraphize(answer) == expected
+
+
+def test_paragraphize_inline_numbered_item_starting_with_digit_still_splits():
+    """웹(AnswerText.tsx) 정규식이 놓치던 형태 — 번호 뒤에 또 숫자가 오면("1. 2023년식…")
+    웹은 못 잡지만 이 함수는 잡는다(항목마다 줄이 나뉜다)."""
+    answer = "두 차량을 비교합니다. 1. 2023년식 (1,980만 원): 무사고. 2. 2022년식 (1,830만 원): 단순교환."
+    expected = (
+        "두 차량을 비교합니다.\n\n"
+        "1. 2023년식 (1,980만 원): 무사고.\n"
+        "2. 2022년식 (1,830만 원): 단순교환."
+    )
+    assert answer_guards.paragraphize(answer) == expected
+
+
+def test_paragraphize_decimal_and_comma_amounts_do_not_trigger_split():
+    answer = "배기량 3.3 리터에 가격은 1,957만 원이고 1.5억은 아닙니다."
+    assert answer_guards.paragraphize(answer) == answer
+
+
+def test_paragraphize_already_formatted_answer_is_byte_identical():
+    """이미 문단·번호 목록·들여쓰기 하위 줄까지 정돈된 답변은 완전히 그대로 둔다(멱등의
+    전제 — 정돈된 답변 0건 변경, 시제품 실측)."""
+    answer = (
+        "안녕하세요! 조건에 맞는 매물을 찾았습니다.\n"
+        "\n"
+        "1. 기아 레이 (2021년식): 1,180만원, 무사고.\n"
+        " - 통풍시트, 후방카메라 포함\n"
+        "2. 현대 캐스퍼 (2022년식): 1,350만원, 무사고.\n"
+        " - 스마트키 포함\n"
+        "\n"
+        "궁금하신 차량이 있으면 말씀해 주세요."
+    )
+    assert answer_guards.paragraphize(answer) == answer
+
+
+def test_paragraphize_is_idempotent():
+    wall = "첫 문장입니다. 둘째 문장입니다. 셋째 문장입니다. 넷째 문장입니다. 다섯째 문장입니다."
+    inline_list = (
+        "추천해 드립니다. 1. 기아 레이 (2021년식): 1,180만원, 무사고, 통풍시트 포함. "
+        "2. 현대 캐스퍼 (2022년식): 1,350만원, 무사고. 3. 기아 모닝 (2019년식): 790만원, 무사고. "
+        "이 중 시세가 궁금한 차량이 있다면 말씀해 주세요."
+    )
+    digit_item = "두 차량을 비교합니다. 1. 2023년식 (1,980만 원): 무사고. 2. 2022년식 (1,830만 원): 단순교환."
+    for answer in (wall, inline_list, digit_item):
+        once = answer_guards.paragraphize(answer)
+        assert answer_guards.paragraphize(once) == once
+
+
+def test_paragraphize_empty_string_unchanged():
+    assert answer_guards.paragraphize("") == ""
