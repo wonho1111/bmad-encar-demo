@@ -7448,3 +7448,12 @@ severity: low
 reason: 판매자가 매물 수정 화면에서 세대·출처를 고치면 권한 오류가 날 수 있다. 의도적으로 수정 불가로 둔 것인지(엔카 수집값 보호) 누락인지 미확인 — 검사가 "INSERT 가능 컬럼 = UPDATE 가능 컬럼"을 요구하는 것이라 의도였다면 검사 쪽 예외 등재가 맞다. 18.1과 무관해 손대지 않음.
 trigger: Epic 18 스토리 18.7(기술부채 선별)에서 의도 확인 → 누락이면 새 마이그레이션으로 grant update 추가, 의도면 검사에 예외와 사유 기록
 status: open
+
+### DW-895: 원격 마이그레이션 원장에 0040이 없다 — 함수는 적용됐고 원장만 0039에서 멈춤
+
+origin: 2026-09-30 스토리 18.1 운영 반영. 오케스트레이터의 `apply_migration`이 자동 권한 검사(Production Deploy)에 막혀 사용자가 SQL Editor로 직접 실행
+location: 원격 `supabase_migrations.schema_migrations` · 기록 = deploy-record-2026-09-30-migration-0040.md
+severity: low
+reason: 동작 영향 없음. 다만 다음에 "원장 마지막 번호 = 적용된 마지막 마이그"로 읽으면 0040을 또 적용하려 든다(create or replace라 재적용해도 무해). 0041 이후도 같은 방식으로 적용하면 어긋남이 누적된다.
+trigger: 다음 원격 마이그레이션 적용 때(18.5 결제 테이블 예정) — 적용 방식(MCP 권한 허용 vs SQL Editor + 원장 행 수동 추가)을 먼저 정하고 0040 행을 같이 맞춘다
+status: open
