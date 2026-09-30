@@ -368,7 +368,7 @@ development_status:
   epic-17-retrospective: done # 2026-08-12 — epic-17-retro-2026-08-12.md. 이전 회고(Epic 16) 액션을 코드에서 확인(B5 이행·B6 미이행)했고, B6 미이행이 단발이 아니라 Epic 13~17에 걸친 23건임을 전수 조사로 실측했다
   # Epic 18 — 운영 서비스 고도화(웹만). 정본 = planning-artifacts/epics-upgrade-2026-09-29.md
   epic-18: in-progress # 2026-09-29 착수. 순서=소셜로그인→회원+이메일→PG, 알림 제외, 기술부채 맨 뒤(사용자 지정)
-  18-1-카카오-로그인: ready-for-dev
+  18-1-카카오-로그인: review # 2026-09-30 구현·로컬/미리보기/운영 확인·main 반영(de2f830). 코드리뷰는 새 세션에서(B4) 후 done
   18-2-메일-발송-기반-resend-도메인-인증: backlog
   18-3-가입-이메일-인증: backlog
   18-4-비밀번호-재설정: backlog
